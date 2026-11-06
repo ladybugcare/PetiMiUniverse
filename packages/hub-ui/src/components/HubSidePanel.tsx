@@ -21,8 +21,9 @@ export type HubSidePanelProps = {
   /**
    * `default` = metade da viewport.
    * `wide` = painel mais largo (formulários densos / mapas).
+   * `xl` = agendamento: formulário + resumo, mais largo que os demais.
    */
-  size?: 'default' | 'wide';
+  size?: 'default' | 'wide' | 'xl';
   /**
    * Quando muda, o corpo do painel volta ao topo (ex.: trocar formulário ↔ compartilhar convite).
    */
@@ -86,7 +87,9 @@ export const HubSidePanel: React.FC<HubSidePanelProps> = ({
       aria-label={ariaLabel || title}
     >
       <div
-        className={`hub-side-panel__sheet${size === 'wide' ? ' hub-side-panel__sheet--wide' : ''}`}
+        className={`hub-side-panel__sheet${
+          size === 'wide' ? ' hub-side-panel__sheet--wide' : size === 'xl' ? ' hub-side-panel__sheet--xl' : ''
+        }`}
       >
         <div className="hub-side-panel__header">
           <div className="hub-side-panel__header-text">

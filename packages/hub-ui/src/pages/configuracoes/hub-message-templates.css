@@ -1,8 +1,8 @@
 /* HubMessageTemplatesPage — Templates de Mensagem */
 
 .hub-mt {
+  width: 100%;
   padding: 8px 4px 32px;
-  max-width: 760px;
 }
 
 .hub-mt__intro {
@@ -21,7 +21,7 @@
   font-size: 13px;
   line-height: 1.5;
   color: #7a6060;
-  max-width: 560px;
+  max-width: 78ch;
 }
 
 .hub-mt__groups {
@@ -41,9 +41,10 @@
 }
 
 .hub-mt__list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(420px, calc(50% - 8px))), 1fr));
   gap: 12px;
+  align-items: start;
 }
 
 .hub-mt__card {

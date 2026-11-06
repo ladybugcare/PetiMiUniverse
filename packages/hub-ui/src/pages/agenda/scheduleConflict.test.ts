@@ -76,6 +76,34 @@ describe('findLocalScheduleConflict', () => {
     ).toBeNull();
   });
 
+  it('conflita pelo id do recurso mesmo com rótulos diferentes', () => {
+    const found = findLocalScheduleConflict(
+      [{ staffId: null, resourceLabel: 'Nome antigo', resourceId: 'r1', startMs: 10, endMs: 20 }],
+      [slot({ id: 'r1', staffId: null, resourceLabel: 'Banheira 1', resourceId: 'r1', startMs: 12, endMs: 18, label: 'Banheira 1' })],
+    );
+    expect(found?.reason).toMatch(/recurso/);
+  });
+
+  it('ignora recurso já liberado', () => {
+    expect(
+      findLocalScheduleConflict(
+        [{ staffId: null, resourceLabel: 'Banheira 1', resourceId: 'r1', startMs: 10, endMs: 20 }],
+        [
+          slot({
+            id: 'r1',
+            staffId: null,
+            resourceLabel: 'Banheira 1',
+            resourceId: 'r1',
+            resourceReleased: true,
+            startMs: 12,
+            endMs: 18,
+            label: 'Banheira 1',
+          }),
+        ],
+      ),
+    ).toBeNull();
+  });
+
   it('detecta conflito de recurso', () => {
     const found = findLocalScheduleConflict(
       [{ staffId: null, resourceLabel: 'Sala 1', startMs: 10, endMs: 20 }],

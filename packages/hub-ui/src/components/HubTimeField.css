@@ -175,6 +175,10 @@
 }
 
 .hub-time-picker {
+  /* O painel vai para o body (portal) e não herda os tokens de .hub-time-field. */
+  --hub-time-text: #4a3b3a;
+  --hub-time-selected: #2563eb;
+
   display: flex;
   gap: 0;
   background: #fff;
@@ -226,7 +230,7 @@
 }
 
 .hub-time-picker__option--selected {
-  background: var(--hub-time-selected);
+  background: var(--hub-time-selected, #2563eb);
   color: #fff;
   font-weight: 600;
   border-color: #1e3a8a;

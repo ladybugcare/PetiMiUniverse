@@ -427,6 +427,7 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
       <HubSidePanel
         open={open}
         onClose={onClose}
+        size="xl"
         title={displayAppointmentTitle(appt)}
         titleIcon={<Calendar size={22} strokeWidth={2} aria-hidden />}
         subtitle={`${formatPanelDate(appt.start)} · ${formatHm(appt.start)}–${formatHm(appt.end)}`}
@@ -545,11 +546,7 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
               </div>
               {(appt.petBehaviorTags?.length ?? 0) > 0 ? (
                 <PetBehaviorTagsDisplay tags={appt.petBehaviorTags ?? []} />
-              ) : (
-                <p className="hub-agenda-appt-panel__empty-hint">
-                  Sem tags de comportamento na ficha do pet.
-                </p>
-              )}
+              ) : null}
               {appt.hubEncounterId ? (
                 <p className="hub-agenda-appt-panel__encounter">
                   Atendimento clínico:{' '}
@@ -558,51 +555,6 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
                   </Link>
                 </p>
               ) : null}
-            </div>
-          </div>
-
-          <div className="nam-section hub-agenda-appt-panel__sec">
-            <h3 className="nam-section-title">Observações do atendimento</h3>
-            <div className="nam-quick-card hub-agenda-appt-panel__card">
-              {canWrite ? (
-                <>
-                  <textarea
-                    className="nam-textarea hub-agenda-appt-panel__notes"
-                    rows={2}
-                    maxLength={8000}
-                    placeholder="Comportamento no dia, avisos da recepção, preferências…"
-                    value={notesDraft}
-                    onChange={(e) => setNotesDraft(e.target.value)}
-                    disabled={notesSaving}
-                  />
-                  {notesDirty ? (
-                    <div className="hub-agenda-appt-panel__notes-actions">
-                      <button
-                        type="button"
-                        className="hub-btn hub-btn--ghost"
-                        disabled={notesSaving}
-                        onClick={() => setNotesDraft(appt.notes ?? '')}
-                      >
-                        Descartar
-                      </button>
-                      <button
-                        type="button"
-                        className="hub-btn hub-btn--secondary"
-                        disabled={notesSaving}
-                        onClick={() => void saveNotes()}
-                      >
-                        {notesSaving ? 'Salvando…' : 'Salvar observações'}
-                      </button>
-                    </div>
-                  ) : null}
-                </>
-              ) : appt.notes ? (
-                <div className="nam-quick-card--pre" style={{ padding: 0, border: 'none', boxShadow: 'none' }}>
-                  {appt.notes}
-                </div>
-              ) : (
-                <p className="hub-agenda-appt-panel__empty-hint">Nenhuma observação neste atendimento.</p>
-              )}
             </div>
           </div>
 
@@ -631,30 +583,71 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
                   <span>{appt.professionalName}</span>
                 </div>
               )}
-              <div className="hub-agenda-appt-panel__kv-grid">
-                <div className="nam-readonly-kv">
-                  <span className="hub-clientes__muted">Recurso</span>
-                  <span>{appt.resourceLabel}</span>
+              <dl className="hub-agenda-appt-panel__facts">
+                <div>
+                  <dt>Recurso</dt>
+                  <dd>{appt.resourceLabel?.trim() || '—'}</dd>
                 </div>
-                <div className="nam-readonly-kv">
-                  <span className="hub-clientes__muted">Unidade</span>
-                  <span>
+                <div>
+                  <dt>Unidade</dt>
+                  <dd>
                     {isPartnerCareLocation(appt)
                       ? `Parceira${appt.partnerClinic?.name ? `: ${appt.partnerClinic.name}` : ''}`
-                      : appt.unitName}
-                  </span>
+                      : appt.unitName?.trim() || '—'}
+                  </dd>
                 </div>
-                <div className="nam-readonly-kv">
-                  <span className="hub-clientes__muted">Tipo</span>
-                  <span>{appointmentKindLabel(appt.appointment_kind)}</span>
+                <div>
+                  <dt>Tipo</dt>
+                  <dd>{appointmentKindLabel(appt.appointment_kind)}</dd>
                 </div>
-              </div>
+              </dl>
               {editable ? (
                 <button type="button" className="hub-agenda-appt-panel__link-btn" onClick={onEdit}>
                   Editar horário, serviços e demais detalhes
                 </button>
               ) : null}
             </div>
+          </div>
+
+          <div className="nam-section hub-agenda-appt-panel__sec">
+            <h3 className="nam-section-title">Descrição do atendimento</h3>
+            {canWrite ? (
+              <>
+                <textarea
+                  className="nam-textarea hub-agenda-appt-panel__notes"
+                  rows={2}
+                  maxLength={8000}
+                  placeholder="Nenhuma descrição neste atendimento."
+                  value={notesDraft}
+                  onChange={(e) => setNotesDraft(e.target.value)}
+                  disabled={notesSaving}
+                />
+                {notesDirty ? (
+                  <div className="hub-agenda-appt-panel__notes-actions">
+                    <button
+                      type="button"
+                      className="hub-btn hub-btn--ghost"
+                      disabled={notesSaving}
+                      onClick={() => setNotesDraft(appt.notes ?? '')}
+                    >
+                      Descartar
+                    </button>
+                    <button
+                      type="button"
+                      className="hub-btn hub-btn--secondary"
+                      disabled={notesSaving}
+                      onClick={() => void saveNotes()}
+                    >
+                      {notesSaving ? 'Salvando…' : 'Salvar descrição'}
+                    </button>
+                  </div>
+                ) : null}
+              </>
+            ) : appt.notes ? (
+              <p className="hub-agenda-appt-panel__notes-read">{appt.notes}</p>
+            ) : (
+              <p className="hub-agenda-appt-panel__empty-hint">Nenhuma descrição neste atendimento.</p>
+            )}
           </div>
 
           {appt.financial_notes ? (

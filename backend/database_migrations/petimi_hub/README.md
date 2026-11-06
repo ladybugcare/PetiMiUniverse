@@ -254,3 +254,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 118. **`118_alter_hub_payables_estimated_amount.sql`** — `amount_mode` (`fixed` | `estimated`) em `hub_payable_schedules` e `amount_confirmed` em `hub_payables`. No modo estimado, a competência nasce como previsão até a fatura ser informada. Executar depois do item 117.
 
 119. **`119_alter_hub_platform_subscriptions_mercadopago.sql`** — Status `pending_payment`, colunas do Mercado Pago na assinatura da clínica e preços públicos de Essencial (R$ 149), Expansão (R$ 297) e Rede (R$ 497). Executar depois do item 82. Ajuste os centavos nesse arquivo antes de cobrar em produção.
+
+120. **`120_create_hub_resources.sql`** — catálogo de recursos físicos por unidade e grupo (`hub_resource_group_settings`, `hub_resource_kinds`, `hub_resources`, `hub_service_type_resource_kinds`) e colunas `hub_resource_id` / `resource_released_at` em `hub_appointments`. Executar depois dos itens 3 e 12. Leva e Traz continua na frota.

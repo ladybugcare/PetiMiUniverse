@@ -117,6 +117,8 @@ import {
   type LocalScheduleWindow,
 } from './scheduleConflict';
 import './new-appointment-modal.css';
+import { AppointmentResourceField } from './AppointmentResourceField';
+import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 
 export type CreateHubAppointmentResult = Awaited<ReturnType<typeof hubAgendaApi.create>>;
 
@@ -126,6 +128,7 @@ export type NewAppointmentInitial = {
   ends_at?: string;
   hub_staff_member_id?: string | null;
   resource_label?: string | null;
+  hub_resource_id?: string | null;
   guardian_id?: string | null;
   guardian_name?: string | null;
   pet_id?: string | null;
@@ -164,6 +167,7 @@ export type NewAppointmentInitial = {
     ends_at?: string;
     hub_staff_member_id?: string | null;
     resource_label?: string | null;
+    hub_resource_id?: string | null;
     title?: string | null;
     notes?: string | null;
     services: Array<{
@@ -315,6 +319,7 @@ function mapInitialExtraBlocks(
     ends_hm: eb.ends_at ? tsToHm(eb.ends_at) : addMinutes(fallbackEndsHm, 60),
     hub_staff_member_id: eb.hub_staff_member_id ?? '',
     resource_label: eb.resource_label ?? '',
+    hub_resource_id: eb.hub_resource_id ?? null,
   }));
 }
 
@@ -324,10 +329,12 @@ function windowFromHm(
   endsHm: string,
   staffId: string | null,
   resourceLabel: string | null,
+  resourceId: string | null = null,
 ): LocalScheduleWindow {
   return {
     staffId: staffId || null,
     resourceLabel: resourceLabel || null,
+    resourceId,
     startMs: new Date(toIsoTs(dateYmd, startsHm)).getTime(),
     endMs: new Date(toEndIsoTs(dateYmd, startsHm, endsHm)).getTime(),
   };
@@ -372,6 +379,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [endsHm, setEndsHm] = useState('10:00');
   const [staffId, setStaffId] = useState('');
   const [resourceLabel, setResourceLabel] = useState('');
+  const [hubResourceId, setHubResourceId] = useState<string | null>(null);
+  const selectedUnitId = useSelectedUnitId();
   const [status, setStatus] = useState<AgendaStatus>('confirmed');
   const [careLocation, setCareLocation] = useState<CareLocationValue>({
     care_location_kind: 'own_unit',
@@ -648,9 +657,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       else if (isEditMode) setStaffId('');
       if (initial.resource_label) setResourceLabel(initial.resource_label);
       else if (isEditMode) setResourceLabel('');
+      setHubResourceId(initial.hub_resource_id ?? null);
       if (initial.guardian_id) setGuardianId(initial.guardian_id);
       if (initial.guardian_name) setGuardianName(initial.guardian_name);
-      if (initial.pet_id) setPetId(initial.pet_id);
+      if (initial.pet_id) {
+        setPetId(initial.pet_id);
+        if (!isEditMode) setSelectedPetIds([initial.pet_id]);
+      }
       if (initial.pet_name) setPetName(initial.pet_name);
       if (initial.status) setStatus(initial.status);
       if (initial.pricing_porte_tier) setPricingApptPorteTier(initial.pricing_porte_tier);
@@ -713,13 +726,12 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         setSelectedAddons([]);
       }
       if (!isWalkIn) {
-        if (isEditMode) {
-          const fallbackEnd = initial.ends_at ? tsToHm(initial.ends_at) : '10:00';
-          if (initial.extra_blocks?.length) {
-            setExtraBlocks(mapInitialExtraBlocks(initial.extra_blocks, serviceTypes, fallbackEnd));
-          } else {
-            setExtraBlocks([]);
-          }
+        const fallbackEnd = initial.ends_at ? tsToHm(initial.ends_at) : '10:00';
+        if (initial.extra_blocks?.length) {
+          const mapped = mapInitialExtraBlocks(initial.extra_blocks, serviceTypes, fallbackEnd);
+          setExtraBlocks(
+            isEditMode ? mapped : mapped.map((block) => ({ ...block, appointment_id: undefined })),
+          );
         } else {
           setExtraBlocks([]);
         }
@@ -1873,7 +1885,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           const t = petVisitTimings.get(cfg.petId);
           if (!t) continue;
           const sid = syncSameStaffForAll ? staffId : cfg.hubStaffMemberId || staffId;
-          windows.push(windowFromHm(dateYmd, t.startsHm, t.endsHm, sid, resourceLabel));
+          windows.push(windowFromHm(dateYmd, t.startsHm, t.endsHm, sid, resourceLabel, hubResourceId));
           for (const block of cfg.extraBlocks) {
             windows.push(
               windowFromHm(
@@ -1882,12 +1894,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 block.ends_hm,
                 block.hub_staff_member_id || sid,
                 block.resource_label || resourceLabel,
+                block.hub_resource_id ?? hubResourceId,
               ),
             );
           }
         }
       } else {
-        windows.push(windowFromHm(dateYmd, startsHm, endsHm, staffId, resourceLabel));
+        windows.push(windowFromHm(dateYmd, startsHm, endsHm, staffId, resourceLabel, hubResourceId));
         for (const block of extraBlocks) {
           windows.push(
             windowFromHm(
@@ -1896,6 +1909,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               block.ends_hm,
               block.hub_staff_member_id || staffId,
               block.resource_label || resourceLabel,
+              block.hub_resource_id ?? hubResourceId,
             ),
           );
         }
@@ -1979,6 +1993,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           ends_at: endsAt,
           status: status as HubAppointmentStatus,
           resource_label: resourceLabel || null,
+          hub_resource_id: hubResourceId,
           title: title || null,
           notes: mainBlockNotes.trim() || null,
           financial_notes: financialNotes.trim() || null,
@@ -2021,6 +2036,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         pet_id: petId || null,
         guardian_id: guardianId || null,
         resource_label: resourceLabel || null,
+        hub_resource_id: hubResourceId,
         title: title || null,
         description: null,
         notes: mainBlockNotes.trim() || null,
@@ -2257,6 +2273,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setSaveError(null);
     setConflicts([]);
     setResourceLabel('');
+    setHubResourceId(null);
     setWalkInEmergency(false);
     setQuickRegisterOpen(false);
     setQuickRegisterPetsOnly(false);
@@ -2995,6 +3012,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     <HubSidePanel
       open={open}
       onClose={handleClose}
+      size="xl"
       title={isEditMode ? 'Editar agendamento' : isWalkIn ? 'Encaixe / walk-in' : 'Novo agendamento'}
       titleIcon={isWalkIn ? <Zap size={22} strokeWidth={2} aria-hidden /> : <Calendar size={22} strokeWidth={2} aria-hidden />}
       subtitle={isWalkIn ? 'Check-in imediato com horário atual.' : title || autoTitle || undefined}
@@ -3188,19 +3206,21 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                     </p>
                   ) : null}
                 </div>
-                <div className="nam-field">
-                  <label className="nam-label" htmlFor="nam-resource-edit-top">
-                    Recurso / Sala
-                  </label>
-                  <input
-                    id="nam-resource-edit-top"
-                    className="nam-input"
-                    type="text"
-                    placeholder="Ex.: Mesa 1, Van…"
-                    value={resourceLabel}
-                    onChange={(e) => setResourceLabel(e.target.value)}
-                  />
-                </div>
+                <AppointmentResourceField
+                  id="nam-resource-edit-top"
+                  clinicId={clinicId}
+                  unitId={selectedUnitId}
+                  serviceTypeId={services[0]?.hub_service_type_id ?? null}
+                  dateYmd={dateYmd}
+                  startsHm={startsHm}
+                  endsHm={endsHm}
+                  excludeAppointmentId={appointmentId}
+                  value={{ hubResourceId, resourceLabel }}
+                  onChange={(next) => {
+                    setHubResourceId(next.hubResourceId);
+                    setResourceLabel(next.resourceLabel);
+                  }}
+                />
               </div>
             </div>
           </div>
@@ -3279,6 +3299,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   computedStartHm={timing?.startsHm ?? startsHm}
                   computedEndHm={timing?.endsHm ?? endsHm}
                   defaultResourceLabel={resourceLabel}
+                  clinicId={clinicId}
+                  unitId={selectedUnitId}
                 />
               );
             })}
@@ -3446,16 +3468,21 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               </p>
             </div>
             )}
-            <div className="nam-field">
-              <label className="nam-label">Recurso / Sala</label>
-              <input
-                className="nam-input"
-                type="text"
-                placeholder="Ex.: Mesa 1, Van…"
-                value={resourceLabel}
-                onChange={(e) => setResourceLabel(e.target.value)}
-              />
-            </div>
+            <AppointmentResourceField
+              id="nam-resource"
+              clinicId={clinicId}
+              unitId={selectedUnitId}
+              serviceTypeId={services[0]?.hub_service_type_id ?? null}
+              dateYmd={dateYmd}
+              startsHm={startsHm}
+              endsHm={endsHm}
+              excludeAppointmentId={appointmentId}
+              value={{ hubResourceId, resourceLabel }}
+              onChange={(next) => {
+                setHubResourceId(next.hubResourceId);
+                setResourceLabel(next.resourceLabel);
+              }}
+            />
           </div>
         </div>
         ) : null}
@@ -3560,6 +3587,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 groups={groups}
                 staffComboOptions={staffComboOptions}
                 serviceTypes={serviceTypes}
+                clinicId={clinicId}
+                unitId={selectedUnitId}
+                dateYmd={dateYmd}
                 onRemove={() => removeExtraBlock(block.key)}
                 onChange={(updated) =>
                   setExtraBlocks((prev) => prev.map((b) => (b.key === block.key ? updated : b)))

@@ -30,7 +30,7 @@ import {
 } from './groomingStages';
 import { FinancialAdjustmentPendingBadge } from '../../components/FinancialAdjustmentPendingBadge';
 import { buildWhatsappLink } from '../../utils/whatsappLink';
-import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
+import { digitsOnlyBrPhone, formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 import { renderTemplate } from '../../utils/hubMessageTemplates';
 import { useMessageTemplates } from '../../utils/useMessageTemplates';
 import { logMessageAttempt } from '../../api/hubMessageLogsApi';
@@ -465,8 +465,18 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
             </div>
           )}
           <div className="hub-grooming-drawer__hero-info">
-            <p className="hub-grooming-drawer__hero-name">{petName}</p>
             {heroMeta ? <p className="hub-grooming-drawer__hero-meta">{heroMeta}</p> : null}
+            <p className="hub-grooming-drawer__hero-tutor">
+              <span className="hub-grooming-drawer__hero-kicker">Tutor</span>
+              {tutor}
+            </p>
+            {phone ? (
+              <a className="hub-grooming-drawer__hero-phone" href={`tel:${digitsOnlyBrPhone(phone)}`}>
+                {formatBrPhoneDisplay(phone)}
+              </a>
+            ) : (
+              <p className="hub-grooming-drawer__hero-phone hub-grooming-drawer__hero-phone--empty">Sem telefone</p>
+            )}
             <div className="hub-grooming-drawer__badges">
               <span
                 className={`hub-grooming-drawer__stage hub-grooming-drawer__stage--${stageBadgeVariant(stage)}`}
@@ -490,20 +500,6 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
                 <span className="hub-grooming-drawer__flag hub-grooming-drawer__flag--first">1ª visita</span>
               ) : null}
             </div>
-          </div>
-        </div>
-
-        <div className={`hub-grooming-drawer__contact${phone ? '' : ' hub-grooming-drawer__contact--no-phone'}`}>
-          <div className="hub-grooming-drawer__contact-info">
-            <p className="hub-grooming-drawer__contact-kicker">Tutor</p>
-            <p className="hub-grooming-drawer__contact-name">{tutor}</p>
-            {phone ? (
-              <p className="hub-grooming-drawer__contact-phone">{formatBrPhoneDisplay(phone)}</p>
-            ) : (
-              <p className="hub-grooming-drawer__contact-phone hub-grooming-drawer__contact-phone--empty">
-                Sem telefone
-              </p>
-            )}
           </div>
           {notifyTutorHref ? (
             <a
@@ -529,28 +525,45 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
 
         <div className="hub-grooming-drawer__facts">
           <div className="hub-grooming-drawer__fact">
-            <Clock size={14} className="hub-grooming-drawer__fact-icon" aria-hidden />
-            <span className="hub-grooming-drawer__fact-label">Horário</span>
+            <span className="hub-grooming-drawer__fact-label">
+              <Clock size={13} className="hub-grooming-drawer__fact-icon" aria-hidden />
+              Horário
+            </span>
             <span className="hub-grooming-drawer__fact-value">{timeRange}</span>
           </div>
           <div className="hub-grooming-drawer__fact">
-            <User size={14} className="hub-grooming-drawer__fact-icon" aria-hidden />
-            <span className="hub-grooming-drawer__fact-label">Profissional</span>
+            <span className="hub-grooming-drawer__fact-label">
+              <User size={13} className="hub-grooming-drawer__fact-icon" aria-hidden />
+              Profissional
+            </span>
             <span className="hub-grooming-drawer__fact-value">
               {item.staff_member?.full_name || 'Sem profissional'}
             </span>
           </div>
+          <div className="hub-grooming-drawer__fact">
+            <span className="hub-grooming-drawer__fact-label">
+              <Scissors size={13} className="hub-grooming-drawer__fact-icon" aria-hidden />
+              Recurso
+            </span>
+            <span className="hub-grooming-drawer__fact-value">
+              {item.resource_label?.trim() || 'Definir ao iniciar'}
+            </span>
+          </div>
           {item.estimated_duration_minutes ? (
             <div className="hub-grooming-drawer__fact">
-              <Clock size={14} className="hub-grooming-drawer__fact-icon" aria-hidden />
-              <span className="hub-grooming-drawer__fact-label">Duração</span>
+              <span className="hub-grooming-drawer__fact-label">
+                <Clock size={13} className="hub-grooming-drawer__fact-icon" aria-hidden />
+                Duração
+              </span>
               <span className="hub-grooming-drawer__fact-value">~{item.estimated_duration_minutes} min</span>
             </div>
           ) : null}
           {item.session_id ? (
             <div className="hub-grooming-drawer__fact">
-              <Calendar size={14} className="hub-grooming-drawer__fact-icon" aria-hidden />
-              <span className="hub-grooming-drawer__fact-label">Última visita</span>
+              <span className="hub-grooming-drawer__fact-label">
+                <Calendar size={13} className="hub-grooming-drawer__fact-icon" aria-hidden />
+                Última visita
+              </span>
               <span className="hub-grooming-drawer__fact-value">
                 {drawerLoading && !drawer ? '…' : lastVisitLabel}
               </span>
@@ -567,38 +580,49 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
           <HubLoading variant="block" label="Carregando detalhes…" className="hub-grooming-drawer__loading" />
         ) : null}
 
-        {tags.length > 0 ? (
+        {tags.length > 0 || ((canWrite || canPauseQueue) && clinicId && item.pet_id) ? (
           <section className="hub-grooming-drawer__section" aria-label="Alertas e preferências">
             <h4 className="hub-grooming-drawer__heading">Alertas</h4>
-            <div className="hub-grooming-tags hub-grooming-tags--drawer">
-              {tags.map((t) => (
-                <span key={t.key} className="hub-grooming-tags__pill">
-                  {t.label}
-                </span>
-              ))}
-            </div>
+            {tags.length > 0 ? (
+              <div className="hub-grooming-tags hub-grooming-tags--drawer">
+                {tags.map((t) => (
+                  <span key={t.key} className="hub-grooming-tags__pill">
+                    {t.label}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="hub-grooming-drawer__hint">Nenhum alerta na ficha deste pet.</p>
+            )}
+            {(canWrite || canPauseQueue) && clinicId && item.pet_id ? (
+              <PetOperationalAddAlert
+                clinicId={clinicId}
+                petId={item.pet_id}
+                source="grooming"
+                existingFlagKeys={tags.map((t) => t.key).filter((k) => !k.startsWith('behavior:') && k !== 'no_dryer')}
+                onAdded={() => {
+                  void refreshDrawer();
+                  onSessionUpdated?.();
+                }}
+              />
+            ) : null}
           </section>
         ) : null}
 
-        {(canWrite || canPauseQueue) && clinicId && item.pet_id ? (
-          <PetOperationalAddAlert
-            clinicId={clinicId}
-            petId={item.pet_id}
-            source="grooming"
-            existingFlagKeys={tags.map((t) => t.key).filter((k) => !k.startsWith('behavior:') && k !== 'no_dryer')}
-            onAdded={() => {
-              void refreshDrawer();
-              onSessionUpdated?.();
-            }}
-          />
+        {item.description?.trim() || item.notes?.trim() ? (
+          <section className="hub-grooming-drawer__section hub-grooming-drawer__callout hub-grooming-drawer__callout--notes">
+            <h4 className="hub-grooming-drawer__heading">Descrição do atendimento</h4>
+            {item.description?.trim() ? <p>{item.description.trim()}</p> : null}
+            {item.notes?.trim() && item.notes.trim() !== item.description?.trim() ? (
+              <p>{item.notes.trim()}</p>
+            ) : null}
+          </section>
         ) : null}
 
-        {item.pet?.notes?.trim() || item.notes?.trim() || item.description?.trim() ? (
+        {item.pet?.notes?.trim() ? (
           <section className="hub-grooming-drawer__section hub-grooming-drawer__callout hub-grooming-drawer__callout--notes">
             <h4 className="hub-grooming-drawer__heading">Observações do tutor</h4>
-            {item.pet?.notes?.trim() ? <p>{item.pet.notes.trim()}</p> : null}
-            {item.description?.trim() ? <p className="hub-grooming-drawer__muted">{item.description.trim()}</p> : null}
-            {item.notes?.trim() ? <p className="hub-grooming-drawer__muted">{item.notes.trim()}</p> : null}
+            <p>{item.pet.notes.trim()}</p>
           </section>
         ) : null}
 

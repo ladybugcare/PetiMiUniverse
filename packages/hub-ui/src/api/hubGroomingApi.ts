@@ -59,6 +59,9 @@ export type GroomingDayBoardItem = {
   pet_id?: string | null;
   guardian_id?: string | null;
   hub_staff_member_id?: string | null;
+  unit_id?: string | null;
+  hub_resource_id?: string | null;
+  resource_label?: string | null;
   clinical_tags?: GroomingClinicalTag[];
   financial_adjustment_pending?: boolean;
   comanda_id?: string | null;
@@ -204,10 +207,18 @@ export const hubGroomingApi = {
     }) as Promise<{ session: GroomingSession }>;
   },
 
-  advanceSession(id: string, clinicId: string) {
+  advanceSession(
+    id: string,
+    clinicId: string,
+    resource?: { hubResourceId?: string | null; skipResource?: boolean },
+  ) {
     return apiRequest(`${groomingBase}/sessions/${encodeURIComponent(id)}/advance`, {
       method: 'POST',
-      body: JSON.stringify({ clinic_id: clinicId }),
+      body: JSON.stringify({
+        clinic_id: clinicId,
+        ...(resource?.hubResourceId !== undefined ? { hub_resource_id: resource.hubResourceId } : {}),
+        ...(resource?.skipResource ? { skip_resource: true } : {}),
+      }),
     }) as Promise<{ session: GroomingSession }>;
   },
 

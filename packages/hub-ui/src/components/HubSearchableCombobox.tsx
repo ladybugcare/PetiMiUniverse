@@ -275,7 +275,7 @@ export const HubSearchableCombobox: React.FC<HubSearchableComboboxProps> = ({
         <span className={`hub-combobox__trigger-leading ${showLeading ? '' : 'hub-combobox__trigger-leading--hidden'}`} aria-hidden>
           {selected?.icon ?? (!value ? triggerIcon : null)}
         </span>
-        <span className={`hub-combobox__trigger-label ${!value ? 'hub-combobox__trigger-label--placeholder' : ''}`}>
+        <span className={`hub-combobox__trigger-label ${selected ? '' : 'hub-combobox__trigger-label--placeholder'}`}>
           {selected ? selected.label : placeholder}
         </span>
         <span className="hub-combobox__trigger-actions">

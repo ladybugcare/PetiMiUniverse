@@ -50,6 +50,20 @@
   min-width: min(840px, 92vw);
 }
 
+/* Agendamento: formulário em duas colunas + resumo. Mais largo que os outros painéis,
+   sem cobrir a agenda inteira em monitores grandes. */
+.hub-side-panel__sheet--xl {
+  width: min(1240px, 72vw);
+  max-width: 100%;
+}
+
+@media (min-width: 1200px) {
+  .hub-side-panel__sheet--xl .hub-side-panel__aside {
+    width: 300px;
+    padding: 20px 18px 24px;
+  }
+}
+
 @keyframes hub-side-panel-sheet-in {
   from {
     transform: translateX(100%);
@@ -66,7 +80,8 @@
     border-radius: 0;
   }
 
-  .hub-side-panel__sheet--wide {
+  .hub-side-panel__sheet--wide,
+  .hub-side-panel__sheet--xl {
     width: 100%;
     min-width: 0;
   }

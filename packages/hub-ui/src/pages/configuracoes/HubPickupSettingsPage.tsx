@@ -717,7 +717,11 @@ function VehicleCard({
   const activeCages = vehicle.cages.filter((c) => c.active);
 
   return (
-    <div className={`hub-ps__vehicle-card${vehicle.active ? '' : ' hub-ps__vehicle-card--inactive'}`}>
+    <div
+      className={`hub-ps__vehicle-card${open ? ' hub-ps__vehicle-card--open' : ''}${
+        vehicle.active ? '' : ' hub-ps__vehicle-card--inactive'
+      }`}
+    >
       <div className="hub-ps__vehicle-header" onClick={() => setOpen((o) => !o)}>
         <div className="hub-ps__vehicle-icon">
           {vehicle.color ? <Car size={20} style={{ color: vehicle.color }} /> : <Car size={20} />}

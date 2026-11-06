@@ -97,6 +97,8 @@ type PetVisitBlockProps = {
   computedStartHm: string;
   computedEndHm: string;
   defaultResourceLabel: string;
+  clinicId?: string | null;
+  unitId?: string | null;
 };
 
 export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
@@ -121,6 +123,8 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
   computedStartHm,
   computedEndHm,
   defaultResourceLabel,
+  clinicId = null,
+  unitId = null,
 }) => {
   const [serviceSearchId, setServiceSearchId] = useState('');
 
@@ -473,6 +477,9 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
                   groups={groups}
                   staffComboOptions={staffComboOptions}
                   serviceTypes={serviceTypes}
+                  clinicId={clinicId}
+                  unitId={unitId}
+                  dateYmd={dateYmd}
                   onRemove={() => removeExtraBlock(block.key)}
                   onChange={(updated) => updateExtraBlock(block.key, updated)}
                   onToggleExpand={() => toggleExtraBlockExpand(block.key)}

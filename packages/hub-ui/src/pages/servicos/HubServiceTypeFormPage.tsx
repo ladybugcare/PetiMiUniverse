@@ -4,6 +4,8 @@ import { Navigate, useNavigate, useParams, useSearchParams } from 'react-router-
 import { getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { hubServiceGroupsApi, type HubServiceGroupRow } from '../../api/hubServiceGroupsApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
+import { hubResourcesApi } from '../../api/hubResourcesApi';
+import { ServiceResourceKindsSection } from './ServiceResourceKindsSection';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import { ServicePricingMatrixEditor } from '../../components/ServicePricingMatrixEditor';
 import { useAlert } from '../../components/AlertProvider';
@@ -96,6 +98,8 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
   const [saving, setSaving] = useState(false);
   const [addonSnapshot, setAddonSnapshot] = useState<AddonAvailabilitySnapshot | null>(null);
   const [draftAddonItems, setDraftAddonItems] = useState<AddonAvailabilityItem[]>([]);
+  const [resourceKindMode, setResourceKindMode] = useState<'inherit' | 'custom'>('inherit');
+  const [resourceKindIds, setResourceKindIds] = useState<string[]>([]);
 
   const steps = isAddon ? ADDON_STEPS : SERVICE_STEPS;
   const reviewStepIndex = steps.length - 1;
@@ -159,6 +163,27 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
     if (!clinicId || !accessAllowed) return;
     void load();
   }, [clinicId, accessAllowed, load]);
+
+  useEffect(() => {
+    if (!clinicId || !isEdit || !id || isAddon) return;
+    let cancelled = false;
+    void hubResourcesApi
+      .getServiceTypeKinds(id, clinicId)
+      .then((res) => {
+        if (cancelled) return;
+        setResourceKindMode(res.inherit ? 'inherit' : 'custom');
+        setResourceKindIds(res.resource_kind_ids ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setResourceKindMode('inherit');
+          setResourceKindIds([]);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, isEdit, id, isAddon]);
 
   useEffect(() => {
     if (isAddon || !isEdit || !id || !clinicId || activeStep !== reviewStepIndex) return;
@@ -343,10 +368,18 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
       return;
     }
     if (!clinicId || !canWrite) return;
+    const persistResourceKinds = async (serviceId: string) => {
+      if (isAddon || form.service_group === 'leva_traz') return;
+      await hubResourcesApi.putServiceTypeKinds(serviceId, {
+        clinic_id: clinicId,
+        resource_kind_ids: resourceKindMode === 'custom' ? resourceKindIds : [],
+      });
+    };
     setSaving(true);
     try {
       const payload = buildPayload();
       if (isEdit && id) {
+        await persistResourceKinds(id);
         const updated = await hubServiceTypesApi.update(id, { ...payload, code_locked: form.code_locked });
         const sync = updated.special_prices_sync;
         if (sync && (sync.reviewed > 0 || sync.auto_adjusted > 0)) {
@@ -366,6 +399,7 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
       } else {
         const created = await hubServiceTypesApi.create(payload);
         const newId = created.service_type?.id;
+        if (newId) await persistResourceKinds(newId);
         if (!isAddon && newId && draftAddonItems.length > 0) {
           await hubServiceAddonsApi.putAddonAvailability(newId, {
             clinic_id: clinicId,
@@ -625,6 +659,16 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
                         </div>
                       ) : null}
                     </div>
+                  ) : null}
+                  {!isAddon && clinicId ? (
+                    <ServiceResourceKindsSection
+                      clinicId={clinicId}
+                      serviceGroup={form.service_group}
+                      mode={resourceKindMode}
+                      selectedIds={resourceKindIds}
+                      onModeChange={setResourceKindMode}
+                      onSelectedChange={setResourceKindIds}
+                    />
                   ) : null}
                   <div className="pet-wizard__field--full">
                     <label className="pet-wizard__label">Descrição</label>

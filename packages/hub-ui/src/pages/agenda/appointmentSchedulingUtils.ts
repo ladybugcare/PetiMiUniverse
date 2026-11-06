@@ -26,6 +26,7 @@ export type ExtraBlock = {
   ends_hm: string;
   hub_staff_member_id: string;
   resource_label: string;
+  hub_resource_id?: string | null;
 };
 
 /** Título automático: "Serviço A + Serviço B — Pet" (paridade com o bloco principal). */
@@ -216,6 +217,7 @@ export function buildExtraBlocksApiPayload(
         })),
         hub_staff_member_id: b.hub_staff_member_id || null,
         resource_label: b.resource_label || null,
+        hub_resource_id: b.hub_resource_id ?? null,
         title: b.block_title.trim() || null,
         notes: b.block_description.trim() || null,
       };

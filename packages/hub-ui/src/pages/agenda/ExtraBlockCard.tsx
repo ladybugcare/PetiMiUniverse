@@ -25,6 +25,7 @@ import {
   buildServiceDescriptionBullets,
   type ExtraBlock,
 } from './appointmentSchedulingUtils';
+import { AppointmentResourceField } from './AppointmentResourceField';
 
 export type ExtraBlockCardProps = {
   block: ExtraBlock;
@@ -37,6 +38,9 @@ export type ExtraBlockCardProps = {
   onRemove: () => void;
   onChange: (updated: ExtraBlock) => void;
   onToggleExpand: () => void;
+  clinicId?: string | null;
+  unitId?: string | null;
+  dateYmd?: string;
 };
 
 export const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
@@ -50,6 +54,9 @@ export const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
   onRemove,
   onChange,
   onToggleExpand,
+  clinicId = null,
+  unitId = null,
+  dateYmd = '',
 }) => {
   const [svcSearchId, setSvcSearchId] = useState('');
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -284,16 +291,24 @@ export const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
                   clearable={false}
                 />
               </div>
-              <div className="nam-field">
-                <label className="nam-label">Recurso / Sala</label>
-                <input
-                  className="nam-input"
-                  type="text"
-                  placeholder="Ex.: Mesa 1, Van…"
-                  value={block.resource_label}
-                  onChange={(e) => onChange({ ...block, resource_label: e.target.value })}
-                />
-              </div>
+              <AppointmentResourceField
+                id={`nam-eb-resource-${block.key}`}
+                clinicId={clinicId}
+                unitId={unitId}
+                serviceTypeId={block.services[0]?.hub_service_type_id ?? null}
+                dateYmd={dateYmd}
+                startsHm={block.starts_hm}
+                endsHm={block.ends_hm}
+                excludeAppointmentId={block.appointment_id}
+                value={{ hubResourceId: block.hub_resource_id ?? null, resourceLabel: block.resource_label }}
+                onChange={(next) =>
+                  onChange({
+                    ...block,
+                    hub_resource_id: next.hubResourceId,
+                    resource_label: next.resourceLabel,
+                  })
+                }
+              />
             </div>
           </div>
 

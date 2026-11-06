@@ -1,0 +1,82 @@
+.grooming-resource-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(42, 28, 26, 0.45);
+}
+
+.grooming-resource-dialog__card {
+  width: min(440px, 100%);
+  background: var(--hc-surface, #fff);
+  color: var(--hc-text, #3d2c2a);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 16px 40px rgba(42, 28, 26, 0.18);
+}
+
+.grooming-resource-dialog__card h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.grooming-resource-dialog__card p {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.grooming-resource-dialog__warn {
+  color: #9a3412;
+}
+
+.grooming-resource-dialog__field {
+  display: grid;
+  gap: 6px;
+  margin-bottom: 16px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.grooming-resource-dialog__field select {
+  font: inherit;
+  font-weight: 500;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--hc-border, #e4d5cf);
+  background: var(--hc-surface, #fff);
+}
+
+.grooming-resource-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.grooming-resource-dialog__ghost,
+.grooming-resource-dialog__primary {
+  border-radius: 999px;
+  padding: 8px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.grooming-resource-dialog__ghost {
+  background: transparent;
+  border: 1px solid var(--hc-border, #e4d5cf);
+}
+
+.grooming-resource-dialog__primary {
+  background: var(--hc-accent, #c45c26);
+  color: #fff;
+  border: none;
+}
+
+.grooming-resource-dialog__primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

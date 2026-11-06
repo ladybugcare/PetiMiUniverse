@@ -75,6 +75,8 @@ export type HubAppointment = {
   ends_at: string;
   status: HubAppointmentStatus;
   resource_label: string | null;
+  hub_resource_id?: string | null;
+  resource_released_at?: string | null;
   notes: string | null;
   appointment_kind: HubAppointmentKind;
   title: string | null;
@@ -187,6 +189,7 @@ export type CreateExtraBlock = {
   }>;
   hub_staff_member_id?: string | null;
   resource_label?: string | null;
+  hub_resource_id?: string | null;
   status?: HubAppointmentStatus;
   notes?: string | null;
   title?: string | null;
@@ -203,6 +206,7 @@ export type CreateHubAppointmentPayload = {
   ends_at: string;
   status?: HubAppointmentStatus;
   resource_label?: string | null;
+  hub_resource_id?: string | null;
   notes?: string | null;
   appointment_kind?: HubAppointmentKind;
   title?: string | null;
@@ -248,6 +252,7 @@ export type CreateHubAppointmentBatchPetEntry = {
   ends_at?: string;
   hub_staff_member_id?: string | null;
   resource_label?: string | null;
+  hub_resource_id?: string | null;
   extra_blocks?: CreateExtraBlock[];
 };
 
@@ -269,6 +274,7 @@ export type PatchHubAppointmentPayload = {
   ends_at?: string;
   status?: HubAppointmentStatus;
   resource_label?: string | null;
+  hub_resource_id?: string | null;
   notes?: string | null;
   financial_notes?: string | null;
   appointment_kind?: HubAppointmentKind;

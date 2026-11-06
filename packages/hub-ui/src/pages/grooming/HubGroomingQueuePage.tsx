@@ -21,6 +21,7 @@ import { getItemBoardStage, groomingOpenSessionStage, type GroomingQuickAction }
 import { isGroomingFloorStaff } from './groomingAccess';
 import GroomingDayList from './GroomingDayList';
 import GroomingAppointmentDrawer from './GroomingAppointmentDrawer';
+import { useGroomingResourcePrompt } from './useGroomingResourcePrompt';
 import GroomingWalkInPanel from './GroomingWalkInPanel';
 import { PORTE_LABELS, PORTE_VALUES } from '../../utils/hubServiceTypesPricingMatrix';
 
@@ -59,6 +60,7 @@ function useIsNarrowViewport(): boolean {
 }
 
 const HubGroomingQueuePage: React.FC = () => {
+  const { chooseForStart, dialog: resourceDialog } = useGroomingResourcePrompt();
   const { showError } = useAlert();
   const { role: authRole } = useAuth();
   const { hasPermission, loading: permLoading } = usePermissions();
@@ -225,7 +227,13 @@ const HubGroomingQueuePage: React.FC = () => {
           groomingOpenSessionStage(item),
         );
       } else if (action.type === 'advance' && item.session_id) {
-        await hubGroomingApi.advanceSession(item.session_id, clinicId);
+        const choice = await chooseForStart(item, clinicId);
+        if (choice === null) return;
+        await hubGroomingApi.advanceSession(
+          item.session_id,
+          clinicId,
+          choice === 'skip-gate' ? undefined : { hubResourceId: choice.hubResourceId, skipResource: choice.skipResource },
+        );
       }
       await load();
     } catch (e: unknown) {
@@ -397,6 +405,7 @@ const HubGroomingQueuePage: React.FC = () => {
 
   return (
     <div className="hub-grooming-queue-page">
+      {resourceDialog}
       {!groomingTypesConfigured && !loading ? (
         <div className="hub-clinic-banner">
           <p>

@@ -1,8 +1,8 @@
 /* HubPaymentMethodsPage — Formas de pagamento */
 
 .hub-pm {
+  width: 100%;
   padding: 8px 4px 32px;
-  max-width: 640px;
 }
 
 .hub-pm__intro {
@@ -21,7 +21,7 @@
   font-size: 13px;
   line-height: 1.5;
   color: #7a6060;
-  max-width: 520px;
+  max-width: 78ch;
 }
 
 .hub-pm__card {
@@ -101,9 +101,10 @@
   list-style: none;
   margin: 0;
   padding: 8px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(280px, calc(33.333% - 8px))), 1fr));
   gap: 4px;
+  align-items: stretch;
 }
 
 .hub-pm__item {

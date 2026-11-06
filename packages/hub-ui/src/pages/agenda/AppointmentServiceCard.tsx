@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { AlertCircle, ChevronDown, ChevronUp, Loader2, Trash2 } from 'lucide-react';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import type { HubQuotePricingVariant } from '../../api/hubQuotesApi';
-import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
+import { HubSearchableCombobox, type HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import {
   comboValueToVariant,
@@ -295,38 +295,34 @@ export const AppointmentServiceCard: React.FC<AppointmentServiceCardProps> = ({
                     }`}
                   >
                     {showPorteField ? (
-                      <label className="nam-price-table__field" htmlFor={`${idPrefix}-pricing-porte-${serviceIndex}`}>
-                        <span>Porte</span>
-                        <select
+                      <div className="nam-price-table__field">
+                        <span id={`${idPrefix}-pricing-porte-label-${serviceIndex}`}>Porte</span>
+                        <HubSearchableCombobox
                           id={`${idPrefix}-pricing-porte-${serviceIndex}`}
-                          className="nam-price-table__select"
+                          options={tableOverride.porteOptions ?? []}
                           value={tableOverride.porteValue ?? ''}
-                          onChange={(e) => tableOverride.onPorteChange?.(e.target.value)}
-                        >
-                          {(tableOverride.porteOptions ?? []).map((opt) => (
-                            <option key={opt.value || 'auto'} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                          onChange={(v) => tableOverride.onPorteChange?.(v)}
+                          placeholder="Automático"
+                          searchPlaceholder="Buscar porte…"
+                          clearable={false}
+                          ariaLabel="Porte"
+                        />
+                      </div>
                     ) : null}
                     {showCoatField ? (
-                      <label className="nam-price-table__field" htmlFor={`${idPrefix}-pricing-coat-${serviceIndex}`}>
-                        <span>Pelagem</span>
-                        <select
+                      <div className="nam-price-table__field">
+                        <span id={`${idPrefix}-pricing-coat-label-${serviceIndex}`}>Pelagem</span>
+                        <HubSearchableCombobox
                           id={`${idPrefix}-pricing-coat-${serviceIndex}`}
-                          className="nam-price-table__select"
+                          options={tableOverride.coatOptions ?? []}
                           value={tableOverride.coatValue ?? ''}
-                          onChange={(e) => tableOverride.onCoatChange?.(e.target.value)}
-                        >
-                          {(tableOverride.coatOptions ?? []).map((opt) => (
-                            <option key={opt.value || 'auto'} value={opt.value}>
-                              {opt.label}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
+                          onChange={(v) => tableOverride.onCoatChange?.(v)}
+                          placeholder="Automático"
+                          searchPlaceholder="Buscar pelagem…"
+                          clearable={false}
+                          ariaLabel="Pelagem"
+                        />
+                      </div>
                     ) : null}
                   </div>
                   {pricingLine && (pricingLine.tierApplied || pricingLine.coatTypeApplied) ? (

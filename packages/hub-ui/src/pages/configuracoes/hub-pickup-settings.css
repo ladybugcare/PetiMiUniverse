@@ -1,8 +1,8 @@
 /* HubPickupSettingsPage — Frota / Leva e Traz */
 
 .hub-ps {
+  width: 100%;
   padding: 8px 4px 32px;
-  max-width: 780px;
 }
 
 /* ── Intro ────────────────────────────────────────────────────── */
@@ -23,7 +23,7 @@
   font-size: 13px;
   line-height: 1.5;
   color: #7a6060;
-  max-width: 560px;
+  max-width: 78ch;
 }
 
 .hub-ps__toolbar {
@@ -103,9 +103,14 @@
 /* ── Lista de veículos ────────────────────────────────────────── */
 
 .hub-ps__vehicle-list {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(420px, calc(50% - 8px))), 1fr));
   gap: 12px;
+  align-items: start;
+}
+
+.hub-ps__vehicle-card--open {
+  grid-column: 1 / -1;
 }
 
 .hub-ps__vehicle-card {

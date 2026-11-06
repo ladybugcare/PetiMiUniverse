@@ -39,6 +39,10 @@ const ROUTES: RouteTitle[] = [
     path: '/hub/configuracoes-sistema/servicos-funcoes',
     crumbs: [{ label: 'Configurações', to: '/hub/configuracoes-sistema' }, { label: 'Serviços e funções' }],
   },
+  {
+    path: '/hub/configuracoes-sistema/recursos',
+    crumbs: [{ label: 'Configurações', to: '/hub/configuracoes-sistema' }, { label: 'Recursos' }],
+  },
   { path: '/hub/configuracoes-sistema', crumbs: [{ label: 'Configurações do Sistema' }] },
   { path: '/hub/assinatura', crumbs: [{ label: 'Plano' }] },
   { path: '/hub/clinica/atendimentos', crumbs: [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Consultório' }] },

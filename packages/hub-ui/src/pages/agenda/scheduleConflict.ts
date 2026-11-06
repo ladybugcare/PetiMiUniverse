@@ -7,6 +7,7 @@ export const SCHEDULE_OVERLAP_CANCEL_TEXT = 'Voltar e ajustar';
 export type LocalScheduleWindow = {
   staffId: string | null;
   resourceLabel: string | null;
+  resourceId?: string | null;
   startMs: number;
   endMs: number;
 };
@@ -15,6 +16,8 @@ export type LocalExistingSlot = {
   id: string;
   staffId: string | null;
   resourceLabel: string | null;
+  resourceId?: string | null;
+  resourceReleased?: boolean;
   unitId?: string | null;
   startMs: number;
   endMs: number;
@@ -52,6 +55,8 @@ export function agendaAppointmentToConflictSlot(a: AgendaAppointment): LocalExis
     id: a.id,
     staffId: a.professionalId,
     resourceLabel: normalizeResource(a.resourceLabel),
+    resourceId: a.hubResourceId ?? null,
+    resourceReleased: Boolean(a.resourceReleasedAt),
     unitId: a.unitId ?? null,
     startMs: a.start.getTime(),
     endMs: a.end.getTime(),
@@ -74,9 +79,11 @@ export function findLocalScheduleConflict(
     for (const row of active) {
       if (!intervalsOverlap(window.startMs, window.endMs, row.startMs, row.endMs)) continue;
       const staffConflict = Boolean(staffId && row.staffId && staffId === row.staffId);
-      const resourceConflict = Boolean(
-        resource && row.resourceLabel && resource === row.resourceLabel,
-      );
+      const resourceConflict = (() => {
+        if (row.resourceReleased) return false;
+        if (window.resourceId && row.resourceId) return window.resourceId === row.resourceId;
+        return Boolean(resource && row.resourceLabel && resource === row.resourceLabel);
+      })();
       if (!staffConflict && !resourceConflict) continue;
       return {
         reason: staffConflict

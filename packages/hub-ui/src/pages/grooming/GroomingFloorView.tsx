@@ -1,7 +1,12 @@
 import React, { useMemo, useState } from 'react';
 import { CheckCircle, Loader, RefreshCw } from 'lucide-react';
 import type { GroomingDayBoardItem } from '../../api/hubGroomingApi';
-import { PORTE_LABELS, type PetBodyPorteValue } from '../../utils/hubServiceTypesPricingMatrix';
+import {
+  COAT_TYPE_LABELS,
+  PORTE_LABELS,
+  type CoatTypeValue,
+  type PetBodyPorteValue,
+} from '../../utils/hubServiceTypesPricingMatrix';
 import {
   GROOMING_STAGE_LABELS,
   getItemBoardStage,
@@ -48,6 +53,23 @@ function servicesLabel(item: GroomingDayBoardItem): string {
 function porteLabel(tier?: string): string | null {
   if (!tier) return null;
   return PORTE_LABELS[tier as PetBodyPorteValue] ?? tier;
+}
+
+function coatLabel(coat?: string | null): string | null {
+  const value = coat?.trim();
+  if (!value) return null;
+  return COAT_TYPE_LABELS[value as CoatTypeValue] ?? value;
+}
+
+/** Horário e perfil do pet para o chão de salão: raça, porte e pelagem. */
+function scheduleAndPetLabel(item: GroomingDayBoardItem): string {
+  const parts = [
+    formatTime(item.starts_at),
+    item.pet?.breed?.trim() || null,
+    porteLabel(item.pet?.size_tier),
+    coatLabel(item.pet?.coat_type),
+  ].filter((part): part is string => Boolean(part));
+  return parts.join(' · ');
 }
 
 function quickActionLabel(action: GroomingQuickAction, item: GroomingDayBoardItem): string {
@@ -241,11 +263,7 @@ const GroomingFloorView: React.FC<GroomingFloorViewProps> = ({
             <span className="hub-grooming-floor__pet-name">{featured.pet?.name || 'Sem pet'}</span>
           </div>
           <p className="hub-grooming-floor__meta">{servicesLabel(featured)}</p>
-          <p className="hub-grooming-floor__meta">
-            {formatTime(featured.starts_at)}
-            {featured.guardian?.full_name ? ` · ${featured.guardian.full_name}` : ''}
-            {porteLabel(featured.pet?.size_tier) ? ` · ${porteLabel(featured.pet?.size_tier)}` : ''}
-          </p>
+          <p className="hub-grooming-floor__meta">{scheduleAndPetLabel(featured)}</p>
           {featured.staff_member?.full_name ? (
             <p className="hub-grooming-floor__meta">Profissional: {featured.staff_member.full_name}</p>
           ) : null}

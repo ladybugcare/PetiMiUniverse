@@ -1,8 +1,8 @@
 /* Clínicas parceiras — Configurações do Sistema */
 
 .hub-pc {
+  width: 100%;
   padding: 8px 4px 32px;
-  max-width: 780px;
 }
 
 .hub-pc__intro {
@@ -21,7 +21,7 @@
   font-size: 13px;
   line-height: 1.5;
   color: #7a6060;
-  max-width: 560px;
+  max-width: 78ch;
 }
 
 .hub-pc__toolbar {
@@ -55,9 +55,10 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, max(420px, calc(50% - 8px))), 1fr));
   gap: 10px;
+  align-items: stretch;
 }
 
 .hub-pc__card {

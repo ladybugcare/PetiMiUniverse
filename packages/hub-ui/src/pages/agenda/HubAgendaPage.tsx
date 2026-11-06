@@ -25,6 +25,7 @@ import type { HubStaffMember } from '../../api/hubStaffApi';
 import { hubServiceTypesApi } from '../../api/hubServiceTypesApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import { hubServiceGroupsApi } from '../../api/hubServiceGroupsApi';
+import { hubResourcesApi, type HubResource } from '../../api/hubResourcesApi';
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
 import { hubQuotesApi, type HubQuoteLine, type HubQuoteLineServiceEmbed } from '../../api/hubQuotesApi';
 import type { PackageSaleAgendaNavigationState } from '../finance/packageSaleScheduleUtils';
@@ -63,7 +64,7 @@ import {
   enrichAgendaCardsForGrid,
   isPartnerCareLocation,
 } from './agendaModel';
-import { mapHubAppointmentToAgenda, buildSeriesRenewalInitial } from './mapHubAgenda';
+import { mapHubAppointmentToAgenda, buildDuplicateAppointmentInitial, buildSeriesRenewalInitial } from './mapHubAgenda';
 import { findExtraBlockChildren } from './extraBlockAgendaUtils';
 import { AgendaAppointmentCard } from './AgendaAppointmentCard';
 import { hubEncountersApi, type DayBoardItem } from '../../api/hubClinicalApi';
@@ -169,6 +170,7 @@ const HubAgendaPage: React.FC = () => {
   const [groupFilter, setGroupFilter] = useState(persisted.group ?? 'all');
   const [statusFilter, setStatusFilter] = useState(persisted.status ?? 'all');
   const [resourceFilter, setResourceFilter] = useState((persisted as Partial<PersistedFilters>).resource_label ?? 'all');
+  const [catalogResources, setCatalogResources] = useState<HubResource[]>([]);
   const [serviceTypeFilter, setServiceTypeFilter] = useState(
     (persisted as Partial<PersistedFilters>).service_type_id ?? 'all',
   );
@@ -822,14 +824,54 @@ const HubAgendaPage: React.FC = () => {
     return rows;
   }, [clinicUnits, unitFilter, allAppointments]);
 
+  useEffect(() => {
+    if (!clinicId || !isUuid(unitFilter)) {
+      setCatalogResources([]);
+      return;
+    }
+    let cancelled = false;
+    void Promise.all([
+      hubResourcesApi.list({ clinicId, unitId: unitFilter }),
+      hubResourcesApi.listKinds(clinicId),
+    ])
+      .then(([res, kindsRes]) => {
+        if (cancelled) return;
+        const enabled = new Set(
+          (kindsRes.settings ?? []).filter((s) => s.enabled).map((s) => s.service_group_slug),
+        );
+        setCatalogResources(
+          (res.resources ?? []).filter((r) => r.service_group_slug != null && enabled.has(r.service_group_slug)),
+        );
+      })
+      .catch(() => {
+        if (!cancelled) setCatalogResources([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, unitFilter]);
+
+  const visibleCatalogResources = useMemo(() => {
+    if (groupFilter === 'all') return catalogResources;
+    return catalogResources.filter((r) => r.service_group_slug === groupFilter);
+  }, [catalogResources, groupFilter]);
+
+  const resourceFieldLabel = useMemo(() => {
+    const names = new Set(visibleCatalogResources.map((r) => r.kind_name).filter(Boolean));
+    if (names.size === 1) return [...names][0]!;
+    if (visibleCatalogResources.length > 0) return 'Recurso';
+    return 'Recurso / sala';
+  }, [visibleCatalogResources]);
+
   const resourceOptions = useMemo(() => {
     const s = new Set<string>();
+    for (const r of visibleCatalogResources) s.add(r.name);
     for (const a of allAppointments) {
       const r = (a.resourceLabel ?? '').trim();
       if (r && r !== '—') s.add(r);
     }
     return ['all', ...Array.from(s).sort()];
-  }, [allAppointments]);
+  }, [allAppointments, visibleCatalogResources]);
 
   const professionalComboOptions = useMemo((): HubComboboxOption[] => {
     const rows: HubComboboxOption[] = [{ value: 'all', label: 'Todos' }];
@@ -1075,8 +1117,26 @@ const HubAgendaPage: React.FC = () => {
         subtitle: 'Grupo de serviço',
       }));
     }
-    const keys = new Set<string>();
     const source = view === 'day' ? dayAppointments : weekAppointments;
+    if (visibleCatalogResources.length > 0 && isUuid(unitFilter)) {
+      const cols = visibleCatalogResources.map((r) => ({
+        key: r.id,
+        title: r.name,
+        subtitle: r.kind_name || 'Recurso',
+      }));
+      const known = new Set(cols.map((c) => c.key));
+      const extra = new Set<string>();
+      source.forEach((a) => {
+        const k = laneKeyForAppointment(a, 'resource');
+        if (k !== '__none__' && !known.has(k)) extra.add(k);
+      });
+      for (const k of [...extra].sort()) {
+        cols.push({ key: k, title: k, subtitle: 'Texto livre' });
+      }
+      cols.push({ key: '__none__', title: 'Sem recurso', subtitle: 'Definir na hora' });
+      return cols;
+    }
+    const keys = new Set<string>();
     source.forEach((a) => keys.add(laneKeyForAppointment(a, 'resource')));
     if (keys.size === 0) keys.add('__none__');
     return [...keys].sort().map((k) => ({
@@ -1084,7 +1144,7 @@ const HubAgendaPage: React.FC = () => {
       title: k === '__none__' ? 'Sem recurso/sala' : k,
       subtitle: 'Recurso',
     }));
-  }, [groupMode, view, dayAppointments, weekAppointments, staffOptions]);
+  }, [groupMode, view, dayAppointments, weekAppointments, staffOptions, visibleCatalogResources, unitFilter]);
 
   const weekRows = dayColumns;
 
@@ -1357,15 +1417,10 @@ const HubAgendaPage: React.FC = () => {
 
   const duplicateSelectedAppointment = useCallback(() => {
     if (!selected) return;
+    const extraChildren = findExtraBlockChildren(selected, allAppointments);
     closeAppointmentDetail();
-    openCreateModal({
-      date: toYmd(startOfDay(selected.start)),
-      starts_at: selected.start.toISOString(),
-      ends_at: selected.end.toISOString(),
-      hub_staff_member_id: selected.professionalId,
-      resource_label: selected.resourceLabel !== '—' ? selected.resourceLabel : null,
-    });
-  }, [selected, openCreateModal, closeAppointmentDetail]);
+    openCreateModal(buildDuplicateAppointmentInitial(selected, extraChildren));
+  }, [selected, allAppointments, openCreateModal, closeAppointmentDetail]);
 
   const requestCancelSelected = useCallback(() => {
     if (!canWrite) return;
@@ -1441,13 +1496,15 @@ const HubAgendaPage: React.FC = () => {
 
   const assignmentPatchFromColKey = (
     colKey: string | undefined,
-  ): { hub_staff_member_id?: string | null; resource_label?: string | null } => {
+  ): { hub_staff_member_id?: string | null; resource_label?: string | null; hub_resource_id?: string | null } => {
     if (!colKey) return {};
     if (groupMode === 'professional') {
       return { hub_staff_member_id: colKey === '__na__' ? null : colKey };
     }
     if (groupMode === 'resource') {
-      return { resource_label: colKey === '__none__' ? null : colKey };
+      if (colKey === '__none__') return { hub_resource_id: null, resource_label: null };
+      if (isUuid(colKey)) return { hub_resource_id: colKey };
+      return { resource_label: colKey, hub_resource_id: null };
     }
     return {};
   };
@@ -1490,8 +1547,10 @@ const HubAgendaPage: React.FC = () => {
       (assignment.hub_staff_member_id ?? null) === (ap.professionalId ?? null);
     const currentResource = ap.resourceLabel === '—' ? null : ap.resourceLabel;
     const sameResource =
-      assignment.resource_label === undefined ||
-      (assignment.resource_label ?? null) === currentResource;
+      assignment.hub_resource_id !== undefined
+        ? (assignment.hub_resource_id ?? null) === (ap.hubResourceId ?? null)
+        : assignment.resource_label === undefined ||
+          ((assignment.resource_label ?? null) === currentResource && !ap.hubResourceId);
     if (sameStart && sameEnd && sameStaff && sameResource) return;
     await patchMoveWithOverlapConfirm(id, {
       clinic_id: clinicId,
@@ -1588,7 +1647,8 @@ const HubAgendaPage: React.FC = () => {
         initial.hub_staff_member_id = colKey;
       }
       if (groupMode === 'resource' && colKey !== '__none__') {
-        initial.resource_label = colKey;
+        if (isUuid(colKey)) initial.hub_resource_id = colKey;
+        else initial.resource_label = colKey;
       }
       openCreateModal(initial);
     },
@@ -1932,7 +1992,7 @@ const HubAgendaPage: React.FC = () => {
             </div>
             <div className="hub-servicos__filter-field hub-agenda__filter-combo">
               <label className="hub-clientes__label" htmlFor="ag-res">
-                Recurso / sala
+                {resourceFieldLabel}
               </label>
               <HubSearchableCombobox
                 id="ag-res"
@@ -2079,7 +2139,7 @@ const HubAgendaPage: React.FC = () => {
                         ? 'Profissional'
                         : groupMode === 'category'
                           ? 'Categoria'
-                          : 'Recurso / sala'}
+                          : resourceFieldLabel}
                     </th>
                     {weekDays.map((d) => (
                       <th key={toYmd(d)}>

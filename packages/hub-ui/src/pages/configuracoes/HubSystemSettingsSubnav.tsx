@@ -5,6 +5,7 @@ const BASE = '/hub/configuracoes-sistema';
 
 const links = [
   { to: `${BASE}/servicos-funcoes`, label: 'Serviços e Funções' },
+  { to: `${BASE}/recursos`, label: 'Recursos' },
   { to: `${BASE}/templates-mensagem`, label: 'Templates de Mensagem' },
   { to: `${BASE}/checklists`, label: 'Checklists operacionais' },
   { to: `${BASE}/formas-pagamento`, label: 'Formas de pagamento' },

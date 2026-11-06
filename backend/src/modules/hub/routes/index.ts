@@ -158,6 +158,20 @@ import {
   deleteTransportCage,
 } from '../hubPickupVehiclesController';
 import {
+  listHubResourceKinds,
+  createHubResourceKind,
+  patchHubResourceKind,
+  deleteHubResourceKind,
+  putHubResourceGroupSetting,
+  listHubResources,
+  createHubResource,
+  patchHubResource,
+  deleteHubResource,
+  getHubResourceAvailability,
+  getHubServiceTypeResourceKinds,
+  putHubServiceTypeResourceKinds,
+} from '../hubResourcesController';
+import {
   listHubPartnerClinics,
   createHubPartnerClinic,
   patchHubPartnerClinic,
@@ -627,6 +641,41 @@ router.put(
   authenticateUser,
   requirePermission('hub.service_types.write'),
   putHubAddonDeployments
+);
+
+const resourceRead = ['hub.appointments.read', 'grooming.queue.read', 'hub.service_types.read'] as const;
+
+router.get('/resource-kinds', authenticateUser, requirePermission([...resourceRead]), listHubResourceKinds);
+router.post('/resource-kinds', authenticateUser, requirePermission('hub.service_types.write'), createHubResourceKind);
+router.patch('/resource-kinds/:id', authenticateUser, requirePermission('hub.service_types.write'), patchHubResourceKind);
+router.delete('/resource-kinds/:id', authenticateUser, requirePermission('hub.service_types.write'), deleteHubResourceKind);
+router.put(
+  '/resource-group-settings',
+  authenticateUser,
+  requirePermission('hub.service_types.write'),
+  putHubResourceGroupSetting,
+);
+router.get('/resources', authenticateUser, requirePermission([...resourceRead]), listHubResources);
+router.post('/resources', authenticateUser, requirePermission('hub.service_types.write'), createHubResource);
+router.patch('/resources/:id', authenticateUser, requirePermission('hub.service_types.write'), patchHubResource);
+router.delete('/resources/:id', authenticateUser, requirePermission('hub.service_types.write'), deleteHubResource);
+router.get(
+  '/resources/availability',
+  authenticateUser,
+  requirePermission([...resourceRead]),
+  getHubResourceAvailability,
+);
+router.get(
+  '/service-types/:id/resource-kinds',
+  authenticateUser,
+  requirePermission([...resourceRead]),
+  getHubServiceTypeResourceKinds,
+);
+router.put(
+  '/service-types/:id/resource-kinds',
+  authenticateUser,
+  requirePermission('hub.service_types.write'),
+  putHubServiceTypeResourceKinds,
 );
 
 router.get(

@@ -47,6 +47,8 @@ export type AgendaAppointment = {
   professionalId: string | null;
   professionalName: string;
   resourceLabel: string;
+  hubResourceId?: string | null;
+  resourceReleasedAt?: string | null;
   unitName: string;
   /** UUID da unidade (agenda Hub); usado em checkout/caixa. */
   unitId?: string | null;
@@ -85,6 +87,12 @@ export type AgendaAppointment = {
     saleAmount?: number | null;
     isAddon?: boolean;
     serviceGroup?: HubServiceGroupValue;
+    pricingVariant?: {
+      period?: 'full_day' | 'half_day';
+      consult_type?: 'padrao' | 'retorno';
+      km_tier_index?: number;
+      custom_tier_index?: number;
+    } | null;
   }>;
   /** Grupos únicos presentes nas linhas de serviço (para ícones múltiplos). */
   serviceGroups?: HubServiceGroupValue[];
@@ -277,6 +285,7 @@ export function monthMatrix(anchor: Date): Date[][] {
 export function laneKeyForAppointment(a: AgendaAppointment, groupMode: AgendaGroupMode): string {
   if (groupMode === 'professional') return a.professionalId ?? '__na__';
   if (groupMode === 'category') return a.group;
+  if (a.hubResourceId) return a.hubResourceId;
   const r = (a.resourceLabel ?? '').trim();
   if (!r || r === '—') return '__none__';
   return r;

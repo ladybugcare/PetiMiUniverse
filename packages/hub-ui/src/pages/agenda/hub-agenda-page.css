@@ -1389,6 +1389,12 @@
   display: none;
 }
 
+@media (max-width: 720px) {
+  .hub-agenda-appt-panel__facts {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 900px) {
   .hub-agenda-page {
     margin-left: -16px;
@@ -1757,6 +1763,10 @@
   align-items: center;
   gap: 6px 4px;
   margin-bottom: 4px;
+  padding: 8px 10px;
+  border: 1px solid #f0ede9;
+  border-radius: 10px;
+  background: #faf8f6;
   font-size: 13px;
   color: var(--hc-text, #4a3b3a);
 }
@@ -1808,9 +1818,34 @@
   color: var(--hc-text-muted, #8e6e67);
 }
 
+.hub-agenda-appt-panel__notes,
+.hub-agenda-appt-panel__notes-read {
+  width: 100%;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  background: #fff7ed;
+  color: #431407;
+  font-size: 14px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  box-sizing: border-box;
+}
+
 .hub-agenda-appt-panel__notes {
-  min-height: 56px;
+  display: block;
+  min-height: 44px;
+  max-height: 160px;
+  field-sizing: content;
   resize: vertical;
+  font-family: inherit;
+}
+
+.hub-agenda-appt-panel__notes:focus {
+  border-color: #c86a4d;
+  background: #fff;
+  color: #2d2a28;
 }
 
 .hub-agenda-appt-panel__notes-actions {
@@ -1824,15 +1859,29 @@
   margin-bottom: 4px;
 }
 
-.hub-agenda-appt-panel__kv-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.hub-agenda-appt-panel__facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 16px;
+  margin: 8px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid #f0ede9;
 }
 
-.hub-agenda-appt-panel__kv-grid .nam-readonly-kv {
+.hub-agenda-appt-panel__facts dt {
   margin: 0;
-  padding: 2px 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-agenda-appt-panel__facts dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hc-text, #4a3b3a);
 }
 
 .nam-readonly-value {
@@ -1878,17 +1927,23 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  border: 1px solid #e8e4e0;
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
 }
 
 .hub-agenda-appt-panel__service-item {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  padding: 6px 10px;
-  background: #faf8f7;
-  border-radius: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f0ede9;
   font-size: 13px;
+}
+
+.hub-agenda-appt-panel__service-item:last-child {
+  border-bottom: none;
 }
 
 .hub-agenda-appt-panel__service-meta {

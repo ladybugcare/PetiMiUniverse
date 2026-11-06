@@ -11,6 +11,7 @@ import { useMyStaffMember } from '../../hooks/useMyStaffMember';
 import { groomingOpenSessionStage, itemBoardKey, type GroomingQuickAction } from './groomingStages';
 import GroomingFloorView from './GroomingFloorView';
 import GroomingAppointmentDrawer from './GroomingAppointmentDrawer';
+import { useGroomingResourcePrompt } from './useGroomingResourcePrompt';
 import '../clinica/clinica-page.css';
 import '../clientes/clientes.css';
 import './grooming-page.css';
@@ -36,6 +37,7 @@ const HubGroomingFloorPage: React.FC = () => {
   const canViewFinancial = hasPermission('hub.financial.read');
   const canPauseQueue = hasPermission('grooming.queue.manage');
   const { myStaffMember, linked } = useMyStaffMember();
+  const { chooseForStart, dialog: resourceDialog } = useGroomingResourcePrompt();
 
   const loadSeqRef = useRef(0);
   const [items, setItems] = useState<GroomingDayBoardItem[]>([]);
@@ -121,7 +123,13 @@ const HubGroomingFloorPage: React.FC = () => {
           groomingOpenSessionStage(item),
         );
       } else if (action.type === 'advance' && item.session_id) {
-        await hubGroomingApi.advanceSession(item.session_id, clinicId);
+        const choice = await chooseForStart(item, clinicId);
+        if (choice === null) return;
+        await hubGroomingApi.advanceSession(
+          item.session_id,
+          clinicId,
+          choice === 'skip-gate' ? undefined : { hubResourceId: choice.hubResourceId, skipResource: choice.skipResource },
+        );
       }
       await load();
     } catch (e: unknown) {
@@ -189,6 +197,7 @@ const HubGroomingFloorPage: React.FC = () => {
         onFeaturedOverride={setFeaturedOverride}
       />
 
+      {resourceDialog}
       <GroomingAppointmentDrawer
         item={selected}
         open={!!selected}

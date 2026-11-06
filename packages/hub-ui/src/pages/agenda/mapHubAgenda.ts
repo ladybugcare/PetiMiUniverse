@@ -2,6 +2,7 @@ import type { HubAppointment, HubSeriesEndingSoon } from '../../api/hubAgendaApi
 import type { AgendaAppointment, AgendaStatus } from './agendaModel';
 import { computeDisplayServiceLabel } from './agendaModel';
 import type { NewAppointmentInitial } from './NewAppointmentModal';
+import { mapExtraBlocksToInitial } from './extraBlockAgendaUtils';
 import { KNOWN_SERVICE_GROUP_SLUGS, type HubServiceGroupValue } from '../../utils/serviceTypeSlug';
 
 function toYmd(d: Date): string {
@@ -40,6 +41,7 @@ export function mapHubAppointmentToAgenda(row: HubAppointment): AgendaAppointmen
     saleAmount: s.sale_amount_applied ?? null,
     isAddon: Boolean(s.service_type?.is_addon),
     serviceGroup: parseGroup(s.service_type?.service_group),
+    pricingVariant: s.pricing_variant ?? null,
   }));
 
   const primaryGroup = parseGroup(st?.service_group);
@@ -71,6 +73,8 @@ export function mapHubAppointmentToAgenda(row: HubAppointment): AgendaAppointmen
     professionalId: row.hub_staff_member_id,
     professionalName: staff?.full_name ?? 'Não atribuído',
     resourceLabel: row.resource_label?.trim() || '—',
+    hubResourceId: row.hub_resource_id ?? null,
+    resourceReleasedAt: row.resource_released_at ?? null,
     unitName: un?.name ?? '—',
     unitId: row.unit_id,
     care_location_kind: row.care_location_kind,
@@ -121,10 +125,31 @@ export function mapHubAppointmentToAgenda(row: HubAppointment): AgendaAppointmen
   };
 }
 
+function appointmentDurationMin(appt: AgendaAppointment): number {
+  const diff = Math.round((appt.end.getTime() - appt.start.getTime()) / 60_000);
+  return Math.max(15, Number.isFinite(diff) ? diff : 60);
+}
+
 /** Pré-preenche o formulário de edição a partir de um agendamento da agenda. */
 export function mapAgendaToAppointmentInitial(appt: AgendaAppointment): NewAppointmentInitial {
   const mainServices = (appt.services ?? []).filter((s) => !s.isAddon);
   const addonServices = (appt.services ?? []).filter((s) => s.isAddon);
+  const services =
+    mainServices.length > 0
+      ? mainServices.map((s) => ({
+          hub_service_type_id: s.hub_service_type_id,
+          name: s.name,
+          duration_minutes: s.durationMin,
+          pricing_variant: s.pricingVariant ?? null,
+        }))
+      : appt.hub_service_type_id
+        ? [
+            {
+              hub_service_type_id: appt.hub_service_type_id,
+              duration_minutes: appointmentDurationMin(appt),
+            },
+          ]
+        : [];
 
   return {
     date: toYmd(appt.start),
@@ -132,6 +157,7 @@ export function mapAgendaToAppointmentInitial(appt: AgendaAppointment): NewAppoi
     ends_at: appt.end.toISOString(),
     hub_staff_member_id: appt.professionalId,
     resource_label: appt.resourceLabel !== '—' ? appt.resourceLabel : null,
+    hub_resource_id: appt.hubResourceId ?? null,
     guardian_id: appt.guardianId ?? null,
     guardian_name: appt.guardianName !== '—' ? appt.guardianName : null,
     pet_id: appt.petId ?? null,
@@ -142,16 +168,25 @@ export function mapAgendaToAppointmentInitial(appt: AgendaAppointment): NewAppoi
     status: appt.status,
     pricing_porte_tier: appt.pricing_porte_tier ?? null,
     pricing_coat_type: appt.pricing_coat_type ?? null,
-    services: mainServices.map((s) => ({
-      hub_service_type_id: s.hub_service_type_id,
-      name: s.name,
-      duration_minutes: s.durationMin,
-    })),
+    services,
     addon_services: addonServices.map((s) => ({
       hub_service_type_id: s.hub_service_type_id,
       name: s.name,
       duration_minutes: s.durationMin,
+      pricing_variant: s.pricingVariant ?? null,
     })),
+  };
+}
+
+/** Cópia para um agendamento novo: mesmos dados, sem vínculo com o original. */
+export function buildDuplicateAppointmentInitial(
+  appt: AgendaAppointment,
+  extraChildren: AgendaAppointment[] = [],
+): NewAppointmentInitial {
+  return {
+    ...mapAgendaToAppointmentInitial(appt),
+    status: 'confirmed',
+    extra_blocks: mapExtraBlocksToInitial(extraChildren).map(({ appointment_id: _id, ...block }) => block),
   };
 }
 

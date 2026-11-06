@@ -12,6 +12,7 @@ import {
   canTransitionGroomingStage,
   type GroomingStage,
 } from './groomingStages';
+import { prepareResourceForGroomingStart, releaseAppointmentResource } from './hubResourcesService';
 import { buildGroomingDisplayTags } from './groomingPetTags';
 import {
   syncOpenComandasAfterGroomingClosed,
@@ -275,7 +276,7 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
     let apptQ = supabaseAdmin
       .from('hub_appointments')
       .select(
-        'id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, starts_at, ends_at, status, title, hub_service_type_id, appointment_kind, notes, description',
+        'id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, starts_at, ends_at, status, title, hub_service_type_id, appointment_kind, notes, description, hub_resource_id, resource_label',
       )
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
@@ -621,6 +622,9 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
           guardian_id: guardianId,
           hub_staff_member_id: staffId,
           clinical_tags: tagsForPet(petId),
+          unit_id: a.unit_id,
+          hub_resource_id: a.hub_resource_id ?? null,
+          resource_label: a.resource_label ?? null,
         });
       } else {
         items.push({
@@ -651,6 +655,9 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
           guardian_id: guardianId,
           hub_staff_member_id: staffId,
           clinical_tags: tagsForPet(petId),
+          unit_id: a.unit_id,
+          hub_resource_id: a.hub_resource_id ?? null,
+          resource_label: a.resource_label ?? null,
         });
       }
     }
@@ -870,6 +877,8 @@ const patchSessionSchema = z
     priority: z.number().int().min(0).max(99).optional(),
     operational_notes: z.string().trim().max(8000).optional().nullable(),
     checklist: z.record(z.string(), z.object({ done: z.boolean() }).strict()).optional(),
+    hub_resource_id: uuidStr.optional().nullable(),
+    skip_resource: z.boolean().optional(),
   })
   .strict();
 
@@ -908,6 +917,15 @@ export const patchHubGroomingSession = async (req: Request, res: Response) => {
         return res.status(400).json({
           error: `Transição inválida: ${GROOMING_STAGE_LABELS[from]} → ${GROOMING_STAGE_LABELS[to]}`,
         });
+      }
+      if (to === 'in_service') {
+        const decision = await prepareResourceForGroomingStart({
+          clinicId: b.clinic_id,
+          appointmentId: current.hub_appointment_id as string | null,
+          hubResourceId: b.hub_resource_id,
+          skipResource: b.skip_resource,
+        });
+        if (!decision.ok) return res.status(decision.status).json(decision.body);
       }
       patch.grooming_stage = to;
       Object.assign(patch, stageTimestampsPatch(to, now));
@@ -978,6 +996,9 @@ export const patchHubGroomingSession = async (req: Request, res: Response) => {
         current.hub_appointment_id as string | null,
         b.grooming_stage,
       );
+      if (b.grooming_stage === 'ready' || b.grooming_stage === 'delivered' || b.grooming_stage === 'closed') {
+        await releaseAppointmentResource(b.clinic_id, current.hub_appointment_id as string | null);
+      }
       if (b.grooming_stage === 'closed') {
         void syncOpenComandasAfterGroomingClosed(b.clinic_id, id.data);
       }
@@ -1114,7 +1135,14 @@ export const listHubGroomingSessionEvents = async (req: Request, res: Response) 
 export const advanceHubGroomingSession = async (req: Request, res: Response) => {
   try {
     const id = uuidStr.safeParse(req.params.id);
-    const body = z.object({ clinic_id: uuidStr }).strict().safeParse(req.body);
+    const body = z
+      .object({
+        clinic_id: uuidStr,
+        hub_resource_id: uuidStr.optional().nullable(),
+        skip_resource: z.boolean().optional(),
+      })
+      .strict()
+      .safeParse(req.body);
     if (!id.success || !body.success) return res.status(400).json({ error: 'id e clinic_id são obrigatórios' });
 
     const { data: current } = await supabaseAdmin
@@ -1130,7 +1158,12 @@ export const advanceHubGroomingSession = async (req: Request, res: Response) => 
     const next = GROOMING_NEXT_STAGE[from];
     if (!next) return res.status(400).json({ error: 'Não há próximo estágio' });
 
-    req.body = { clinic_id: body.data.clinic_id, grooming_stage: next };
+    req.body = {
+      clinic_id: body.data.clinic_id,
+      grooming_stage: next,
+      ...(body.data.hub_resource_id !== undefined ? { hub_resource_id: body.data.hub_resource_id } : {}),
+      ...(body.data.skip_resource !== undefined ? { skip_resource: body.data.skip_resource } : {}),
+    };
     return patchHubGroomingSession(req, res);
   } catch (e: unknown) {
     console.error('advanceHubGroomingSession', e);

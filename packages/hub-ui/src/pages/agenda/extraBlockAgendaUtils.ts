@@ -50,6 +50,7 @@ export function mapExtraBlocksToInitial(
     ends_at: child.end.toISOString(),
     hub_staff_member_id: child.professionalId,
     resource_label: child.resourceLabel !== '—' ? child.resourceLabel : null,
+    hub_resource_id: child.hubResourceId ?? null,
     title: child.title ?? null,
     notes: child.notes ?? null,
     services: (child.services ?? []).map((s) => ({
