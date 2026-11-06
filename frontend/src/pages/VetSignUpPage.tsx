@@ -695,7 +695,7 @@ const VetSignUpPage: React.FC = () => {
               <span className="hero-headline__accent">quem precisa.</span>
             </h2>
             <p>
-              Junte-se ao PetMi Vet e encontre as melhores oportunidades de
+              Junte-se ao PetMi Shift e encontre as melhores oportunidades de
               trabalho em clínicas veterinárias. Candidate-se às demandas que
               mais combinam com seu perfil e construa uma carreira de sucesso.
             </p>

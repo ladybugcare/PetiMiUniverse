@@ -8,7 +8,7 @@ interface VerificationBadgeProps {
 
 const VerificationBadge: React.FC<VerificationBadgeProps> = ({ 
   verified = true, 
-  text = 'Documentos validados pela PetMi Vet' 
+  text = 'Documentos validados pela PetMi Shift' 
 }) => {
   if (!verified) return null;
 

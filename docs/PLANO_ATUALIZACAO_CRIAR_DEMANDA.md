@@ -308,7 +308,7 @@ Alinhar a interface com o lifecycle de demandas implementado, onde clínicas pub
 
 ---
 
-## 8. DESIGN SYSTEM PETIVET
+## 8. DESIGN SYSTEM PetMi Shift
 
 ### 8.1 Tipografia
 
@@ -343,7 +343,7 @@ Alinhar a interface com o lifecycle de demandas implementado, onde clínicas pub
   - Outros: `#22c55e` (success)
 
 **Consistência:**
-- ✅ Cores alinhadas com paleta PetMi Vet
+- ✅ Cores alinhadas com paleta PetMi Shift
 
 ### 8.4 Bordas e Sombras
 

@@ -47,7 +47,7 @@ Ver também [`.env.example`](.env.example) e [ENV_SETUP.md](ENV_SETUP.md).
 
 | URL | Destino |
 |-----|---------|
-| `https://petmi.app` | Vercel (PetMi Vet / site) |
+| `https://petmi.app` | Vercel (PetMi Shift / site) |
 | `https://hub.petmi.app` | Vercel (Hub) |
 | `https://shift.petmi.app` | Futuro Vercel |
 | `https://api.petmi.app` | Railway (API) |

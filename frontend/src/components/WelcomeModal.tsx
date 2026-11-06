@@ -64,7 +64,7 @@ const WelcomeModal: React.FC<WelcomeModalProps> = ({
 
         <div style={styles.header}>
           <h1 id="welcome-modal-title" style={styles.title}>
-            Boas-vindas à PetMi Vet!
+            Boas-vindas à PetMi Shift!
           </h1>
           <p style={styles.subtitle}>
             Cadastre sua clínica e a primeira unidade para ativar a conta. É rápido e libera todas as
@@ -74,7 +74,7 @@ const WelcomeModal: React.FC<WelcomeModalProps> = ({
 
         <div style={styles.body}>
           <p style={styles.lead}>
-            Antes de abrirmos as portas da sua clínica no PetMi Vet, precisamos saber onde ela fica e quem é o
+            Antes de abrirmos as portas da sua clínica no PetMi Shift, precisamos saber onde ela fica e quem é o
             responsável técnico.
           </p>
           <p style={styles.text}>
@@ -91,7 +91,7 @@ const WelcomeModal: React.FC<WelcomeModalProps> = ({
             <ol style={styles.steps}>
               <li style={styles.step}>
                 <span style={styles.stepNum}>1</span>
-                <span style={styles.stepBody}>Cadastre sua primeira unidade (ex.: PetMi Vet – Cotia).</span>
+                <span style={styles.stepBody}>Cadastre sua primeira unidade (ex.: PetMi Shift – Cotia).</span>
               </li>
               <li style={styles.step}>
                 <span style={styles.stepNum}>2</span>

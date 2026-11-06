@@ -66,7 +66,7 @@ const HowItWorks: React.FC = () => {
   return (
     <section id="sobre" style={styles.section}>
       <div style={styles.wrapper}>
-        <h2 style={styles.title}>Como o PetiMi funciona</h2>
+        <h2 style={styles.title}>Como o PetMi Shift funciona</h2>
         <p style={styles.subtitle}>
           Uma plataforma feita para unir quem oferece cuidado e quem precisa dele. Tudo em um só lugar — simples, rápido e cheio de amor pelos pets.
         </p>

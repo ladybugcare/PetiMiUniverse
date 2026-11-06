@@ -1,4 +1,4 @@
-# Manual de uso — Agenda (PetiMi Hub)
+# Manual de uso — Agenda (PetMi Hub)
 
 Documento para equipes da clínica (recepção, coordenação e operação).  
 Objetivo: explicar **como usar a Agenda no dia a dia**, com regras que evitam cobrança duplicada, conflito de horário e perda de série recorrente.
@@ -403,7 +403,7 @@ Tags de comportamento do pet (quando cadastradas na ficha) ajudam a equipe no pa
 
 Na vista **Mês**, dias especiais podem aparecer com chip **Feriado** ou outro rótulo de bloqueio (fechamento, equipe reduzida etc.).
 
-> **Limitação atual:** a Agenda **exibe** esses bloqueios. A gestão completa (cadastrar/editar/apagar) pode não estar disponível nesta tela. Em caso de dúvida, fale com o suporte PetiMi ou o administrador da conta.
+> **Limitação atual:** a Agenda **exibe** esses bloqueios. A gestão completa (cadastrar/editar/apagar) pode não estar disponível nesta tela. Em caso de dúvida, fale com o suporte PetMi ou o administrador da conta.
 
 Não confundir com **Adicionar outro bloco no dia** no modal de agendamento: isso é um **segundo horário** do mesmo pet no mesmo dia, não um feriado.
 
@@ -522,4 +522,4 @@ Não confundir com **Adicionar outro bloco no dia** no modal de agendamento: iss
 
 ---
 
-*Documento de uso do PetiMi Hub — módulo Agenda. Em caso de divergência com a versão instalada na clínica, prevalece o comportamento da tela e a orientação do suporte PetiMi.*
+*Documento de uso do PetMi Hub — módulo Agenda. Em caso de divergência com a versão instalada na clínica, prevalece o comportamento da tela e a orientação do suporte PetMi.*

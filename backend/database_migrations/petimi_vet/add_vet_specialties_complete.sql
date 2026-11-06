@@ -56,7 +56,7 @@ CHECK (category IN (
 ));
 
 -- ========================================
--- 🐾 PETIVET: Especialidades Veterinárias
+-- 🐾 PetMi Shift: Especialidades Veterinárias
 -- ========================================
 
 INSERT INTO specialties (name, category, description, active) VALUES

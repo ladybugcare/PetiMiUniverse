@@ -460,7 +460,7 @@ if (step === 2) {
               <span className="hero-headline__accent">quem precisa.</span>
             </h2>
             <p>
-              Junte-se ao PetMi Vet e faça parte da maior rede de clínicas e
+              Junte-se ao PetMi Shift e faça parte da maior rede de clínicas e
               profissionais veterinários do Brasil. Publique oportunidades e
               encontre os melhores veterinários para sua equipe.
             </p>

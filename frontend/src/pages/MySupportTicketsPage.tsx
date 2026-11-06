@@ -369,7 +369,7 @@ const MySupportTicketsPage: React.FC = () => {
                 >
                   <div style={styles.messageHeader}>
                     <span style={styles.messageSender}>
-                      {isUser ? 'Você' : 'Equipe PetMi Vet'}
+                      {isUser ? 'Você' : 'Equipe PetMi Shift'}
                     </span>
                   </div>
                   <p style={styles.messageText}>{message.message}</p>

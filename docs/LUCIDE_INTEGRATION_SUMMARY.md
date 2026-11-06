@@ -1,6 +1,6 @@
 # ✅ Lucide Icons - Integração Completa
 
-A biblioteca **Lucide React** foi integrada com sucesso ao projeto PetMi Vet!
+A biblioteca **Lucide React** foi integrada com sucesso ao projeto PetMi Shift!
 
 ## 📦 O Que Foi Feito
 
@@ -12,7 +12,7 @@ A biblioteca **Lucide React** foi integrada com sucesso ao projeto PetMi Vet!
 - ✅ **LoginPage.tsx** - Ícones adicionados nas labels de Email e Senha
   - Ícone de envelope (Mail) no campo de Email
   - Ícone de cadeado (Lock) no campo de Senha
-  - Cor roxo PetMi Vet aplicada aos ícones
+  - Cor roxo PetMi Shift aplicada aos ícones
 
 ### 3. Componentes Criados
 
@@ -37,7 +37,7 @@ Página de demonstração com todos os ícones disponíveis organizados por cate
 ### 4. Documentação
 - ✅ **LUCIDE_ICONS_GUIDE.md** - Guia completo de uso
 - ✅ Exemplos de código
-- ✅ Ícones recomendados para PetMi Vet
+- ✅ Ícones recomendados para PetMi Shift
 - ✅ Dicas de boas práticas
 
 ## 🎨 Exemplo de Uso
@@ -119,10 +119,10 @@ import { Plus } from 'lucide-react';
 ✅ **TypeScript**: Totalmente tipado  
 ✅ **Tree-shaking**: Importa apenas os ícones usados
 
-## 🎨 Design System PetMi Vet
+## 🎨 Design System PetMi Shift
 
 Os ícones já estão integrados com as cores do design system:
-- **Primary**: `#7c3aed` (roxo PetMi Vet)
+- **Primary**: `#7c3aed` (roxo PetMi Shift)
 - **Primary Dark**: `#5b21b6` (hover)
 - **Surface**: `#ffffff` (fundo)
 - **Text**: `#111827` (texto principal)
@@ -132,5 +132,5 @@ Os ícones já estão integrados com as cores do design system:
 **Status**: ✅ Integração Completa  
 **Versão**: 1.0.0  
 **Data**: 30 de Outubro de 2025  
-**Desenvolvido para**: PetMi Vet 🐶✨
+**Desenvolvido para**: PetMi Shift 🐶✨
 

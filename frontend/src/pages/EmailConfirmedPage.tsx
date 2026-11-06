@@ -509,11 +509,11 @@ const EmailConfirmedPage: React.FC = () => {
         
         {status === 'success' && (
           <>
-            {/* Logo PetMi Vet */}
+            {/* Logo PetMi Shift */}
             <div style={styles.logoContainer}>
               <img 
                 src="/just_logo.png" 
-                alt="PetMi Vet" 
+                alt="PetMi Shift" 
                 style={styles.logo}
               />
             </div>
@@ -536,7 +536,7 @@ const EmailConfirmedPage: React.FC = () => {
 
             <p style={styles.successMessage}>
               Seu e-mail foi confirmado com sucesso! 🎉<br />
-              Faça login para acessar o ecossistema PetMi Vet e começar a gerenciar sua clínica ou perfil veterinário.
+              Faça login para acessar o ecossistema PetMi Shift e começar a gerenciar sua clínica ou perfil veterinário.
             </p>
 
             {/* Botão Fazer login estilizado */}
@@ -562,11 +562,11 @@ const EmailConfirmedPage: React.FC = () => {
         
         {status === 'error' && (
           <>
-            {/* Logo PetMi Vet */}
+            {/* Logo PetMi Shift */}
             <div style={styles.logoContainer}>
               <img 
                 src="/just_logo.png" 
-                alt="PetMi Vet" 
+                alt="PetMi Shift" 
                 style={styles.logo}
               />
             </div>

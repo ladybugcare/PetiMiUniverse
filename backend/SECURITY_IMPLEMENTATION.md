@@ -1,4 +1,4 @@
-# 🔒 Implementação de Segurança - PetMi Vet
+# 🔒 Implementação de Segurança - PetMi Shift
 
 Este documento descreve todas as melhorias de segurança implementadas no projeto.
 

@@ -241,5 +241,5 @@ done
 ---
 
 **Última atualização**: 30 de Outubro de 2025  
-**Desenvolvido para**: PetMi Vet 💜
+**Desenvolvido para**: PetMi Shift 💜
 

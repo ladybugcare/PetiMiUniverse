@@ -34,7 +34,7 @@ const Navigation: React.FC<NavigationProps> = ({ user, onLogout }) => {
             {/* Logo */}
             <Link to="/demands" className="flex items-center space-x-2">
               <Heart className="w-7 h-7 shrink-0" style={{ color: '#A36B6B' }} aria-hidden strokeWidth={2} />
-              <span className="text-xl font-bold" style={{ color: '#A36B6B' }}>PetMi Vet</span>
+              <span className="text-xl font-bold" style={{ color: '#A36B6B' }}>PetMi Shift</span>
             </Link>
 
             {/* Desktop Menu */}

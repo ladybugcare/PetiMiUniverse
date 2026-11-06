@@ -1,6 +1,6 @@
 # PetiMiUniverse — Arquitetura multi-produto
 
-Este diretório documenta a estratégia oficial para evoluir o monorepo **PetiMiUniverse** de um produto principal (PetMi Vet / staffing) para um **ecossistema modular** (Hub, Vet/Match, Marketplace, PetMi ID, Admin), sem microserviços prematuros.
+Este diretório documenta a estratégia oficial para evoluir o monorepo **PetiMiUniverse** de um produto principal (PetMi Shift / staffing) para um **ecossistema modular** (Hub, Vet/Match, Marketplace, PetMi ID, Admin), sem microserviços prematuros.
 
 ## Documentos
 
@@ -14,7 +14,7 @@ Este diretório documenta a estratégia oficial para evoluir o monorepo **PetiMi
 | [FRONTEND_MODULARIZATION.md](./FRONTEND_MODULARIZATION.md) | Plano incremental de reorganização do frontend por produto |
 | [BACKEND_MODULARIZATION.md](./BACKEND_MODULARIZATION.md) | Plano incremental de reorganização do backend por módulos de domínio |
 | [HUB_MVP_EPICS.md](./HUB_MVP_EPICS.md) | Fase 1 Hub — épicos, ordem de entrega e critérios de aceite |
-| [HUB_BRANDING.md](./HUB_BRANDING.md) | Logo e paleta próprios do PetMi Hub (separados do PetMi Vet) |
+| [HUB_BRANDING.md](./HUB_BRANDING.md) | Logo e paleta próprios do PetMi Hub (separados do PetMi Shift) |
 | [HUB_EPIC1_MANUAL_QA.md](./HUB_EPIC1_MANUAL_QA.md) | Checklist de QA manual do Epic 1 (tutores / `hub_guardians`) |
 | [HUB_SIGNUP_FIRST_ADMIN_AND_UNIT.md](./HUB_SIGNUP_FIRST_ADMIN_AND_UNIT.md) | **Backlog:** visão de cadastro no Hub — pessoa como admin, depois primeira unidade (vs. signup Vet centrado na empresa) |
 | [HUB_QUOTES_AND_PROSPECTS.md](./HUB_QUOTES_AND_PROSPECTS.md) | Orçamentos e contatos (prospects) sem «falso cliente»; API `/api/hub/prospects` e `/api/hub/quotes` + UI Hub em `/hub/orcamentos` |

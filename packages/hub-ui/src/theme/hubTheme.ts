@@ -1,5 +1,5 @@
 /**
- * PetMi Hub — tokens de cor (paleta própria; não usar colors.brand do PetMi Vet).
+ * PetMi Hub — tokens de cor (paleta própria; não usar colors.brand do PetMi Shift).
  * Fonte de verdade documentada em docs/architecture/HUB_BRANDING.md
  */
 

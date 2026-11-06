@@ -1,6 +1,6 @@
 # PetMi Hub (web)
 
-App Vite separada do front PetMi Vet. Desenvolvimento: porta **3002**.
+App Vite separada do front PetMi Shift. Desenvolvimento: porta **3002**.
 
 ## Variáveis (`.env` ou `.env.local`)
 
@@ -8,7 +8,7 @@ App Vite separada do front PetMi Vet. Desenvolvimento: porta **3002**.
 VITE_API_URL=http://localhost:3000
 VITE_SUPABASE_URL=
 VITE_SUPABASE_ANON_KEY=
-# Opcional: URL do app Vet para links "PetMi Vet" e redirecionamentos quando o papel não é staff Hub
+# Opcional: URL do app Vet para links "PetMi Shift" e redirecionamentos quando o papel não é staff Hub
 VITE_VET_WEB_URL=http://localhost:3001
 ```
 

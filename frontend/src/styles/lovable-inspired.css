@@ -1,11 +1,11 @@
-/* Lovable-Inspired Design System for PetMi Vet */
+/* Lovable-Inspired Design System for PetMi Shift */
 
 /* Import modern fonts - Poppins (títulos) + Inter (texto) */
 @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&family=Inter:wght@300;400;500;600;700;800&display=swap');
 
 /* CSS Variables - Modern Design System */
 :root {
-  /* Color Palette - PetiMi Oficial */
+  /* Color Palette - PetMi Oficial */
   /* Primary - Rosa Queimado */
   --primary-50: #FFF7F6;
   --primary-100: #FCEAEA;

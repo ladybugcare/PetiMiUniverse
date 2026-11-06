@@ -14,5 +14,5 @@ import { demandsApi } from '../services/demandsApi';
 import { applicationsApi } from '../services/applicationsApi';
 
 
-// Centraliza e exporta todas as APIs do PetMi Vet
+// Centraliza e exporta todas as APIs do PetMi Shift
 

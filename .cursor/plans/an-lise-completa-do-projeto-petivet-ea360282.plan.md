@@ -1,5 +1,5 @@
 ---
-name: Plano de Correção de Gaps de Lógica - PetMi Vet
+name: Plano de Correção de Gaps de Lógica - PetMi Shift
 overview: ""
 todos:
   - id: b56043ff-ce08-4fbf-9817-d119a13ac6dc
@@ -32,7 +32,7 @@ todos:
 isProject: false
 ---
 
-# Plano de Correção de Gaps de Lógica - PetMi Vet
+# Plano de Correção de Gaps de Lógica - PetMi Shift
 
 ## Estratégia Geral
 

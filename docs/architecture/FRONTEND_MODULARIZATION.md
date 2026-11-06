@@ -43,7 +43,7 @@ frontend/src/
 
 ### Identidade visual PetMi Hub (logo e paleta)
 
-O Hub **não** reutiliza a identidade do PetMi Vet: **outro logo** e **outra paleta**. O design system global em [frontend/src/styles/colors.ts](frontend/src/styles/colors.ts) continua a servir Vet/Match e restantes áreas legadas; o Hub deve consumir tokens dedicados (ver [HUB_BRANDING.md](./HUB_BRANDING.md)).
+O Hub **não** reutiliza a identidade do PetMi Shift: **outro logo** e **outra paleta**. O design system global em [frontend/src/styles/colors.ts](frontend/src/styles/colors.ts) continua a servir Vet/Match e restantes áreas legadas; o Hub deve consumir tokens dedicados (ver [HUB_BRANDING.md](./HUB_BRANDING.md)).
 
 Implementação sugerida:
 
@@ -81,7 +81,7 @@ Ordem sugerida (baixo risco → alto):
 - **`packages/web-core`**: Supabase singleton web, `apiRequest` / `login`, `AuthProvider`, permissões de staff clínica, `usePermissions`.
 - **`packages/hub-ui`**: tema Hub, `HubChrome`, páginas e APIs do domínio Hub.
 - **`apps/hub-web`**: app Vite dedicada (porta 3002 em dev); comando na raiz: `npm run dev:hub-web`.
-- O bundle **PetMi Vet** em `frontend/` mantém Expo/mobile; links do menu para o Hub usam `REACT_APP_HUB_WEB_URL` quando configurado (ver `frontend/.env.example`).
+- O bundle **PetMi Shift** em `frontend/` mantém Expo/mobile; links do menu para o Hub usam `REACT_APP_HUB_WEB_URL` quando configurado (ver `frontend/.env.example`).
 
 **Contrato de login partilhado**: ambas as apps chamam `POST /auth/login` no mesmo backend e recebem o mesmo payload. A persistência de sessão (`localStorage` + `supabase.auth.setSession`) é feita por `@petimi/web-core` no Hub; o Vet ainda usa uma cópia local em `frontend/src/AuthContext.tsx` e `frontend/src/services/api.ts`. A convergência do Vet para `@petimi/web-core` é o caminho de deduplicação técnica — ver pendência `vet-web-core`.
 

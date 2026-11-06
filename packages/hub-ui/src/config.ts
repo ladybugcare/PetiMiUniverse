@@ -1,6 +1,6 @@
 let vetWebUrl = '';
 
-/** Chamado na arranque da app Hub (ex.: `main.tsx`) para links de saída para o PetMi Vet. */
+/** Chamado na arranque da app Hub (ex.: `main.tsx`) para links de saída para o PetMi Shift. */
 export function setHubUiConfig(config: { vetWebUrl?: string }): void {
   vetWebUrl = (config.vetWebUrl || '').trim();
 }

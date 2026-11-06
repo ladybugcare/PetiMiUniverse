@@ -1,7 +1,7 @@
 {
   "name": "petivet",
   "version": "1.0.0",
-  "description": "PetMi Vet - Plataforma de conexão entre clínicas veterinárias e veterinários",
+  "description": "PetMi Shift - Plataforma de conexão entre clínicas veterinárias e veterinários",
   "private": true,
   "workspaces": [
     "backend",

@@ -223,7 +223,7 @@ const HubLoginPage: React.FC = () => {
 
         {vetLogin && (
           <p className="hub-login-page-secondary">
-            <a href={vetLogin}>Ir para o login PetMi Vet</a>
+            <a href={vetLogin}>Ir para o login PetMi Shift</a>
           </p>
         )}
       </div>
