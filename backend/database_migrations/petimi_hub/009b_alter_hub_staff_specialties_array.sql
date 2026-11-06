@@ -1,4 +1,4 @@
--- PetMi Hub — especialidades da equipe como text[] (alinhado a vets.specialties no PetMiVet).
+-- PetMi Hub — especialidades da equipe como text[] (alinhado a vets.specialties no PetMi Shift).
 -- Converte legado: JSON em text, lista separada por vírgula ou valor único livre.
 -- Idempotente: se a coluna já for text[], não altera o tipo.
 --

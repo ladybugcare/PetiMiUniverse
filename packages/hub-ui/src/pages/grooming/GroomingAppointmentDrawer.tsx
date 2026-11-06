@@ -517,9 +517,7 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
 
         {stage === 'ready' ? (
           <div className="hub-grooming-drawer__ready-banner" role="status">
-            {notifyTutorHref
-              ? `${petName} está pronto para retirada. Avise o tutor pelo WhatsApp.`
-              : `${petName} está pronto para retirada. Sem telefone do tutor para avisar.`}
+            {`${petName} está pronto. A recepção cuida da retirada.`}
           </div>
         ) : null}
 

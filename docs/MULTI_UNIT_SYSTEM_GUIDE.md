@@ -386,5 +386,5 @@ For questions or issues:
 
 **Version**: 1.0.0  
 **Last Updated**: October 29, 2025  
-**Author**: PetMi Vet Development Team
+**Author**: PetMi Shift Development Team
 

@@ -1,8 +1,8 @@
-// Design System PetiMi - Paleta Oficial
+// Design System PetMi - Paleta Oficial
 import { colors } from './colors';
 
 export const theme = {
-  // Cores principais - usando paleta PetiMi
+  // Cores principais - usando paleta PetMi
   colors: {
     // Primárias - Rosa Queimado
     primary: {
@@ -140,7 +140,7 @@ export const theme = {
   },
 };
 
-// Cores específicas para componentes (usando paleta PetiMi)
+// Cores específicas para componentes (usando paleta PetMi)
 export const componentColors = {
   // Backgrounds
   background: {

@@ -3,7 +3,7 @@
 ## Pré-requisitos
 
 - [ ] Conta no Render (https://render.com)
-- [ ] Repositório GitHub do PetMi Vet
+- [ ] Repositório GitHub do PetMi Shift
 - [ ] Branch `staging` criada e com push feito
 - [ ] Credenciais do Supabase Staging
 - [ ] URL do frontend Vercel (ex: `https://staging-petivet.vercel.app`)
@@ -15,7 +15,7 @@
 1. Acesse: https://dashboard.render.com
 2. Clique em **"New +"** → **"Web Service"**
 3. Conecte sua conta GitHub se ainda não conectou
-4. Procure e selecione o repositório **PetMi Vet**
+4. Procure e selecione o repositório **PetMi Shift**
 5. Clique em **"Connect"**
 
 ---

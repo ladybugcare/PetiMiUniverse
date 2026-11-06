@@ -1,4 +1,4 @@
-# 🔄 Workflow Git - PetMi Vet
+# 🔄 Workflow Git - PetMi Shift
 
 ## 📋 Regras Importantes
 

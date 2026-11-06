@@ -915,7 +915,7 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
                       ariaLabel="Especialidades do profissional"
                     />
                     <p className="hub-clientes__muted" style={{ fontSize: 12, marginTop: 6 }}>
-                      Catálogo PetMiVet; pode adicionar especialidades personalizadas.
+                      Catálogo PetMi Shift; pode adicionar especialidades personalizadas.
                     </p>
                   </div>
                   <div className="hub-clientes__field">

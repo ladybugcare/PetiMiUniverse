@@ -41,6 +41,8 @@ export const OPERATIONAL_AREA_PERMISSIONS: Record<HubOperationalArea, readonly s
     'hub.pets.write',
     'hub.prospects.read',
     'hub.quotes.read',
+    'reception.ops.read',
+    'reception.ops.manage',
   ],
   caixa: [
     'hub.financial.read',

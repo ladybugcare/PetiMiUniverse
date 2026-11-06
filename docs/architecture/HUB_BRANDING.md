@@ -1,6 +1,6 @@
 # PetMi Hub — identidade visual (logo e paleta)
 
-O **PetMi Hub** é um produto distinto do **PetMi Vet** (staffing/matching). Na implementação do frontend do Hub, a UI deve seguir **outro logo** e **outra paleta** — não usar o sistema de cores de marca do Vet (`colors.brand` em [frontend/src/styles/colors.ts](frontend/src/styles/colors.ts)) como identidade principal das telas Hub.
+O **PetMi Hub** é um produto distinto do **PetMi Shift** (staffing/matching). Na implementação do frontend do Hub, a UI deve seguir **outro logo** e **outra paleta** — não usar o sistema de cores de marca do Vet (`colors.brand` em [frontend/src/styles/colors.ts](frontend/src/styles/colors.ts)) como identidade principal das telas Hub.
 
 ## Objetivo
 
@@ -66,7 +66,7 @@ Escala `primary.100`–`800` em [hubTheme.ts](../../packages/hub-ui/src/theme/hu
 ## Critérios de aceite (branding)
 
 - [ ] Primeira página Hub MVP (ex.: tutores ou dashboard Hub) usa **apenas** tokens Hub + logo Hub no topo.
-- [ ] Não há texto de marca “PetMi Vet” no shell Hub (exceto créditos legais globais do site, se aplicável).
+- [ ] Não há texto de marca “PetMi Shift” no shell Hub (exceto créditos legais globais do site, se aplicável).
 - [ ] Contraste WCAG AA nos pares texto/fundo principais (validar com ferramenta ao fechar tokens).
 
 ## Referências

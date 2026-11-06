@@ -81,8 +81,8 @@ Todos os emojis nas páginas principais foram substituídos por ícones do Lucid
 
 ### ✅ Consistência
 - Mesmo estilo visual em toda aplicação
-- Integração com design system PetMi Vet
-- Cores padronizadas (#7c3aed - roxo PetMi Vet)
+- Integração com design system PetMi Shift
+- Cores padronizadas (#7c3aed - roxo PetMi Shift)
 
 ## 💡 Padrões Estabelecidos
 
@@ -134,5 +134,5 @@ Para mais informações sobre como usar os ícones Lucide:
 
 **Status**: ✅ Migração Completa  
 **Data**: 30 de Outubro de 2025  
-**Desenvolvido para**: PetMi Vet 🐶✨ → 💜
+**Desenvolvido para**: PetMi Shift 🐶✨ → 💜
 

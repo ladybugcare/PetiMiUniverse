@@ -1,4 +1,4 @@
-# Resumo da Implementação - Auditoria e Melhorias PetMi Vet
+# Resumo da Implementação - Auditoria e Melhorias PetMi Shift
 
 ## ✅ Tarefas Concluídas
 

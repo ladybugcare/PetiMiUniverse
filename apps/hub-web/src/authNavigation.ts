@@ -17,8 +17,8 @@ function hubLandingForStaff(role: AppRole, areas: string[] = []): string {
     if (areas.includes('banho_tosa')) return '/hub/banho-tosa/minha-fila';
     if (areas.includes('clinica')) return '/hub/clinica';
     if (areas.includes('hotel_creche')) return '/hub/hotel-creche/minha-fila';
+    if (areas.includes('recepcao')) return '/hub/recepcao';
     if (areas.includes('financeiro') || areas.includes('caixa')) return '/hub/financeiro';
-    if (areas.includes('recepcao')) return '/hub/appointments';
     return '/hub/meu-perfil';
   }
 
@@ -27,7 +27,7 @@ function hubLandingForStaff(role: AppRole, areas: string[] = []): string {
     case 'CMANAGER':
       return '/hub/dashboard';
     case 'CASSISTANT':
-      return '/hub/appointments';
+      return '/hub/recepcao';
     case 'CVET_INTERNAL':
       return '/hub/clinica';
     case 'CGROOMER':

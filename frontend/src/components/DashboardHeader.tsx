@@ -1,24 +1,40 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { HelpCircle, User, LogOut } from 'lucide-react';
-import IconWrapper from './IconWrapper';
-import UnitSelector from './UnitSelector';
+import { ChevronDown, HelpCircle, LogOut, Menu, User, X } from 'lucide-react';
 import SupportModal from './SupportModal';
 import NotificationBell from './NotificationBell';
 import { supportTicketsApi } from '../services/supportTicketsApi';
-import { useAuth } from '../AuthContext'; // ✅ Importa o contexto
+import { useAuth } from '../AuthContext';
 import Avatar from './Avatar';
-import { colors } from '../styles/colors';
 import { getUserPhotoUrl, getUserDisplayName, getUserTypeForAvatar } from '../utils/userPhotoHelper';
+import { usePermissions } from '../hooks/usePermissions';
 
 interface DashboardHeaderProps {
-  onMenuClick: () => void;
+  onMenuClick?: () => void;
   pageName: string;
+  isMenuOpen?: boolean;
+  showMenuButton?: boolean;
+}
+
+function shiftAccessLabel(clinicRole: string | null, authRole: string): string {
+  const key = String(clinicRole || authRole || '').toUpperCase();
+  const labels: Record<string, string> = {
+    ADMIN: 'Administrador',
+    CADMIN: 'Administrador da Clínica',
+    CMANAGER: 'Gestor de Unidade',
+    CASSISTANT: 'Assistente',
+    CVET_INTERNAL: 'Veterinário Interno',
+    VET: 'Veterinário',
+    FREELANCER: 'Freelancer',
+  };
+  return labels[key] || 'Conta';
 }
 
 const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   onMenuClick,
   pageName,
+  isMenuOpen = false,
+  showMenuButton = false,
 }) => {
   const navigate = useNavigate();
   const [supportModalOpen, setSupportModalOpen] = useState(false);
@@ -26,53 +42,48 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
-  const { user, role, logout, isLoggingOut } = useAuth(); // ✅ Usa logout e role globais
+  const { user, role, logout, isLoggingOut } = useAuth();
+  const { role: clinicRole } = usePermissions();
 
-  // Verificar se é admin (admins não veem o botão de suporte)
   const isAdmin = role === 'ADMIN';
   const userId = useMemo(() => user?.id, [user?.id]);
   const isLoadingRef = useRef(false);
   const lastRequestTimeRef = useRef(0);
   const errorCountRef = useRef(0);
+  const displayName = getUserDisplayName(user);
+  const accessLabel = shiftAccessLabel(clinicRole, role);
 
-  // Buscar contagem de tickets não lidos com throttling
   const loadUnreadCount = useCallback(async () => {
     if (!userId || isAdmin) return;
-    
-    // Throttle: não fazer requisição se a última foi há menos de 2 segundos
+
     const now = Date.now();
     if (now - lastRequestTimeRef.current < 2000) {
       return;
     }
-    
-    // Se já está carregando, não fazer nova requisição
+
     if (isLoadingRef.current) {
       return;
     }
-    
-    // Se houve muitos erros (429), aumentar o throttle
+
     if (errorCountRef.current > 3) {
       if (now - lastRequestTimeRef.current < 10000) {
         return;
       }
-      // Reset error count após 10 segundos
       errorCountRef.current = 0;
     }
-    
+
     isLoadingRef.current = true;
     lastRequestTimeRef.current = now;
-    
+
     try {
       const result = await supportTicketsApi.getUnreadCount(userId);
       setUnreadCount(result.unread_count);
-      errorCountRef.current = 0; // Reset error count em caso de sucesso
+      errorCountRef.current = 0;
     } catch (error: any) {
       console.error('Error loading unread count:', error);
-      
-      // Se for erro 429, incrementar contador de erros
+
       if (error?.message?.includes('429') || error?.status === 429) {
         errorCountRef.current += 1;
-        // Se muitos erros, parar polling temporariamente
         if (errorCountRef.current > 5) {
           console.warn('[DashboardHeader] Muitos erros 429, pausando polling temporariamente');
         }
@@ -84,33 +95,28 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
 
   useEffect(() => {
     if (!userId || isAdmin) return;
-    
-    // Carregar imediatamente apenas uma vez
+
     loadUnreadCount();
-    
-    // Polling a cada 60 segundos (aumentado para reduzir carga)
+
     const interval = setInterval(() => {
-      // Só fazer polling se a página estiver visível
       if (document.visibilityState === 'visible') {
         loadUnreadCount();
       }
     }, 60000);
-    
-    // Pausar polling quando a página não estiver visível
+
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         loadUnreadCount();
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
-    
+
     return () => {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [userId, isAdmin, loadUnreadCount]);
 
-  // Fecha dropdown ao clicar fora
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
@@ -120,14 +126,6 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const handleLogoClick = () => {
-    if (role === 'ADMIN') navigate('/admin-dashboard');
-    else if (role === 'CADMIN' || role === 'CMANAGER')
-      navigate('/clinic-dashboard');
-    else if (role === 'VET') navigate('/vet-dashboard');
-    else navigate('/');
-  };
 
   const handleSupportClick = () => {
     if (unreadCount > 0) navigate('/my-support-tickets');
@@ -147,62 +145,43 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
   };
 
   return (
-    <header style={styles.header}>
-      <div style={styles.container}>
-        {/* Left: Hamburger + Page Name */}
-        <div style={styles.leftSection}>
-          <button
-            onClick={onMenuClick}
-            style={styles.hamburger}
-            aria-label="Toggle menu"
-          >
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
+    <header className="shift-top-header">
+      <div className="shift-top-header__inner">
+        <div className="shift-top-header__left">
+          {showMenuButton && (
+            <button
+              type="button"
+              className="shift-top-header__menu-btn"
+              onClick={onMenuClick}
+              aria-label={isMenuOpen ? 'Fechar menu' : 'Abrir menu'}
+              aria-expanded={isMenuOpen}
             >
-              <line x1="3" y1="12" x2="21" y2="12" />
-              <line x1="3" y1="6" x2="21" y2="6" />
-              <line x1="3" y1="18" x2="21" y2="18" />
-            </svg>
-          </button>
-          <h1 style={styles.pageName}>{pageName}</h1>
+              {isMenuOpen ? <X size={22} strokeWidth={2} /> : <Menu size={22} strokeWidth={2} />}
+            </button>
+          )}
+          <nav className="shift-top-header__crumbs" aria-label="Localização">
+            <h1 className="shift-top-header__page" aria-current="page">
+              {pageName}
+            </h1>
+          </nav>
         </div>
 
-        {/* Center: Logo */}
-        <div style={styles.centerSection}>
-          <img
-            src="/petmi-shift.svg"
-            alt="PetMi Shift"
-            style={styles.logo}
-            onClick={handleLogoClick}
-            title="Ir para o Dashboard"
-          />
-        </div>
-
-        {/* Right: Unit Selector + Support + Notifications + Avatar */}
-        <div style={styles.rightSection}>
-          {role !== 'CADMIN' && <UnitSelector />}
-
+        <div className="shift-top-header__right">
           {!isAdmin && (
             <button
+              type="button"
               onClick={handleSupportClick}
-              style={styles.supportButton}
+              className="shift-top-header__icon-btn"
               aria-label="Suporte"
               title={
                 unreadCount > 0
-                  ? `Ver Respostas (${unreadCount} ${unreadCount === 1 ? 'nova' : 'novas'})`
-                  : 'Solicitar Suporte'
+                  ? `Ver respostas (${unreadCount} ${unreadCount === 1 ? 'nova' : 'novas'})`
+                  : 'Solicitar suporte'
               }
             >
-              <IconWrapper icon={HelpCircle} size={20} />
+              <HelpCircle size={20} strokeWidth={1.75} />
               {unreadCount > 0 && (
-                <span style={styles.supportBadge}>
+                <span className="shift-top-header__support-badge">
                   {unreadCount > 9 ? '9+' : unreadCount}
                 </span>
               )}
@@ -211,38 +190,52 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
 
           <NotificationBell />
 
-          {/* Profile Dropdown */}
-          <div ref={dropdownRef} style={{ position: 'relative' }}>
+          <div className="shift-top-header__profile" ref={dropdownRef}>
             <button
-              onClick={() => setDropdownOpen(!dropdownOpen)}
-              style={styles.avatarButton}
-              aria-label="Menu do usuário"
+              type="button"
+              className="shift-top-header__user-trigger"
+              onClick={() => setDropdownOpen((open) => !open)}
+              aria-expanded={dropdownOpen}
+              aria-haspopup="menu"
+              aria-label={`Menu do usuário: ${displayName}`}
             >
               <Avatar
                 src={getUserPhotoUrl(user)}
-                name={getUserDisplayName(user)}
-                size={40}
+                name={displayName}
+                size={36}
                 userType={getUserTypeForAvatar(user)}
+              />
+              <span className="shift-top-header__user-text">
+                <span className="shift-top-header__user-name">{displayName}</span>
+                <span className="shift-top-header__user-role">{accessLabel}</span>
+              </span>
+              <ChevronDown
+                size={18}
+                strokeWidth={2}
+                className={`shift-top-header__chevron${dropdownOpen ? ' shift-top-header__chevron--open' : ''}`}
+                aria-hidden
               />
             </button>
 
             {dropdownOpen && (
-              <div style={styles.dropdownMenu}>
-                <button onClick={handleViewProfile} style={styles.dropdownItem}>
-                  <IconWrapper icon={User} size={16} />
-                  <span>Ver Perfil</span>
-                </button>
-
+              <div className="shift-top-header__dropdown" role="menu">
                 <button
+                  type="button"
+                  className="shift-top-header__dropdown-item"
+                  role="menuitem"
+                  onClick={handleViewProfile}
+                >
+                  <User size={16} aria-hidden />
+                  <span>Ver perfil</span>
+                </button>
+                <button
+                  type="button"
+                  className="shift-top-header__dropdown-item shift-top-header__dropdown-item--danger"
+                  role="menuitem"
                   onClick={handleLogout}
                   disabled={isLoggingOut}
-                  style={{
-                    ...styles.dropdownItem,
-                    color: isLoggingOut ? '#aaa' : '#ef4444',
-                    cursor: isLoggingOut ? 'not-allowed' : 'pointer',
-                  }}
                 >
-                  <IconWrapper icon={LogOut} size={16} />
+                  <LogOut size={16} aria-hidden />
                   <span>{isLoggingOut ? 'Saindo...' : 'Sair'}</span>
                 </button>
               </div>
@@ -251,147 +244,9 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
         </div>
       </div>
 
-      {/* Support Modal */}
-      <SupportModal
-        isOpen={supportModalOpen}
-        onClose={() => setSupportModalOpen(false)}
-      />
+      <SupportModal isOpen={supportModalOpen} onClose={() => setSupportModalOpen(false)} />
     </header>
   );
 };
 
-/* 🎨 Estilos */
-const styles: { [key: string]: React.CSSProperties } = {
-  header: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    right: 0,
-    height: '64px',
-    backgroundColor: '#ffffff',
-    borderBottom: '1px solid #e5e5e5',
-    zIndex: 100,
-    boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.1)',
-    // `hidden` recortava o menu do avatar (dropdown fica abaixo dos 64px do header).
-    overflow: 'visible',
-  },
-  container: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    height: '100%',
-    padding: '0 24px',
-  },
-  leftSection: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '16px',
-    flex: '1',
-  },
-  hamburger: {
-    background: 'none',
-    border: 'none',
-    cursor: 'pointer',
-    color: '#525252',
-  },
-  pageName: {
-    fontFamily: 'Poppins, sans-serif',
-    fontSize: '18px',
-    fontWeight: '600',
-    color: '#262626',
-  },
-  centerSection: {
-    position: 'absolute',
-    left: '50%',
-    top: '50%',
-    transform: 'translate(-50%, -50%)',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  logo: {
-    height: '40px',
-    cursor: 'pointer',
-    objectFit: 'contain',
-    display: 'block',
-  },
-  rightSection: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: '8px',
-    flex: '1',
-  },
-  supportButton: {
-    position: 'relative',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '40px',
-    height: '40px',
-    border: 'none',
-    backgroundColor: 'transparent',
-    color: colors.brand.primary[500],
-    cursor: 'pointer',
-  },
-  supportBadge: {
-    position: 'absolute',
-    top: '6px',
-    right: '6px',
-    backgroundColor: '#ef4444',
-    color: '#fff',
-    fontSize: '10px',
-    fontWeight: 600,
-    borderRadius: '9999px',
-    padding: '2px 5px',
-    border: '2px solid #fff',
-  },
-  avatarButton: {
-    border: 'none',
-    backgroundColor: 'transparent',
-    cursor: 'pointer',
-    borderRadius: '50%',
-    width: '40px',
-    height: '40px',
-    minWidth: '40px',
-    minHeight: '40px',
-    maxWidth: '40px',
-    maxHeight: '40px',
-    padding: 0,
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-    overflow: 'hidden',
-  },
-  dropdownMenu: {
-    position: 'absolute',
-    top: '50px',
-    right: 0,
-    backgroundColor: '#fff',
-    border: '1px solid #e5e7eb',
-    borderRadius: '8px',
-    boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
-    width: '160px',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '8px 0',
-    zIndex: 200,
-  },
-  dropdownItem: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '8px',
-    padding: '10px 16px',
-    background: 'none',
-    border: 'none',
-    color: '#374151',
-    fontSize: '14px',
-    cursor: 'pointer',
-    width: '100%',
-    textAlign: 'left',
-  },
-};
-
 export default DashboardHeader;
-

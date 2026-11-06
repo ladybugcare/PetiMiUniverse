@@ -1,8 +1,10 @@
-import React, { useState, useEffect, ReactNode } from 'react';
+import React, { useState, useEffect, useCallback, ReactNode } from 'react';
+import { useLocation } from 'react-router-dom';
 import DashboardHeader from './DashboardHeader';
 import DashboardSidebar, { MenuItem } from './DashboardSidebar';
 
-const CLINIC_DESKTOP_SIDEBAR_MQ = '(min-width: 1024px)';
+const MOBILE_MQ = '(max-width: 900px)';
+const COLLAPSED_KEY = 'shift.sidebar.collapsed';
 
 interface DashboardLayoutProps {
   children: ReactNode;
@@ -10,7 +12,7 @@ interface DashboardLayoutProps {
   menuItems: MenuItem[];
   activeSection?: string;
   onSectionChange?: (sectionId: string) => void;
-  /** Em desktop, abre o menu por defeito e sem overlay escuro (layout tipo backoffice clínica). */
+  /** Mantido por compatibilidade. No desktop a sidebar fica fixa, como no Hub. */
   persistentClinicNav?: boolean;
 }
 
@@ -20,113 +22,107 @@ const DashboardLayout: React.FC<DashboardLayoutProps> = ({
   menuItems,
   activeSection,
   onSectionChange,
-  persistentClinicNav = false,
 }) => {
-  const [isSidebarOpen, setIsSidebarOpen] = useState(() => {
+  const { pathname } = useLocation();
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia(MOBILE_MQ).matches : false
+  );
+  const [isCollapsed, setIsCollapsed] = useState(() => {
     if (typeof window === 'undefined') return false;
-    if (persistentClinicNav && window.matchMedia(CLINIC_DESKTOP_SIDEBAR_MQ).matches) {
-      return true;
-    }
-    return false;
+    return localStorage.getItem(COLLAPSED_KEY) === '1';
   });
 
-  const [isDesktop, setIsDesktop] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia(CLINIC_DESKTOP_SIDEBAR_MQ).matches : false
-  );
-
   useEffect(() => {
-    const mq = window.matchMedia(CLINIC_DESKTOP_SIDEBAR_MQ);
-    const onMq = () => setIsDesktop(mq.matches);
-    onMq();
-    mq.addEventListener('change', onMq);
-    return () => mq.removeEventListener('change', onMq);
+    const mq = window.matchMedia(MOBILE_MQ);
+    const onChange = () => {
+      const mobile = mq.matches;
+      setIsMobile(mobile);
+      if (!mobile) setIsSidebarOpen(false);
+    };
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
   }, []);
 
   useEffect(() => {
-    if (!persistentClinicNav) return;
-    const mq = window.matchMedia(CLINIC_DESKTOP_SIDEBAR_MQ);
-    const onShrink = () => {
-      if (!mq.matches) setIsSidebarOpen(false);
-    };
-    mq.addEventListener('change', onShrink);
-    return () => mq.removeEventListener('change', onShrink);
-  }, [persistentClinicNav]);
-
-  // Get user info from localStorage
-  const getUserFromStorage = () => {
-    try {
-      const userStr = localStorage.getItem('user');
-      if (!userStr) return null;
-      return JSON.parse(userStr);
-    } catch (error) {
-      console.warn('Failed to parse user from localStorage:', error);
-      return null;
-    }
-  };
-
-  const user = getUserFromStorage();
-  const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || 'User';
-  const userEmail = user?.email || '';
-
-  const handleMenuToggle = () => {
-    setIsSidebarOpen(!isSidebarOpen);
-  };
-
-  const handleCloseSidebar = () => {
     setIsSidebarOpen(false);
-  };
+  }, [pathname]);
 
-  const showSidebarBackdrop = !(persistentClinicNav && isDesktop);
+  useEffect(() => {
+    if (isMobile && isSidebarOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [isMobile, isSidebarOpen]);
+
+  const handleMenuToggle = useCallback(() => {
+    setIsSidebarOpen((open) => !open);
+  }, []);
+
+  const handleCloseSidebar = useCallback(() => {
+    setIsSidebarOpen(false);
+  }, []);
+
+  const handleToggleCollapsed = useCallback(() => {
+    setIsCollapsed((prev) => {
+      const next = !prev;
+      localStorage.setItem(COLLAPSED_KEY, next ? '1' : '0');
+      return next;
+    });
+  }, []);
+
+  const sidebarOpen = !isMobile || isSidebarOpen;
+  const desktopCollapsed = !isMobile && isCollapsed;
+  const hasNav = menuItems.length > 0;
 
   return (
-    <div style={styles.container}>
-      {/* Header */}
-      <DashboardHeader
-        onMenuClick={handleMenuToggle}
-        pageName={pageName}
-      />
+    <div
+      className={[
+        'shift-app-shell',
+        desktopCollapsed ? 'shift-app-shell--sidebar-collapsed' : '',
+        hasNav ? '' : 'shift-app-shell--no-nav',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      {hasNav && isMobile && isSidebarOpen && (
+        <button
+          type="button"
+          className="shift-sidebar-backdrop"
+          aria-label="Fechar menu"
+          onClick={handleCloseSidebar}
+        />
+      )}
 
-      {/* Sidebar */}
-      <DashboardSidebar
-        isOpen={isSidebarOpen}
-        onClose={handleCloseSidebar}
-        showBackdrop={showSidebarBackdrop}
-        menuItems={menuItems}
-        userName={userName}
-        userEmail={userEmail}
-        activeSection={activeSection}
-        onSectionChange={onSectionChange}
-      />
+      {hasNav && (
+        <DashboardSidebar
+          isOpen={sidebarOpen}
+          isMobile={isMobile}
+          collapsed={desktopCollapsed}
+          onClose={handleCloseSidebar}
+          onToggleCollapsed={handleToggleCollapsed}
+          menuItems={menuItems}
+          activeSection={activeSection}
+          onSectionChange={onSectionChange}
+        />
+      )}
 
-      {/* Main Content */}
-      <main
-        style={{
-          ...styles.mainContent,
-          marginLeft: isSidebarOpen ? '280px' : '0',
-        }}
-      >
-        <div style={styles.contentWrapper}>
-        {children}
-        </div>
-      </main>
+      <div className="shift-app-shell__column">
+        <DashboardHeader
+          onMenuClick={handleMenuToggle}
+          isMenuOpen={isSidebarOpen}
+          showMenuButton={isMobile && hasNav}
+          pageName={pageName}
+        />
+        <main className="shift-app-shell__outlet">{children}</main>
+      </div>
     </div>
   );
 };
 
-const styles: { [key: string]: React.CSSProperties } = {
-  container: {
-    minHeight: '100vh',
-    backgroundColor: '#fafafa',
-  },
-  mainContent: {
-    paddingTop: '64px', // Height of header
-    transition: 'margin-left 0.3s ease',
-    minHeight: '100vh',
-  },
-  contentWrapper: {
-    width: '100%',
-  },
-};
-
 export default DashboardLayout;
-

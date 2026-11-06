@@ -133,6 +133,7 @@ import {
   listHubGroomingSessionEvents,
   postHubGroomingSessionEvent,
 } from '../hubGroomingController';
+import { getHubReceptionBoard, postHubReceptionResolve } from '../hubReceptionController';
 import {
   getHubPickupDayBoard,
   createHubPickupRoute,
@@ -1176,6 +1177,20 @@ router.patch(
   authenticateUser,
   requirePermission('grooming.queue.manage'),
   patchHubGroomingAppointmentServiceLine
+);
+
+/* --- Operação da Recepção (custódia) --- */
+router.get(
+  '/reception/board',
+  authenticateUser,
+  requirePermission('reception.ops.read'),
+  getHubReceptionBoard,
+);
+router.post(
+  '/reception/handoffs/:id/resolve',
+  authenticateUser,
+  requirePermission('reception.ops.manage'),
+  postHubReceptionResolve,
 );
 
 /* --- Casos clínicos --- */

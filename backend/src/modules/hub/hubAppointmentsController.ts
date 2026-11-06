@@ -2940,6 +2940,11 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       .eq('id', id)
       .single();
     const [enriched] = await enrichAppointments([updated as Record<string, unknown>]);
+    const petId = (updated as { pet_id?: string | null } | null)?.pet_id;
+    if (petId && b.clinic_id) {
+      const { scheduleReceptionSync } = await import('./receptionSync');
+      scheduleReceptionSync(b.clinic_id, petId);
+    }
     return res.json({ appointment: enriched, updated_count: targetIds.length });
   } catch (e: unknown) {
     console.error('patchHubAppointment', e);

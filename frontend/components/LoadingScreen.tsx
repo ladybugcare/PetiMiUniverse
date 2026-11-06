@@ -35,7 +35,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({
             source={logoSource}
             style={styles.logo}
             resizeMode="contain"
-            accessibilityLabel="PetMi Vet Logo"
+            accessibilityLabel="PetMi Shift Logo"
             onError={(error) => {
               console.error('Image load error:', error);
             }}
@@ -43,7 +43,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({
               console.log('Logo loaded successfully');
             }}
           />
-          <Text style={styles.appName}>PetMi Vet</Text>
+          <Text style={styles.appName}>PetMi Shift</Text>
         </View>
 
         {/* Loading Indicator */}

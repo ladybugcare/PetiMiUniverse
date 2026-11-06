@@ -8,6 +8,7 @@ import {
   Heart,
   Stethoscope,
   Scissors,
+  Inbox,
   Hotel,
   Car,
   DollarSign,
@@ -18,6 +19,7 @@ import {
   BarChart3,
   CreditCard,
   Settings,
+  MessageCircle,
   ChevronDown,
   PanelLeftClose,
   PanelLeft,
@@ -25,6 +27,7 @@ import {
 import { usePermissions } from '@petimi/web-core';
 import HubSidebarFooter from './HubSidebarFooter';
 import { useHubCashSession } from '../contexts/HubCashSessionContext';
+import { getHubSupportWhatsappHref } from '../constants/hubSupportWhatsapp';
 
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
 const logoSrc = `${baseUrl}petmi-hub.svg`;
@@ -32,14 +35,26 @@ const logoCollapsedSrc = `${baseUrl}petmi-mark.svg`;
 
 const EXPANDED_SECTIONS_KEY = 'hub.sidebar.expandedSections';
 
-type NavItem = {
-  to: string;
+type NavItemBase = {
   label: string;
   icon: React.ElementType;
-  end?: boolean;
-  /** Uma permissão ou qualquer uma da lista (OR). */
-  permission: string | string[];
+  /** Uma permissão ou qualquer uma da lista (OR). Omitido = sempre visível. */
+  permission?: string | string[];
 };
+
+type InternalNavItem = NavItemBase & {
+  to: string;
+  end?: boolean;
+  href?: never;
+};
+
+type ExternalNavItem = NavItemBase & {
+  href: string;
+  to?: never;
+  end?: never;
+};
+
+type NavItem = InternalNavItem | ExternalNavItem;
 
 type NavSection = {
   id: string;
@@ -83,6 +98,7 @@ const navSections: NavSection[] = [
     id: 'operacao',
     title: 'Operação',
     items: [
+      { to: '/hub/recepcao', label: 'Recepção', icon: Inbox, permission: 'reception.ops.read' },
       { to: '/hub/clinica', label: 'Clínica', icon: Stethoscope, permission: 'hub.clinic.read' },
       { to: '/hub/banho-tosa', label: 'Banho & Tosa', icon: Scissors, permission: 'grooming.queue.read' },
       { to: '/hub/hotel-creche', label: 'Hotel & Creche', icon: Hotel, permission: 'boarding.reservations.read' },
@@ -141,14 +157,41 @@ const navSections: NavSection[] = [
   },
 ];
 
-function itemAllowed(hasPermission: (p: string) => boolean, permission: string | string[]): boolean {
+function buildNavSections(supportHref: string | null): NavSection[] {
+  if (!supportHref) return navSections;
+  return [
+    ...navSections,
+    {
+      id: 'ajuda',
+      title: 'Ajuda',
+      items: [
+        {
+          href: supportHref,
+          label: 'Feedback beta',
+          icon: MessageCircle,
+        },
+      ],
+    },
+  ];
+}
+
+function itemAllowed(
+  hasPermission: (p: string) => boolean,
+  permission: string | string[] | undefined,
+): boolean {
+  if (permission == null) return true;
   if (Array.isArray(permission)) {
     return permission.some((p) => hasPermission(p));
   }
   return hasPermission(permission);
 }
 
+function isInternalNavItem(item: NavItem): item is InternalNavItem {
+  return typeof item.to === 'string';
+}
+
 function itemMatchesPath(item: NavItem, pathname: string): boolean {
+  if (!isInternalNavItem(item)) return false;
   if (item.end) return pathname === item.to;
   return pathname === item.to || pathname.startsWith(`${item.to}/`);
 }
@@ -164,7 +207,13 @@ function loadExpandedSections(sectionIds: string[]): Set<string> {
       const parsed = JSON.parse(raw) as unknown;
       if (Array.isArray(parsed)) {
         const allowed = new Set(sectionIds);
-        return new Set(parsed.filter((id): id is string => typeof id === 'string' && allowed.has(id)));
+        const savedIds = parsed.filter((id): id is string => typeof id === 'string');
+        const savedKnown = new Set(savedIds.filter((id) => allowed.has(id)));
+        // Seções novas (ainda não persistidas) começam abertas.
+        sectionIds.forEach((id) => {
+          if (!savedIds.includes(id)) savedKnown.add(id);
+        });
+        return savedKnown;
       }
     }
   } catch {
@@ -195,15 +244,17 @@ const HubSidebar: React.FC<HubSidebarProps> = ({
   const { hasPermission, loading: permLoading } = usePermissions();
   const { isOpen: caixaOpen, pendingBillingCount } = useHubCashSession();
 
+  const allSections = useMemo(() => buildNavSections(getHubSupportWhatsappHref()), []);
+
   const visibleSections = useMemo(() => {
-    if (permLoading) return navSections;
-    return navSections
+    if (permLoading) return allSections;
+    return allSections
       .map((section) => ({
         ...section,
         items: section.items.filter((item) => itemAllowed(hasPermission, item.permission)),
       }))
       .filter((section) => section.items.length > 0);
-  }, [hasPermission, permLoading]);
+  }, [allSections, hasPermission, permLoading]);
 
   const sectionIds = useMemo(() => visibleSections.map((s) => s.id), [visibleSections]);
 
@@ -213,7 +264,9 @@ const HubSidebar: React.FC<HubSidebarProps> = ({
   }, [visibleSections, pathname]);
 
   const [expandedSections, setExpandedSections] = useState<Set<string>>(() =>
-    typeof window !== 'undefined' ? loadExpandedSections(navSections.map((s) => s.id)) : new Set(navSections.map((s) => s.id)),
+    typeof window !== 'undefined'
+      ? loadExpandedSections(allSections.map((s) => s.id))
+      : new Set(allSections.map((s) => s.id)),
   );
 
   // Garante que a seção da rota atual fique aberta.
@@ -363,40 +416,68 @@ const HubSidebar: React.FC<HubSidebarProps> = ({
                 aria-label={section.title}
                 hidden={!isExpanded}
               >
-                {section.items.map(({ to, label, icon: Icon, end }) => (
-                  <NavLink
-                    key={to}
-                    to={to}
-                    className={linkClass}
-                    end={end}
-                    onClick={handleNavClick}
-                    title={!showLabels ? label : undefined}
-                    aria-label={!showLabels ? label : undefined}
-                  >
-                    <Icon size={18} strokeWidth={1.75} className="hub-sidebar__icon" aria-hidden />
-                    {showLabels && <span>{label}</span>}
-                    {showLabels && to === '/hub/caixa' && caixaOpen && (
-                      <span
-                        className={[
-                          'hub-sidebar__badge',
-                          pendingBillingCount > 0 ? 'hub-sidebar__badge--warn' : 'hub-sidebar__badge--ok',
-                        ].join(' ')}
-                        aria-label={`Caixa aberto${pendingBillingCount > 0 ? `, ${pendingBillingCount} pendente(s)` : ''}`}
+                {section.items.map((item) => {
+                  const { label, icon: Icon } = item;
+                  const tip = !showLabels ? label : undefined;
+
+                  if (!isInternalNavItem(item)) {
+                    return (
+                      <a
+                        key={item.href}
+                        href={item.href}
+                        className="hub-sidebar__link"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={handleNavClick}
+                        title={
+                          showLabels
+                            ? 'Abre o WhatsApp para bugs, feedbacks ou elogios (beta)'
+                            : tip
+                        }
+                        aria-label={`${label} (abre o WhatsApp em nova aba)`}
                       >
-                        {pendingBillingCount > 0 ? pendingBillingCount : 'Aberto'}
-                      </span>
-                    )}
-                    {!showLabels && to === '/hub/caixa' && caixaOpen && (
-                      <span
-                        className={[
-                          'hub-sidebar__dot',
-                          pendingBillingCount > 0 ? 'hub-sidebar__dot--warn' : 'hub-sidebar__dot--ok',
-                        ].join(' ')}
-                        aria-hidden
-                      />
-                    )}
-                  </NavLink>
-                ))}
+                        <Icon size={18} strokeWidth={1.75} className="hub-sidebar__icon" aria-hidden />
+                        {showLabels && <span>{label}</span>}
+                      </a>
+                    );
+                  }
+
+                  const { to, end } = item;
+                  return (
+                    <NavLink
+                      key={to}
+                      to={to}
+                      className={linkClass}
+                      end={end}
+                      onClick={handleNavClick}
+                      title={tip}
+                      aria-label={!showLabels ? label : undefined}
+                    >
+                      <Icon size={18} strokeWidth={1.75} className="hub-sidebar__icon" aria-hidden />
+                      {showLabels && <span>{label}</span>}
+                      {showLabels && to === '/hub/caixa' && caixaOpen && (
+                        <span
+                          className={[
+                            'hub-sidebar__badge',
+                            pendingBillingCount > 0 ? 'hub-sidebar__badge--warn' : 'hub-sidebar__badge--ok',
+                          ].join(' ')}
+                          aria-label={`Caixa aberto${pendingBillingCount > 0 ? `, ${pendingBillingCount} pendente(s)` : ''}`}
+                        >
+                          {pendingBillingCount > 0 ? pendingBillingCount : 'Aberto'}
+                        </span>
+                      )}
+                      {!showLabels && to === '/hub/caixa' && caixaOpen && (
+                        <span
+                          className={[
+                            'hub-sidebar__dot',
+                            pendingBillingCount > 0 ? 'hub-sidebar__dot--warn' : 'hub-sidebar__dot--ok',
+                          ].join(' ')}
+                          aria-hidden
+                        />
+                      )}
+                    </NavLink>
+                  );
+                })}
               </div>
             </div>
           );

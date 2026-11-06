@@ -76,7 +76,7 @@ backend/database_migrations/petimi_vet/migrate_existing_clinics_to_approval_flow
 
 ### 1️⃣ Acesse Supabase
 - URL: https://app.supabase.com
-- Projeto: PetMi Vet
+- Projeto: PetMi Shift
 - Navegue para: **SQL Editor** (⚡)
 
 ### 2️⃣ Execute Migration 1 (OBRIGATÓRIA)

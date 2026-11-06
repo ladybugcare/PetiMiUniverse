@@ -1,5 +1,5 @@
 -- =============================================================================
--- PetiMi / PetMi Vet — Popular tabela public.specialties (lista vazia no app)
+-- PetMi Shift — Popular tabela public.specialties (lista vazia no app)
 -- =============================================================================
 -- Execute no Supabase: SQL Editor → colar → Run (como postgres / service role
 -- não é necessário; isto é DDL+DML normal na public schema).

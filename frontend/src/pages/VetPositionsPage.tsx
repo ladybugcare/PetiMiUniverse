@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import DashboardHeader from '../components/DashboardHeader';
-import DashboardSidebar from '../components/DashboardSidebar';
+import DashboardLayout from '../components/DashboardLayout';
 import PositionCard from '../components/PositionCard';
 import { demandPositionsApi, PositionWithAvailability } from '../services/demandPositionsApi';
 import { useAlert } from '../hooks/useAlert';
@@ -8,13 +7,10 @@ import colors from '../styles/colors';
 import { useSidebarMenu } from '../hooks/useSidebarMenu';
 import { getUserRole } from '../utils/authHelpers';
 import { useAuth } from '../AuthContext';
-import { MenuItem } from '../components/DashboardSidebar';
-
 const VetPositionsPage: React.FC = () => {
   const { user } = useAuth();
   const { showSuccess, showError, showConfirm } = useAlert();
 
-  const [sidebarOpen, setSidebarOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [positions, setPositions] = useState<PositionWithAvailability[]>([]);
   const [filteredPositions, setFilteredPositions] = useState<PositionWithAvailability[]>([]);
@@ -130,22 +126,8 @@ const VetPositionsPage: React.FC = () => {
 
 
   return (
-    <div style={styles.container}>
-      <DashboardHeader
-        onMenuClick={() => setSidebarOpen(!sidebarOpen)}
-        pageName="Posições Disponíveis"
-      />
-
-      <div style={styles.mainContainer}>
-        <DashboardSidebar
-          isOpen={sidebarOpen}
-          onClose={() => setSidebarOpen(false)}
-          menuItems={menuItems}
-          userName={user.name || 'Veterinário'}
-          userEmail={user.email || ''}
-        />
-
-        <main style={styles.content}>
+    <DashboardLayout pageName="Posições Disponíveis" menuItems={menuItems}>
+        <div style={styles.content}>
           <div style={styles.pageHeader}>
             <div>
               <h1 style={styles.pageTitle}>Posições Disponíveis</h1>
@@ -226,8 +208,7 @@ const VetPositionsPage: React.FC = () => {
               ))}
             </div>
           )}
-        </main>
-      </div>
+        </div>
 
       {/* Modal de Candidatura */}
       {showApplicationModal && (
@@ -262,22 +243,11 @@ const VetPositionsPage: React.FC = () => {
           </div>
         </div>
       )}
-    </div>
+    </DashboardLayout>
   );
 };
 
 const styles: { [key: string]: React.CSSProperties } = {
-  container: {
-    display: 'flex',
-    flexDirection: 'column',
-    minHeight: '100vh',
-    backgroundColor: '#fafafa',
-  },
-  mainContainer: {
-    display: 'flex',
-    flex: 1,
-    paddingTop: '70px',
-  },
   content: {
     flex: 1,
     padding: '32px',

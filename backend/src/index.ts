@@ -113,7 +113,7 @@ app.use('/api/messages/admin', messageReportsRoutes);
 
 // 🔹 Healthcheck
 app.get('/', (req, res) => {
-  res.json({ message: '🐾 PetMi Vet API is running!' });
+  res.json({ message: '🐾 PetMi Shift API is running!' });
 });
 
 // 🔹 Endpoint de teste de conexão com Supabase

@@ -26,16 +26,15 @@ const ADVANCE_LABEL: Partial<Record<GroomingStage, string>> = {
   delivered: 'Encerrar',
 };
 
-type FloorTab = 'chegando' | 'fila' | 'servico' | 'pronto';
+type FloorTab = 'chegando' | 'fila' | 'servico';
 
 const FLOOR_TABS: { id: FloorTab; label: string; stages: GroomingStage[] }[] = [
   { id: 'chegando', label: 'Chegando', stages: ['scheduled', 'checked_in'] },
   { id: 'fila', label: 'Fila', stages: ['queued'] },
   { id: 'servico', label: 'Em serviço', stages: ['in_service', 'finishing'] },
-  { id: 'pronto', label: 'Pronto', stages: ['ready'] },
 ];
 
-const DONE_STAGES: GroomingStage[] = ['delivered', 'closed'];
+const DONE_STAGES: GroomingStage[] = ['ready', 'delivered', 'closed'];
 
 function formatTime(iso?: string): string {
   if (!iso) return '—';
@@ -88,7 +87,7 @@ function sortByStartsAt(a: GroomingDayBoardItem, b: GroomingDayBoardItem): numbe
   return String(a.starts_at).localeCompare(String(b.starts_at));
 }
 
-/** Pet em destaque: em atendimento/finalização; senão próximo na fila/check-in; senão agendado; senão pronto. */
+/** Pet em destaque: em atendimento; senão o próximo da fila; senão quem está chegando. Pronto já saiu da fila. */
 export function pickFeaturedItem(items: GroomingDayBoardItem[]): GroomingDayBoardItem | null {
   const active = items
     .filter((i) => {
@@ -110,9 +109,7 @@ export function pickFeaturedItem(items: GroomingDayBoardItem[]): GroomingDayBoar
     .filter((i) => getItemBoardStage(i) === 'scheduled')
     .sort(sortByStartsAt);
   if (arriving[0]) return arriving[0];
-
-  const ready = items.filter((i) => getItemBoardStage(i) === 'ready').sort(sortByStartsAt);
-  return ready[0] ?? null;
+  return null;
 }
 
 export type GroomingFloorViewProps = {
@@ -172,7 +169,7 @@ const GroomingFloorView: React.FC<GroomingFloorViewProps> = ({
   }, [featuredOverride, items, autoFeatured]);
 
   const tabCounts = useMemo(() => {
-    const counts: Record<FloorTab, number> = { chegando: 0, fila: 0, servico: 0, pronto: 0 };
+    const counts: Record<FloorTab, number> = { chegando: 0, fila: 0, servico: 0 };
     for (const item of items) {
       const stage = getItemBoardStage(item);
       for (const t of FLOOR_TABS) {

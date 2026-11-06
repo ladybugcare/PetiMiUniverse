@@ -491,7 +491,7 @@ const CreateFirstUnitPage: React.FC = () => {
           <div style={styles.header}>
             <h1 style={styles.title}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '12px' }}>
-                <span>Boas-vindas à PetMi Vet!
+                <span>Boas-vindas à PetMi Shift!
                    Vamos cadastrar sua Clínica</span>
               
               </div>

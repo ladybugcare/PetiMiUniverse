@@ -64,7 +64,7 @@ function quickActionLabel(action: GroomingQuickAction, item: GroomingDayBoardIte
 }
 
 function isDoneStage(stage: GroomingStage): boolean {
-  return stage === 'delivered' || stage === 'closed';
+  return stage === 'ready' || stage === 'delivered' || stage === 'closed';
 }
 
 function needsAttention(item: GroomingDayBoardItem): boolean {

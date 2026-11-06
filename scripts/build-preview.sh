@@ -19,7 +19,7 @@ echo -e "${GREEN}🚀 Iniciando build de preview/teste...${NC}"
 
 # Verificar se está na raiz do projeto
 if [ ! -d "$FRONTEND_DIR" ]; then
-    echo -e "${RED}❌ Erro: Execute este script da raiz do projeto PetMi Vet${NC}"
+    echo -e "${RED}❌ Erro: Execute este script da raiz do projeto PetMi Shift${NC}"
     exit 1
 fi
 

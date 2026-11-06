@@ -64,7 +64,7 @@ export async function notifyHubPetReady(opts: {
     type: 'hub_pet_ready',
     title: 'Pet pronto para retirada',
     message: `${pet} já está pronto(a) para retirada.`,
-    link: '/hub/banho-tosa',
+    link: '/hub/recepcao',
     entityType: 'grooming_session',
     entityId: opts.sessionId,
   });
@@ -89,7 +89,7 @@ export async function notifyHubGroomingExtraRequest(opts: {
     type: 'hub_grooming_extra_request',
     title: 'Serviço precisa de autorização',
     message: `${pet}: a equipe pediu ${service}. Peça autorização ao tutor e inclua o serviço.`,
-    link: '/hub/banho-tosa',
+    link: '/hub/recepcao',
     entityType: 'grooming_session',
     entityId: opts.sessionId,
   });

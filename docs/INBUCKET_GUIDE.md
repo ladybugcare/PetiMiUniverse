@@ -92,7 +92,7 @@ enabled = true
 host = "inbucket"
 port = 1025
 admin_email = "no-reply@petivet.local"
-sender_name = "PetMi Vet"
+sender_name = "PetMi Shift"
 ```
 
 ### Variáveis de Ambiente

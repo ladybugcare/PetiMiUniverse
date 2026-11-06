@@ -1,6 +1,6 @@
-# 🚀 Guia Rápido - Configuração Local do PetMi Vet
+# 🚀 Guia Rápido - Configuração Local do PetMi Shift
 
-Este guia mostra como configurar e rodar o projeto PetMi Vet na sua máquina local.
+Este guia mostra como configurar e rodar o projeto PetMi Shift na sua máquina local.
 
 ## 📋 Pré-requisitos
 
@@ -70,7 +70,7 @@ VITE_API_URL=http://localhost:3000
 VITE_VET_WEB_URL=http://localhost:3001
 ```
 
-Use as mesmas credenciais Supabase do backend. `VITE_VET_WEB_URL` é opcional (links «PetMi Vet» e redirecionamentos quando o papel não é staff de clínica no Hub).
+Use as mesmas credenciais Supabase do backend. `VITE_VET_WEB_URL` é opcional (links «PetMi Shift» e redirecionamentos quando o papel não é staff de clínica no Hub).
 
 ⚠️ **Importante**: Use as mesmas credenciais do Supabase configuradas no backend.
 
@@ -95,7 +95,7 @@ npm run dev
 
 O backend estará rodando em: **http://localhost:3000**
 
-### Terminal 2 - PetMi Vet (web)
+### Terminal 2 - PetMi Shift (web)
 
 ```bash
 cd frontend
@@ -117,7 +117,7 @@ A app Hub sobe em **http://localhost:3002**. A sessão é independente da app Ve
 ## ✅ Verificação
 
 1. **Backend**: Acesse http://localhost:3000 — deve responder à API
-2. **PetMi Vet (web)**: http://localhost:3001 (script `npm run web` em `frontend/`)
+2. **PetMi Shift (web)**: http://localhost:3001 (script `npm run web` em `frontend/`)
 3. **PetMi Hub (web)**: http://localhost:3002 (`npm run dev:hub-web` na raiz)
 
 ## 📱 Testando no Dispositivo Móvel

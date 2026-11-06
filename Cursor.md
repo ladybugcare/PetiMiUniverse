@@ -9,7 +9,7 @@ Behavioral guidelines to reduce common LLM coding mistakes. **Tradeoff:** these 
 Use this when choosing where to change code or which docs to trust.
 
 - **Monorepo:** backend (`backend/` — Express + TypeScript + Supabase), universal app (`frontend/` — Expo/React Native), Hub web (`apps/hub-web/` — Vite + React), shared packages (`packages/web-core`, `packages/hub-ui`).
-- **Idioma PetiMi:** português do Brasil (**pt-BR**) — vocabulário, ortografia e convenções brasileiras em textos de produto (UI, erros, e-mails, notificações, documentação voltada ao usuário). **Não** usar português de Portugal (pt-PT).
+- **Idioma PetMi:** português do Brasil (**pt-BR**) — vocabulário, ortografia e convenções brasileiras em textos de produto (UI, erros, e-mails, notificações, documentação voltada ao usuário). **Não** usar português de Portugal (pt-PT).
 - **Architecture & product boundaries:** [`docs/architecture/README.md`](docs/architecture/README.md) is the source of truth for multi-product evolution (Hub, Vet-Match, Marketplace, PetMi ID, modular monolith).
 - **SQL migrations:** `backend/database_migrations/` (`petimi_vet/`, `petimi_hub/`) and `supabase/migrations/` — keep schema changes consistent with existing migration style and naming.
 - **Secrets:** do not commit `.env*`, credentials, or staging keys. If the user asks to commit, warn on sensitive files.

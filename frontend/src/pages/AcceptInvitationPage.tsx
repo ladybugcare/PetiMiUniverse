@@ -89,7 +89,7 @@ const AcceptInvitationPage: React.FC = () => {
           
           <h1 style={styles.title}>Convite para Equipe</h1>
           <p style={styles.description}>
-            Você foi convidado para se juntar a uma equipe no PetMi Vet!
+            Você foi convidado para se juntar a uma equipe no PetMi Shift!
           </p>
           <p style={styles.subdescription}>
             Ao aceitar este convite, você terá acesso à clínica e poderá colaborar

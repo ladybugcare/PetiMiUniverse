@@ -1647,6 +1647,10 @@ export const completeHubEncounter = async (req: Request, res: Response) => {
     });
 
     void syncOpenComandasAfterEncounterCompleted(clinic_id.data, id.data);
+    if (resolvedPetId) {
+      const { scheduleReceptionSync } = await import('./receptionSync');
+      scheduleReceptionSync(clinic_id.data, resolvedPetId);
+    }
 
     const changedBy = (req.body?.changed_by as string | undefined) ?? null;
     void saveEncounterSnapshot({

@@ -22,6 +22,7 @@ import {
   HubOrcamentosRoutes,
   HubClinicRoutes,
   HubGroomingRoutes,
+  HubReceptionPage,
   HubBoardingRoutes,
   HubPickupRoutes,
   HubCaixaPage,
@@ -132,6 +133,7 @@ const router = createBrowserRouter(
         <Route path="clinica/*" element={<HubClinicRoutes />} />
         <Route path="hotel-creche/*" element={<HubBoardingRoutes />} />
         <Route path="banho-tosa/*" element={<HubGroomingRoutes />} />
+        <Route path="recepcao" element={<HubReceptionPage />} />
         <Route path="leva-e-traz/*" element={<HubPickupRoutes />} />
         <Route path="estoque/*" element={<HubEstoqueRoutes />} />
         <Route path="equipe" element={<HubStaffPage />} />

@@ -1535,6 +1535,27 @@ export const patchHubPickupStop = async (req: Request, res: Response) => {
       }
     }
 
+    if (cur.hub_appointment_id) {
+      const { data: leg } = await supabaseAdmin
+        .from('hub_appointments')
+        .select('pet_id, parent_appointment_id')
+        .eq('id', cur.hub_appointment_id)
+        .maybeSingle();
+      let petId = (leg?.pet_id as string | null) ?? null;
+      if (!petId && leg?.parent_appointment_id) {
+        const { data: parent } = await supabaseAdmin
+          .from('hub_appointments')
+          .select('pet_id')
+          .eq('id', leg.parent_appointment_id as string)
+          .maybeSingle();
+        petId = (parent?.pet_id as string | null) ?? null;
+      }
+      if (petId) {
+        const { scheduleReceptionSync } = await import('./receptionSync');
+        scheduleReceptionSync(clinic_id, petId);
+      }
+    }
+
     return res.json({ stop: updated });
   } catch (e) {
     console.error('[hubPickupController] patchHubPickupStop', e);

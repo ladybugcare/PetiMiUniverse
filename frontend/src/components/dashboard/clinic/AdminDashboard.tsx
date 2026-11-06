@@ -22,7 +22,7 @@ import {
   ChevronLeft,
   PlusCircle,
   Calendar,
-  ArrowUpRight,
+  ArrowRight,
   Eye,
   Tag,
 } from 'lucide-react';
@@ -338,38 +338,34 @@ const DashboardContent: React.FC<{
         </div>
       </div>
 
-      {/* ── Stat cards ─────────────────────────────────────────────────── */}
-      <div style={s.statsRow}>
+      {/* ── Stat cards (modelo Operação agora do Hub) ──────────────────── */}
+      <div className="shift-ops-grid">
         <StatCard
-          icon={<ClipboardList size={22} color={BRAND[500]} />}
+          icon={ClipboardList}
           label="Demandas abertas"
           value={statsLoading ? '—' : String(stats.openDemands)}
-          trend="hoje"
-          accentColor={BRAND[500]}
+          meta={statsLoading ? 'Carregando…' : 'hoje'}
           onClick={() => navigate('/demands?status=open')}
         />
         <StatCard
-          icon={<Users size={22} color="#6366f1" />}
+          icon={Users}
           label="Candidaturas pendentes"
           value={statsLoading ? '—' : String(stats.pendingApplications)}
-          trend="aguardando revisão"
-          accentColor="#6366f1"
+          meta={statsLoading ? 'Carregando…' : 'aguardando revisão'}
           onClick={() => navigate('/clinic-applications?status=pending')}
         />
         <StatCard
-          icon={<Users size={22} color="#10b981" />}
+          icon={Users}
           label="Usuários da clínica"
           value={statsLoading ? '—' : String(stats.totalUsers)}
-          trend="cadastrados"
-          accentColor="#10b981"
+          meta={statsLoading ? 'Carregando…' : 'cadastrados'}
           onClick={() => navigate('/users')}
         />
         <StatCard
-          icon={<ShoppingCart size={22} color="#f59e0b" />}
+          icon={ShoppingCart}
           label="Anúncios no Marketplace"
           value={statsLoading ? '—' : String(stats.activeMarketplaceListings)}
-          trend="ativos"
-          accentColor="#f59e0b"
+          meta={statsLoading ? 'Carregando…' : 'ativos'}
           onClick={() => navigate('/marketplace/my-listings')}
         />
       </div>
@@ -648,22 +644,20 @@ const DashboardContent: React.FC<{
 // ─── sub-components ───────────────────────────────────────────────────────────
 
 const StatCard: React.FC<{
-  icon: React.ReactNode;
+  icon: React.ElementType;
   label: string;
   value: string;
-  trend: string;
-  accentColor: string;
+  meta: string;
   onClick: () => void;
-}> = ({ icon, label, value, trend, accentColor, onClick }) => (
-  <button style={{ ...s.statCard, borderLeftColor: accentColor }} onClick={onClick}>
-    <div style={{ ...s.statIconWrap, backgroundColor: `${accentColor}18` }}>{icon}</div>
-    <div style={{ flex: 1, textAlign: 'left' }}>
-      <p style={s.statLabel}>{label}</p>
-      <p style={s.statValue}>{value}</p>
-      <p style={{ ...s.statTrend, color: accentColor }}>
-        <ArrowUpRight size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> {trend}
-      </p>
+}> = ({ icon: Icon, label, value, meta, onClick }) => (
+  <button type="button" className="shift-ops-card" onClick={onClick}>
+    <div className="shift-ops-card__top">
+      <Icon size={18} strokeWidth={1.75} color={BRAND[500]} aria-hidden />
+      <span className="shift-ops-card__label">{label}</span>
+      <ArrowRight size={14} className="shift-ops-card__arrow" aria-hidden />
     </div>
+    <div className="shift-ops-card__value">{value}</div>
+    <div className="shift-ops-card__meta">{meta}</div>
   </button>
 );
 
@@ -802,40 +796,6 @@ const s: Record<string, React.CSSProperties> = {
     boxShadow: `0 4px 14px ${BRAND[500]}55`,
     whiteSpace: 'nowrap' as const,
   },
-
-  /* Stats row */
-  statsRow: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-    gap: '16px',
-    marginBottom: '20px',
-  },
-  statCard: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '14px',
-    padding: '18px 16px',
-    backgroundColor: '#fff',
-    border: '1px solid #f0f0f0',
-    borderLeft: '4px solid',
-    borderRadius: '12px',
-    cursor: 'pointer',
-    textAlign: 'left',
-    transition: 'box-shadow 0.2s',
-    boxShadow: '0 1px 4px rgba(0,0,0,0.06)',
-  },
-  statIconWrap: {
-    width: '44px',
-    height: '44px',
-    borderRadius: '10px',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    flexShrink: 0,
-  },
-  statLabel: { margin: '0 0 2px', fontSize: '12px', color: '#737373', fontWeight: 500 },
-  statValue: { margin: '0 0 2px', fontSize: '28px', fontWeight: 700, color: '#1a1a1a', lineHeight: 1.1 },
-  statTrend: { margin: 0, fontSize: '11px', fontWeight: 500, display: 'flex', alignItems: 'center', gap: '2px' },
 
   /* hint */
   hint: {

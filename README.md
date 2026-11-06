@@ -1,8 +1,8 @@
-# 🐾 PetMi Vet
+# 🐾 PetMi Shift
 
 **Ecossistema & arquitetura multi-produto:** visão de plataforma, fronteiras Hub / Vet-Match / Marketplace / PetMi ID, permissões e épicos do Hub estão em [`docs/architecture/README.md`](docs/architecture/README.md).
 
-PetMi Vet connects veterinary clinics and professionals. This workspace provides:
+PetMi Shift connects veterinary clinics and professionals. This workspace provides:
 - **Backend** (Express + TypeScript) in `backend/`
 - **Universal Frontend** (Expo/React Native) in `frontend/` which runs on web, iOS, and Android
 - **PetMi Hub web** (Vite + React) in [`apps/hub-web`](apps/hub-web) — operação clínica (tutores, pets, tipos de serviço); corre em servidor de desenvolvimento separado (`npm run dev:hub-web` na raiz, porta **3002**)
@@ -127,7 +127,7 @@ EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 ### 4. Set up Supabase Database
 
-The database migrations are located in `backend/database_migrations/` (`petimi_vet/` for PetMi Vet, `petimi_hub/` for PetMi Hub). 
+The database migrations are located in `backend/database_migrations/` (`petimi_vet/` for PetMi Shift, `petimi_hub/` for PetMi Hub). 
 
 **Option 1: Run migrations manually**
    
@@ -498,7 +498,7 @@ This is a project for connecting veterinary clinics with professionals. Feel fre
 
 ## 👥 Team
 
-PetMi Vet Development Team
+PetMi Shift Development Team
 
 ---
 

@@ -37,6 +37,7 @@ describe('pickFeaturedItem', () => {
       pickFeaturedItem([
         item({ grooming_stage: 'delivered', starts_at: '2026-09-08T08:00:00' }),
         item({ grooming_stage: 'closed', starts_at: '2026-09-08T09:00:00' }),
+        item({ grooming_stage: 'ready', starts_at: '2026-09-08T07:00:00' }),
       ]),
     ).toBeNull();
   });

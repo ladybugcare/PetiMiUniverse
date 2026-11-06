@@ -1,5 +1,5 @@
 -- =============================================================================
--- PetMi Vet — bootstrap completo para NOVO projeto Supabase (banco vazio)
+-- PetMi Shift — bootstrap completo para NOVO projeto Supabase (banco vazio)
 -- Execute no Dashboard: SQL Editor → colar este arquivo → Run
 -- Ordem: igual a scripts/bootstrap-new-supabase.sh
 --

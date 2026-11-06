@@ -352,7 +352,7 @@ const HubPetsPage: React.FC = () => {
     return (
       <div className="hub-clientes" style={{ padding: 24 }}>
         <p className="hub-clientes__muted">
-          Selecione ou aceda a uma clínica para gerir pets (PetMi Hub). Inicie sessão no PetMi Vet e escolha uma
+          Selecione ou aceda a uma clínica para gerir pets (PetMi Hub). Inicie sessão no PetMi Shift e escolha uma
           clínica, depois volte ao Hub.
         </p>
       </div>
