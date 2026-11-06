@@ -1622,6 +1622,10 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
         body: patch.discharge_notes ?? null,
       });
     }
+    if (hospData.pet_id) {
+      const { scheduleReceptionSync } = await import('./receptionSync');
+      scheduleReceptionSync(clinic_id, hospData.pet_id as string);
+    }
   }
 
   return res.json({ hospitalization: data });

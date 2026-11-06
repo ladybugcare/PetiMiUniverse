@@ -88,6 +88,7 @@ export { default as HubAgendaPage } from './pages/agenda/HubAgendaPage';
 export { default as HubClinicRoutes } from './pages/clinica/HubClinicRoutes';
 export { default as HubStandalonePrescriptionPage } from './pages/clinica/HubStandalonePrescriptionPage';
 export { default as HubGroomingRoutes } from './pages/grooming/HubGroomingRoutes';
+export { default as HubReceptionPage } from './pages/reception/HubReceptionPage';
 export { default as HubGroomingQueuePage } from './pages/grooming/HubGroomingQueuePage';
 export { default as HubGroomingFloorPage } from './pages/grooming/HubGroomingFloorPage';
 export { hubGroomingApi } from './api/hubGroomingApi';

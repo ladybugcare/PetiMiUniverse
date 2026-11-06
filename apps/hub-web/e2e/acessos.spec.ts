@@ -134,15 +134,15 @@ test.describe('acessos Hub', () => {
     });
   });
 
-  test('CSTAFF recepcao cai na Agenda com o menu de atendimento', async ({ page }) => {
+  test('CSTAFF recepcao cai na Operação da Recepção', async ({ page }) => {
     const creds = hubCstaffReceptionCredentials();
     if (!skipIfMissing(creds, 'CSTAFF recepcao')) return;
 
     await loginAs(page, creds.email, creds.password);
-    await expect(page).toHaveURL(/\/hub\/appointments(?:\?|$)/, { timeout: 20_000 });
+    await expect(page).toHaveURL(/\/hub\/recepcao(?:\?|$)/, { timeout: 20_000 });
 
     await expectNav(page, {
-      visiveis: ['Agenda', 'Orçamento', 'Clientes', 'Pets'],
+      visiveis: ['Recepção', 'Agenda', 'Orçamento', 'Clientes', 'Pets'],
       ocultos: ['Dashboard', 'Financeiro', /^Caixa/, 'Clínica', 'Banho & Tosa', 'Leva e Traz'],
     });
   });

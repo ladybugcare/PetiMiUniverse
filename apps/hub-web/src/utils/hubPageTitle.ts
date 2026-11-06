@@ -88,6 +88,7 @@ const ROUTES: RouteTitle[] = [
     path: '/hub/banho-tosa',
     crumbs: [{ label: 'Banho & Tosa', to: '/hub/banho-tosa' }, { label: 'Fila do dia' }],
   },
+  { path: '/hub/recepcao', crumbs: [{ label: 'Recepção' }] },
   { path: '/hub/orcamentos/contatos', crumbs: [{ label: 'Orçamento', to: '/hub/orcamentos' }, { label: 'Contatos' }] },
   { path: '/hub/orcamentos/novo', crumbs: [{ label: 'Orçamento', to: '/hub/orcamentos' }, { label: 'Novo' }] },
   { path: '/hub/orcamentos', crumbs: [{ label: 'Orçamento' }] },

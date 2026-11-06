@@ -58,6 +58,8 @@ export const PERMISSIONS: Record<ClinicStaffRole, string[]> = {
     'hub.receivables.create',
     'hub.cash.session',
     'hub.cash.receive',
+    'reception.ops.read',
+    'reception.ops.manage',
   ],
   CMANAGER: [
     'unit.edit',
@@ -106,6 +108,8 @@ export const PERMISSIONS: Record<ClinicStaffRole, string[]> = {
     'hub.receivables.create',
     'hub.cash.session',
     'hub.cash.receive',
+    'reception.ops.read',
+    'reception.ops.manage',
   ],
   CASSISTANT: [
     'unit.view',
@@ -135,6 +139,8 @@ export const PERMISSIONS: Record<ClinicStaffRole, string[]> = {
     'hub.cash.session',
     'hub.cash.receive',
     'hub.receivables.create',
+    'reception.ops.read',
+    'reception.ops.manage',
   ],
   CVET_INTERNAL: [
     'unit.view',

@@ -343,71 +343,83 @@ export const postHubGroomingSessionExtra = async (req: Request, res: Response) =
     const id = uuidStr.safeParse(req.params.id);
     const parsed = postExtraSchema.safeParse(req.body);
     if (!id.success || !parsed.success) return res.status(400).json({ error: parsed.success ? id.error : parsed.error.flatten() });
-    const { clinic_id, hub_service_type_id, created_by_staff_id } = parsed.data;
-
-    const { data: session, error: sErr } = await supabaseAdmin
-      .from('hub_grooming_sessions')
-      .select('id, hub_appointment_id, unit_id')
-      .eq('id', id.data)
-      .eq('clinic_id', clinic_id)
-      .is('deleted_at', null)
-      .maybeSingle();
-    if (sErr) return res.status(500).json({ error: sErr.message });
-    if (!session) return res.status(404).json({ error: 'Sessão não encontrada' });
-
-    const { data: addonType, error: aErr } = await supabaseAdmin
-      .from('hub_service_types')
-      .select('id, name, sale_amount, is_addon, clinic_id, deleted_at, service_group')
-      .eq('id', hub_service_type_id)
-      .maybeSingle();
-    if (aErr) return res.status(500).json({ error: aErr.message });
-    if (!addonType || addonType.clinic_id !== clinic_id || addonType.deleted_at) {
-      return res.status(400).json({ error: 'Tipo de serviço inválido para adicional' });
-    }
-    if (String(addonType.service_group) !== GROOMING_SERVICE_GROUP) {
-      return res.status(400).json({ error: 'Só serviços de Banho & Tosa podem ser lançados aqui' });
-    }
-
-    const groomingSet = await getGroomingTypeIdSet(clinic_id);
-    let parentIds: string[] = [];
-    const apptId = session.hub_appointment_id as string | null;
-    if (apptId) {
-      parentIds = await groomingParentTypeIdsForAppointment(clinic_id, apptId, groomingSet);
-    }
-
-    // Adicionais: precisam estar disponíveis para o(s) serviço(s) pai.
-    // Conversão de pedido (`extra_request`): qualquer tipo Banho & Tosa da clínica.
-    if (addonType.is_addon === true) {
-      const available = await listAvailableAddonsForParents(clinic_id, parentIds);
-      if (!available.some((a) => a.id === hub_service_type_id)) {
-        return res.status(400).json({ error: 'Este adicional não está disponível para esta sessão' });
-      }
-    } else if (!groomingSet.has(hub_service_type_id)) {
-      return res.status(400).json({ error: 'Tipo de serviço inválido para adicional' });
-    }
-
-    const saleSnap = addonType.sale_amount != null ? Number(addonType.sale_amount) : null;
-    const { data: row, error: insErr } = await supabaseAdmin
-      .from('hub_grooming_session_extras')
-      .insert({
-        clinic_id,
-        hub_grooming_session_id: id.data,
-        hub_service_type_id,
-        parent_service_type_id: parentIds[0] ?? null,
-        name_snapshot: String(addonType.name),
-        sale_amount_snapshot: saleSnap,
-        created_by_staff_id: created_by_staff_id ?? null,
-      })
-      .select('id, hub_service_type_id, name_snapshot, sale_amount_snapshot, created_at')
-      .single();
-    if (insErr) return res.status(500).json({ error: insErr.message });
-
-    return res.status(201).json({ extra: row });
+    const result = await insertGroomingSessionExtra({
+      clinicId: parsed.data.clinic_id,
+      sessionId: id.data,
+      hubServiceTypeId: parsed.data.hub_service_type_id,
+      staffId: parsed.data.created_by_staff_id ?? null,
+    });
+    if (!result.ok) return res.status(result.status).json({ error: result.error });
+    return res.status(201).json({ extra: result.extra });
   } catch (e: unknown) {
     console.error('postHubGroomingSessionExtra', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro ao adicionar adicional' });
   }
 };
+
+export async function insertGroomingSessionExtra(opts: {
+  clinicId: string;
+  sessionId: string;
+  hubServiceTypeId: string;
+  staffId: string | null;
+}): Promise<{ ok: true; extra: unknown } | { ok: false; status: number; error: string }> {
+  const { clinicId: clinic_id, sessionId, hubServiceTypeId: hub_service_type_id, staffId } = opts;
+  const { data: session, error: sErr } = await supabaseAdmin
+    .from('hub_grooming_sessions')
+    .select('id, hub_appointment_id, unit_id')
+    .eq('id', sessionId)
+    .eq('clinic_id', clinic_id)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (sErr) return { ok: false, status: 500, error: sErr.message };
+  if (!session) return { ok: false, status: 404, error: 'Sessão não encontrada' };
+
+  const { data: addonType, error: aErr } = await supabaseAdmin
+    .from('hub_service_types')
+    .select('id, name, sale_amount, is_addon, clinic_id, deleted_at, service_group')
+    .eq('id', hub_service_type_id)
+    .maybeSingle();
+  if (aErr) return { ok: false, status: 500, error: aErr.message };
+  if (!addonType || addonType.clinic_id !== clinic_id || addonType.deleted_at) {
+    return { ok: false, status: 400, error: 'Tipo de serviço inválido para adicional' };
+  }
+  if (String(addonType.service_group) !== GROOMING_SERVICE_GROUP) {
+    return { ok: false, status: 400, error: 'Só serviços de Banho & Tosa podem ser lançados aqui' };
+  }
+
+  const groomingSet = await getGroomingTypeIdSet(clinic_id);
+  let parentIds: string[] = [];
+  const apptId = session.hub_appointment_id as string | null;
+  if (apptId) {
+    parentIds = await groomingParentTypeIdsForAppointment(clinic_id, apptId, groomingSet);
+  }
+
+  if (addonType.is_addon === true) {
+    const available = await listAvailableAddonsForParents(clinic_id, parentIds);
+    if (!available.some((a) => a.id === hub_service_type_id)) {
+      return { ok: false, status: 400, error: 'Este adicional não está disponível para esta sessão' };
+    }
+  } else if (!groomingSet.has(hub_service_type_id)) {
+    return { ok: false, status: 400, error: 'Tipo de serviço inválido para adicional' };
+  }
+
+  const saleSnap = addonType.sale_amount != null ? Number(addonType.sale_amount) : null;
+  const { data: row, error: insErr } = await supabaseAdmin
+    .from('hub_grooming_session_extras')
+    .insert({
+      clinic_id,
+      hub_grooming_session_id: sessionId,
+      hub_service_type_id,
+      parent_service_type_id: parentIds[0] ?? null,
+      name_snapshot: String(addonType.name),
+      sale_amount_snapshot: saleSnap,
+      created_by_staff_id: staffId,
+    })
+    .select('id, hub_service_type_id, name_snapshot, sale_amount_snapshot, created_at')
+    .single();
+  if (insErr) return { ok: false, status: 500, error: insErr.message };
+  return { ok: true, extra: row };
+}
 
 const patchLineSchema = z
   .object({

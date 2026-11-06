@@ -23,8 +23,9 @@ export const GROOMING_STAGE_LABELS: Record<GroomingStage, string> = {
 };
 
 /**
- * Caminho enxuto do dia a dia: fila → em serviço → pronto → encerrado
- * (`finishing` / `delivered` ficam no enum só para sessões antigas).
+ * Caminho do salão: fila → em serviço → pronto.
+ * Encerrar a sessão (custódia) fica na recepção, no leva e traz ou na estadia.
+ * `finishing` / `delivered` ficam no enum só para sessões antigas.
  */
 export const GROOMING_NEXT_STAGE: Partial<Record<GroomingStage, GroomingStage>> = {
   scheduled: 'queued',
@@ -32,8 +33,6 @@ export const GROOMING_NEXT_STAGE: Partial<Record<GroomingStage, GroomingStage>> 
   queued: 'in_service',
   in_service: 'ready',
   finishing: 'ready',
-  ready: 'closed',
-  delivered: 'closed',
 };
 
 /** Espelha `appointmentStatusForGroomingStage` do backend (agenda ↔ estágio). */

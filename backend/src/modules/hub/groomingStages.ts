@@ -24,8 +24,9 @@ export const GROOMING_STAGE_LABELS: Record<GroomingStage, string> = {
 
 /**
  * Próximo estágio na ação rápida «Avançar».
- * Caminho enxuto do dia a dia: fila → em serviço → pronto → encerrado
- * (`finishing` / `delivered` ficam no enum só para sessões antigas).
+ * Caminho do salão: fila → em serviço → pronto.
+ * `closed` é custódia (recepção, motorista ou estadia), não a fila do tosador.
+ * `finishing` / `delivered` ficam no enum só para sessões antigas.
  */
 export const GROOMING_NEXT_STAGE: Partial<Record<GroomingStage, GroomingStage>> = {
   scheduled: 'queued',
@@ -33,8 +34,6 @@ export const GROOMING_NEXT_STAGE: Partial<Record<GroomingStage, GroomingStage>> 
   queued: 'in_service',
   in_service: 'ready',
   finishing: 'ready',
-  ready: 'closed',
-  delivered: 'closed',
 };
 
 const ALLOWED_TRANSITIONS: Record<GroomingStage, GroomingStage[]> = {

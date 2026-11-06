@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { notifyHubGroomingExtraRequest, notifyHubPetReady } from './hubNotifyEvents';
+import { scheduleReceptionSync } from './receptionSync';
 import {
   GROOMING_STAGES,
   GROOMING_EVENT_TITLES,
@@ -1012,6 +1013,7 @@ export const patchHubGroomingSession = async (req: Request, res: Response) => {
           excludeUserIds: req.user?.id ? [req.user.id] : undefined,
         });
       }
+      scheduleReceptionSync(b.clinic_id, (current as { pet_id?: string | null }).pet_id);
     }
 
     if (shouldLogPause) {
@@ -1097,6 +1099,7 @@ export const postHubGroomingSessionEvent = async (req: Request, res: Response) =
         extraName,
         excludeUserIds: req.user?.id ? [req.user.id] : undefined,
       });
+      scheduleReceptionSync(b.clinic_id, (session as { pet_id?: string | null }).pet_id);
     }
 
     return res.status(201).json({ event: data });
@@ -1131,7 +1134,117 @@ export const listHubGroomingSessionEvents = async (req: Request, res: Response) 
   }
 };
 
-/** POST /grooming/sessions/:id/advance — avança para o próximo estágio */
+/** Fecha sessão pronta por custódia (estadia, motorista ou recepção). Não reabre a fila do salão. */
+export async function closeGroomingSessionFromCustody(clinicId: string, sessionId: string): Promise<boolean> {
+  const { data: current, error } = await supabaseAdmin
+    .from('hub_grooming_sessions')
+    .select('id, grooming_stage, hub_appointment_id')
+    .eq('id', sessionId)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!current) return false;
+  const from = current.grooming_stage as GroomingStage;
+  if (from === 'closed') return true;
+  if (from !== 'ready' && from !== 'delivered') return false;
+  const now = new Date().toISOString();
+  const { error: upErr } = await supabaseAdmin
+    .from('hub_grooming_sessions')
+    .update({ grooming_stage: 'closed', closed_at: now, paused_at: null })
+    .eq('id', sessionId)
+    .eq('clinic_id', clinicId);
+  if (upErr) throw new Error(upErr.message);
+  await logGroomingEvent({
+    clinic_id: clinicId,
+    session_id: sessionId,
+    event_type: 'stage_change',
+    body: `${GROOMING_STAGE_LABELS[from]} → ${GROOMING_STAGE_LABELS.closed}`,
+    payload: { from, to: 'closed', via: 'reception_custody' },
+  });
+  await syncAppointmentStatusForStage(clinicId, current.hub_appointment_id as string | null, 'closed');
+  void syncOpenComandasAfterGroomingClosed(clinicId, sessionId);
+  return true;
+}
+
+export async function closeReadyGroomingSessionsForPet(clinicId: string, petId: string): Promise<void> {
+  const { data, error } = await supabaseAdmin
+    .from('hub_grooming_sessions')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('pet_id', petId)
+    .is('deleted_at', null)
+    .in('grooming_stage', ['ready', 'delivered']);
+  if (error) throw new Error(error.message);
+  for (const row of data ?? []) {
+    await closeGroomingSessionFromCustody(clinicId, row.id as string);
+  }
+}
+
+/** Check-in do banho a partir da recepção: abre a sessão já na fila. */
+export async function ensureGroomingQueuedForAppointment(
+  clinicId: string,
+  appointmentId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data: existing } = await supabaseAdmin
+    .from('hub_grooming_sessions')
+    .select('id, grooming_stage')
+    .eq('hub_appointment_id', appointmentId)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (existing) {
+    const stage = String((existing as { grooming_stage?: string }).grooming_stage || '');
+    if (stage === 'scheduled' || stage === 'checked_in') {
+      const now = new Date().toISOString();
+      await supabaseAdmin
+        .from('hub_grooming_sessions')
+        .update({ grooming_stage: 'queued', checked_in_at: now })
+        .eq('id', (existing as { id: string }).id);
+      await syncAppointmentStatusForStage(clinicId, appointmentId, 'queued');
+    }
+    return { ok: true };
+  }
+
+  const { data: appt, error: apptErr } = await supabaseAdmin
+    .from('hub_appointments')
+    .select('id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes, status')
+    .eq('id', appointmentId)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (apptErr) return { ok: false, error: apptErr.message };
+  if (!appt) return { ok: false, error: 'Agendamento não encontrado' };
+  if (!appt.pet_id) return { ok: false, error: 'Agendamento sem pet associado' };
+  if (appt.status === 'cancelled') return { ok: false, error: 'Agendamento cancelado' };
+
+  const now = new Date().toISOString();
+  const { data, error } = await supabaseAdmin
+    .from('hub_grooming_sessions')
+    .insert({
+      clinic_id: clinicId,
+      unit_id: appt.unit_id,
+      pet_id: appt.pet_id,
+      guardian_id: appt.guardian_id,
+      hub_appointment_id: appointmentId,
+      hub_staff_member_id: appt.hub_staff_member_id,
+      grooming_stage: 'queued',
+      checked_in_at: now,
+    })
+    .select('id')
+    .single();
+  if (error) return { ok: false, error: error.message };
+  await logGroomingEvent({
+    clinic_id: clinicId,
+    session_id: data.id as string,
+    event_type: 'check_in',
+    body: appt.notes as string | null,
+  });
+  await syncAppointmentStatusForStage(clinicId, appointmentId, 'queued');
+  return { ok: true };
+}
+
+/** POST /grooming/sessions/:id/advance — avança para o próximo estágio do salão */
 export const advanceHubGroomingSession = async (req: Request, res: Response) => {
   try {
     const id = uuidStr.safeParse(req.params.id);
