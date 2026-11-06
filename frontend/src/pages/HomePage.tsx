@@ -13,7 +13,6 @@ import {
   Dog,
   CalendarDays,
   Briefcase,
-  Users,
   Shield,
   Home,
   Calendar,
@@ -66,7 +65,7 @@ const HomePage: React.FC = () => {
             <div className="hero-text-left animate-fade-in-up">
               <div className="hero-eyebrow">
                 <IconWrapper icon={Heart} size={14} fill="currentColor" strokeWidth={0} />
-                O universo do cuidado animal
+                Escalas e turnos no universo pet
               </div>
               <h1 className="text-display text-4xl md:text-5xl lg:text-6xl font-bold mb-6 hero-headline">
                 Conectando quem cuida, quem ama e{' '}
@@ -74,9 +73,9 @@ const HomePage: React.FC = () => {
               </h1>
 
               <p className="hero-lead animate-fade-in-up animate-delay-100">
-                O PetMi Vet é a plataforma que conecta clínicas veterinárias, veterinários, profissionais
-                freelancers e tutores. Tudo em um só lugar — simples, humano e com foco no bem-estar dos
-                pets.
+                O PetMi Shift conecta clínicas veterinárias a veterinários e freelancers para
+                publicar demandas, preencher escalas e fechar turnos — simples, transparente e com
+                foco no bem-estar dos pets.
               </p>
 
               <div className="hero-cta-row animate-fade-in-up animate-delay-200">
@@ -96,11 +95,11 @@ const HomePage: React.FC = () => {
                 </div>
                 <div className="hero-feature-item">
                   <IconWrapper icon={CalendarDays} size={28} strokeWidth={1.5} color="var(--primary-600)" />
-                  <span>Agende e gerencie atendimentos</span>
+                  <span>Publique demandas e monte a escala</span>
                 </div>
                 <div className="hero-feature-item">
                   <IconWrapper icon={Heart} size={28} strokeWidth={1.5} color="var(--primary-600)" />
-                  <span>Cuide com amor, onde estiver</span>
+                  <span>Preencha turnos com quem você confia</span>
                 </div>
                 <div className="hero-feature-item">
                   <IconWrapper icon={Briefcase} size={28} strokeWidth={1.5} color="var(--primary-600)" />
@@ -201,48 +200,23 @@ const HomePage: React.FC = () => {
 
       <section className="home-stats-strip-wrap">
         <div className="container">
-          <div className="home-stats-strip">
-            <div className="home-stats-grid">
-              <div className="home-stat">
-                <div className="home-stat__icon">
-                  <IconWrapper icon={Users} size={22} strokeWidth={1.75} />
-                </div>
-                <p className="home-stat__value">+120</p>
-                <p className="home-stat__label">Profissionais cadastrados</p>
+          <div className="home-trust-strip">
+            <div className="home-stats-secure">
+              <div className="home-stat__icon" style={{ marginBottom: 0 }}>
+                <IconWrapper icon={Shield} size={22} strokeWidth={1.75} />
               </div>
-              <div className="home-stat">
-                <div className="home-stat__icon">
-                  <IconWrapper icon={Building2} size={22} strokeWidth={1.75} />
-                </div>
-                <p className="home-stat__value">+35</p>
-                <p className="home-stat__label">Clínicas parceiras</p>
-              </div>
-              <div className="home-stat">
-                <div className="home-stat__icon">
-                  <IconWrapper icon={Heart} size={22} strokeWidth={1.75} />
-                </div>
-                <p className="home-stat__value">+500</p>
-                <p className="home-stat__label">Pets atendidos</p>
+              <div>
+                <h3 className="home-stats-secure__title">Plataforma segura</h3>
+                <p>Dados e conversas pensados para privacidade entre clínicas e profissionais.</p>
               </div>
             </div>
-            <div className="home-stats-aside">
-              <div className="home-stats-secure">
-                <div className="home-stat__icon" style={{ marginBottom: 0 }}>
-                  <IconWrapper icon={Shield} size={22} strokeWidth={1.75} />
-                </div>
-                <div>
-                  <h3 className="home-stats-secure__title">Plataforma segura</h3>
-                  <p>Dados e conversas pensados para privacidade entre clínicas e profissionais.</p>
-                </div>
-              </div>
-              <div className="home-stats-mission">
-                <h3 className="home-stats-mission__title">Apoiamos o cuidado responsável</h3>
-                <p>
-                  Transparência entre clínicas, profissionais e tutores, com respeito aos pets e à
-                  privacidade de cada conversa.
-                </p>
-                <Link to="/#sobre">Conheça nossas iniciativas →</Link>
-              </div>
+            <div className="home-stats-mission">
+              <h3 className="home-stats-mission__title">Escalas com transparência</h3>
+              <p>
+                Publique demandas, veja perfis e combine turnos com respeito ao profissional e ao
+                cuidado com os pets.
+              </p>
+              <Link to="/#sobre">Veja como funciona →</Link>
             </div>
           </div>
         </div>
@@ -252,31 +226,32 @@ const HomePage: React.FC = () => {
         <div className="container secondary-cta__content">
           <div>
             <span className="secondary-cta__eyebrow">Próximo passo</span>
-            <h2>Converse com a equipe e conheça a plataforma de perto</h2>
+            <h2>Comece a montar sua escala no PetMi Shift</h2>
             <p>
-              Agende uma demo e veja como o PetMi Vet pode acelerar a gestão da sua clínica, engajar a
-              equipe e colaborar com especialistas de confiança.
+              Publique demandas, encontre profissionais e preencha turnos com mais agilidade — sem
+              depender de planilhas ou grupos de mensagem.
             </p>
             <div className="secondary-cta__benefits">
               <div>
-                <IconWrapper icon={CheckCircle} size={16} /> Onboarding guiado com checklists inteligentes
+                <IconWrapper icon={CheckCircle} size={16} /> Demandas abertas com perfil e especialidade
               </div>
               <div>
-                <IconWrapper icon={CheckCircle} size={16} /> Ferramentas para equipe: convites, agendas,
-                unidades
+                <IconWrapper icon={CheckCircle} size={16} /> Convites, unidades e acompanhamento de
+                candidaturas
               </div>
               <div>
-                <IconWrapper icon={CheckCircle} size={16} /> Marketplace para vender serviços e produtos pet
+                <IconWrapper icon={CheckCircle} size={16} /> Espaço para veterinários e freelancers do
+                universo pet
               </div>
             </div>
           </div>
           <div className="secondary-cta__actions">
-            <a className="btn-white" href="https://wa.me/5511999999999" target="_blank" rel="noopener noreferrer">
-              Fale com a gente no WhatsApp
-            </a>
-            <a className="btn-white" href="mailto:contato@petivet.com">
-              Agendar uma demo
-            </a>
+            <Link className="btn-white" to="/clinic-signup">
+              Cadastrar clínica
+            </Link>
+            <Link className="btn-white" to="/vet-signup">
+              Cadastrar profissional
+            </Link>
           </div>
         </div>
       </section>
@@ -351,11 +326,18 @@ const HomePage: React.FC = () => {
           <div className="footer-content">
             <div className="footer-brand">
               <div className="footer-brand-mark">
-                <img src="/just_logo.png" alt="" className="footer-logo-icon" width={52} height={52} decoding="async" />
-                <span className="footer-wordmark">PetMi Vet</span>
+                <img
+                  src="/petmi-shift-mark.svg"
+                  alt=""
+                  className="footer-logo-icon"
+                  width={52}
+                  height={52}
+                  decoding="async"
+                />
+                <span className="footer-wordmark">PetMi Shift</span>
               </div>
               <p>
-                Conectando clínicas, profissionais e tutores para levar cuidado, agilidade e amor aos pets.
+                Conectando clínicas e profissionais para escalas, turnos e demandas no universo pet.
               </p>
             </div>
 
@@ -385,24 +367,16 @@ const HomePage: React.FC = () => {
                 <IconWrapper icon={Instagram} size={22} strokeWidth={1.6} />
                 <span>@petivet.oficial</span>
               </a>
-              <p>Nossa rotina, bastidores e dicas semanais sobre gestão e bem-estar animal.</p>
-            </div>
-
-            <div className="footer-contact">
-              <h4>Contato</h4>
-              <ul>
-                <li>contato@petivet.com</li>
-                <li>(11) 98765-4321</li>
-                <li>São Paulo, SP</li>
-              </ul>
+              <p>Nossa rotina, bastidores e dicas sobre escalas e o universo pet.</p>
             </div>
           </div>
 
           <div className="footer-bottom">
             <p className="footer-bottom__tagline">
-              Feito com <IconWrapper icon={Heart} size={18} fill="currentColor" /> para pets e veterinários
+              Feito com <IconWrapper icon={Heart} size={18} fill="currentColor" /> para pets e
+              profissionais
             </p>
-            <p className="footer-bottom__copyright">© 2026 PetMi Vet. Todos os direitos reservados.</p>
+            <p className="footer-bottom__copyright">© 2026 PetMi Shift. Todos os direitos reservados.</p>
           </div>
         </div>
       </footer>

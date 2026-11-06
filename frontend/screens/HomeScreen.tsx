@@ -286,10 +286,10 @@ const HomeScreen = () => {
             isWeb ? styles.footerColumnWeb : undefined,
           ]}
         >
-          <Text style={styles.footerTitle}>PetMi Vet 🐾</Text>
+          <Text style={styles.footerTitle}>PetMi Shift</Text>
           <Text style={styles.footerText}>
-            Conectando clínicas e veterinários para melhor atender nossos amigos
-            de quatro patas.
+            Conectando clínicas e profissionais para escalas, turnos e demandas
+            no universo pet.
           </Text>
         </View>
 
@@ -309,17 +309,6 @@ const HomeScreen = () => {
               <Text style={styles.footerLinkText}>{card.title}</Text>
             </Pressable>
           ))}
-        </View>
-
-        <View
-          style={[
-            styles.footerColumn,
-            isWeb ? styles.footerColumnWeb : undefined,
-          ]}
-        >
-          <Text style={styles.footerColumnTitle}>Contato</Text>
-          <Text style={styles.footerText}>contato@petivet.com</Text>
-          <Text style={styles.footerText}>+55 (11) 99999-9999</Text>
         </View>
       </View>
     </ScrollView>
