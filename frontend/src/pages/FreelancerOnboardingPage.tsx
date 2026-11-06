@@ -837,7 +837,7 @@ const FreelancerOnboardingPage: React.FC = () => {
           <div style={styles.topHeader}>
             <div style={styles.headerContent}>
               <div style={styles.logoSection}>
-                <img src="/logo_texto_lado.png" alt="PetMi Vet" style={styles.logoImage} />
+                <img src="/petmi-shift.svg" alt="PetMi Shift" style={styles.logoImage} />
               </div>
               <button
                 onClick={handleLogoutClick}
@@ -888,7 +888,7 @@ const FreelancerOnboardingPage: React.FC = () => {
       <div style={styles.topHeader}>
         <div style={styles.headerContent}>
           <div style={styles.logoSection}>
-            <img src="/logo_texto_lado.png" alt="PetMi Vet" style={styles.logoImage} />
+            <img src="/petmi-shift.svg" alt="PetMi Shift" style={styles.logoImage} />
           </div>
           <button
             onClick={handleLogoutClick}

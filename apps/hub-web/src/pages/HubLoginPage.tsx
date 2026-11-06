@@ -3,6 +3,7 @@ import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-do
 import { Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { login, useAuth } from '@petimi/web-core';
 import { getHubPostLoginDestination } from '../authNavigation';
+import { signupLinkState } from '../utils/signupReturn';
 import { applyHubSessionContext, hubSessionApi } from '../services/hubSessionApi';
 import { HubCheckbox } from '@petimi/hub-ui';
 
@@ -217,7 +218,7 @@ const HubLoginPage: React.FC = () => {
         </form>
 
         <p className="hub-login-page-footer">
-          Ainda não tem uma conta? <Link to="/signup">Criar conta da clínica →</Link>
+          Ainda não tem uma conta? <Link to="/signup" state={signupLinkState(location)}>Criar conta da clínica →</Link>
         </p>
 
         {vetLogin && (

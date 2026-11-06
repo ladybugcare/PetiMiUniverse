@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { ArrowRight, Network, User, Users } from 'lucide-react';
 import { useAuth } from '@petimi/web-core';
+import { signupLinkState } from '../utils/signupReturn';
 import HubLandingFooter from '../components/landing/HubLandingFooter';
 import HubLandingHeader from '../components/landing/HubLandingHeader';
 import { useLandingMeta } from '../components/landing/useLandingMeta';
@@ -67,7 +68,8 @@ function formatLaunchPrice(cents: number): string {
 
 const HubPlansPage: React.FC = () => {
   const { user, loading } = useAuth();
-  const { hash } = useLocation();
+  const location = useLocation();
+  const { hash } = location;
   useLandingMeta({ title: PAGE_TITLE, description: PAGE_DESCRIPTION });
 
   useEffect(() => {
@@ -179,7 +181,7 @@ const HubPlansPage: React.FC = () => {
             </ul>
 
             <div className="hub-landing-hero__actions">
-              <Link to="/signup" className="hub-landing-btn hub-landing-btn--primary">
+              <Link to="/signup" state={signupLinkState(location)} className="hub-landing-btn hub-landing-btn--primary">
                 Criar minha conta
                 <ArrowRight size={18} strokeWidth={2.25} aria-hidden />
               </Link>

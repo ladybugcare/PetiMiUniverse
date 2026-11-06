@@ -338,12 +338,11 @@ body {
 }
 
 .home-header-logo-img {
-  height: 72px;
+  height: 44px;
   width: auto;
   max-width: min(52vw, 280px);
   object-fit: contain;
   display: block;
-  margin: -8px 0;
 }
 
 .home-header-links {
@@ -543,7 +542,7 @@ body {
   }
 
   .home-header-logo-img {
-    height: 56px;
+    height: 36px;
     max-width: min(48vw, 220px);
   }
 

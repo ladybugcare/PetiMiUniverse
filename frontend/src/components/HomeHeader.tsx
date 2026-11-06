@@ -22,8 +22,8 @@ const HomeHeader: React.FC = () => {
         <div className="home-header-left">
           <Link to="/" className="home-header-logo">
             <img
-              src="/logo_texto_lado.png"
-              alt="PetMi Vet"
+              src="/petmi-shift.svg"
+              alt="PetMi Shift"
               className="home-header-logo-img"
             />
           </Link>

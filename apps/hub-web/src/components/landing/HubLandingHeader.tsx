@@ -1,11 +1,13 @@
 import React, { useEffect, useId, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
+import { signupLinkState } from '../../utils/signupReturn';
 import { Menu, X } from 'lucide-react';
 
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
 const logoSrc = `${baseUrl}petmi-hub.svg`;
 
 const HubLandingHeader: React.FC = () => {
+  const location = useLocation();
   const [open, setOpen] = useState(false);
   const menuId = useId();
 
@@ -52,7 +54,7 @@ const HubLandingHeader: React.FC = () => {
           <Link to="/login" className="hub-landing-nav__link" onClick={close}>
             Entrar
           </Link>
-          <Link to="/signup" className="hub-landing-nav__cta" onClick={close}>
+          <Link to="/signup" state={signupLinkState(location)} className="hub-landing-nav__cta" onClick={close}>
             Criar conta
           </Link>
         </nav>

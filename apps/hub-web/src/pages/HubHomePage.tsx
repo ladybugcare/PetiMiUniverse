@@ -13,6 +13,7 @@ import {
   Workflow,
 } from 'lucide-react';
 import { useAuth } from '@petimi/web-core';
+import { signupLinkState } from '../utils/signupReturn';
 import HubLandingFlow from '../components/landing/HubLandingFlow';
 import HubLandingFooter from '../components/landing/HubLandingFooter';
 import HubLandingHeader from '../components/landing/HubLandingHeader';
@@ -72,7 +73,8 @@ const PILLARS = [
 
 const HubHomePage: React.FC = () => {
   const { user, loading } = useAuth();
-  const { hash } = useLocation();
+  const location = useLocation();
+  const { hash } = location;
   useLandingMeta({ title: PAGE_TITLE, description: PAGE_DESCRIPTION });
 
   useEffect(() => {
@@ -131,7 +133,7 @@ const HubHomePage: React.FC = () => {
                   conecte sua equipe e simplifique o dia a dia com o PetMi Hub.
                 </p>
                 <div className="hub-landing-hero__actions">
-                  <Link to="/signup" className="hub-landing-btn hub-landing-btn--primary">
+                  <Link to="/signup" state={signupLinkState(location)} className="hub-landing-btn hub-landing-btn--primary">
                     Criar minha conta
                     <ArrowRight size={18} strokeWidth={2.25} aria-hidden />
                   </Link>
@@ -242,7 +244,7 @@ const HubHomePage: React.FC = () => {
                   <p>Uso completo do Hub, sem cartão e sem mensalidade, até o lançamento oficial.</p>
                 </li>
               </ul>
-              <Link to="/signup" className="hub-landing-btn hub-landing-btn--primary">
+              <Link to="/signup" state={signupLinkState(location)} className="hub-landing-btn hub-landing-btn--primary">
                 Quero ser um fundador
                 <ArrowRight size={18} strokeWidth={2.25} aria-hidden />
               </Link>
@@ -279,7 +281,7 @@ const HubHomePage: React.FC = () => {
                       mercado pet.
                     </p>
                     <div className="hub-landing-cta__actions">
-                      <Link to="/signup" className="hub-landing-btn hub-landing-btn--primary hub-landing-btn--lg">
+                      <Link to="/signup" state={signupLinkState(location)} className="hub-landing-btn hub-landing-btn--primary hub-landing-btn--lg">
                         Criar minha conta
                         <ArrowRight size={18} strokeWidth={2.25} aria-hidden />
                       </Link>

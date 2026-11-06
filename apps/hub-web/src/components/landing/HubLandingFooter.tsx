@@ -1,11 +1,13 @@
 import React from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
+import { signupLinkState } from '../../utils/signupReturn';
 import HubProductCredit from '../HubProductCredit';
 
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
 const logoSrc = `${baseUrl}petmi-hub.svg`;
 
 const HubLandingFooter: React.FC = () => {
+  const location = useLocation();
   const year = new Date().getFullYear();
 
   return (
@@ -24,7 +26,7 @@ const HubLandingFooter: React.FC = () => {
           <Link to={{ pathname: '/', hash: 'funcionalidades' }}>Funcionalidades</Link>
           <Link to="/planos">Planos</Link>
           <Link to="/login">Entrar</Link>
-          <Link to="/signup">Criar conta</Link>
+          <Link to="/signup" state={signupLinkState(location)}>Criar conta</Link>
         </nav>
       </div>
 

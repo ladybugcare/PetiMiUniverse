@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { User, Mail, Lock, Phone, ArrowRight, Eye, EyeOff, CheckCircle2 } from 'lucide-react';
 import { HubBrPhoneInput } from '@petimi/hub-ui';
 import '@petimi/hub-ui/pages/pets/wizard/pet-wizard.css';
@@ -7,12 +7,15 @@ import './hub-onboarding-page.css';
 import HubOnboardingStepper from '../components/HubOnboardingStepper';
 import HubOnboardingFooter from '../components/HubOnboardingFooter';
 import { hubSignupApi } from '../services/hubSignupApi';
+import { signupBackTarget } from '../utils/signupReturn';
 
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
 const logoSrc = `${baseUrl}petmi-hub.svg`;
 
 const HubSignUpPage: React.FC = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const back = signupBackTarget((location.state as { from?: unknown } | null)?.from);
   const [step, setStep] = useState(0);
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -73,8 +76,8 @@ const HubSignUpPage: React.FC = () => {
 
   return (
     <div className="hub-login-page-root">
-      <Link to="/login" className="hub-login-page-back">
-        ← Voltar ao login
+      <Link to={back.to} className="hub-login-page-back">
+        {back.label}
       </Link>
 
       <div className="hub-login-page-card hub-onboarding-wide-card">
@@ -134,7 +137,7 @@ const HubSignUpPage: React.FC = () => {
               </div>
             </div>
             <HubOnboardingFooter
-              onCancel={() => navigate('/login')}
+              onCancel={() => navigate(back.to)}
               primaryLabel="Continuar"
               primaryDisabled={!canStep0}
               onPrimary={() => setStep(1)}
@@ -214,7 +217,7 @@ const HubSignUpPage: React.FC = () => {
             )}
             {error && <p className="hub-login-page-msg hub-login-page-msg--error">{error}</p>}
             <HubOnboardingFooter
-              onCancel={() => navigate('/login')}
+              onCancel={() => navigate(back.to)}
               showBack
               onBack={() => setStep(0)}
               primaryLabel="Criar conta"

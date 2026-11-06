@@ -177,8 +177,8 @@ const DashboardHeader: React.FC<DashboardHeaderProps> = ({
         {/* Center: Logo */}
         <div style={styles.centerSection}>
           <img
-            src="/logo_texto_lado.png"
-            alt="PetMi Vet"
+            src="/petmi-shift.svg"
+            alt="PetMi Shift"
             style={styles.logo}
             onClick={handleLogoClick}
             title="Ir para o Dashboard"
@@ -310,12 +310,10 @@ const styles: { [key: string]: React.CSSProperties } = {
     justifyContent: 'center',
   },
   logo: {
-    height: '110px',
+    height: '40px',
     cursor: 'pointer',
     objectFit: 'contain',
     display: 'block',
-    marginTop: '-25px',
-    marginBottom: '-25px',
   },
   rightSection: {
     display: 'flex',
