@@ -1,70 +1,64 @@
 import { describe, expect, it } from 'vitest';
-import type { BoardingDayBoardItem } from '../../api/hubBoardingApi';
-import { pickFeaturedBoardingItem, resolveBoardingFloorAction } from './BoardingFloorView';
+import type { BoardingTask } from '../../api/hubBoardingApi';
+import { pickFeaturedTask, resolveBoardingFloorAction } from './BoardingFloorView';
 
-function item(
-  partial: Partial<BoardingDayBoardItem> & { boarding_stage: string; starts_at: string },
-): BoardingDayBoardItem {
+const NOW = new Date('2026-09-08T12:00:00').getTime();
+
+function task(partial: Partial<BoardingTask> & { id: string }): BoardingTask {
   return {
-    kind: 'reservation',
-    mode: 'hotel',
-    ends_at: partial.ends_at ?? partial.starts_at,
-    pet: { id: 'p1', name: 'Thor' },
+    hub_boarding_reservation_id: 'r1',
+    kind: 'feeding',
+    title: 'Almoço',
+    scheduled_for: null,
+    task_date: '2026-09-08',
+    status: 'pending',
     ...partial,
   };
 }
 
-describe('pickFeaturedBoardingItem', () => {
-  it('prioriza pet hospedado em atraso', () => {
-    const featured = pickFeaturedBoardingItem([
-      item({ boarding_stage: 'reserved', starts_at: '2026-09-08T08:00:00', pet: { id: 'p0', name: 'Bob' } }),
-      item({
-        boarding_stage: 'checked_in',
-        starts_at: '2026-09-07T10:00:00',
-        ends_at: '2026-09-08T18:00:00',
-        pet: { id: 'p2', name: 'Luna' },
-      }),
-      item({
-        boarding_stage: 'checked_in',
-        starts_at: '2026-09-06T10:00:00',
-        ends_at: '2026-09-08T12:00:00',
-        is_late: true,
-        pet: { id: 'p3', name: 'Mia' },
-      }),
-    ]);
-    expect(featured?.pet?.name).toBe('Mia');
+describe('pickFeaturedTask', () => {
+  it('prioriza a atrasada mais antiga', () => {
+    const featured = pickFeaturedTask(
+      [
+        task({ id: 'soon', scheduled_for: '2026-09-08T12:20:00' }),
+        task({ id: 'late2', scheduled_for: '2026-09-08T11:00:00' }),
+        task({ id: 'late1', scheduled_for: '2026-09-08T09:00:00' }),
+      ],
+      NOW,
+    );
+    expect(featured?.id).toBe('late1');
   });
 
-  it('senão pega o próximo previsto', () => {
-    const featured = pickFeaturedBoardingItem([
-      item({ boarding_stage: 'checked_out', starts_at: '2026-09-08T08:00:00', pet: { id: 'p0', name: 'Saído' } }),
-      item({ boarding_stage: 'reserved', starts_at: '2026-09-08T11:00:00', pet: { id: 'p2', name: 'Bob' } }),
-      item({ boarding_stage: 'reserved', starts_at: '2026-09-08T09:30:00', pet: { id: 'p3', name: 'Nina' } }),
-    ]);
-    expect(featured?.pet?.name).toBe('Nina');
+  it('sem atraso, pega a próxima dentro da janela de agora', () => {
+    const featured = pickFeaturedTask(
+      [
+        task({ id: 'later', scheduled_for: '2026-09-08T18:00:00' }),
+        task({ id: 'now', scheduled_for: '2026-09-08T12:30:00' }),
+      ],
+      NOW,
+    );
+    expect(featured?.id).toBe('now');
   });
 
-  it('retorna null se só saídas', () => {
+  it('sem nada próximo, mostra a próxima do dia', () => {
+    const featured = pickFeaturedTask([task({ id: 'evening', scheduled_for: '2026-09-08T19:00:00' })], NOW);
+    expect(featured?.id).toBe('evening');
+  });
+
+  it('ignora feitas e retorna null sem pendentes', () => {
     expect(
-      pickFeaturedBoardingItem([
-        item({ boarding_stage: 'checked_out', starts_at: '2026-09-08T08:00:00' }),
-        item({ boarding_stage: 'cancelled', starts_at: '2026-09-08T09:00:00' }),
-      ]),
+      pickFeaturedTask([task({ id: 'done', status: 'done', scheduled_for: '2026-09-08T08:00:00' })], NOW),
     ).toBeNull();
   });
 });
 
 describe('resolveBoardingFloorAction', () => {
   it('oferece check-in no previsto e check-out no hospedado', () => {
-    expect(resolveBoardingFloorAction(item({ boarding_stage: 'reserved', starts_at: '2026-09-08T10:00:00' }), true)).toBe(
+    expect(resolveBoardingFloorAction({ stage: 'reserved', reservation_id: null, appointment_id: 'a1' }, true)).toBe(
       'check_in',
     );
-    expect(
-      resolveBoardingFloorAction(item({ boarding_stage: 'checked_in', starts_at: '2026-09-08T10:00:00' }), true),
-    ).toBe('check_out');
-    expect(
-      resolveBoardingFloorAction(item({ boarding_stage: 'checked_out', starts_at: '2026-09-08T10:00:00' }), true),
-    ).toBeNull();
-    expect(resolveBoardingFloorAction(item({ boarding_stage: 'reserved', starts_at: '2026-09-08T10:00:00' }), false)).toBeNull();
+    expect(resolveBoardingFloorAction({ stage: 'checked_in', reservation_id: 'r1' }, true)).toBe('check_out');
+    expect(resolveBoardingFloorAction({ stage: 'checked_out', reservation_id: 'r1' }, true)).toBeNull();
+    expect(resolveBoardingFloorAction({ stage: 'reserved', reservation_id: 'r1' }, false)).toBeNull();
   });
 });

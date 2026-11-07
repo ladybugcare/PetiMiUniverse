@@ -6,7 +6,7 @@ import '../clinica/clinica-page.css';
 import '../grooming/grooming-page.css';
 import './boarding-page.css';
 
-/** Casco da operação Hotel & Creche: abas Fila do dia (gestão) e Minha fila (chão). */
+/** Casco da operação Hotel & Creche: Painel (recepção), Minha fila (cuidador) e Configurações (gestor). */
 const HubBoardingShell: React.FC = () => {
   return (
     <div className="hub-clinic-page hub-clientes hub-grooming-page hub-boarding-page">

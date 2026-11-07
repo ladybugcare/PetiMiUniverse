@@ -4,6 +4,7 @@ import {
   dayBoundsFromYmdSaoPaulo,
   isValidStatusTransition,
   modeFromAppointmentKind,
+  reservationOverlapsRange,
   resolveDayBoardRange,
   stageFromAppointmentStatus,
   VALID_STATUS_TRANSITIONS,
@@ -100,10 +101,16 @@ describe('boardingOperational', () => {
   });
 
   describe('calcBoardingNights', () => {
-    it('calcula noites entre check-in e check-out (floor)', () => {
+    it('calcula noites pelas viradas de data em São Paulo', () => {
       expect(
         calcBoardingNights('2026-06-01T14:00:00.000Z', '2026-06-04T10:00:00.000Z'),
-      ).toBe(2);
+      ).toBe(3);
+    });
+
+    it('entrada à noite e saída na manhã seguinte conta 1 noite', () => {
+      expect(
+        calcBoardingNights('2026-06-01T23:30:00.000Z', '2026-06-02T11:00:00.000Z'),
+      ).toBe(1);
     });
 
     it('mesmo dia retorna 0 noites', () => {
@@ -115,12 +122,60 @@ describe('boardingOperational', () => {
     it('sem checkout usa Date.now()', () => {
       jest.useFakeTimers();
       jest.setSystemTime(new Date('2026-06-04T10:00:00.000Z'));
-      expect(calcBoardingNights('2026-06-01T14:00:00.000Z', null)).toBe(2);
+      expect(calcBoardingNights('2026-06-01T14:00:00.000Z', null)).toBe(3);
       jest.useRealTimers();
     });
 
     it('retorna 0 sem check-in', () => {
       expect(calcBoardingNights(null, '2026-06-04T10:00:00.000Z')).toBe(0);
+    });
+  });
+
+  describe('reservationOverlapsRange', () => {
+    const day = (ymd: string) => dayBoundsFromYmdSaoPaulo(ymd);
+    const now = '2026-06-03T15:00:00.000Z';
+
+    it('estadia de vários dias aparece em todos os dias', () => {
+      const r = {
+        status: 'checked_in',
+        checked_in_at: '2026-06-01T14:00:00.000Z',
+        expected_check_out: '2026-06-05T13:00:00.000Z',
+      };
+      for (const ymd of ['2026-06-01', '2026-06-02', '2026-06-03', '2026-06-04', '2026-06-05']) {
+        const { from, to } = day(ymd);
+        expect(reservationOverlapsRange(r, from, to, now)).toBe(true);
+      }
+      const after = day('2026-06-06');
+      expect(reservationOverlapsRange(r, after.from, after.to, now)).toBe(false);
+    });
+
+    it('hóspede com saída prevista vencida continua presente até o check-out', () => {
+      const r = {
+        status: 'checked_in',
+        checked_in_at: '2026-05-30T14:00:00.000Z',
+        expected_check_out: '2026-06-01T13:00:00.000Z',
+      };
+      const { from, to } = day('2026-06-03');
+      expect(reservationOverlapsRange(r, from, to, now)).toBe(true);
+    });
+
+    it('reserva futura aparece nos dias previstos', () => {
+      const r = {
+        status: 'reserved',
+        expected_check_in: '2026-06-10T12:00:00.000Z',
+        expected_check_out: '2026-06-12T12:00:00.000Z',
+      };
+      expect(reservationOverlapsRange(r, day('2026-06-11').from, day('2026-06-11').to, now)).toBe(true);
+      expect(reservationOverlapsRange(r, day('2026-06-09').from, day('2026-06-09').to, now)).toBe(false);
+    });
+
+    it('estadia encerrada não aparece depois da saída', () => {
+      const r = {
+        status: 'checked_out',
+        checked_in_at: '2026-06-01T14:00:00.000Z',
+        checked_out_at: '2026-06-02T14:00:00.000Z',
+      };
+      expect(reservationOverlapsRange(r, day('2026-06-03').from, day('2026-06-03').to, now)).toBe(false);
     });
   });
 

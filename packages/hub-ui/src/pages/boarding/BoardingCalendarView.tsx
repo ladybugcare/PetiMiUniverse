@@ -46,7 +46,7 @@ function eventSpansDay(event: BoardingCalendarEvent, dayYmd: string): boolean {
   return eventStart <= dayEnd && eventEnd >= dayStart;
 }
 
-const MODE_LABELS: Record<string, string> = { hotel: '🏨', daycare: '🐾' };
+const MODE_LABELS: Record<string, string> = { hotel: 'Hotel', daycare: 'Creche' };
 
 const BoardingCalendarView: React.FC<Props> = ({ clinicId, unitId, mode, onSelectReservationId }) => {
   const [weekStart, setWeekStart] = useState(() => isoWeekStart(new Date()));

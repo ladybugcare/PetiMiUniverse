@@ -403,8 +403,49 @@ import {
 } from '../hubBoardingController';
 import {
   getHubBoardingReservationDrawer,
+  getHubBoardingReservationTimeline,
   postHubBoardingDailyLog,
 } from '../hubBoardingDrawerController';
+import {
+  getHubBoardingCarePlan,
+  getHubPetCareProfile,
+  postHubBoardingCareTutorLink,
+  putHubBoardingCarePlan,
+  putHubPetCareProfile,
+} from '../hubBoardingCareController';
+import {
+  getHubBoardingTasks,
+  postHubBoardingBatchActivity,
+  postHubBoardingTask,
+  postHubBoardingTaskExecute,
+} from '../hubBoardingTasksController';
+import {
+  deleteHubBoardingBelonging,
+  deleteHubBoardingExtra,
+  deleteHubBoardingMedia,
+  getHubBoardingBelongings,
+  getHubBoardingExtras,
+  getHubBoardingIncidents,
+  getHubBoardingMedia,
+  patchHubBoardingBelonging,
+  patchHubBoardingIncident,
+  postHubBoardingBelonging,
+  postHubBoardingExtra,
+  postHubBoardingIncident,
+  uploadHubBoardingMedia,
+} from '../hubBoardingRecordsController';
+import {
+  deleteHubBoardingSpace,
+  getHubBoardingHandoffs,
+  getHubBoardingOpsBoard,
+  getHubBoardingSpaces,
+  getHubBoardingTutorReport,
+  patchHubBoardingSpace,
+  postHubBoardingHandoff,
+  postHubBoardingHandoffAcknowledge,
+  postHubBoardingSpace,
+  postHubBoardingTutorReport,
+} from '../hubBoardingOpsController';
 
 /**
  * PetMi Hub API — rotas do sistema operacional do negócio pet.
@@ -2091,6 +2132,204 @@ router.get(
   authenticateUser,
   requirePermission('boarding.reservations.read'),
   getHubBoardingCalendar
+);
+router.get(
+  '/boarding/ops-board',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingOpsBoard
+);
+router.get(
+  '/boarding/reservations/:id/timeline',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingReservationTimeline
+);
+router.get(
+  '/boarding/pets/:petId/care-profile',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubPetCareProfile
+);
+router.put(
+  '/boarding/pets/:petId/care-profile',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  putHubPetCareProfile
+);
+router.get(
+  '/boarding/reservations/:id/care-plan',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingCarePlan
+);
+router.put(
+  '/boarding/reservations/:id/care-plan',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  putHubBoardingCarePlan
+);
+router.post(
+  '/boarding/reservations/:id/care-plan/tutor-link',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  postHubBoardingCareTutorLink
+);
+router.get(
+  '/boarding/tasks',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingTasks
+);
+router.post(
+  '/boarding/tasks/batch-activity',
+  authenticateUser,
+  requirePermission('boarding.daily_report.write'),
+  postHubBoardingBatchActivity
+);
+router.post(
+  '/boarding/tasks/:id/execute',
+  authenticateUser,
+  requirePermission('boarding.daily_report.write'),
+  postHubBoardingTaskExecute
+);
+router.post(
+  '/boarding/reservations/:id/tasks',
+  authenticateUser,
+  requirePermission('boarding.daily_report.write'),
+  postHubBoardingTask
+);
+router.get(
+  '/boarding/reservations/:id/incidents',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingIncidents
+);
+router.post(
+  '/boarding/reservations/:id/incidents',
+  authenticateUser,
+  requirePermission('boarding.daily_report.write'),
+  postHubBoardingIncident
+);
+router.patch(
+  '/boarding/incidents/:id',
+  authenticateUser,
+  requirePermission('boarding.daily_report.write'),
+  patchHubBoardingIncident
+);
+router.get(
+  '/boarding/reservations/:id/belongings',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingBelongings
+);
+router.post(
+  '/boarding/reservations/:id/belongings',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  postHubBoardingBelonging
+);
+router.patch(
+  '/boarding/belongings/:id',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  patchHubBoardingBelonging
+);
+router.delete(
+  '/boarding/belongings/:id',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  deleteHubBoardingBelonging
+);
+router.get(
+  '/boarding/reservations/:id/extras',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingExtras
+);
+router.post(
+  '/boarding/reservations/:id/extras',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  postHubBoardingExtra
+);
+router.delete(
+  '/boarding/extras/:id',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  deleteHubBoardingExtra
+);
+router.get(
+  '/boarding/reservations/:id/media',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingMedia
+);
+router.post(
+  '/boarding/reservations/:id/media',
+  authenticateUser,
+  requirePermission('boarding.daily_report.write'),
+  uploadHubBoardingMedia
+);
+router.delete(
+  '/boarding/media/:id',
+  authenticateUser,
+  requirePermission('boarding.daily_report.write'),
+  deleteHubBoardingMedia
+);
+router.get(
+  '/boarding/spaces',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingSpaces
+);
+router.post(
+  '/boarding/spaces',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  postHubBoardingSpace
+);
+router.patch(
+  '/boarding/spaces/:id',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  patchHubBoardingSpace
+);
+router.delete(
+  '/boarding/spaces/:id',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  deleteHubBoardingSpace
+);
+router.get(
+  '/boarding/handoffs',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingHandoffs
+);
+router.post(
+  '/boarding/handoffs',
+  authenticateUser,
+  requirePermission('boarding.daily_report.write'),
+  postHubBoardingHandoff
+);
+router.post(
+  '/boarding/handoffs/:id/acknowledge',
+  authenticateUser,
+  requirePermission('boarding.daily_report.write'),
+  postHubBoardingHandoffAcknowledge
+);
+router.get(
+  '/boarding/reservations/:id/tutor-report',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  getHubBoardingTutorReport
+);
+router.post(
+  '/boarding/reservations/:id/tutor-reports',
+  authenticateUser,
+  requirePermission('boarding.reservations.read'),
+  postHubBoardingTutorReport
 );
 
 // ─── Comunicação — log de tentativas (click-to-chat / in-app) ──────────────

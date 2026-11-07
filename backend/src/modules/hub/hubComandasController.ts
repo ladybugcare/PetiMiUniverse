@@ -99,7 +99,12 @@ function round2(n: number): number {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
-import { buildBoardingComandaLine } from './boardingBilling';
+import {
+  buildBoardingComandaLine,
+  buildBoardingExtraLines,
+  isAppointmentLineReplacedByBoarding,
+  type BoardingExtraInput,
+} from './boardingBilling';
 import { buildHospitalizationDailyItems } from './hubHospitalizationBilling';
 import { comandaOriginSchema } from './hubComandaSchemas';
 
@@ -1418,7 +1423,7 @@ async function buildComandaItemsFromBoardingReservation(
 }> {
   const { data: res, error } = await supabaseAdmin
     .from('hub_boarding_reservations')
-    .select('id, pet_id, guardian_id, unit_id, mode, status, expected_check_in, expected_check_out, checked_in_at, checked_out_at, daily_rate_cents, hub_appointment_id')
+    .select('*')
     .eq('id', reservationId)
     .eq('clinic_id', clinicId)
     .maybeSingle();
@@ -1429,24 +1434,93 @@ async function buildComandaItemsFromBoardingReservation(
   if (!guardianId) throw new Error('NO_GUARDIAN');
   if (res.status !== 'checked_out') throw new Error('NOT_READY');
 
-  const { line, subtotal } = buildBoardingComandaLine({
-    id: reservationId,
-    mode: res.mode as string,
-    pet_id: res.pet_id as string | null,
-    expected_check_in: res.expected_check_in as string | null,
-    expected_check_out: res.expected_check_out as string | null,
-    checked_in_at: res.checked_in_at as string | null,
-    checked_out_at: res.checked_out_at as string | null,
-    daily_rate_cents: res.daily_rate_cents as number | null,
-  });
+  const unitId = (res.unit_id as string | null) ?? null;
+  let cutoffTime: string | null = null;
+  if (unitId) {
+    const { data: settings } = await supabaseAdmin
+      .from('hub_unit_boarding_settings')
+      .select('checkout_cutoff_time')
+      .eq('unit_id', unitId)
+      .maybeSingle();
+    cutoffTime = (settings?.checkout_cutoff_time as string | null | undefined) ?? null;
+  }
+
+  const { line, subtotal } = buildBoardingComandaLine(
+    {
+      id: reservationId,
+      mode: res.mode as string,
+      pet_id: res.pet_id as string | null,
+      hub_service_type_id: (res.hub_service_type_id as string | null | undefined) ?? null,
+      daycare_period: (res.daycare_period as string | null | undefined) ?? null,
+      expected_check_in: res.expected_check_in as string | null,
+      expected_check_out: res.expected_check_out as string | null,
+      checked_in_at: res.checked_in_at as string | null,
+      checked_out_at: res.checked_out_at as string | null,
+      daily_rate_cents: res.daily_rate_cents as number | null,
+    },
+    { cutoffTime },
+  );
+
+  const { data: extraRows, error: extraErr } = await supabaseAdmin
+    .from('hub_boarding_extras')
+    .select('id, hub_service_type_id, description, quantity, unit_amount_cents, service_date, deleted_at')
+    .eq('clinic_id', clinicId)
+    .eq('hub_boarding_reservation_id', reservationId)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: true });
+  if (extraErr && !isMissingPostgrestRelation(extraErr)) throw new Error(extraErr.message);
+  const extras = buildBoardingExtraLines(
+    (extraErr ? [] : extraRows ?? []) as BoardingExtraInput[],
+    (res.pet_id as string | null) ?? null,
+  );
 
   return {
-    items: [line],
-    subtotal,
-    unit_id: (res.unit_id as string | null) ?? null,
+    items: [line, ...extras.lines],
+    subtotal: round2(subtotal + extras.subtotal),
+    unit_id: unitId,
     guardian_id: guardianId,
     pet_id: res.pet_id as string | null,
   };
+}
+
+/** Remove do snapshot do agendamento as linhas de hospedagem substituídas pelas diárias. */
+async function dropAppointmentLinesReplacedByBoarding(
+  clinicId: string,
+  reservationId: string,
+  items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[],
+): Promise<{ items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[]; removedTotal: number }> {
+  const serviceIds = [
+    ...new Set(
+      items
+        .filter((it) => it.origin_type === 'appointment_service' && it.hub_service_type_id)
+        .map((it) => it.hub_service_type_id as string),
+    ),
+  ];
+  if (serviceIds.length === 0) return { items, removedTotal: 0 };
+
+  const [{ data: types }, { data: res }] = await Promise.all([
+    supabaseAdmin.from('hub_service_types').select('id, service_group').in('id', serviceIds),
+    supabaseAdmin
+      .from('hub_boarding_reservations')
+      .select('*')
+      .eq('id', reservationId)
+      .eq('clinic_id', clinicId)
+      .maybeSingle(),
+  ]);
+  const groupById = new Map(
+    (types ?? []).map((t: { id: string; service_group: string | null }) => [t.id, t.service_group]),
+  );
+  const reservationServiceId = (res?.hub_service_type_id as string | null | undefined) ?? null;
+
+  let removedTotal = 0;
+  const kept = items.filter((it) => {
+    if (it.origin_type !== 'appointment_service') return true;
+    const sid = it.hub_service_type_id ?? null;
+    const replaced = isAppointmentLineReplacedByBoarding(sid, sid ? groupById.get(sid) : null, reservationServiceId);
+    if (replaced) removedTotal = round2(removedTotal + Number(it.line_total ?? 0));
+    return !replaced;
+  });
+  return { items: kept.map((it, i) => ({ ...it, sort_order: i })), removedTotal };
 }
 
 function mapItemToReceivableLineKind(originType: string | null): 'appointment_service' | 'grooming_extra' | 'quote_line' | 'manual' {
@@ -1482,10 +1556,16 @@ async function buildDesiredComandaSnapshot(
     const boardingId = await findCheckedOutBoardingReservationForAppointment(clinicId, oid);
     if (boardingId) {
       const boardingBuilt = await buildComandaItemsFromBoardingReservation(clinicId, boardingId);
+      const { items: apptItems, removedTotal } = await dropAppointmentLinesReplacedByBoarding(
+        clinicId,
+        boardingId,
+        snapshot.items,
+      );
+      const base = apptItems.length;
       return {
         ...snapshot,
-        items: [...snapshot.items, ...boardingBuilt.items],
-        subtotal: round2(snapshot.subtotal + boardingBuilt.subtotal),
+        items: [...apptItems, ...boardingBuilt.items.map((it, i) => ({ ...it, sort_order: base + i }))],
+        subtotal: round2(snapshot.subtotal - removedTotal + boardingBuilt.subtotal),
       };
     }
     return snapshot;

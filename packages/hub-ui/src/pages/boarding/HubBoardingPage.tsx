@@ -1,121 +1,125 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { CalendarDays, PlusCircle, RefreshCw, Search } from 'lucide-react';
-import { apiRequest, getStoredClinicId, getSupabase, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
+import { CalendarDays, RefreshCw, Search } from 'lucide-react';
+import { apiRequest, getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
-import { useAlert } from '../../components/AlertProvider';
-import { HubLoading } from '../../components/HubLoading';
+import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
 import { HubDayNav } from '../../components/HubDayNav';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
-import { hubBoardingApi, type BoardingDayBoardItem, type BoardingOccupancyResponse } from '../../api/hubBoardingApi';
-import { hubAgendaApi } from '../../api/hubAgendaApi';
+import { hubBoardingApi, type BoardingOpsStay, type BoardingTask } from '../../api/hubBoardingApi';
+import { useAlert } from '../../components/AlertProvider';
 import {
   dayRangeIsoLocal,
   isUuid,
   loadAgendaPersistedFilters,
   saveAgendaPersistedUnit,
 } from '../agenda/agendaFilters';
-import type { BoardingMode } from './boardingStages';
 import { isBoardingFloorStaff } from './boardingAccess';
-import BoardingDayBoard from './BoardingDayBoard';
-import BoardingReservationDrawer from './BoardingReservationDrawer';
+import {
+  BATCH_TASK_KINDS,
+  sortStays,
+  stayMatchesFilter,
+  stayMatchesSearch,
+  type StayFilter,
+} from './boardingCareUi';
+import { useBoardingOpsBoard } from './useBoardingOpsBoard';
+import { useBoardingTaskRunner } from './useBoardingTaskRunner';
+import BoardingStayCard from './BoardingStayCard';
+import BoardingTaskList from './BoardingTaskList';
 import BoardingCalendarView from './BoardingCalendarView';
-import BoardingWalkInPanel from './BoardingWalkInPanel';
+import BoardingStayPanel, { type BoardingStayTarget } from './BoardingStayPanel';
+import BoardingCheckInPanel, { type CheckInRequest } from './BoardingCheckInPanel';
+import BoardingCheckOutPanel from './BoardingCheckOutPanel';
+import BoardingNewStayPanel from './BoardingNewStayPanel';
+import BoardingHandoffPanel from './BoardingHandoffPanel';
+import BoardingGroupActivityPanel from './BoardingGroupActivityPanel';
 import '../clinica/clinica-page.css';
 import '../clientes/clientes.css';
 import '../grooming/grooming-page.css';
 import './boarding-page.css';
 
-const POLL_MS = 30_000;
+type ViewMode = 'pets' | 'tasks' | 'calendar';
+
+const FILTERS: { id: StayFilter; label: string }[] = [
+  { id: 'all', label: 'Todos' },
+  { id: 'attention', label: 'Precisam de atenção' },
+  { id: 'hotel', label: 'Hotel' },
+  { id: 'daycare', label: 'Creche' },
+  { id: 'arrivals', label: 'Chegadas' },
+  { id: 'departures', label: 'Saídas' },
+];
+
+const VIEWS: { id: ViewMode; label: string }[] = [
+  { id: 'pets', label: 'Por pet' },
+  { id: 'tasks', label: 'Por tarefa' },
+  { id: 'calendar', label: 'Calendário' },
+];
+
+/** Passagem recente sem ciência (até 12h): o próximo turno precisa ler. */
+function handoffNeedsAck(h: { created_at: string; acknowledged_at?: string | null } | null | undefined): boolean {
+  if (!h || h.acknowledged_at) return false;
+  return Date.now() - new Date(h.created_at).getTime() < 12 * 3600_000;
+}
 
 const HubBoardingPage: React.FC = () => {
-  const { showError } = useAlert();
   const { role: authRole } = useAuth();
   const { hasPermission, loading: permLoading } = usePermissions();
+  const { showError, showSuccess } = useAlert();
   const navigate = useNavigate();
   const clinicId = getStoredClinicId();
 
   const accessAllowed = hasPermission('boarding.reservations.read');
-  const canWrite =
-    hasPermission('boarding.reservations.manage') && hasPermission('hub.appointments.write');
-  /** CSTAFF de chão → Minha fila (padrão Banho & Tosa). */
+  const canWrite = hasPermission('boarding.reservations.manage') && hasPermission('hub.appointments.write');
   const isFloorStaff = isBoardingFloorStaff(authRole, hasPermission('hub.appointments.write'));
   const canDailyReport = hasPermission('boarding.daily_report.write');
   const canManageFinance = hasPermission('hub.receivables.create');
   const canWriteInventory = hasPermission('hub.inventory.write');
 
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const loadSeqRef = useRef(0);
-  const [activeMode, setActiveMode] = useState<BoardingMode>('all');
-  const [items, setItems] = useState<BoardingDayBoardItem[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [actionBusy, setActionBusy] = useState(false);
+  const [cursor, setCursor] = useState(() => new Date());
   const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
   const [unitFilter, setUnitFilter] = useState(() => loadAgendaPersistedFilters().unit ?? 'all');
   const [searchQ, setSearchQ] = useState('');
-  const [boardingTypesConfigured, setBoardingTypesConfigured] = useState(true);
-  const [selected, setSelected] = useState<BoardingDayBoardItem | null>(null);
-  const [cursor, setCursor] = useState(() => new Date());
-  const [viewMode, setViewMode] = useState<'board' | 'calendar'>('board');
-  const [occupancy, setOccupancy] = useState<BoardingOccupancyResponse | null>(null);
-  const [walkInOpen, setWalkInOpen] = useState(false);
-  const [walkInBusy, setWalkInBusy] = useState(false);
+  const [filter, setFilter] = useState<StayFilter>('all');
+  const [view, setView] = useState<ViewMode>('pets');
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
 
-  const dayRange = useMemo(() => dayRangeIsoLocal(cursor), [cursor]);
+  const [stayTarget, setStayTarget] = useState<BoardingStayTarget | null>(null);
+  const [checkInRequest, setCheckInRequest] = useState<CheckInRequest | null>(null);
+  const [checkOutId, setCheckOutId] = useState<string | null>(null);
+  const [newStayOpen, setNewStayOpen] = useState(false);
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const [groupActivity, setGroupActivity] = useState<{
+    kind: 'recreation' | 'walk' | 'custom';
+    title?: string;
+    reservationIds: string[];
+  } | null>(null);
+  const [showOccupancy, setShowOccupancy] = useState(false);
 
+  const dateYmd = useMemo(() => dayRangeIsoLocal(cursor).dateYmd, [cursor]);
   const unitIdParam = useMemo(() => {
     if (unitFilter === 'all') return undefined;
     if (isUuid(unitFilter)) return unitFilter;
-    const match = units.find((u) => u.name === unitFilter);
-    return match?.id;
+    return units.find((u) => u.name === unitFilter)?.id;
   }, [unitFilter, units]);
 
-  const load = useCallback(async (opts?: { soft?: boolean }) => {
-    if (!clinicId) return;
-    const seq = ++loadSeqRef.current;
-    if (!opts?.soft) setLoading(true);
-    try {
-      const res = await hubBoardingApi.dayBoard(clinicId, dayRange, {
-        unitId: unitIdParam,
-        mode: activeMode === 'all' ? undefined : activeMode,
-      });
-      if (seq !== loadSeqRef.current) return;
-      setItems(res.items ?? []);
-      setBoardingTypesConfigured(res.boarding_types_configured !== false);
-      setSelected((prev) => {
-        if (!prev) return null;
-        const key = prev.reservation_id || prev.appointment_id;
-        return res.items?.find((i) => (i.reservation_id || i.appointment_id) === key) ?? prev;
-      });
-    } catch (e: unknown) {
-      if (seq !== loadSeqRef.current) return;
-      showError((e as Error)?.message || 'Erro ao carregar painel de Hotel & Creche');
-      setItems([]);
-      setBoardingTypesConfigured(true);
-    } finally {
-      if (seq === loadSeqRef.current) setLoading(false);
-    }
-  }, [clinicId, dayRange, unitIdParam, activeMode, showError]);
+  const enabled = Boolean(clinicId) && accessAllowed && !isFloorStaff && !permLoading;
+  const { board, loading, refreshing, reload } = useBoardingOpsBoard({
+    clinicId,
+    unitId: unitIdParam,
+    dateYmd,
+    enabled,
+    channelKey: 'hub_boarding_board',
+  });
+  const refresh = () => void reload({ soft: true });
+  const { busyTaskId, run } = useBoardingTaskRunner(clinicId, () => reload({ soft: true }));
 
   useEffect(() => {
     if (permLoading) return;
     if (!accessAllowed) redirectAwayFromHub(authRole as AppRole);
-    if (isFloorStaff) {
-      navigate('/hub/hotel-creche/minha-fila', { replace: true });
-    }
+    if (isFloorStaff) navigate('/hub/hotel-creche/minha-fila', { replace: true });
   }, [permLoading, accessAllowed, authRole, isFloorStaff, navigate]);
-
-  useEffect(() => {
-    if (!clinicId || !accessAllowed || isFloorStaff) return;
-    void load();
-  }, [clinicId, accessAllowed, isFloorStaff, load]);
-
-  useEffect(() => {
-    if (!clinicId || !accessAllowed || isFloorStaff) return;
-    const id = window.setInterval(() => void load({ soft: true }), POLL_MS);
-    return () => window.clearInterval(id);
-  }, [clinicId, accessAllowed, isFloorStaff, load]);
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -129,28 +133,6 @@ const HubBoardingPage: React.FC = () => {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, []);
 
-  // Realtime: escuta mudanças em hub_boarding_reservations para o clinic_id atual.
-  // Complementa o polling (não o substitui) para reduzir latência de atualizações.
-  useEffect(() => {
-    if (!clinicId || !accessAllowed || isFloorStaff) return;
-    const supabase = getSupabase();
-    if (!supabase) return;
-    const channel = supabase
-      .channel(`hub_boarding_${clinicId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'hub_boarding_reservations',
-          filter: `clinic_id=eq.${clinicId}`,
-        },
-        () => { void load({ soft: true }); }
-      )
-      .subscribe();
-    return () => { void supabase.removeChannel(channel); };
-  }, [clinicId, accessAllowed, isFloorStaff, load]);
-
   useEffect(() => {
     if (!clinicId || isFloorStaff) return;
     void (apiRequest(`/units/clinic/${encodeURIComponent(clinicId)}?activeOnly=true`) as Promise<{
@@ -160,102 +142,9 @@ const HubBoardingPage: React.FC = () => {
       .catch(() => setUnits([]));
   }, [clinicId, isFloorStaff]);
 
-  const loadOccupancy = useCallback(async () => {
-    if (!clinicId) return;
-    try {
-      const occ = await hubBoardingApi.getOccupancy(clinicId, {
-        unitId: unitIdParam,
-        dateYmd: dayRange.dateYmd,
-        mode: activeMode === 'all' ? undefined : activeMode,
-      });
-      setOccupancy(occ);
-    } catch {
-      // Ocupação é não-crítica: falha silenciosa
-    }
-  }, [clinicId, unitIdParam, dayRange.dateYmd, activeMode]);
-
   useEffect(() => {
-    if (isFloorStaff) return;
-    void loadOccupancy();
-  }, [isFloorStaff, loadOccupancy]);
-
-  const handleUnitFilterChange = (value: string) => {
-    setUnitFilter(value);
-    saveAgendaPersistedUnit(value);
-  };
-
-  const handleWalkIn = async (payload: {
-    petId: string;
-    guardianId?: string;
-    mode: BoardingMode;
-    expectedCheckIn?: string;
-    expectedCheckOut?: string;
-    notes?: string;
-  }) => {
-    if (!clinicId) return;
-    setWalkInBusy(true);
-    try {
-      await hubBoardingApi.createReservation({
-        clinic_id: clinicId,
-        pet_id: payload.petId,
-        guardian_id: payload.guardianId ?? null,
-        unit_id: unitIdParam ?? null,
-        mode: payload.mode,
-        expected_check_in: payload.expectedCheckIn ?? null,
-        expected_check_out: payload.expectedCheckOut ?? null,
-        notes: payload.notes ?? null,
-      });
-      setWalkInOpen(false);
-      await load({ soft: true });
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao registrar entrada avulsa');
-    } finally {
-      setWalkInBusy(false);
-    }
-  };
-
-  const handleCheckIn = async (item: BoardingDayBoardItem) => {
-    if (!clinicId || !canWrite) return;
-    setActionBusy(true);
-    try {
-      if (item.reservation_id) {
-        await hubBoardingApi.patchReservation(item.reservation_id, {
-          clinic_id: clinicId,
-          status: 'checked_in',
-          checked_in_at: new Date().toISOString(),
-        });
-      } else if (item.appointment_id) {
-        await hubBoardingApi.openFromAppointment(clinicId, item.appointment_id);
-        await hubAgendaApi.patch(item.appointment_id, { clinic_id: clinicId, status: 'in_progress' });
-      }
-      await load({ soft: true });
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao fazer check-in');
-    } finally {
-      setActionBusy(false);
-    }
-  };
-
-  const handleCheckOut = async (item: BoardingDayBoardItem) => {
-    if (!clinicId || !canWrite) return;
-    setActionBusy(true);
-    try {
-      if (item.reservation_id) {
-        await hubBoardingApi.patchReservation(item.reservation_id, {
-          clinic_id: clinicId,
-          status: 'checked_out',
-          checked_out_at: new Date().toISOString(),
-        });
-      } else if (item.appointment_id) {
-        await hubAgendaApi.patch(item.appointment_id, { clinic_id: clinicId, status: 'done' });
-      }
-      await load({ soft: true });
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao fazer check-out');
-    } finally {
-      setActionBusy(false);
-    }
-  };
+    setSelectedTaskIds(new Set());
+  }, [dateYmd, unitIdParam, view]);
 
   const unitOptions: HubComboboxOption[] = useMemo(() => {
     const rows: HubComboboxOption[] = [{ value: 'all', label: 'Todas as unidades' }];
@@ -266,22 +155,77 @@ const HubBoardingPage: React.FC = () => {
     return rows;
   }, [units, unitFilter]);
 
-  const metrics = useMemo(() => {
-    const total = items.length;
-    const hosting = items.filter((i) => {
-      const stage = String(i.boarding_stage ?? '');
-      return stage === 'checked_in' || i.appointment_status === 'in_progress';
-    }).length;
-    const late = items.filter((i) => i.is_late).length;
-    return { total, hosting, late };
-  }, [items]);
+  const stays = board?.stays ?? [];
+  const filterCounts = useMemo(() => {
+    const out = {} as Record<StayFilter, number>;
+    for (const f of FILTERS) out[f.id] = stays.filter((s) => stayMatchesFilter(s, f.id)).length;
+    return out;
+  }, [stays]);
+
+  const visibleStays = useMemo(
+    () => sortStays(stays.filter((s) => stayMatchesFilter(s, filter) && stayMatchesSearch(s, searchQ))),
+    [stays, filter, searchQ],
+  );
+  const sections = useMemo(
+    () => [
+      { key: 'present', title: 'Hospedados agora', items: visibleStays.filter((s) => s.stage === 'checked_in') },
+      { key: 'arriving', title: 'Chegadas previstas', items: visibleStays.filter((s) => s.stage === 'reserved') },
+      { key: 'left', title: 'Saíram', items: visibleStays.filter((s) => s.stage === 'checked_out') },
+    ],
+    [visibleStays],
+  );
+
+  const visibleTasks = useMemo(() => {
+    const rids = new Set(visibleStays.map((s) => s.reservation_id).filter(Boolean) as string[]);
+    return (board?.tasks ?? []).filter((t) => rids.has(t.hub_boarding_reservation_id));
+  }, [board?.tasks, visibleStays]);
+
+  const selectedTasks = visibleTasks.filter((t) => selectedTaskIds.has(t.id));
+  const selectedKind = selectedTasks[0]?.kind;
+
+  const toggleTask = (task: BoardingTask) =>
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(task.id)) next.delete(task.id);
+      else {
+        // Lote só junta tarefas do mesmo tipo.
+        const kind = visibleTasks.find((t) => prev.has(t.id))?.kind;
+        if (kind && kind !== task.kind) next.clear();
+        next.add(task.id);
+      }
+      return next;
+    });
+
+  const openStay = (stay: BoardingOpsStay, initialTab?: BoardingStayTarget['initialTab']) =>
+    setStayTarget({ reservationId: stay.reservation_id, stay, initialTab });
+
+  const openStayFromTask = (task: BoardingTask) => {
+    const stay = stays.find((s) => s.reservation_id === task.hub_boarding_reservation_id) ?? null;
+    setStayTarget({ reservationId: task.hub_boarding_reservation_id, stay, initialTab: 'routine' });
+  };
+
+  const requestCheckIn = (stay: BoardingOpsStay) =>
+    setCheckInRequest({ reservationId: stay.reservation_id, appointmentId: stay.appointment_id ?? null, stay });
+
+  const attachTaskPhoto = async (task: BoardingTask, file: File) => {
+    if (!clinicId) return;
+    try {
+      await hubBoardingApi.uploadMedia({
+        clinicId,
+        reservationId: task.hub_boarding_reservation_id,
+        file,
+        taskId: task.id,
+        caption: task.title,
+      });
+      showSuccess('Foto anexada à tarefa');
+      refresh();
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao enviar a foto');
+    }
+  };
 
   if (!permLoading && !clinicId) {
-    return (
-      <p className="hub-clientes__muted hub-clinic-page__pad">
-        Selecione uma clínica para acessar Hotel & Creche.
-      </p>
-    );
+    return <p className="hub-clientes__muted hub-clinic-page__pad">Selecione uma clínica para acessar Hotel & Creche.</p>;
   }
 
   if (permLoading || !accessAllowed || isFloorStaff) {
@@ -292,46 +236,60 @@ const HubBoardingPage: React.FC = () => {
     );
   }
 
-  const tabsConfig: { mode: BoardingMode; label: string }[] = [
-    { mode: 'all', label: 'Todos' },
-    { mode: 'hotel', label: 'Hotel' },
-    { mode: 'daycare', label: 'Creche' },
-  ];
-
-  const overHotel = occupancy?.hotel.over_capacity ?? false;
-  const overDaycare = occupancy?.daycare.over_capacity ?? false;
-  const hasOverbooking = overHotel || overDaycare;
+  const occ = board?.occupancy;
+  const overHotel = occ?.hotel.max != null && occ.hotel.current > occ.hotel.max;
+  const overDaycare = occ?.daycare.max != null && occ.daycare.current > occ.daycare.max;
+  const pendingHandoff = handoffNeedsAck(board?.last_handoff);
+  const hasGroupCandidates = stays.some((s) => s.stage === 'checked_in');
 
   return (
     <div className="hub-boarding-queue-page">
-      {!boardingTypesConfigured && !loading && (
+      {board && !board.boarding_types_configured ? (
         <div className="hub-clinic-banner">
           <p>
-            Configure tipos de serviço com grupo <strong>hotel</strong> ou <strong>creche</strong>{' '}
-            para ver agendamentos neste painel.
+            Configure tipos de serviço com grupo <strong>hotel</strong> ou <strong>creche</strong> para usar este painel.
           </p>
           <Link to="/hub/servicos" className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm">
             Configurar serviços
           </Link>
         </div>
-      )}
-      {hasOverbooking && (
+      ) : null}
+      {board && !board.migrations_ready ? (
+        <div className="hub-clinic-banner hub-clinic-banner--warning">
+          <p>Rotina, cuidados e acomodações ainda não estão disponíveis neste ambiente. Aplique as migrações do módulo.</p>
+        </div>
+      ) : null}
+      {pendingHandoff ? (
         <div className="hub-clinic-banner hub-clinic-banner--warning">
           <p>
-            {overHotel && (
+            Passagem de turno{board?.last_handoff?.shift_label ? ` (${board.last_handoff.shift_label})` : ''} ainda sem ciência.
+          </p>
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+            onClick={() => setHandoffOpen(true)}
+          >
+            Ler passagem
+          </button>
+        </div>
+      ) : null}
+      {overHotel || overDaycare ? (
+        <div className="hub-clinic-banner hub-clinic-banner--warning">
+          <p>
+            {overHotel ? (
               <>
-                <strong>Hotel</strong>: {occupancy!.hotel.current}/{occupancy!.hotel.max} vagas ocupadas.{' '}
+                <strong>Hotel</strong>: {occ!.hotel.current}/{occ!.hotel.max} vagas.{' '}
               </>
-            )}
-            {overDaycare && (
+            ) : null}
+            {overDaycare ? (
               <>
-                <strong>Creche</strong>: {occupancy!.daycare.current}/{occupancy!.daycare.max} cães no turno.{' '}
+                <strong>Creche</strong>: {occ!.daycare.current}/{occ!.daycare.max} cães.{' '}
               </>
-            )}
-            Capacidade excedida. As reservas continuam sendo aceitas.
+            ) : null}
+            Capacidade excedida.
           </p>
         </div>
-      )}
+      ) : null}
 
       <div className="hub-clientes__toolbar hub-clinic-atendimentos__toolbar">
         <HubDayNav dateFieldId="hub-boarding-date" value={cursor} onChange={setCursor} />
@@ -341,7 +299,7 @@ const HubBoardingPage: React.FC = () => {
           <input
             ref={searchInputRef}
             type="search"
-            placeholder="Buscar pet ou tutor… (/)"
+            placeholder="Buscar pet, tutor ou acomodação… (/)"
             value={searchQ}
             onChange={(e) => setSearchQ(e.target.value)}
           />
@@ -353,7 +311,10 @@ const HubBoardingPage: React.FC = () => {
             className="hub-combobox--clientes"
             options={unitOptions}
             value={unitFilter}
-            onChange={handleUnitFilterChange}
+            onChange={(v) => {
+              setUnitFilter(v);
+              saveAgendaPersistedUnit(v);
+            }}
             placeholder="Unidade"
             allowCreate={false}
           />
@@ -362,121 +323,309 @@ const HubBoardingPage: React.FC = () => {
         <button
           type="button"
           className="hub-clientes__btn hub-clientes__btn--ghost"
-          onClick={() => void load()}
-          disabled={loading || actionBusy}
+          onClick={() => void reload()}
+          disabled={loading}
           aria-label="Atualizar painel"
         >
           <RefreshCw size={16} />
         </button>
-
-        <button
-          type="button"
-          className={`hub-clientes__btn hub-clientes__btn--ghost${viewMode === 'calendar' ? ' hub-clientes__btn--primary' : ''}`}
-          onClick={() => setViewMode((v) => (v === 'board' ? 'calendar' : 'board'))}
-          aria-label="Alternar para calendário"
-          title="Calendário de reservas"
-        >
-          <CalendarDays size={16} />
-        </button>
-
-        {canWrite && (
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--ghost"
-            onClick={() => setWalkInOpen(true)}
-            aria-label="Entrada avulsa"
-            title="Entrada avulsa"
-          >
-            <PlusCircle size={16} />
-          </button>
-        )}
-
-        <Link to="/hub/appointments" className="hub-clientes__btn hub-clientes__btn--ghost">
+        <Link to="/hub/appointments" className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm">
+          <CalendarDays size={16} aria-hidden />
           Agenda
         </Link>
+        <button
+          type="button"
+          className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+          onClick={() => setHandoffOpen(true)}
+        >
+          Passagem de turno
+        </button>
+        {canWrite ? (
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+            onClick={() => setNewStayOpen(true)}
+          >
+            Nova hospedagem
+          </button>
+        ) : null}
       </div>
 
-      {/* Abas Hotel / Creche */}
-      <div className="hub-grooming-page__filters" role="tablist" aria-label="Modo de hospedagem">
-        {tabsConfig.map(({ mode, label }) => (
+      <div
+        className="hub-clientes__metrics hub-clinic-metrics hub-grooming-page__metrics-grid hub-boarding-page__metrics"
+        role="toolbar"
+        aria-label="Filtrar pets do dia"
+      >
+        {FILTERS.map((f) => (
           <button
-            key={mode}
+            key={f.id}
             type="button"
-            role="tab"
-            aria-selected={activeMode === mode}
-            className={`hub-clientes__btn hub-clientes__btn--sm${
-              activeMode === mode ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'
-            }`}
-            onClick={() => setActiveMode(mode)}
+            className={[
+              'hub-clientes__metric-card',
+              'hub-grooming-page__metric-btn',
+              filter === f.id ? 'hub-grooming-page__metric-btn--active' : '',
+              f.id === 'attention' && filterCounts.attention > 0 ? 'hub-grooming-page__metric-card--late' : '',
+            ]
+              .filter(Boolean)
+              .join(' ')}
+            aria-pressed={filter === f.id}
+            onClick={() => setFilter((cur) => (cur === f.id && f.id !== 'all' ? 'all' : f.id))}
           >
-            {label}
+            <span className="hub-clientes__metric-value">{loading && !board ? '–' : filterCounts[f.id]}</span>
+            <span className="hub-clientes__metric-label">{f.label}</span>
           </button>
         ))}
       </div>
 
-      {!loading && (
-        <p className="hub-clientes__muted hub-grooming-page__metrics">
-          {metrics.total} previstos · {metrics.hosting} hospedados
-          {metrics.late > 0 ? ` · ${metrics.late} em atraso` : ''}
-          {occupancy && (occupancy.hotel.max != null || occupancy.daycare.max != null) && (
-            <span className={`hub-boarding-page__occupancy-chip${hasOverbooking ? ' hub-boarding-page__occupancy-chip--over' : ''}`}>
-              {occupancy.hotel.max != null && ` · ${occupancy.hotel.current}/${occupancy.hotel.max} hotel`}
-              {occupancy.daycare.max != null && ` · ${occupancy.daycare.current}/${occupancy.daycare.max} creche`}
-            </span>
-          )}
-        </p>
-      )}
+      <div className="hub-grooming-page__filters hub-boarding-page__views" role="toolbar" aria-label="Visualização">
+        {VIEWS.map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            aria-pressed={view === v.id}
+            className={`hub-clientes__btn hub-clientes__btn--sm${view === v.id ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
+            onClick={() => setView(v.id)}
+          >
+            {v.label}
+            {v.id === 'tasks' && board?.counts.tasks_overdue ? (
+              <span className="hub-boarding-page__view-badge">{board.counts.tasks_overdue}</span>
+            ) : null}
+          </button>
+        ))}
+        {occ && (occ.hotel.max != null || occ.daycare.max != null || occ.spaces.length) ? (
+          <button
+            type="button"
+            className="hub-clientes__link-btn hub-boarding-page__occupancy"
+            aria-expanded={showOccupancy}
+            onClick={() => setShowOccupancy((v) => !v)}
+          >
+            {[
+              occ.hotel.max != null ? `Hotel ${occ.hotel.current}/${occ.hotel.max}` : null,
+              occ.daycare.max != null ? `Creche ${occ.daycare.current}/${occ.daycare.max}` : null,
+              occ.spaces.length
+                ? `${occ.spaces.filter((s) => s.current < s.capacity).length} de ${occ.spaces.length} acomodações livres`
+                : null,
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+            {occ.spaces.length ? (showOccupancy ? ' · ocultar' : ' · ver acomodações') : null}
+          </button>
+        ) : null}
+        {canDailyReport && hasGroupCandidates && view !== 'calendar' ? (
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm hub-boarding-page__group-btn"
+            onClick={() => setGroupActivity({ kind: 'recreation', reservationIds: [] })}
+          >
+            Atividade em grupo
+          </button>
+        ) : null}
+      </div>
 
-      {viewMode === 'calendar' ? (
+      <HubRefreshingBanner show={refreshing && !loading} label="Atualizando…" />
+
+      {showOccupancy && occ?.spaces.length ? (
+        <section className="hub-boarding-page__occupancy-panel" aria-label="Ocupação por acomodação">
+          <h3 className="hub-clinic-queue__col-title">Acomodações</h3>
+          <ul className="hub-boarding-page__occupancy-list">
+            {occ.spaces.map((s) => {
+              const full = s.current >= s.capacity;
+              return (
+                <li
+                  key={s.id}
+                  className={`hub-boarding-page__occupancy-item${full ? ' hub-boarding-page__occupancy-item--full' : ''}`}
+                >
+                  <span className="hub-boarding-page__occupancy-name">{s.name}</span>
+                  <span className="hub-boarding-page__occupancy-fill">
+                    {s.current}/{s.capacity}
+                    {full ? ' · lotada' : ''}
+                  </span>
+                  {s.pets.length ? (
+                    <span className="hub-boarding-page__occupancy-pets">{s.pets.join(', ')}</span>
+                  ) : (
+                    <span className="hub-boarding-page__occupancy-pets">Livre</span>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        </section>
+      ) : null}
+
+      {view === 'calendar' ? (
         <BoardingCalendarView
           clinicId={clinicId ?? ''}
           unitId={unitIdParam}
-          mode={activeMode}
-          onSelectReservationId={(id) => {
-            const found = items.find((i) => i.reservation_id === id);
-            if (found) setSelected(found);
-          }}
+          mode={filter === 'hotel' || filter === 'daycare' ? filter : 'all'}
+          onSelectReservationId={(id) => setStayTarget({ reservationId: id })}
         />
-      ) : loading ? (
+      ) : loading && !board ? (
         <HubLoading variant="block" label="Carregando painel…" className="hub-clinic-page__pad" />
-      ) : items.length === 0 ? (
-        <p className="hub-clientes__muted hub-clinic-page__pad">
-          Nenhum agendamento de Hotel & Creche neste dia. Os serviços agendados na Agenda com grupos{' '}
-          <strong>hotel</strong> ou <strong>creche</strong> aparecem aqui automaticamente.
-        </p>
+      ) : view === 'tasks' ? (
+        <div className="hub-boarding-page__tasks">
+          {selectedTasks.length ? (
+            <div className="hub-boarding-page__batchbar" role="region" aria-label="Registro em lote">
+              <span>
+                {selectedTasks.length} {selectedTasks.length === 1 ? 'tarefa selecionada' : 'tarefas selecionadas'}
+              </span>
+              <div className="hub-clientes__btn-row">
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                  onClick={() => setSelectedTaskIds(new Set())}
+                >
+                  Limpar
+                </button>
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                  disabled={!selectedKind || !BATCH_TASK_KINDS.includes(selectedKind)}
+                  onClick={() =>
+                    setGroupActivity({
+                      kind: selectedKind as 'recreation' | 'walk' | 'custom',
+                      title: selectedTasks[0]?.title,
+                      reservationIds: [...new Set(selectedTasks.map((t) => t.hub_boarding_reservation_id))],
+                    })
+                  }
+                >
+                  Registrar em lote
+                </button>
+              </div>
+            </div>
+          ) : null}
+          <BoardingTaskList
+            tasks={visibleTasks}
+            showPet
+            grouped
+            canExecute={canDailyReport}
+            busyTaskId={busyTaskId}
+            onAction={(task, action) => void run(task, action)}
+            onOpenPet={openStayFromTask}
+            onAttachPhoto={canDailyReport ? (task, file) => void attachTaskPhoto(task, file) : undefined}
+            selection={canDailyReport ? { ids: selectedTaskIds, onToggle: toggleTask } : null}
+            emptyLabel={stays.some((s) => s.stage === 'checked_in') ? 'Nenhuma tarefa para este filtro.' : 'Nenhum pet hospedado neste dia.'}
+          />
+        </div>
+      ) : visibleStays.length === 0 ? (
+        <div className="hub-boarding-page__empty">
+          <p className="hub-clientes__muted">
+            {stays.length
+              ? 'Nenhum pet para este filtro.'
+              : 'Nenhum pet em Hotel & Creche neste dia. Reservas feitas aqui ou na Agenda aparecem automaticamente.'}
+          </p>
+          {canWrite && !stays.length ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+              onClick={() => setNewStayOpen(true)}
+            >
+              Nova hospedagem
+            </button>
+          ) : null}
+        </div>
       ) : (
-        <BoardingDayBoard
-          items={items}
-          canWrite={canWrite && !actionBusy}
-          searchQ={searchQ}
-          onSelect={setSelected}
-          onCheckIn={handleCheckIn}
-          onCheckOut={handleCheckOut}
-        />
+        sections
+          .filter((s) => s.items.length)
+          .map((section) => (
+            <section key={section.key} className="hub-boarding-page__section" aria-label={section.title}>
+              <h3 className="hub-clinic-queue__col-title">
+                {section.title} <span className="hub-clinic-queue__count">{section.items.length}</span>
+              </h3>
+              <div className="hub-boarding-page__grid">
+                {section.items.map((stay) => (
+                  <BoardingStayCard
+                    key={stay.key}
+                    stay={stay}
+                    canWrite={canWrite}
+                    onOpen={(s) => openStay(s)}
+                    onCheckIn={requestCheckIn}
+                    onCheckOut={(s) => s.reservation_id && setCheckOutId(s.reservation_id)}
+                  />
+                ))}
+              </div>
+            </section>
+          ))
       )}
 
-      <BoardingReservationDrawer
-        item={selected}
-        open={!!selected}
-        canWrite={canWrite}
+      <BoardingStayPanel
+        open={!!stayTarget}
+        target={stayTarget}
+        canManage={canWrite}
         canDailyReport={canDailyReport}
         canManageFinance={canManageFinance}
         canWriteInventory={canWriteInventory}
         unitId={unitIdParam}
-        onClose={() => setSelected(null)}
-        onUpdated={() => void load({ soft: true })}
+        onClose={() => setStayTarget(null)}
+        onUpdated={refresh}
+        onRequestCheckIn={(req) => setCheckInRequest(req)}
+        onRequestCheckOut={(rid) => setCheckOutId(rid)}
       />
 
-      {canWrite && (
-        <BoardingWalkInPanel
-          open={walkInOpen}
+      {canWrite ? (
+        <>
+          <BoardingCheckInPanel
+            open={!!checkInRequest}
+            clinicId={clinicId ?? ''}
+            unitId={unitIdParam}
+            request={checkInRequest}
+            onClose={() => setCheckInRequest(null)}
+            onDone={() => {
+              setCheckInRequest(null);
+              refresh();
+            }}
+            onReviewCare={(rid) => {
+              setCheckInRequest(null);
+              setStayTarget({ reservationId: rid, initialTab: 'care' });
+            }}
+          />
+          <BoardingCheckOutPanel
+            open={!!checkOutId}
+            clinicId={clinicId ?? ''}
+            reservationId={checkOutId}
+            unitId={unitIdParam}
+            canManageFinance={canManageFinance}
+            onClose={() => setCheckOutId(null)}
+            onDone={refresh}
+          />
+          <BoardingNewStayPanel
+            open={newStayOpen}
+            clinicId={clinicId ?? ''}
+            unitId={unitIdParam}
+            settings={board?.settings}
+            onClose={() => setNewStayOpen(false)}
+            onCreated={(rid) => {
+              setNewStayOpen(false);
+              refresh();
+              setStayTarget({ reservationId: rid, initialTab: 'care' });
+            }}
+          />
+        </>
+      ) : null}
+
+      <BoardingHandoffPanel
+        open={handoffOpen}
+        clinicId={clinicId ?? ''}
+        unitId={unitIdParam}
+        board={board}
+        canWrite={canDailyReport || canWrite}
+        onClose={() => setHandoffOpen(false)}
+        onChanged={refresh}
+      />
+
+      {canDailyReport ? (
+        <BoardingGroupActivityPanel
+          open={!!groupActivity}
           clinicId={clinicId ?? ''}
-          unitId={unitIdParam}
-          onClose={() => setWalkInOpen(false)}
-          onSubmit={handleWalkIn}
-          submitting={walkInBusy}
+          stays={stays}
+          initial={groupActivity}
+          onClose={() => setGroupActivity(null)}
+          onDone={() => {
+            setGroupActivity(null);
+            setSelectedTaskIds(new Set());
+            refresh();
+          }}
         />
-      )}
+      ) : null}
     </div>
   );
 };

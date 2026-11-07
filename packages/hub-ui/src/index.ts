@@ -185,6 +185,8 @@ export { default as HubSpecialistReferralPublicView } from './pages/clinica/HubS
 export type { HubSpecialistReferralPublicViewProps } from './pages/clinica/HubSpecialistReferralPublicView';
 export { default as HubOrcamentosRoutes } from './pages/orcamentos/HubOrcamentosRoutes';
 export { default as HubQuotePublicView } from './pages/orcamentos/HubQuotePublicView';
+export { default as BoardingCarePublicView } from './pages/boarding/BoardingCarePublicView';
+export type { BoardingCarePublicData, BoardingCarePublicSubmit } from './pages/boarding/BoardingCarePublicView';
 export { hubProspectsApi } from './api/hubProspectsApi';
 export type { HubProspect } from './api/hubProspectsApi';
 export { hubQuotesApi, openHubQuotePdf, downloadHubQuotePdf } from './api/hubQuotesApi';

@@ -1,37 +1,32 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { getStoredClinicId, getSupabase, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
+import React, { useEffect, useMemo, useState } from 'react';
+import { getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
-import { useAlert } from '../../components/AlertProvider';
 import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
-import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
-import {
-  hubBoardingApi,
-  type BoardingDayBoardItem,
-  type BoardingOccupancyResponse,
-} from '../../api/hubBoardingApi';
-import { hubAgendaApi } from '../../api/hubAgendaApi';
+import { useAlert } from '../../components/AlertProvider';
+import { hubBoardingApi, type BoardingTask } from '../../api/hubBoardingApi';
 import { dayRangeIsoLocal, isUuid, loadAgendaPersistedFilters } from '../agenda/agendaFilters';
-import { boardingItemKey, type BoardingMode } from './boardingStages';
+import { useBoardingOpsBoard } from './useBoardingOpsBoard';
+import { useBoardingTaskRunner } from './useBoardingTaskRunner';
 import BoardingFloorView from './BoardingFloorView';
-import BoardingReservationDrawer from './BoardingReservationDrawer';
+import BoardingStayPanel, { type BoardingStayTarget } from './BoardingStayPanel';
+import BoardingCheckInPanel, { type CheckInRequest } from './BoardingCheckInPanel';
+import BoardingCheckOutPanel from './BoardingCheckOutPanel';
+import BoardingHandoffPanel from './BoardingHandoffPanel';
+import BoardingGroupActivityPanel from './BoardingGroupActivityPanel';
 import '../clinica/clinica-page.css';
 import '../clientes/clientes.css';
 import '../grooming/grooming-page.css';
 import './boarding-page.css';
 
-const POLL_MS = 30_000;
-
 /**
- * Tela "Minha fila" — visão de chão (celular) para Hotel & Creche.
- * Acessível em /hub/hotel-creche/minha-fila.
- *
+ * Minha fila — visão de chão (celular) para Hotel & Creche, em /hub/hotel-creche/minha-fila.
  * Check-in e check-out usam `boarding.reservations.manage`
  * (CSTAFF hotel_creche opera sem `hub.appointments.write`).
  */
 const HubBoardingFloorPage: React.FC = () => {
-  const { showError } = useAlert();
   const { role: authRole } = useAuth();
   const { hasPermission, loading: permLoading } = usePermissions();
+  const { showError, showSuccess } = useAlert();
   const clinicId = getStoredClinicId();
   const accessAllowed = hasPermission('boarding.reservations.read');
   const canWrite = hasPermission('boarding.reservations.manage');
@@ -39,164 +34,58 @@ const HubBoardingFloorPage: React.FC = () => {
   const canManageFinance = hasPermission('hub.receivables.create');
   const canWriteInventory = hasPermission('hub.inventory.write');
 
-  const loadSeqRef = useRef(0);
-  const [activeMode, setActiveMode] = useState<BoardingMode>('all');
-  const [items, setItems] = useState<BoardingDayBoardItem[]>([]);
-  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
-  const [actionBusy, setActionBusy] = useState(false);
-  const [selected, setSelected] = useState<BoardingDayBoardItem | null>(null);
-  const [featuredOverride, setFeaturedOverride] = useState<BoardingDayBoardItem | null>(null);
-  const [occupancy, setOccupancy] = useState<BoardingOccupancyResponse | null>(null);
   const [unitFilter] = useState(() => loadAgendaPersistedFilters().unit ?? 'all');
-  const cursor = useMemo(() => new Date(), []);
-  const dayRange = useMemo(() => dayRangeIsoLocal(cursor), [cursor]);
+  const unitIdParam = unitFilter !== 'all' && isUuid(unitFilter) ? unitFilter : undefined;
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const today = useMemo(() => new Date(nowMs), [nowMs]);
+  const dateYmd = dayRangeIsoLocal(today).dateYmd;
 
-  const unitIdParam = useMemo(() => {
-    if (unitFilter === 'all') return undefined;
-    if (isUuid(unitFilter)) return unitFilter;
-    return undefined;
-  }, [unitFilter]);
+  const [stayTarget, setStayTarget] = useState<BoardingStayTarget | null>(null);
+  const [checkInRequest, setCheckInRequest] = useState<CheckInRequest | null>(null);
+  const [checkOutId, setCheckOutId] = useState<string | null>(null);
+  const [handoffOpen, setHandoffOpen] = useState(false);
+  const [groupOpen, setGroupOpen] = useState(false);
+
+  const { board, loading, refreshing, reload } = useBoardingOpsBoard({
+    clinicId,
+    unitId: unitIdParam,
+    dateYmd,
+    enabled: Boolean(clinicId) && accessAllowed && !permLoading,
+    channelKey: 'hub_boarding_floor',
+  });
+  const refresh = () => void reload({ soft: true });
+  const { busyTaskId, run } = useBoardingTaskRunner(clinicId, () => reload({ soft: true }));
+
+  const attachTaskPhoto = async (task: BoardingTask, file: File) => {
+    if (!clinicId) return;
+    try {
+      await hubBoardingApi.uploadMedia({
+        clinicId,
+        reservationId: task.hub_boarding_reservation_id,
+        file,
+        taskId: task.id,
+        caption: task.title,
+      });
+      showSuccess('Foto anexada à tarefa');
+      refresh();
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao enviar a foto');
+    }
+  };
 
   useEffect(() => {
     if (permLoading) return;
     if (!accessAllowed) redirectAwayFromHub(authRole as AppRole);
   }, [permLoading, accessAllowed, authRole]);
 
-  const load = useCallback(async () => {
-    if (!clinicId) return;
-    const seq = ++loadSeqRef.current;
-    begin();
-    try {
-      const res = await hubBoardingApi.dayBoard(clinicId, dayRange, {
-        unitId: unitIdParam,
-        mode: activeMode === 'all' ? undefined : activeMode,
-      });
-      if (seq !== loadSeqRef.current) return;
-      setItems(res.items ?? []);
-      setSelected((prev) => {
-        if (!prev) return null;
-        const key = boardingItemKey(prev);
-        return res.items?.find((i) => boardingItemKey(i) === key) ?? prev;
-      });
-      setFeaturedOverride((prev) => {
-        if (!prev) return null;
-        const key = boardingItemKey(prev);
-        return res.items?.find((i) => boardingItemKey(i) === key) ?? null;
-      });
-      succeed();
-    } catch (e: unknown) {
-      if (seq !== loadSeqRef.current) return;
-      showError((e as Error)?.message || 'Erro ao carregar Minha fila');
-      setItems([]);
-    } finally {
-      if (seq === loadSeqRef.current) finish();
-    }
-  }, [clinicId, dayRange, unitIdParam, activeMode, showError, begin, succeed, finish]);
-
+  // "Atrasada" e "Agora" dependem do relógio.
   useEffect(() => {
-    if (!clinicId || !accessAllowed) return;
-    void load();
-  }, [clinicId, accessAllowed, load]);
-
-  useEffect(() => {
-    if (!clinicId || !accessAllowed) return;
-    const id = window.setInterval(() => void load(), POLL_MS);
+    const id = window.setInterval(() => setNowMs(Date.now()), 60_000);
     return () => window.clearInterval(id);
-  }, [clinicId, accessAllowed, load]);
-
-  useEffect(() => {
-    if (!clinicId || !accessAllowed) return;
-    const supabase = getSupabase();
-    if (!supabase) return;
-    const channel = supabase
-      .channel(`hub_boarding_floor_${clinicId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'hub_boarding_reservations',
-          filter: `clinic_id=eq.${clinicId}`,
-        },
-        () => {
-          void load();
-        },
-      )
-      .subscribe();
-    return () => {
-      void supabase.removeChannel(channel);
-    };
-  }, [clinicId, accessAllowed, load]);
-
-  const loadOccupancy = useCallback(async () => {
-    if (!clinicId) return;
-    try {
-      const occ = await hubBoardingApi.getOccupancy(clinicId, {
-        unitId: unitIdParam,
-        dateYmd: dayRange.dateYmd,
-        mode: activeMode === 'all' ? undefined : activeMode,
-      });
-      setOccupancy(occ);
-    } catch {
-      // Ocupação é não-crítica
-    }
-  }, [clinicId, unitIdParam, dayRange.dateYmd, activeMode]);
-
-  useEffect(() => {
-    void loadOccupancy();
-  }, [loadOccupancy]);
-
-  const handleCheckIn = async (item: BoardingDayBoardItem) => {
-    if (!clinicId || !canWrite) return;
-    setActionBusy(true);
-    try {
-      if (item.reservation_id) {
-        await hubBoardingApi.patchReservation(item.reservation_id, {
-          clinic_id: clinicId,
-          status: 'checked_in',
-          checked_in_at: new Date().toISOString(),
-        });
-      } else if (item.appointment_id) {
-        await hubBoardingApi.openFromAppointment(clinicId, item.appointment_id);
-        await hubAgendaApi.patch(item.appointment_id, { clinic_id: clinicId, status: 'in_progress' });
-      }
-      await load();
-      await loadOccupancy();
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao fazer check-in');
-    } finally {
-      setActionBusy(false);
-    }
-  };
-
-  const handleCheckOut = async (item: BoardingDayBoardItem) => {
-    if (!clinicId || !canWrite) return;
-    setActionBusy(true);
-    try {
-      if (item.reservation_id) {
-        await hubBoardingApi.patchReservation(item.reservation_id, {
-          clinic_id: clinicId,
-          status: 'checked_out',
-          checked_out_at: new Date().toISOString(),
-        });
-      } else if (item.appointment_id) {
-        await hubAgendaApi.patch(item.appointment_id, { clinic_id: clinicId, status: 'done' });
-      }
-      await load();
-      await loadOccupancy();
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao fazer check-out');
-    } finally {
-      setActionBusy(false);
-    }
-  };
+  }, []);
 
   if (!permLoading && !clinicId) {
-    return (
-      <p className="hub-clientes__muted hub-clinic-page__pad">
-        Selecione uma clínica para acessar Hotel & Creche.
-      </p>
-    );
+    return <p className="hub-clientes__muted hub-clinic-page__pad">Selecione uma clínica para acessar Hotel & Creche.</p>;
   }
 
   if (permLoading || !accessAllowed) {
@@ -207,50 +96,102 @@ const HubBoardingFloorPage: React.FC = () => {
     );
   }
 
-  const dateLabel = cursor.toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: 'numeric',
-    month: 'long',
-  });
-
-  const overHotel = occupancy?.hotel.over_capacity ?? false;
-  const overDaycare = occupancy?.daycare.over_capacity ?? false;
-  const occupancyParts: string[] = [];
-  if (occupancy?.hotel.max != null) occupancyParts.push(`${occupancy.hotel.current}/${occupancy.hotel.max} hotel`);
-  if (occupancy?.daycare.max != null) occupancyParts.push(`${occupancy.daycare.current}/${occupancy.daycare.max} creche`);
+  const lastHandoff = board?.last_handoff;
+  const handoffPending =
+    Boolean(lastHandoff && !lastHandoff.acknowledged_at) &&
+    nowMs - new Date(lastHandoff!.created_at).getTime() < 12 * 3600_000;
 
   return (
     <div className="hub-boarding-page--floor">
-      <HubRefreshingBanner show={refreshing} label="Atualizando fila…" />
+      <HubRefreshingBanner show={refreshing && !loading} label="Atualizando…" />
       <BoardingFloorView
-        items={items}
-        dateLabel={dateLabel}
+        board={board}
+        dateLabel={today.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
         loading={loading}
-        busy={actionBusy}
         canWrite={canWrite}
-        activeMode={activeMode}
-        onActiveModeChange={setActiveMode}
-        occupancyLabel={occupancyParts.length ? occupancyParts.join(' · ') : null}
-        occupancyOver={overHotel || overDaycare}
-        onRefresh={() => void load()}
-        onSelect={setSelected}
-        onCheckIn={(item) => void handleCheckIn(item)}
-        onCheckOut={(item) => void handleCheckOut(item)}
-        featuredOverride={featuredOverride}
-        onFeaturedOverride={setFeaturedOverride}
+        canDailyReport={canDailyReport}
+        busyTaskId={busyTaskId}
+        handoffPending={handoffPending}
+        nowMs={nowMs}
+        onRefresh={() => void reload()}
+        onTaskAction={(task, action) => void run(task, action)}
+        onAttachPhoto={(task, file) => void attachTaskPhoto(task, file)}
+        onOpenStay={(stay, reservationId, tab) =>
+          setStayTarget({ reservationId: reservationId || null, stay, initialTab: tab })
+        }
+        onCheckIn={(stay) =>
+          setCheckInRequest({ reservationId: stay.reservation_id, appointmentId: stay.appointment_id ?? null, stay })
+        }
+        onCheckOut={(stay) => stay.reservation_id && setCheckOutId(stay.reservation_id)}
+        onOpenHandoff={() => setHandoffOpen(true)}
+        onOpenGroupActivity={() => setGroupOpen(true)}
       />
 
-      <BoardingReservationDrawer
-        item={selected}
-        open={!!selected}
-        canWrite={canWrite}
+      <BoardingStayPanel
+        open={!!stayTarget}
+        target={stayTarget}
+        canManage={canWrite}
         canDailyReport={canDailyReport}
         canManageFinance={canManageFinance}
         canWriteInventory={canWriteInventory}
         unitId={unitIdParam}
-        onClose={() => setSelected(null)}
-        onUpdated={() => void load()}
+        onClose={() => setStayTarget(null)}
+        onUpdated={refresh}
+        onRequestCheckIn={(req) => setCheckInRequest(req)}
+        onRequestCheckOut={(rid) => setCheckOutId(rid)}
       />
+
+      {canWrite ? (
+        <>
+          <BoardingCheckInPanel
+            open={!!checkInRequest}
+            clinicId={clinicId ?? ''}
+            unitId={unitIdParam}
+            request={checkInRequest}
+            onClose={() => setCheckInRequest(null)}
+            onDone={() => {
+              setCheckInRequest(null);
+              refresh();
+            }}
+            onReviewCare={(rid) => {
+              setCheckInRequest(null);
+              setStayTarget({ reservationId: rid, initialTab: 'care' });
+            }}
+          />
+          <BoardingCheckOutPanel
+            open={!!checkOutId}
+            clinicId={clinicId ?? ''}
+            reservationId={checkOutId}
+            unitId={unitIdParam}
+            canManageFinance={canManageFinance}
+            onClose={() => setCheckOutId(null)}
+            onDone={refresh}
+          />
+        </>
+      ) : null}
+
+      <BoardingHandoffPanel
+        open={handoffOpen}
+        clinicId={clinicId ?? ''}
+        unitId={unitIdParam}
+        board={board}
+        canWrite={canDailyReport || canWrite}
+        onClose={() => setHandoffOpen(false)}
+        onChanged={refresh}
+      />
+
+      {canDailyReport ? (
+        <BoardingGroupActivityPanel
+          open={groupOpen}
+          clinicId={clinicId ?? ''}
+          stays={board?.stays ?? []}
+          onClose={() => setGroupOpen(false)}
+          onDone={() => {
+            setGroupOpen(false);
+            refresh();
+          }}
+        />
+      ) : null}
     </div>
   );
 };

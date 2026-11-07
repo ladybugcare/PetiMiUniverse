@@ -24,16 +24,70 @@ export function resolveBoardingCheckInOut(reservation: BoardingReservationBillin
   return { checkIn, checkOut };
 }
 
-export function computeBoardingNights(checkIn: string | null, checkOut: string | null): number {
-  if (!checkIn || !checkOut) return 0;
-  const d1 = new Date(checkIn);
-  const d2 = new Date(checkOut);
-  return Math.max(0, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)));
+const BOARDING_TZ = 'America/Sao_Paulo';
+
+const spPartsFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: BOARDING_TZ,
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+/** Data (YYYY-MM-DD) e minutos do dia no fuso da operação. */
+export function boardingLocalParts(iso: string): { ymd: string; minutes: number } | null {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const parts = Object.fromEntries(spPartsFormatter.formatToParts(d).map((p) => [p.type, p.value]));
+  return {
+    ymd: `${parts.year}-${parts.month}-${parts.day}`,
+    minutes: Number(parts.hour) * 60 + Number(parts.minute),
+  };
 }
 
-export function computeBoardingQuantity(mode: string, checkIn: string | null, checkOut: string | null): number {
+function ymdToUtcDays(ymd: string): number {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return Math.floor(Date.UTC(y, m - 1, d) / 86_400_000);
+}
+
+/** Noites = viradas de data (fuso de São Paulo) entre entrada e saída. */
+export function computeBoardingNights(checkIn: string | null, checkOut: string | null): number {
+  if (!checkIn || !checkOut) return 0;
+  const a = boardingLocalParts(checkIn);
+  const b = boardingLocalParts(checkOut);
+  if (!a || !b) return 0;
+  return Math.max(0, ymdToUtcDays(b.ymd) - ymdToUtcDays(a.ymd));
+}
+
+function cutoffToMinutes(cutoff: string | null | undefined): number | null {
+  if (!cutoff) return null;
+  const m = /^(\d{2}):(\d{2})/.exec(cutoff);
+  if (!m) return null;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+/** Saída depois do horário-limite da unidade cobra uma diária extra. */
+export function isCheckoutAfterCutoff(checkOut: string | null, cutoffTime: string | null | undefined): boolean {
+  const limit = cutoffToMinutes(cutoffTime);
+  if (limit == null || !checkOut) return false;
+  const parts = boardingLocalParts(checkOut);
+  return parts != null && parts.minutes > limit;
+}
+
+export type BoardingQuantityOptions = { cutoffTime?: string | null };
+
+export function computeBoardingQuantity(
+  mode: string,
+  checkIn: string | null,
+  checkOut: string | null,
+  opts?: BoardingQuantityOptions,
+): number {
   if (mode === 'hotel') {
-    return Math.max(1, computeBoardingNights(checkIn, checkOut));
+    const nights = computeBoardingNights(checkIn, checkOut);
+    const extra = nights > 0 && isCheckoutAfterCutoff(checkOut, opts?.cutoffTime) ? 1 : 0;
+    return Math.max(1, nights + extra);
   }
   return 1;
 }
@@ -47,18 +101,23 @@ export function computeBoardingLineAmount(dailyRateCents: number, quantity: numb
   return { unitAmount, lineTotal };
 }
 
-export function buildBoardingDescription(mode: string, quantity: number): string {
-  const label = mode === 'hotel' ? 'Hotel' : 'Creche';
+export function buildBoardingDescription(
+  mode: string,
+  quantity: number,
+  daycarePeriod?: string | null,
+): string {
   if (mode === 'hotel') {
-    return `${label} — ${quantity} ${quantity === 1 ? 'diária' : 'diárias'}`;
+    return `Hotel — ${quantity} ${quantity === 1 ? 'diária' : 'diárias'}`;
   }
-  return `${label} — ${quantity} bloco(s)`;
+  if (daycarePeriod === 'half_day') return 'Creche — meio período';
+  if (daycarePeriod === 'full_day') return 'Creche — período integral';
+  return `Creche — ${quantity} ${quantity === 1 ? 'período' : 'períodos'}`;
 }
 
 export type BoardingComandaLine = {
   pet_id: string | null;
   item_kind: 'service';
-  hub_service_type_id: null;
+  hub_service_type_id: string | null;
   hub_inventory_item_id: null;
   hub_inventory_lot_id: null;
   description: string;
@@ -67,37 +126,123 @@ export type BoardingComandaLine = {
   discount_amount: number;
   line_total: number;
   service_date: string | null;
-  origin_type: 'boarding_reservation';
+  origin_type: 'boarding_reservation' | 'boarding_extra';
   origin_id: string;
   sort_order: number;
 };
 
+export type BoardingReservationLineInput = BoardingReservationBillingInput & {
+  pet_id?: string | null;
+  hub_service_type_id?: string | null;
+  daycare_period?: string | null;
+};
+
+export type BoardingExtraInput = {
+  id: string;
+  hub_service_type_id?: string | null;
+  description: string;
+  quantity: number | string;
+  unit_amount_cents: number;
+  service_date?: string | null;
+  deleted_at?: string | null;
+};
+
+function localYmdOrNull(iso: string | null): string | null {
+  if (!iso) return null;
+  return boardingLocalParts(iso)?.ymd ?? iso.slice(0, 10);
+}
+
 export function buildBoardingComandaLine(
-  reservation: BoardingReservationBillingInput & { pet_id?: string | null }
+  reservation: BoardingReservationLineInput,
+  opts?: BoardingQuantityOptions,
 ): { line: BoardingComandaLine; subtotal: number } {
   const { checkIn, checkOut } = resolveBoardingCheckInOut(reservation);
   const dailyRateCents = reservation.daily_rate_cents ?? 0;
-  const quantity = computeBoardingQuantity(reservation.mode, checkIn, checkOut);
+  const quantity = computeBoardingQuantity(reservation.mode, checkIn, checkOut, opts);
   const { unitAmount, lineTotal } = computeBoardingLineAmount(dailyRateCents, quantity);
 
   const line: BoardingComandaLine = {
     pet_id: reservation.pet_id ?? null,
     item_kind: 'service',
-    hub_service_type_id: null,
+    hub_service_type_id: reservation.hub_service_type_id ?? null,
     hub_inventory_item_id: null,
     hub_inventory_lot_id: null,
-    description: buildBoardingDescription(reservation.mode, quantity),
+    description: buildBoardingDescription(reservation.mode, quantity, reservation.daycare_period),
     quantity,
     unit_amount: unitAmount,
     discount_amount: 0,
     line_total: lineTotal,
-    service_date: checkIn ? checkIn.slice(0, 10) : null,
+    service_date: localYmdOrNull(checkIn),
     origin_type: 'boarding_reservation',
     origin_id: reservation.id,
     sort_order: 0,
   };
 
   return { line, subtotal: lineTotal };
+}
+
+/** Adicionais da estadia como linhas próprias da comanda (após a linha das diárias). */
+export function buildBoardingExtraLines(
+  extras: BoardingExtraInput[],
+  petId: string | null,
+  startSortOrder = 1,
+): { lines: BoardingComandaLine[]; subtotal: number } {
+  const lines: BoardingComandaLine[] = [];
+  let subtotal = 0;
+  let sort = startSortOrder;
+  for (const ex of extras) {
+    if (ex.deleted_at) continue;
+    const quantity = round2(Number(ex.quantity) || 0);
+    if (quantity <= 0) continue;
+    const { unitAmount, lineTotal } = computeBoardingLineAmount(ex.unit_amount_cents ?? 0, quantity);
+    lines.push({
+      pet_id: petId,
+      item_kind: 'service',
+      hub_service_type_id: ex.hub_service_type_id ?? null,
+      hub_inventory_item_id: null,
+      hub_inventory_lot_id: null,
+      description: ex.description,
+      quantity,
+      unit_amount: unitAmount,
+      discount_amount: 0,
+      line_total: lineTotal,
+      service_date: ex.service_date ?? null,
+      origin_type: 'boarding_extra',
+      origin_id: ex.id,
+      sort_order: sort++,
+    });
+    subtotal = round2(subtotal + lineTotal);
+  }
+  return { lines, subtotal };
+}
+
+/** Total estimado da estadia (diárias/período + adicionais), em reais. */
+export function estimateBoardingStayTotal(
+  reservation: BoardingReservationLineInput,
+  extras: BoardingExtraInput[],
+  opts?: BoardingQuantityOptions,
+): { quantity: number; base: number; extras: number; total: number } {
+  const { line } = buildBoardingComandaLine(reservation, opts);
+  const { subtotal } = buildBoardingExtraLines(extras, null);
+  return {
+    quantity: line.quantity,
+    base: line.line_total,
+    extras: subtotal,
+    total: round2(line.line_total + subtotal),
+  };
+}
+
+/**
+ * Quando a reserva entra na comanda do agendamento, a linha do serviço de hospedagem
+ * do agendamento é substituída pelas diárias (evita cobrança dupla).
+ */
+export function isAppointmentLineReplacedByBoarding(
+  lineServiceTypeId: string | null | undefined,
+  lineServiceGroup: string | null | undefined,
+  reservationServiceTypeId: string | null | undefined,
+): boolean {
+  if (reservationServiceTypeId && lineServiceTypeId === reservationServiceTypeId) return true;
+  return lineServiceGroup === 'hotel' || lineServiceGroup === 'creche';
 }
 
 export type UnbilledBoardingContext = {
@@ -121,9 +266,12 @@ export function shouldIncludeInUnbilledBoarding(
   return true;
 }
 
-export function estimateBoardingUnbilledAmount(reservation: BoardingReservationBillingInput): number {
+export function estimateBoardingUnbilledAmount(
+  reservation: BoardingReservationBillingInput,
+  opts?: BoardingQuantityOptions,
+): number {
   const { checkIn, checkOut } = resolveBoardingCheckInOut(reservation);
-  const quantity = computeBoardingQuantity(reservation.mode, checkIn, checkOut);
+  const quantity = computeBoardingQuantity(reservation.mode, checkIn, checkOut, opts);
   const dailyRateCents = reservation.daily_rate_cents ?? 0;
   return computeBoardingLineAmount(dailyRateCents, quantity).lineTotal;
 }

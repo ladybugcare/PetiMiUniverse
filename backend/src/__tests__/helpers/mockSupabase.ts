@@ -16,6 +16,25 @@ type Filter =
   | { kind: 'gt'; col: string; val: unknown }
   | { kind: 'or'; expr: string };
 
+/** Divide `a.eq.1,b.in.(x,y)` nas vírgulas de primeiro nível (fora de parênteses). */
+function splitTopLevel(expr: string): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let cur = '';
+  for (const ch of expr) {
+    if (ch === '(') depth++;
+    if (ch === ')') depth--;
+    if (ch === ',' && depth === 0) {
+      out.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
+
 function matchesFilter(row: Row, filter: Filter): boolean {
   switch (filter.kind) {
     case 'eq':
@@ -40,16 +59,28 @@ function matchesFilter(row: Row, filter: Filter): boolean {
     case 'gt':
       return String(row[filter.col] ?? '') > String(filter.val ?? '');
     case 'or': {
-      const parts = filter.expr.split(',');
-      return parts.some((part) => {
+      return splitTopLevel(filter.expr).some((part) => {
         const trimmed = part.trim();
         if (trimmed.includes('.is.null')) {
           const col = trimmed.split('.')[0];
           return row[col] == null;
         }
-        const m = trimmed.match(/^(\w+)\.eq\.(.+)$/);
-        if (m) return row[m[1]] === m[2];
-        return false;
+        const inMatch = trimmed.match(/^(\w+)\.in\.\((.*)\)$/);
+        if (inMatch) {
+          const vals = inMatch[2].split(',').map((s) => s.trim().replace(/"/g, ''));
+          return vals.includes(String(row[inMatch[1]] ?? ''));
+        }
+        const m = trimmed.match(/^(\w+)\.(eq|gte|lte|gt|lt)\.(.+)$/);
+        if (!m) return false;
+        const cell = row[m[1]];
+        if (m[2] === 'eq') return cell === m[3];
+        if (cell == null) return false;
+        const a = String(cell);
+        const b = m[3];
+        if (m[2] === 'gte') return a >= b;
+        if (m[2] === 'lte') return a <= b;
+        if (m[2] === 'gt') return a > b;
+        return a < b;
       });
     }
     default:

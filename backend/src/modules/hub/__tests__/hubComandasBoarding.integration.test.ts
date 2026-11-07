@@ -10,10 +10,16 @@ import {
   baseBoardingFixture,
   emptyBoardingTables,
   hotelReservationCheckedOut,
+  hotelServiceType,
   TEST_CLINIC_ID,
   TEST_GUARDIAN_ID,
+  TEST_HOTEL_SERVICE_TYPE_ID,
+  TEST_PET_ID,
   TEST_RESERVATION_ID,
 } from '../../../__tests__/helpers/fixtures/boarding';
+
+const TEST_HOTEL_PACKAGE_ID = '66666666-6666-4666-8666-666666666670';
+const TEST_HOTEL_BALANCE_ID = '66666666-6666-4666-8666-666666666671';
 
 describe('POST /api/hub/comandas/open (boarding)', () => {
   beforeEach(() => {
@@ -98,6 +104,69 @@ describe('POST /api/hub/comandas/open (boarding)', () => {
 
     expect(second.status).toBe(200);
     expect(second.body.comanda.id).toBe(comandaId);
+  });
+
+  it('aplica pacote na linha de hospedagem (zera valor)', async () => {
+    configureSupabaseMock({
+      tables: {
+        ...emptyBoardingTables(),
+        hub_service_types: [hotelServiceType()],
+        hub_boarding_reservations: [
+          hotelReservationCheckedOut({ hub_service_type_id: TEST_HOTEL_SERVICE_TYPE_ID }),
+        ],
+        hub_packages: [
+          {
+            id: TEST_HOTEL_PACKAGE_ID,
+            clinic_id: TEST_CLINIC_ID,
+            name: 'Pacote Hotel 5 diárias',
+            active: true,
+            sessions_total: 5,
+          },
+        ],
+        hub_customer_package_balances: [
+          {
+            id: TEST_HOTEL_BALANCE_ID,
+            clinic_id: TEST_CLINIC_ID,
+            guardian_id: TEST_GUARDIAN_ID,
+            pet_id: TEST_PET_ID,
+            package_id: TEST_HOTEL_PACKAGE_ID,
+            hub_service_type_id: TEST_HOTEL_SERVICE_TYPE_ID,
+            sessions_remaining: 3,
+            sessions_total: 5,
+            expires_at: null,
+            purchased_at: '2026-01-01T00:00:00.000Z',
+            pricing_variant: null,
+            hub_packages: [{ id: TEST_HOTEL_PACKAGE_ID, name: 'Pacote Hotel 5 diárias' }],
+          },
+        ],
+      },
+    });
+
+    const opened = await request(app)
+      .post('/api/hub/comandas/open')
+      .send({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'boarding_reservation',
+        origin_id: TEST_RESERVATION_ID,
+      });
+    expect(opened.status).toBe(201);
+    const comandaId = opened.body.comanda.id as string;
+    const itemId = opened.body.items[0].id as string;
+    expect(opened.body.items[0].line_total).toBeGreaterThan(0);
+
+    const applied = await request(app)
+      .post(`/api/hub/comandas/${comandaId}/apply-package`)
+      .send({
+        clinic_id: TEST_CLINIC_ID,
+        item_id: itemId,
+        package_balance_id: TEST_HOTEL_BALANCE_ID,
+        edit_context: 'caixa',
+      });
+
+    expect(applied.status).toBe(200);
+    const line = (applied.body.detail.items as Array<Record<string, unknown>>).find((it) => it.id === itemId);
+    expect(line?.line_total).toBe(0);
+    expect(line?.package_balance_id).toBe(TEST_HOTEL_BALANCE_ID);
   });
 });
 

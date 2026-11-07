@@ -3,6 +3,7 @@ import { Route, Routes } from 'react-router-dom';
 import HubBoardingShell from './HubBoardingShell';
 import HubBoardingPage from './HubBoardingPage';
 import HubBoardingFloorPage from './HubBoardingFloorPage';
+import HubBoardingSettingsPage from './HubBoardingSettingsPage';
 
 const HubBoardingRoutes: React.FC = () => {
   return (
@@ -10,6 +11,7 @@ const HubBoardingRoutes: React.FC = () => {
       <Route element={<HubBoardingShell />}>
         <Route index element={<HubBoardingPage />} />
         <Route path="minha-fila" element={<HubBoardingFloorPage />} />
+        <Route path="configuracoes" element={<HubBoardingSettingsPage />} />
       </Route>
     </Routes>
   );

@@ -60,7 +60,7 @@ describe('Boarding drawer e daily logs (integração)', () => {
   });
 
   describe('POST /api/hub/boarding/reservations/:id/daily-logs', () => {
-    it('cria relatório diário', async () => {
+    it('retorna 410 — escrita descontinuada em favor das tarefas', async () => {
       const res = await request(app)
         .post(`/api/hub/boarding/reservations/${TEST_RESERVATION_ID}/daily-logs`)
         .send({
@@ -70,41 +70,12 @@ describe('Boarding drawer e daily logs (integração)', () => {
           notes: 'Comeu bem',
         });
 
-      expect(res.status).toBe(201);
-      expect(res.body.log.log_date).toBe('2026-06-02');
-      expect(res.body.log.mood).toBe('feliz');
-    });
-
-    it('faz upsert no mesmo log_date', async () => {
-      await request(app)
-        .post(`/api/hub/boarding/reservations/${TEST_RESERVATION_ID}/daily-logs`)
-        .send({ clinic_id: TEST_CLINIC_ID, log_date: '2026-06-02', mood: 'calmo' });
-
-      const second = await request(app)
-        .post(`/api/hub/boarding/reservations/${TEST_RESERVATION_ID}/daily-logs`)
-        .send({ clinic_id: TEST_CLINIC_ID, log_date: '2026-06-02', mood: 'animado' });
-
-      expect(second.status).toBe(201);
-      expect(second.body.log.mood).toBe('animado');
+      expect(res.status).toBe(410);
+      expect(res.body.code).toBe('BOARDING_DAILY_LOGS_GONE');
+      expect(res.body.error).toMatch(/descontinuado|tarefas/i);
 
       const logs = getMockSupabaseClient()._state.tables.hub_boarding_daily_logs ?? [];
-      expect(logs).toHaveLength(1);
-    });
-
-    it('retorna 404 quando reserva não existe', async () => {
-      const res = await request(app)
-        .post('/api/hub/boarding/reservations/00000000-0000-4000-8000-000000000001/daily-logs')
-        .send({ clinic_id: TEST_CLINIC_ID, log_date: '2026-06-02' });
-
-      expect(res.status).toBe(404);
-    });
-
-    it('retorna 400 para log_date inválido', async () => {
-      const res = await request(app)
-        .post(`/api/hub/boarding/reservations/${TEST_RESERVATION_ID}/daily-logs`)
-        .send({ clinic_id: TEST_CLINIC_ID, log_date: '02/06/2026' });
-
-      expect(res.status).toBe(400);
+      expect(logs).toHaveLength(0);
     });
   });
 });

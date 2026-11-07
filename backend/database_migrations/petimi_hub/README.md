@@ -260,3 +260,19 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 121. **`121_create_hub_reception_handoffs.sql`** — fila de custódia da Operação da Recepção (`hub_reception_handoffs`). Não duplica o status de banho, clínica, hotel ou transporte. Sessões já prontas são reconciliadas ao abrir o quadro do dia, sem fechar o banho sozinhas. Executar depois dos itens 12, 31 e 51.
 
 122. **`122_alter_hub_pickup_stops_failure_return.sql`** — desfecho da falha no Leva e Traz (`failure_outcome`, `failure_resolution`, `failed_at`, `return_stop_id`, `retry_appointment_id` em `hub_pickup_stops`) e tarefa `lt_falha` na recepção. Com pet a bordo, a falha gera retorno à clínica e a recepção decide entre tutor buscar ou novo Leva e Traz. Executar depois do item 121.
+
+123. **`123_alter_hub_boarding_pricing_extras.sql`** — Hotel & Creche, preço de ponta a ponta: `hub_service_type_id`, `daycare_period` (`full_day` | `half_day`) e `rate_source` em `hub_boarding_reservations`; tabela `hub_boarding_extras` (adicionais cobrados como linhas próprias na comanda). Executar depois dos itens 51, 57 e 3. Ver [HUB_BOARDING_OPERATIONAL_PLAN.md](../../docs/architecture/HUB_BOARDING_OPERATIONAL_PLAN.md).
+
+124. **`124_create_hub_boarding_care.sql`** — Ficha de cuidados do pet (`hub_pet_care_profiles`) e plano de cuidados da estadia (`hub_boarding_care_plans`, com estado herdado/confirmado/alterado/pendente por bloco e link do tutor). Executar depois do item 123.
+
+125. **`125_create_hub_boarding_tasks.sql`** — Tarefas programadas (`hub_boarding_tasks`) e histórico de execuções (`hub_boarding_task_executions`). `hub_boarding_daily_logs` passa a ser só leitura. Executar depois do item 124.
+
+126. **`126_create_hub_boarding_incidents_belongings.sql`** — Intercorrências (`hub_boarding_incidents`) e pertences com conferência de saída (`hub_boarding_belongings`). Executar depois do item 51.
+
+127. **`127_alter_hub_boarding_daycare_recreation.sql`** — Turnos de creche, horários de recreação, capacidade de recreação e `overbooking_policy` (`warn` | `block`) em `hub_unit_boarding_settings`; `daycare_shift_key` em `hub_boarding_reservations`. Executar depois do item 52.
+
+128. **`128_create_hub_boarding_spaces.sql`** — Acomodações com capacidade (`hub_boarding_spaces`) e `space_id` em `hub_boarding_reservations`. Executar depois do item 51.
+
+129. **`129_create_hub_boarding_handoffs_tutor_reports.sql`** — Passagem de turno (`hub_boarding_shift_handoffs`) e histórico de relatórios ao tutor (`hub_boarding_tutor_reports`). Executar depois do item 51.
+
+130. **`130_create_hub_boarding_media.sql`** — Bucket `hub-boarding-media` e tabela `hub_boarding_media` (fotos da estadia, da tarefa ou da intercorrência). Executar depois dos itens 125 e 126.

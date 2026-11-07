@@ -1,253 +1,246 @@
-# PetMi Hub — Plano em fases: tela operacional Hotel & Creche
+# PetMi Hub — Hotel & Creche: módulo operacional
 
-Plano de implementação da **operação diária de Hotel & Creche** (`/hub/hotel-creche`), alinhado ao [modelo de domínio](./HUB_DOMAIN_MODEL.md), ao plano de [Banho & Tosa](./HUB_GROOMING_OPERATIONAL_PLAN.md) (mesmos padrões de day-board, sessão e drawer) e ao [modelo financeiro](./HUB_FINANCIAL_MODEL.md).
+Contrato de produto e de implementação da operação de **Hotel & Creche** (`/hub/hotel-creche`). Substitui a versão de jun/2026, que organizava o módulo em torno de reservas e de um relatório diário com três caixas de seleção.
 
-> **Decisão de produto (jun/2026):** Hotel & Creche **permanece no MVP**. A rota `/hub/hotel-creche` hoje é `HubComingSoonPage` (`apps/hub-web/src/App.tsx`); este documento define o caminho até uma tela operacional utilizável.
-
----
-
-## Estado atual (baseline)
-
-| Item | Situação |
-|------|----------|
-| Rota `/hub/hotel-creche` | **Placeholder** (`HubComingSoonPage`) |
-| Grupos de serviço `hotel` e `creche` | **Existem** (`hubServiceGroupsController.ts` — cores, job titles, display order) |
-| `appointment_kind` `hotel_stay` / `daycare_block` | **Existem** no schema de agenda (`hubAppointmentsController.ts`) |
-| Tipo de serviço `hotel_daycare` (grupo `hotel`) | Seed em `hubServiceTypesController.ts` |
-| Matriz de preço por porte/período | Suportada (`hubPricingResolve.ts`, `hubServiceTypesPricingMatrix.ts` — `creche` usa período) |
-| Reserva / estadia (modelo próprio) | **Não existe** (sem `hub_boarding_reservations`) |
-| Permissões `boarding.*` | **Documentadas** em [PERMISSIONS_ROADMAP](./PERMISSIONS_ROADMAP.md), **ausentes** em `backend/src/utils/permissions.ts` |
-| Pagamentos / comanda | Reutiliza `hub_comandas` + Financeiro (Epic 7) |
-
-**Princípio herdado do Banho & Tosa:** *appointment = intenção; estadia/sessão = execução*. Não reaproveitar `hub_encounters` (clínico) nem `hub_grooming_sessions`; criar modelo próprio de estadia.
+Documentos relacionados: [modelo de domínio](./HUB_DOMAIN_MODEL.md), [modelo financeiro](./HUB_FINANCIAL_MODEL.md), [plano de comunicação WhatsApp](./HUB_COMMUNICATION_WHATSAPP_PLAN.md), [Banho & Tosa](./HUB_GROOMING_OPERATIONAL_PLAN.md) (padrões de fila, painel e drawer).
 
 ---
 
-## Princípios de build
+## 1. Princípio
 
-1. **Reaproveitar padrões, não tabelas:** day-board, cards, drawer lateral e filtros seguem `ClinicQueueBoard` / `GroomingQueueBoard`.
-2. **Hotel ≠ Creche:** mesma tela, dois modos. Hotel = estadia multi-dia (check-in/check-out com diárias); Creche = bloco do dia (entrada/saída no mesmo dia).
-3. **Cobrança nunca automática:** estadia concluída entra em **Atendimentos sem cobrança** até ação explícita «Gerar cobrança» (igual grooming/clínica). Diárias acumulam em linhas da comanda.
-4. **MVP sem realtime:** polling 30s na ocupação; Supabase Realtime fica para fase de integrações.
-5. **Permissões:** `boarding.reservations.manage`, `boarding.daily_report.write` (a criar em `permissions.ts`), + `hub.appointments.write` para editar a agenda subjacente.
-6. **Capacidade/ocupação por unidade:** Hotel tem limite de vagas/baias; Creche tem limite de cães por turno. Configurável por unidade.
+O módulo é organizado em torno dos **pets sob responsabilidade da unidade**, não das reservas. A reserva continua existindo (comercial e financeiro), mas deixa de ser a unidade mental da operação.
 
----
+- A **recepção prepara** a estadia (confirma rotina, cuidados, pertences, preço).
+- O **cuidador executa** e registra o que aconteceu.
+- O **gestor configura** capacidade, acomodações e políticas.
+- O **tutor recebe** o resultado — o relatório é consequência da operação, não um formulário de fim de dia.
 
-## Visão das fases
+## 2. Três níveis de informação
+
+| Nível | Entidade | Quem mantém | Vida útil |
+|---|---|---|---|
+| Ficha de cuidados do pet | `hub_pet_care_profiles` | Recepção (e tutor, via link) | Permanente, reaproveitada entre estadias |
+| Plano de cuidados da estadia | `hub_boarding_care_plans` | Recepção | Uma por reserva |
+| Execução | `hub_boarding_tasks`, `hub_boarding_task_executions`, `hub_boarding_incidents` | Cuidador | Durante a estadia |
+
+Alertas clínicos continuam em `hub_pet_clinical_flags` (não são duplicados na ficha de cuidados).
+
+### Estados de cada bloco do plano
+
+Cada bloco do plano (alimentação, medicação, passeios, manejo, recreação) carrega um estado:
+
+| Estado | Rótulo na UI | Significado |
+|---|---|---|
+| `inherited` | Herdado | Copiado da ficha do pet; ainda não confirmado nesta estadia |
+| `confirmed` | Confirmado | Recepção confirmou com o tutor |
+| `overridden` | Alterado | Diferente da ficha, só nesta estadia |
+| `pending` | Pendente | Sem informação (ficha vazia) |
+
+Blocos **essenciais**: alimentação, medicação e manejo. Se algum estiver `inherited` ou `pending` no check-in, o check-in é permitido, mas a estadia entra em **Precisa de atenção** e as pendências aparecem no painel (aviso forte, sem bloqueio).
+
+Herdar nunca significa considerar válido: medicação, alergias e restrições precisam de confirmação explícita.
+
+## 3. Três superfícies e três perfis
+
+| Superfície | Responde | Onde |
+|---|---|---|
+| Painel operacional | Quem está aqui, quem chega, quem sai, o que precisa de atenção agora? | `/hub/hotel-creche` (aba Painel) |
+| Rotina do pet | O que fazer, o que foi feito, o que aconteceu? | Painel lateral da estadia, aba Rotina; `/hub/hotel-creche/minha-fila` |
+| Gestão da hospedagem | Até quando, onde, quanto custa, em que condições? | Painel lateral da estadia, aba Hospedagem; `/hub/hotel-creche/configuracoes` |
+
+| | Recepção | Cuidador | Gestor |
+|---|---|---|---|
+| Painel | Chegadas, saídas, alertas, check-in/out | Presentes, tarefas, atenção | Ocupação e alertas |
+| Rotina | Consulta e plano | Execução, intercorrências, fotos | Auditoria |
+| Hospedagem | Reserva, plano, pertences, preço, acomodação, cobrança, tutor | Leitura das condições | Políticas, acomodações, capacidade |
+
+Permissões: `boarding.reservations.read` (ver), `boarding.reservations.manage` (reserva, plano, pertences, acomodação, configurações), `boarding.daily_report.write` (executar tarefas, intercorrências, fotos, passagem de turno).
+
+## 4. Fluxo ponta a ponta
 
 ```mermaid
-flowchart TB
-  F0[Fase 0 — Prep: permissões + rota UI]
-  F1[Fase 1 — Painel do dia MVP]
-  F2[Fase 2 — Reserva/estadia + diárias]
-  F3[Fase 3 — Drawer operacional + relatório diário]
-  F4[Fase 4 — Capacidade & UX]
-  F5[Fase 5 — Integrações]
-  F0 --> F1 --> F2 --> F3 --> F4 --> F5
+flowchart LR
+  ficha[FichaDeCuidados]
+  reserva[Reserva]
+  plano[PlanoConfirmado]
+  tarefas[TarefasDoDia]
+  checkin[CheckIn]
+  execucao[Execucao]
+  turno[PassagemDeTurno]
+  checkout[CheckOut]
+  tutor[RelatorioTutor]
+  ficha -->|"herda"| plano
+  reserva --> plano
+  plano -->|"gera"| tarefas
+  plano --> checkin
+  checkin -->|"pertences + acomodação"| execucao
+  tarefas --> execucao
+  execucao --> turno
+  execucao -->|"deriva"| tutor
+  execucao --> checkout
 ```
 
-| Fase | Nome | Objetivo | Release utilizável |
-|------|------|----------|-------------------|
-| **0** | Preparação | Permissões `boarding.*`, contratos API, esqueleto UI (sai do Coming Soon) | Não (infra) |
-| **1** | Painel do dia MVP | Lista de hóspedes/cães do dia a partir da agenda (`hotel`/`creche`) + status | Sim — visão operacional básica |
-| **2** | Reserva/estadia | `hub_boarding_reservations` + diárias + check-in/check-out | Sim — fluxo completo de estadia |
-| **3** | Drawer + relatório diário | Alimentação, medicação, passeios, observações, fotos (link), timeline | Sim — registro sem planilha |
-| **4** | Capacidade & UX | Mapa de ocupação, calendário de reservas, mobile | Sim — polish |
-| **5** | Integrações | Cobrança no drawer, baixa de estoque, WhatsApp template (ver [plano de comunicação](./HUB_COMMUNICATION_WHATSAPP_PLAN.md)), realtime | Incremental |
+| Momento | Responsável | O que acontece |
+|---|---|---|
+| Ficha do pet | Recepção | Mantém o padrão habitual (ficha do pet, card Hospedagem) |
+| Nova reserva | Recepção | Escolhe pet, modalidade e datas; o plano nasce da ficha |
+| Antes da chegada | Sistema | Painel mostra pendências do plano; recepção pode enviar link ao tutor |
+| Check-in | Recepção | Confere pertences, aloca acomodação, revê pendências |
+| Durante | Cuidador | Executa tarefas (por pet ou por horário), registra intercorrências e fotos |
+| Troca de turno | Cuidador | Encerra o turno; o próximo recebe as pendências |
+| Check-out | Recepção | Confere a saída dos pertences, adicionais, cobrança e resumo ao tutor |
 
----
+## 5. Hotel × Creche
 
-## Fase 0 — Preparação
+Mesma base de dados; modelos de geração de tarefas e rótulos diferentes.
 
-**Objetivo:** desbloquear a Fase 1 e remover o placeholder.
+| | Hotel | Creche |
+|---|---|---|
+| Tempo | Estadia de vários dias | Turno ou dia (manhã, tarde, integral) |
+| Plano | Rotina diária recorrente | Atividades do período |
+| Ênfase | Alimentação, medicação, acomodação, pertences | Recreação, socialização |
+| Cobrança | Diárias com horário-limite de saída + adicionais | Período (integral/meio) + adicionais |
+| Relatório | Por dia e resumo da estadia | Resumo do dia |
 
-### Entregas
+**Recreação de hóspede:** um pet do hotel participa da recreação como **tarefa da hospedagem** (`kind = recreation`), nos horários de recreação da unidade e só se o manejo permitir. Nunca cria uma segunda reserva de creche nem cobrança duplicada.
 
-1. **Permissões** em `backend/src/utils/permissions.ts`:
-   - `boarding.reservations.read`, `boarding.reservations.manage`, `boarding.daily_report.write`.
-   - Mapear: `CADMIN`/`CMANAGER` = manage; `CASSISTANT` = read + check-in; `CGROOMER`/`CFINANCE` conforme necessidade. Espelhar em `packages/web-core` (helpers de permissão da UI).
-2. **Rotas backend** — novo grupo `/api/hub/boarding/*` em `backend/src/modules/hub/routes/index.ts` (não misturar com `encounters` nem `grooming`).
-3. **Tipos compartilhados** — `packages/hub-ui/src/api/hubBoardingApi.ts` (espelhar `hubGroomingApi.ts`).
-4. **Substituir placeholder** em `apps/hub-web/src/App.tsx`: rota `hotel-creche` → `HubBoardingPage` (skeleton, não Coming Soon).
+## 6. Modelo de dados
 
-### Critérios de aceite
+| Tabela | Migração | Papel |
+|---|---|---|
+| `hub_boarding_reservations` | 051, 057, 123, 127, 128 | Estadia; agora com serviço, período, turno de creche e acomodação |
+| `hub_boarding_extras` | 123 | Adicionais cobrados na comanda (banho no dia, horário extra, produtos) |
+| `hub_pet_care_profiles` | 124 | Ficha de cuidados do pet |
+| `hub_boarding_care_plans` | 124 | Plano confirmável da estadia + link do tutor |
+| `hub_boarding_tasks` | 125 | Atividades programadas por dia/hora |
+| `hub_boarding_task_executions` | 125 | Registro do que aconteceu (quem, quando, resultado) |
+| `hub_boarding_incidents` | 126 | Intercorrências |
+| `hub_boarding_belongings` | 126 | Pertences com conferência de entrada e saída |
+| `hub_unit_boarding_settings` | 052, 127 | Capacidade, horário-limite, turnos de creche, horários de recreação, política de lotação |
+| `hub_boarding_spaces` | 128 | Acomodações (baias, suítes, salas) com capacidade |
+| `hub_boarding_shift_handoffs` | 129 | Passagem de turno |
+| `hub_boarding_tutor_reports` | 129 | Histórico de relatórios enviados ao tutor |
+| `hub_boarding_media` | 130 | Fotos da estadia, da tarefa ou da intercorrência |
+| `hub_boarding_daily_logs` | 051 | **Legado** — só leitura no histórico; a escrita nova passa pelas tarefas |
 
-- [ ] Usuário com `boarding.reservations.read` acessa `/hub/hotel-creche` (skeleton, não Coming Soon).
-- [ ] Usuário sem permissão é redirecionado (padrão `HubClinicEncountersPage`).
-- [ ] PR referencia este documento.
+Não misturar com `hub_hospitalization_events` nem com o prontuário clínico: o cuidador consome alertas, não edita a clínica.
 
----
+### Tarefas e resultados
 
-## Fase 1 — Painel do dia MVP
+| `kind` | Origem | Resultados (`outcome`) |
+|---|---|---|
+| `feeding` | Refeições do plano | `ate_all`, `ate_partial`, `refused` |
+| `medication` | Medicações do plano | `given`, `not_given` |
+| `walk` | Passeios do plano | `done`, `not_done` |
+| `recreation` | Recreação (creche ou hóspede liberado) | `done`, `not_done` |
+| `custom` | Criada na hora | `done`, `not_done` |
 
-**Objetivo:** a recepção enxerga quem está hospedado/na creche hoje, **sem nova tabela**, usando a agenda existente.
+Geração: ao confirmar o plano, o sistema cria as tarefas de cada dia da estadia (`plan_key` + `task_date`, idempotente). Se o plano mudar depois do check-in, só as tarefas **pendentes** de hoje em diante são refeitas; as executadas ficam.
 
-### Backend
+Lote: atividade coletiva (recreação) pode ser registrada para vários pets de uma vez, gerando um registro individual por pet. **Alimentação e medicação exigem confirmação individual.**
 
-1. **`GET /api/hub/boarding/day-board`** — espelhar `getHubGroomingDayBoard`:
-   - Filtrar agendamentos com `appointment_kind ∈ { hotel_stay, daycare_block }` **ou** tipo/linhas dos grupos `hotel` / `creche`.
-   - Query: `clinic_id`, `unit_id`, `date`/`from`/`to`, `mode` (`hotel` | `creche` | `all`), `hub_staff_member_id`.
-   - Resposta: `{ items, date, boarding_types_configured }`.
-2. **Ações via API existente:** `PATCH /api/hub/appointments/:id` para `status` (`confirmed` → `in_progress` (check-in) → `done` (check-out)).
+## 7. Regras financeiras
 
-### Frontend (`packages/hub-ui`)
+- O preço da diária/período é **snapshot** na reserva (`daily_rate_cents`), vindo da linha do serviço no agendamento (`sale_amount_applied`) ou do tipo de serviço Hotel/Creche (matriz por porte ou período). A recepção pode ajustar.
+- **Diárias (hotel):** número de viradas de data (fuso de São Paulo) entre entrada e saída; se a saída passar do `checkout_cutoff_time` da unidade, soma uma diária. Mínimo 1. A mesma função alimenta painel, check-out e comanda.
+- **Creche:** 1 período por reserva, valor conforme `daycare_period` (integral ou meio período).
+- **Adicionais** (`hub_boarding_extras`) entram como linhas próprias na comanda.
+- Quando a reserva vem de um agendamento, a linha do serviço de hospedagem do agendamento **não** é somada de novo: as diárias substituem a linha.
+- Cobrança nunca automática: check-out sincroniza comanda aberta; sem comanda, a estadia aparece em **Atendimentos sem cobrança**. Desconto e dispensa seguem o fluxo do Caixa.
+- Lotação: padrão é **alertar**; a unidade pode configurar **bloquear** o check-in quando exceder a capacidade (`overbooking_policy`).
 
-| Artefato | Base |
-|----------|------|
-| `HubBoardingPage.tsx` | `HubGroomingQueuePage.tsx` |
-| `BoardingDayBoard.tsx` | `GroomingQueueBoard.tsx` |
-| `hubBoardingApi.ts` | `hubGroomingApi.dayBoard` |
+## 8. Contrato de UI/UX
 
-- **Abas:** «Hotel» e «Creche» (filtro `mode`).
-- **Card mínimo:** pet, tutor, período (entrada→saída prevista), serviço, porte, badge de atraso de check-out.
-- **Colunas (3):** Previstos hoje / Hospedados (in_progress) / Saídas de hoje.
-- **Refresh:** `setInterval` 30s + botão manual.
+O redesenho muda a experiência (pets presentes, rotina, plano), não a identidade visual. Vale para todas as telas do módulo.
 
-### Critérios de aceite
+**Fazer**
 
-- [ ] Lista só hóspedes/cães do dia da unidade selecionada (isolamento por `clinic_id`/`unit_id`).
-- [ ] Check-in move o card para «Hospedados» sem reload completo.
-- [ ] Banner se a clínica não tiver tipos de serviço nos grupos `hotel`/`creche`.
+- Reutilizar componentes de `packages/hub-ui/src/components/` (`HubSidePanel`, `HubModal`, `HubTabs`, `HubDayNav`, `HubCheckbox`, `HubDateField`, `HubTimeField`, `HubSearchableCombobox`, `HubCancelButton`, `HubLoading`, `AlertProvider`/`HubToast`).
+- Reutilizar classes já existentes: `hub-clinic-queue__*` (cards), `hub-grooming-floor__*` (Minha fila), `hub-drawer-*` (painel lateral), `hub-clientes__*` e `hub-btn` (botões, pílulas, formulários), `hub-public-quote__*` (página pública).
+- Estender `boarding-page.css` com tokens do [`DESIGN.md`](../../packages/hub-ui/DESIGN.md); sem tema paralelo.
+- UX de chão: registrar uma tarefa em até dois toques; atenção primeiro; alvos de toque de 44px no celular.
+- Microcopy em pt-BR.
 
----
+**Não fazer**
 
-## Fase 2 — Reserva/estadia e diárias
+- Inventar design system, tokens, tipografia ou estética (gradientes genéricos, brilho, excesso de cartões, pílulas soltas).
+- Importar bibliotecas de UI de terceiros.
+- Criar um drawer gigante: cada superfície tem seu lugar; formulários longos viram seções ou abas.
+- Copiar mockups ao pé da letra quando conflitarem com os padrões do Hub — mockup define informação e fluxo.
 
-**Objetivo:** modelo de execução próprio com controle de diárias e datas reais.
+**Revisão de cada PR com tela:** parece do Hub ao lado de Banho & Tosa e Clínica? Funciona no celular do cuidador? Nenhuma dependência de UI nova?
 
-### Banco — nova migration (`051_create_hub_boarding_reservations.sql`)
+## 9. API
 
-```sql
--- Esboço conceitual (implementar no PR da Fase 2)
-hub_boarding_reservations (
-  id uuid PK,
-  clinic_id, unit_id,
-  pet_id NOT NULL,
-  guardian_id,
-  hub_appointment_id UNIQUE nullable,
-  mode text NOT NULL,            -- 'hotel' | 'daycare'
-  status text NOT NULL,          -- 'reserved' | 'checked_in' | 'checked_out' | 'cancelled' | 'no_show'
-  expected_check_in, expected_check_out,
-  checked_in_at, checked_out_at,
-  daily_rate_cents int,          -- snapshot do preço por diária/turno
-  notes text,
-  created_at, updated_at, deleted_at
-)
+Todas sob `/api/hub/boarding`, com `clinic_id` em query (GET) ou corpo.
 
-hub_boarding_daily_logs (   -- relatório diário (Fase 3)
-  id, clinic_id, hub_boarding_reservation_id,
-  log_date date,
-  fed jsonb, medication jsonb, walks jsonb,
-  mood text, notes text,
-  created_by_staff_id, created_at
-)
-```
+| Método | Rota | Permissão | Uso |
+|---|---|---|---|
+| GET | `/day-board` | read | Itens do dia (agenda + reservas por sobreposição) — mantido para resumo do dia |
+| GET | `/ops-board` | read | Painel: presentes, chegadas, saídas, tarefas do dia, alertas, último turno |
+| POST | `/reservations` | manage | Nova hospedagem (entrada agora ou reserva futura) |
+| POST | `/reservations/open-from-appointment` | manage | Check-in a partir da agenda |
+| PATCH | `/reservations/:id` | manage | Status, datas, preço, período, acomodação, notas |
+| GET | `/reservations/:id/drawer` | read | Estadia completa (plano, tarefas, intercorrências, pertences, adicionais, fotos, relatórios) |
+| GET | `/reservations/:id/timeline` | read | Linha do tempo unificada |
+| GET/PUT | `/pets/:petId/care-profile` | read / manage | Ficha de cuidados |
+| GET/PUT | `/reservations/:id/care-plan` | read / manage | Plano da estadia (PUT gera tarefas) |
+| POST | `/reservations/:id/care-plan/tutor-link` | manage | Link para o tutor confirmar cuidados |
+| GET | `/tasks` | read | Tarefas do dia (por pet ou por horário) |
+| POST | `/reservations/:id/tasks` | daily_report | Tarefa extra |
+| POST | `/tasks/:id/execute` | daily_report | Registrar resultado |
+| POST | `/tasks/batch-activity` | daily_report | Atividade coletiva (recreação) |
+| GET/POST | `/reservations/:id/incidents` | read / daily_report | Intercorrências |
+| PATCH | `/incidents/:id` | daily_report | Resolver |
+| GET/POST | `/reservations/:id/belongings` | read / manage | Pertences |
+| PATCH/DELETE | `/belongings/:id` | manage | Conferência / remoção |
+| GET/POST | `/reservations/:id/extras` | read / manage | Adicionais |
+| DELETE | `/extras/:id` | manage | Remover adicional |
+| GET/POST | `/spaces` | read / manage | Acomodações |
+| PATCH/DELETE | `/spaces/:id` | manage | Editar / arquivar |
+| GET/PATCH | `/unit-settings` | read / manage | Configurações da unidade |
+| GET/POST | `/handoffs` | read / daily_report | Passagem de turno |
+| POST | `/handoffs/:id/acknowledge` | daily_report | Ciência do turno anterior |
+| GET | `/reservations/:id/tutor-report` | read | Prévia do resumo ao tutor |
+| POST | `/reservations/:id/tutor-reports` | read | Registra envio |
+| GET/POST | `/reservations/:id/media` | read / daily_report | Fotos |
+| DELETE | `/media/:id` | daily_report | Remover foto |
+| GET/POST | `/api/public/boarding-care/:token` | pública | Tutor confirma cuidados antes da hospedagem |
 
-**Regra de diárias (hotel):** nº de diárias = noites entre `checked_in_at` e `checked_out_at` (política de virada documentada; ex.: check-out após horário-limite cobra diária extra). Creche: 1 unidade por bloco/turno.
+## 10. Fases de entrega
 
-### Backend
+| Fase | Entrega | Aceite |
+|---|---|---|
+| 0 | Este documento | Contrato de produto e UI aprovado |
+| 1 | Presença por sobreposição + preço ponta a ponta | Estadia de 5 dias aparece nos 5 dias; comanda com diárias, horário-limite e adicionais corretos |
+| 2 | Ficha de cuidados + plano na reserva | Cliente recorrente abre reserva pré-preenchida; check-in com pendência marca atenção |
+| 3 | Tarefas e execução | Tarefas existem após confirmar o plano; registro em até dois toques; fila por horário |
+| 4 | Painel de pets presentes | Atenção visível sem abrir cada reserva; Minha fila usa a mesma API |
+| 5 | Intercorrências | Aparece no card e na rotina; resolver tira da atenção |
+| 6 | Pertences + manejo | Conferência de entrada e saída; manejo visível no card e na rotina |
+| 7 | Hotel × Creche | Turnos de creche; recreação de hóspede sem segunda reserva |
+| 8 | Acomodações e lotação | Pet alocado; ocupação real; política de lotação configurável |
+| 9 | Passagem de turno + relatório ao tutor | Pendências transmitidas; resumo gerado pela operação e enviado por WhatsApp |
+| 10 | Fotos, linha do tempo, lote, link do tutor | Fotos na linha do tempo; recreação em lote; tutor confirma cuidados por link |
 
-| Endpoint | Descrição |
-|----------|-----------|
-| `POST /boarding/reservations/open-from-appointment` | Idempotente; espelho `openHubGroomingSessionFromAppointment` |
-| `POST /boarding/reservations` | Walk-in sem agendamento (pet + tutor obrigatórios) |
-| `PATCH /boarding/reservations/:id` | `status`, datas, notas (transições validadas via Zod) |
-| `GET /boarding/day-board` | Unificar agendamentos sem reserva + reservas ativas |
+## 11. Critério de sucesso
 
-### Critérios de aceite
+A equipe opera **sem planilha paralela** para alimentação, medicação, intercorrências, pertences e passagem de turno; a cobrança sai coerente da estadia até a comanda; e o tutor recebe o resumo sem trabalho manual extra.
 
-- [ ] Um agendamento gera no máximo uma reserva ativa.
-- [ ] Check-out calcula nº de diárias coerente com a política documentada.
-- [ ] Reserva concluída aparece em **Atendimentos sem cobrança** (nenhum `hub_receivables` criado automaticamente).
-- [ ] Walk-in cria reserva sem `hub_appointment_id`.
+## 12. Migrações (executar em ordem no Supabase SQL Editor)
 
----
+`123_alter_hub_boarding_pricing_extras.sql` → `124_create_hub_boarding_care.sql` → `125_create_hub_boarding_tasks.sql` → `126_create_hub_boarding_incidents_belongings.sql` → `127_alter_hub_boarding_daycare_recreation.sql` → `128_create_hub_boarding_spaces.sql` → `129_create_hub_boarding_handoffs_tutor_reports.sql` → `130_create_hub_boarding_media.sql`.
 
-## Fase 3 — Drawer operacional + relatório diário
+O banner da UI (`migrations_ready === false`) aponta para esse intervalo **123–130**. Sem essas migrações, o painel operacional e a rotina ficam desabilitados.
 
-**Objetivo:** registrar o dia a dia da estadia sem sair do painel.
+## 13. Smoke checklist (manual, ~5 min)
 
-### Backend
+Depois de `npm run seed:hotel-creche` (ou com dados reais):
 
-- `GET /boarding/reservations/:id/drawer` — reserva, pet, flags clínicas, tutor (telefone só exibição), diárias acumuladas, logs do dia.
-- `POST /boarding/reservations/:id/daily-logs` — alimentação, medicação, passeios, humor, notas (`boarding.daily_report.write`).
+1. **Reserva** — em `/hub/hotel-creche`, abrir ou criar uma estadia (chegada do dia ou walk-in).
+2. **Plano** — na aba Rotina/Hospedagem, confirmar alimentação, medicação e manejo; salvar e conferir que as tarefas do dia aparecem.
+3. **Check-in** — marcar check-in (se ainda reservada); acomodar em uma baia se houver; pet aparece em Presentes com atenção se o plano estiver incompleto.
+4. **Tarefa + foto** — executar uma refeição (resultado) e anexar foto na rotina; conferir na linha do tempo.
+5. **Checkout + comanda** — check-out; na aba Hospedagem aplicar pacote ou conferir diárias/adicionais; abrir a comanda da reserva no Caixa.
 
-### Frontend — drawer (painel direito)
-
-1. Cabeçalho — pet, porte, tutor, telefone, período da estadia, nº de diárias até agora.
-2. Relatório diário — checklist de alimentação/medicação/passeios por dia.
-3. Flags do pet — `hub_pet_clinical_flags` (alergia, agressivo).
-4. Observações — `notes`.
-5. Timeline — eventos da estadia.
-
-### Critérios de aceite
-
-- [ ] Registrar alimentação/medicação do dia persiste no log e aparece na timeline.
-- [ ] Flags ativas do pet aparecem no card e no drawer.
-- [ ] Drawer não desmonta o painel (layout split).
-
----
-
-## Fase 4 — Capacidade & UX
-
-- **Mapa de ocupação/baias** por unidade (capacidade configurável; bloquear overbooking ou só alertar — decisão de produto).
-- **Calendário de reservas** (visão semana/mês para hotel).
-- **Mobile/tablet** responsivo (espelho do polish de grooming Fase 4).
-
-### Critérios de aceite
-
-- [ ] Tela alerta quando a ocupação prevista excede a capacidade da unidade.
-- [ ] Calendário lista reservas futuras por unidade.
-
----
-
-## Fase 5 — Integrações (contínuo)
-
-| Entrega | Depende de | Notas |
-|---------|------------|--------|
-| Cobrança no drawer (Gerar cobrança) | [HUB_FINANCIAL_MODEL.md](./HUB_FINANCIAL_MODEL.md) | Reserva `checked_out` → comanda; nunca criar recebível por mudança de status |
-| Baixa de estoque (ração, medicação) | Estoque Hub | `hub_stock_movements` com `reference_type = hub_boarding_reservation` |
-| WhatsApp «pet voltando para casa» | [plano de comunicação](./HUB_COMMUNICATION_WHATSAPP_PLAN.md) | Apenas tier grátis (link `wa.me`) no MVP |
-| Realtime na ocupação | Infra | Substituir polling |
-
----
-
-## Critério de sucesso do módulo (release Fase 3)
-
-A equipe de Hotel & Creche consegue, **sem planilha paralela**:
-
-1. Ver quem está hospedado / na creche hoje.
-2. Fazer check-in/check-out e contar diárias corretamente.
-3. Registrar relatório diário (alimentação, medicação, passeios).
-4. Consultar flags e preferências do pet no drawer.
-5. Enviar a estadia para cobrança via fluxo financeiro padrão.
-
----
-
-## Referências de código
-
-| Área | Arquivo |
-|------|---------|
-| Padrão de fila (UI) | `packages/hub-ui/src/pages/grooming/GroomingQueueBoard.tsx` |
-| Day-board grooming (backend) | `backend/src/modules/hub/hubGroomingController.ts` → `getHubGroomingDayBoard` |
-| Grupos `hotel`/`creche` | `backend/src/modules/hub/hubServiceGroupsController.ts` |
-| `appointment_kind` hotel/creche | `backend/src/modules/hub/hubAppointmentsController.ts` |
-| Preço por porte/período | `backend/src/modules/hub/hubPricingResolve.ts` |
-| Rota placeholder | `apps/hub-web/src/App.tsx` → `hotel-creche` |
-| Permissões | `backend/src/utils/permissions.ts` + [PERMISSIONS_ROADMAP](./PERMISSIONS_ROADMAP.md) |
-
----
-
-## Status de implementação
-
-| Fase | Status |
-|------|--------|
-| 0 — Permissões + rota UI | **Concluída** (jun/2026) |
-| 1 — Painel do dia MVP | **Concluída** (jun/2026) |
-| 2 — Reserva/estadia + diárias | **Concluída** (jun/2026) |
-| 3 — Drawer + relatório diário | **Concluída** (jun/2026) |
-| 4 — Capacidade & UX | **Concluída** (jun/2026) |
-| 5 — Integrações | **Concluída** (jun/2026) |
-
-*Última atualização: jun/2026 — Todas as fases (0–5) implementadas. Executar as migrações SQL no Supabase SQL Editor em ordem: `051_create_hub_boarding_reservations.sql` (item 51) e `052_create_hub_unit_boarding_settings.sql` (item 52).*
+Se algum passo falhar com erro de tabela/coluna, rode as migrações 123–130 e recarregue.

@@ -3,36 +3,40 @@ import { useAuth, usePermissions } from '@petimi/web-core';
 import { HubTabs } from '../../components/HubTabs';
 import { isBoardingFloorStaff } from './boardingAccess';
 
-function isMinhaFilaPath(pathname: string): boolean {
-  return pathname === '/hub/hotel-creche/minha-fila' || pathname.startsWith('/hub/hotel-creche/minha-fila/');
+const BASE = '/hub/hotel-creche';
+
+function isUnder(pathname: string, sub: string): boolean {
+  const p = `${BASE}/${sub}`;
+  return pathname === p || pathname.startsWith(`${p}/`);
 }
 
-function isFilaDoDiaPath(pathname: string): boolean {
-  if (!pathname.startsWith('/hub/hotel-creche')) return false;
-  return !isMinhaFilaPath(pathname);
+function isPainelPath(pathname: string): boolean {
+  if (!pathname.startsWith(BASE)) return false;
+  return !isUnder(pathname, 'minha-fila') && !isUnder(pathname, 'configuracoes');
 }
-
-const links = [
-  {
-    to: '/hub/hotel-creche',
-    label: 'Fila do dia',
-    end: true,
-    isActivePath: isFilaDoDiaPath,
-  },
-  {
-    to: '/hub/hotel-creche/minha-fila',
-    label: 'Minha fila',
-    end: true,
-    isActivePath: isMinhaFilaPath,
-  },
-];
 
 const HubBoardingSubnav: React.FC = () => {
   const { role } = useAuth();
   const { hasPermission, loading: permLoading } = usePermissions();
   const floorOnly = isBoardingFloorStaff(role, hasPermission('hub.appointments.write'));
+  const canManage = hasPermission('boarding.reservations.manage');
 
   if (permLoading || floorOnly) return null;
+
+  const links = [
+    { to: BASE, label: 'Painel', end: true, isActivePath: isPainelPath },
+    { to: `${BASE}/minha-fila`, label: 'Minha fila', end: true, isActivePath: (p: string) => isUnder(p, 'minha-fila') },
+    ...(canManage
+      ? [
+          {
+            to: `${BASE}/configuracoes`,
+            label: 'Configurações',
+            end: true,
+            isActivePath: (p: string) => isUnder(p, 'configuracoes'),
+          },
+        ]
+      : []),
+  ];
 
   return <HubTabs ariaLabel="Hotel e creche" items={links} />;
 };

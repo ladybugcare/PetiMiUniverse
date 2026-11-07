@@ -1,6 +1,10 @@
 import {
   buildBoardingComandaLine,
+  buildBoardingExtraLines,
   computeBoardingLineAmount,
+  estimateBoardingStayTotal,
+  isAppointmentLineReplacedByBoarding,
+  isCheckoutAfterCutoff,
   computeBoardingNights,
   computeBoardingQuantity,
   estimateBoardingUnbilledAmount,
@@ -193,7 +197,93 @@ describe('boardingBilling', () => {
     });
   });
 
-  it.todo('check-out após horário-limite cobra diária extra (regra futura)');
+  describe('horário-limite de saída', () => {
+    // 2026-06-04T15:30Z = 12:30 em São Paulo
+    const checkIn = '2026-06-01T14:00:00.000Z';
+    const lateOut = '2026-06-04T15:30:00.000Z';
+
+    it('saída depois do horário-limite cobra uma diária a mais', () => {
+      expect(isCheckoutAfterCutoff(lateOut, '12:00:00')).toBe(true);
+      expect(computeBoardingQuantity('hotel', checkIn, lateOut, { cutoffTime: '12:00:00' })).toBe(4);
+    });
+
+    it('saída antes do horário-limite não cobra extra', () => {
+      expect(computeBoardingQuantity('hotel', checkIn, lateOut, { cutoffTime: '14:00' })).toBe(3);
+    });
+
+    it('sem horário-limite configurado mantém as noites', () => {
+      expect(computeBoardingQuantity('hotel', checkIn, lateOut, { cutoffTime: null })).toBe(3);
+    });
+
+    it('estadia no mesmo dia continua com 1 diária mesmo depois do limite', () => {
+      expect(
+        computeBoardingQuantity('hotel', '2026-06-04T11:00:00.000Z', lateOut, { cutoffTime: '12:00' }),
+      ).toBe(1);
+    });
+
+    it('creche não usa horário-limite', () => {
+      expect(computeBoardingQuantity('daycare', checkIn, lateOut, { cutoffTime: '08:00' })).toBe(1);
+    });
+  });
+
+  describe('adicionais e total da estadia', () => {
+    it('gera uma linha por adicional e ignora removidos', () => {
+      const { lines, subtotal } = buildBoardingExtraLines(
+        [
+          { id: 'e1', description: 'Banho no dia', quantity: 1, unit_amount_cents: 6000 },
+          { id: 'e2', description: 'Petisco', quantity: 2, unit_amount_cents: 1250 },
+          { id: 'e3', description: 'Removido', quantity: 1, unit_amount_cents: 999, deleted_at: '2026-06-01' },
+        ],
+        'pet-1',
+      );
+      expect(lines.map((l) => l.origin_type)).toEqual(['boarding_extra', 'boarding_extra']);
+      expect(lines[1].line_total).toBe(25);
+      expect(subtotal).toBe(85);
+    });
+
+    it('total da estadia soma diárias e adicionais', () => {
+      const total = estimateBoardingStayTotal(
+        {
+          id: 'r1',
+          mode: 'hotel',
+          checked_in_at: '2026-06-01T14:00:00.000Z',
+          checked_out_at: '2026-06-04T15:30:00.000Z',
+          daily_rate_cents: 15000,
+        },
+        [{ id: 'e1', description: 'Banho', quantity: 1, unit_amount_cents: 6000 }],
+        { cutoffTime: '12:00' },
+      );
+      expect(total).toEqual({ quantity: 4, base: 600, extras: 60, total: 660 });
+    });
+
+    it('creche descreve o período', () => {
+      const { line } = buildBoardingComandaLine({
+        id: 'r2',
+        mode: 'daycare',
+        daycare_period: 'half_day',
+        checked_in_at: '2026-06-01T11:00:00.000Z',
+        checked_out_at: '2026-06-01T15:00:00.000Z',
+        daily_rate_cents: 5000,
+      });
+      expect(line.description).toBe('Creche — meio período');
+      expect(line.line_total).toBe(50);
+    });
+  });
+
+  describe('isAppointmentLineReplacedByBoarding', () => {
+    it('substitui a linha do mesmo serviço da reserva', () => {
+      expect(isAppointmentLineReplacedByBoarding('svc-1', 'outro', 'svc-1')).toBe(true);
+    });
+
+    it('substitui linhas de grupo hotel/creche', () => {
+      expect(isAppointmentLineReplacedByBoarding('svc-2', 'hotel', null)).toBe(true);
+      expect(isAppointmentLineReplacedByBoarding('svc-3', 'creche', null)).toBe(true);
+    });
+
+    it('mantém outros serviços (ex.: banho no agendamento)', () => {
+      expect(isAppointmentLineReplacedByBoarding('svc-4', 'banho_tosa', 'svc-1')).toBe(false);
+    });
+  });
 });
 
 describe('computeBoardingNights', () => {

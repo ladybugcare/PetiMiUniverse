@@ -1,19 +1,270 @@
 /* ─── Módulo Hotel & Creche — estilos específicos ─────────────────────────── */
 
-/* Banner de warning para overbooking */
+.hub-boarding-page,
+.hub-boarding-queue-page {
+  --hc-brand: #c86a4d;
+  --hc-brand-hover: #a85a40;
+  --hc-text: #4a3b3a;
+  --hc-text-muted: #8e6e67;
+  --hc-border: #e5dcd6;
+  --hc-card: #ffffff;
+  --hc-radius: 10px;
+  --hb-late: #b45309;
+  --hb-late-bg: #fff7ed;
+  --hb-danger: #b94a38;
+  --hb-danger-bg: #fff0ec;
+  --hb-ok: #15803d;
+  --hb-soft: #fdf8f5;
+}
+
+/* Banner de aviso (capacidade, passagem de turno, migrações) */
 .hub-clinic-banner--warning {
   background: #fef9c3;
   border: 1px solid #fde047;
   color: #713f12;
 }
 
-/* Página principal de boarding */
-.hub-boarding-page .hub-clinic-queue__actions .hub-clientes__btn--sm {
-  padding: 8px 12px;
+@keyframes hub-boarding-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes hub-boarding-late-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(180, 83, 9, 0);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(180, 83, 9, 0.18);
+  }
+}
+
+/* ─── Painel ──────────────────────────────────────────────────────────────── */
+
+.hub-boarding-page__views {
+  align-items: center;
+}
+
+.hub-boarding-page__view-badge {
+  margin-left: 6px;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--hb-late, #b45309);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.hub-boarding-page__occupancy {
+  font-size: 12px;
+  font-weight: 600;
+  margin-left: 4px;
+}
+
+.hub-boarding-page__occupancy-panel {
+  margin: 0 0 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--hub-border, #e5e7eb);
+  border-radius: 10px;
+  background: var(--hub-surface, #fff);
+}
+
+.hub-boarding-page__occupancy-list {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+}
+
+.hub-boarding-page__occupancy-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 12px;
   font-size: 13px;
 }
 
-/* Avatar do pet no card do painel */
+.hub-boarding-page__occupancy-item--full .hub-boarding-page__occupancy-fill {
+  color: var(--hb-late, #b45309);
+  font-weight: 700;
+}
+
+.hub-boarding-page__occupancy-name {
+  font-weight: 600;
+  min-width: 7rem;
+}
+
+.hub-boarding-page__occupancy-fill {
+  font-variant-numeric: tabular-nums;
+  color: var(--hub-muted, #6b7280);
+}
+
+.hub-boarding-page__occupancy-pets {
+  flex: 1 1 100%;
+  color: var(--hub-muted, #6b7280);
+  font-size: 12px;
+}
+
+.hub-boarding-task__file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.hub-boarding-page__group-btn {
+  margin-left: auto;
+}
+
+.hub-boarding-page__section + .hub-boarding-page__section {
+  margin-top: 20px;
+}
+
+.hub-boarding-page__section .hub-clinic-queue__col-title {
+  margin: 0 0 10px;
+}
+
+.hub-boarding-page__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.hub-boarding-page__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 24px 4px;
+}
+
+.hub-boarding-page__tasks {
+  max-width: 880px;
+}
+
+.hub-boarding-page__batchbar {
+  position: sticky;
+  top: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--hc-brand, #c86a4d);
+  border-radius: 10px;
+  background: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  animation: hub-boarding-enter 0.18s ease-out;
+}
+
+/* Card do pet */
+.hub-clinic-queue__card.hub-boarding-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0;
+  overflow: hidden;
+  transition: border-color 0.15s, transform 0.15s;
+  animation: hub-boarding-enter 0.24s ease-out both;
+}
+
+.hub-boarding-page__grid > .hub-boarding-card:nth-child(2) {
+  animation-delay: 30ms;
+}
+.hub-boarding-page__grid > .hub-boarding-card:nth-child(3) {
+  animation-delay: 60ms;
+}
+.hub-boarding-page__grid > .hub-boarding-card:nth-child(n + 4) {
+  animation-delay: 90ms;
+}
+
+.hub-boarding-card::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 3px;
+  background: transparent;
+}
+
+.hub-boarding-card--attention::before {
+  background: #e8a23c;
+}
+
+.hub-boarding-card--high::before {
+  background: #e56b55;
+}
+
+.hub-boarding-card--done {
+  opacity: 0.72;
+}
+
+.hub-boarding-card:hover {
+  border-color: var(--hc-brand, #c86a4d);
+}
+
+.hub-boarding-card__open {
+  appearance: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  margin: 0;
+  padding: 14px 14px 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hub-boarding-card__open:focus-visible {
+  outline: 2px solid var(--hc-brand, #c86a4d);
+  outline-offset: -2px;
+}
+
+.hub-boarding-card > .hub-clinic-queue__actions {
+  padding: 0 14px 14px;
+  margin: 0;
+}
+
+.hub-boarding-card__open:last-child {
+  padding-bottom: 14px;
+}
+
+.hub-boarding-card__identity {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.hub-boarding-card__identity .hub-clinic-queue__pet,
+.hub-boarding-card__identity .hub-clinic-queue__meta {
+  margin: 0;
+}
+
 .hub-boarding-card__avatar {
   width: 36px;
   height: 36px;
@@ -31,23 +282,630 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 16px;
   flex-shrink: 0;
   color: #8e6e67;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
-/* Chip de ocupação na barra de métricas */
-.hub-boarding-page__occupancy-chip {
+.hub-boarding-card__reasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hub-boarding-card__reason {
+  padding: 2px 8px;
+  border-radius: 6px;
   font-size: 12px;
   font-weight: 600;
-  color: #4a3b3a;
+  line-height: 1.5;
+  background: #f7efeb;
+  color: #6b5e59;
 }
 
-.hub-boarding-page__occupancy-chip--over {
-  color: #b45309;
+.hub-boarding-card__reason--medium {
+  background: var(--hb-late-bg, #fff7ed);
+  color: var(--hb-late, #b45309);
 }
 
-/* ─── Calendário semanal ───────────────────────────────────────────────────── */
+.hub-boarding-card__reason--high {
+  background: var(--hb-danger-bg, #fff0ec);
+  color: var(--hb-danger, #b94a38);
+}
+
+.hub-boarding-card__next {
+  margin: 0;
+  font-size: 13px;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-boarding-card__next-label {
+  margin-right: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--hc-text-muted, #8a7772);
+}
+
+.hub-boarding-card__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hub-boarding-card__chips:empty {
+  display: none;
+}
+
+.hub-boarding-page .hub-clinic-queue__actions .hub-clientes__btn--sm {
+  padding: 8px 12px;
+  font-size: 13px;
+}
+
+/* ─── Tarefas ─────────────────────────────────────────────────────────────── */
+
+.hub-boarding-tasks {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hub-boarding-task-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.hub-boarding-task-groups__group .hub-clinic-queue__col-title {
+  margin: 0 0 8px;
+}
+
+.hub-boarding-task-groups__title--late {
+  color: var(--hb-late, #b45309);
+}
+
+.hub-boarding-task {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 10px;
+  background: #fff;
+  transition: background 0.2s, border-color 0.2s, opacity 0.2s;
+  animation: hub-boarding-enter 0.2s ease-out both;
+}
+
+.hub-boarding-task--overdue {
+  border-color: #f3c48f;
+  background: var(--hb-late-bg, #fff7ed);
+}
+
+.hub-boarding-task--done {
+  background: var(--hb-soft, #fdf8f5);
+}
+
+.hub-boarding-task--done .hub-boarding-task__title {
+  color: var(--hc-text-muted, #8a7772);
+}
+
+.hub-boarding-task--concern {
+  border-color: #f2c7bd;
+}
+
+.hub-boarding-task__main {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.hub-boarding-task__time {
+  flex-shrink: 0;
+  min-width: 44px;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-boarding-task__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.hub-boarding-task__pet {
+  appearance: none;
+  align-self: flex-start;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--hc-brand, #c86a4d);
+  cursor: pointer;
+}
+
+span.hub-boarding-task__pet {
+  cursor: default;
+}
+
+.hub-boarding-task__title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-boarding-task__details {
+  font-size: 12px;
+  color: var(--hc-text-muted, #8a7772);
+}
+
+.hub-boarding-task__state {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+}
+
+.hub-boarding-task__actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  padding-left: 54px;
+}
+
+.hub-boarding-task__note {
+  margin-left: 54px;
+  width: calc(100% - 54px);
+  box-sizing: border-box;
+}
+
+/* ─── Ficha e plano de cuidados ───────────────────────────────────────────── */
+
+.hub-boarding-care {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.hub-boarding-care__block-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hub-boarding-care__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.hub-boarding-care__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 12px;
+}
+
+.hub-boarding-care__times {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hub-boarding-care__chips {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hub-boarding-care__chip {
+  align-items: center;
+  gap: 4px;
+  animation: hub-boarding-enter 0.16s ease-out;
+}
+
+.hub-boarding-care__chip-remove {
+  appearance: none;
+  display: inline-flex;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--hc-text-muted, #8a7772);
+  cursor: pointer;
+}
+
+.hub-boarding-care__chip-remove:hover {
+  color: var(--hb-danger, #b94a38);
+}
+
+.hub-boarding-care__add-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 8px;
+}
+
+.hub-boarding-care__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.hub-boarding-care__list .hub-grooming-drawer__line {
+  align-items: center;
+  gap: 10px;
+}
+
+.hub-boarding-care__inline-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.hub-boarding-care__med {
+  padding: 10px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 10px;
+  background: var(--hb-soft, #fdf8f5);
+}
+
+.hub-boarding-care__med + .hub-boarding-care__med {
+  margin-top: 8px;
+}
+
+.hub-boarding-care__choice {
+  flex-wrap: wrap;
+}
+
+.hub-boarding-care__spaced {
+  margin-top: 6px;
+}
+
+.hub-boarding-care__save-profile {
+  padding-top: 8px;
+  border-top: 1px dashed var(--hc-border, #e8ddd8);
+}
+
+/* Resumo da ficha (card Hospedagem na ficha do pet) */
+.hub-pet-care__card--boarding::before {
+  background: var(--hc-brand, #c86a4d);
+}
+
+.hub-pet-care__card--boarding .hub-pet-care__card-icon {
+  color: var(--hc-brand, #c86a4d);
+  background: #fdf1ec;
+}
+
+.hub-boarding-care__summary {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 16px;
+}
+
+.hub-boarding-care__summary-row {
+  min-width: 0;
+}
+
+.hub-boarding-care__summary-row dt {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8a7772;
+}
+
+.hub-boarding-care__summary-row dd {
+  margin: 2px 0 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #3d2f2c;
+}
+
+.hub-boarding-care__recent {
+  margin: 12px 0 0;
+  font-size: 12px;
+  color: #8a7772;
+}
+
+/* ─── Painel da estadia ───────────────────────────────────────────────────── */
+
+.hub-boarding-stay__tabs {
+  margin: 4px 0 12px;
+}
+
+.hub-boarding-stay__days {
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.hub-boarding-stay__form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 10px;
+  background: var(--hb-soft, #fdf8f5);
+  animation: hub-boarding-enter 0.18s ease-out;
+}
+
+.hub-boarding-stay__form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.hub-boarding-stay__add {
+  margin-top: 8px;
+}
+
+.hub-boarding-stay__spaced {
+  margin-top: 10px;
+}
+
+.hub-boarding-stay__incident {
+  flex: 1;
+  min-width: 0;
+}
+
+.hub-boarding-stay__incident .hub-grooming-drawer__timeline-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.hub-grooming-drawer__timeline-dot.hub-boarding-stay__dot--open {
+  background: #e56b55;
+}
+
+.hub-grooming-drawer__timeline-dot.hub-boarding-stay__dot--resolved {
+  background: #7c9d87;
+}
+
+.hub-boarding-stay__savebar {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px 0;
+  border-top: 1px solid var(--hc-border, #e8ddd8);
+  background: #fff;
+}
+
+.hub-boarding-attention--high {
+  font-weight: 700;
+  color: var(--hb-danger, #b94a38);
+}
+
+/* Pertences */
+.hub-boarding-belongings__add {
+  align-items: center;
+}
+
+.hub-boarding-belongings__cat {
+  width: auto;
+  min-width: 140px;
+  flex: 0 1 160px;
+}
+
+.hub-boarding-belongings__add .hub-combobox {
+  min-width: 140px;
+}
+
+.hub-boarding-belongings__qty {
+  width: 64px;
+}
+
+.hub-boarding-belongings__line {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hub-boarding-belongings__checkout {
+  margin-left: auto;
+}
+
+/* Relatório ao tutor */
+.hub-boarding-report__body {
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 160px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Fotos */
+.hub-boarding-photos {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 8px;
+}
+
+.hub-boarding-photos__item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  animation: hub-boarding-enter 0.2s ease-out both;
+}
+
+.hub-boarding-photos__item img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  transition: transform 0.2s;
+}
+
+.hub-boarding-photos__item a:hover img {
+  transform: scale(1.02);
+}
+
+.hub-boarding-photos__meta {
+  font-size: 11px;
+  color: var(--hc-text-muted, #8a7772);
+}
+
+.hub-boarding-photos__remove {
+  appearance: none;
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--hb-danger, #b94a38);
+  cursor: pointer;
+}
+
+.hub-boarding-photos__inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.hub-boarding-handoff__list {
+  margin: 4px 0 10px;
+}
+
+/* ─── Configurações ──────────────────────────────────────────────────────── */
+
+.hub-boarding-settings {
+  max-width: 760px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.hub-boarding-settings__toolbar {
+  margin-bottom: 0;
+}
+
+.hub-boarding-settings__section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.hub-boarding-settings__section .hub-grooming-drawer__heading,
+.hub-boarding-settings__section .hub-grooming-drawer__hint {
+  margin: 0;
+}
+
+.hub-boarding-settings__narrow {
+  max-width: 220px;
+}
+
+.hub-boarding-settings__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) 36px;
+  align-items: end;
+  gap: 10px;
+  padding: 8px 0;
+}
+
+.hub-boarding-settings__row + .hub-boarding-settings__row {
+  border-top: 1px dashed var(--hc-border, #e8ddd8);
+}
+
+.hub-boarding-settings__remove {
+  margin-bottom: 4px;
+}
+
+.hub-boarding-settings__savebar {
+  z-index: 1;
+  padding: 12px 16px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 12px;
+}
+
+.hub-boarding-settings__space {
+  appearance: none;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hub-boarding-settings__space:hover .hub-grooming-drawer__line-name {
+  color: var(--hc-brand, #c86a4d);
+}
+
+/* ─── Página pública do tutor ────────────────────────────────────────────── */
+
+/* Tokens Hub nos formulários da ficha pública (hub-clientes__* fora do shell). */
+.hub-boarding-public {
+  --hc-brand: #c86a4d;
+  --hc-brand-hover: #a85a40;
+  --hc-text: #4a3b3a;
+  --hc-text-muted: #8e6e67;
+  --hc-border: #e5dcd6;
+  --hc-card: #ffffff;
+  --hc-radius: 10px;
+}
+
+.hub-boarding-public .hub-public-quote__card {
+  margin-top: 16px;
+}
+
+.hub-boarding-public .hub-boarding-care .hub-grooming-drawer__section {
+  padding-left: 0;
+  padding-right: 0;
+}
+
+.hub-boarding-public__actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+/* ─── Calendário semanal ─────────────────────────────────────────────────── */
 
 .hub-boarding-calendar {
   width: 100%;
@@ -138,6 +996,9 @@
 
 .hub-boarding-calendar__event-mode {
   font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .hub-boarding-calendar__event-pet {
@@ -152,22 +1013,6 @@
   display: block;
 }
 
-/* ─── Responsive ───────────────────────────────────────────────────────────── */
-
-/* Tablet: scroll horizontal no board */
-@media (max-width: 960px) {
-  .hub-boarding-page .hub-clinic-queue {
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
-    padding-bottom: 12px;
-    grid-template-columns: repeat(3, minmax(220px, 1fr));
-  }
-
-  .hub-boarding-calendar__grid {
-    grid-template-columns: repeat(7, minmax(100px, 1fr));
-  }
-}
-
 /* ─── Minha fila (chão / celular) ─────────────────────────────────────────── */
 
 .hub-boarding-floor.hub-grooming-floor .hub-grooming-floor__tabs,
@@ -175,16 +1020,76 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
-.hub-boarding-floor__modes {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+.hub-boarding-floor__banner {
+  margin: 0;
 }
 
 .hub-boarding-floor__avatar-fallback {
   width: 48px;
   height: 48px;
-  font-size: 20px;
+  font-size: 16px;
+}
+
+.hub-boarding-floor__featured {
+  animation: hub-boarding-enter 0.22s ease-out;
+}
+
+.hub-boarding-floor__featured--late {
+  border-color: #f3c48f;
+  animation: hub-boarding-enter 0.22s ease-out, hub-boarding-late-pulse 2.4s ease-in-out 0.3s 3;
+}
+
+.hub-boarding-floor__featured--late .hub-grooming-floor__card-label {
+  color: var(--hb-late, #b45309);
+}
+
+.hub-boarding-floor__pet-link {
+  appearance: none;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hub-boarding-floor__task-title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-boarding-floor__group-btn {
+  align-self: flex-start;
+  margin-bottom: 10px;
+}
+
+.hub-boarding-floor__pet-item {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.hub-boarding-floor__pet-item .hub-grooming-floor__queue-meta {
+  max-width: 100%;
+}
+
+.hub-boarding-floor__reasons {
+  color: var(--hb-late, #b45309);
+  font-weight: 600;
+}
+
+.hub-boarding-floor__dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: #e8a23c;
+  vertical-align: middle;
 }
 
 .hub-boarding-floor .hub-grooming-floor__tab {
@@ -197,12 +1102,21 @@
   text-overflow: ellipsis;
 }
 
-/* Mobile: coluna única */
+.hub-boarding-floor .hub-boarding-task__actions .hub-clientes__btn--sm {
+  min-height: 40px;
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+/* ─── Responsivo ──────────────────────────────────────────────────────────── */
+
 @media (max-width: 900px) {
-  .hub-boarding-page .hub-clinic-queue {
+  .hub-boarding-page__grid {
     grid-template-columns: 1fr;
-    overflow-x: visible;
-    padding-bottom: 0;
+  }
+
+  .hub-boarding-page__group-btn {
+    margin-left: 0;
   }
 
   .hub-boarding-page .hub-clinic-queue__actions .hub-clientes__btn--sm {
@@ -213,5 +1127,52 @@
 
   .hub-boarding-calendar__grid {
     grid-template-columns: minmax(110px, 1fr);
+    min-width: 0;
+  }
+}
+
+@media (max-width: 640px) {
+  .hub-boarding-care__grid,
+  .hub-boarding-care__summary {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-boarding-task__actions {
+    padding-left: 0;
+  }
+
+  .hub-boarding-task__note {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .hub-boarding-settings__row {
+    grid-template-columns: 1fr 1fr 36px;
+  }
+
+  .hub-boarding-settings__row > .hub-clientes__field:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .hub-boarding-page__batchbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hub-boarding-card,
+  .hub-boarding-task,
+  .hub-boarding-care__chip,
+  .hub-boarding-stay__form,
+  .hub-boarding-photos__item,
+  .hub-boarding-page__batchbar,
+  .hub-boarding-floor__featured,
+  .hub-boarding-floor__featured--late {
+    animation: none;
+  }
+
+  .hub-boarding-photos__item a:hover img {
+    transform: none;
   }
 }

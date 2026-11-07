@@ -3,7 +3,7 @@ import { supabaseAdmin } from '../config/supabase';
 
 // O banco é compartilhado por todos os produtos e `notifications` é acessada com service role:
 // cada rota só pode ler/alterar notificações do próprio usuário autenticado.
-const isOwnUser = (req: Request, userId: unknown): boolean =>
+const isOwnUser = (req: { user?: { id?: string } }, userId: unknown): boolean =>
   typeof userId === 'string' && userId === req.user?.id;
 
 // ========================================

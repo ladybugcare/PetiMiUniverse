@@ -88,6 +88,7 @@ import { ChargeBundleHistorySection } from '../finance/ChargeBundleHistorySectio
 import { SellPackageDrawer } from '../finance/SellPackageDrawer';
 import type { PackageSaleScheduleContext } from '../finance/packageSaleScheduleUtils';
 import { SpecialPricesSection } from '../../components/SpecialPricesSection';
+import PetBoardingCareCard from '../boarding/PetBoardingCareCard';
 import { appointmentDrillHref } from '../finance/hubRelatoriosLinks';
 import '../../components/hub-profile.css';
 import '../clinica/clinica-page.css';
@@ -917,6 +918,8 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
             )}
           </section>
         </div>
+
+        {!compact ? <PetBoardingCareCard clinicId={clinicId} petId={pet.id} petName={pet.name} /> : null}
 
         <section className="hub-pet-care__history">
           <header className="hub-pet-care__history-head">

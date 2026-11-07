@@ -171,6 +171,11 @@ export function daycareReservationCheckedOut(overrides: Record<string, unknown> 
   };
 }
 
+export const TEST_PET_ID_2 = '22222222-2222-4222-8222-222222222222';
+export const TEST_TASK_ID = 'a1a1a1a1-a1a1-4a1a-8a1a-a1a1a1a1a1a1';
+export const TEST_HANDOFF_ID = 'b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2';
+export const TEST_SPACE_ID = 'c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3';
+
 export function emptyBoardingTables() {
   return {
     hub_boarding_reservations: [] as Record<string, unknown>[],
@@ -185,6 +190,17 @@ export function emptyBoardingTables() {
     hub_unit_boarding_settings: [] as Record<string, unknown>[],
     hub_boarding_daily_logs: [] as Record<string, unknown>[],
     hub_pet_clinical_flags: [] as Record<string, unknown>[],
+    hub_pet_care_profiles: [] as Record<string, unknown>[],
+    hub_boarding_care_plans: [] as Record<string, unknown>[],
+    hub_boarding_tasks: [] as Record<string, unknown>[],
+    hub_boarding_task_executions: [] as Record<string, unknown>[],
+    hub_boarding_incidents: [] as Record<string, unknown>[],
+    hub_boarding_belongings: [] as Record<string, unknown>[],
+    hub_boarding_spaces: [] as Record<string, unknown>[],
+    hub_boarding_shift_handoffs: [] as Record<string, unknown>[],
+    hub_boarding_tutor_reports: [] as Record<string, unknown>[],
+    hub_boarding_media: [] as Record<string, unknown>[],
+    hub_boarding_extras: [] as Record<string, unknown>[],
     hub_grooming_sessions: [] as Record<string, unknown>[],
     hub_encounters: [] as Record<string, unknown>[],
     hub_quotes: [] as Record<string, unknown>[],
@@ -201,8 +217,20 @@ export function emptyBoardingTables() {
         sex: 'M',
         deleted_at: null,
       },
+      {
+        id: TEST_PET_ID_2,
+        name: 'Luna',
+        species: 'dog',
+        breed: null,
+        size_tier: 'pequeno',
+        sex: 'F',
+        deleted_at: null,
+      },
     ],
-    hub_pet_guardians: [{ pet_id: TEST_PET_ID, guardian_id: TEST_GUARDIAN_ID, role: 'primary' }],
+    hub_pet_guardians: [
+      { pet_id: TEST_PET_ID, guardian_id: TEST_GUARDIAN_ID, role: 'primary' },
+      { pet_id: TEST_PET_ID_2, guardian_id: TEST_GUARDIAN_ID, role: 'primary' },
+    ],
     hub_clinic_settings: [
       {
         clinic_id: TEST_CLINIC_ID,
@@ -213,6 +241,29 @@ export function emptyBoardingTables() {
     clinic_users: [
       { user_id: '11111111-1111-4111-8111-111111111111', clinic_id: TEST_CLINIC_ID, role: 'CADMIN', status: 'active' },
     ],
+  };
+}
+
+export function pendingFeedingTask(overrides: Record<string, unknown> = {}) {
+  return {
+    id: TEST_TASK_ID,
+    clinic_id: TEST_CLINIC_ID,
+    hub_boarding_reservation_id: TEST_RESERVATION_ID,
+    pet_id: TEST_PET_ID,
+    kind: 'feeding',
+    source: 'plan',
+    title: 'Refeição das 08:00',
+    details: { amount: '1 xícara' },
+    scheduled_for: '2026-06-02T11:00:00.000Z',
+    task_date: '2026-06-02',
+    plan_key: 'feeding:0:08:00',
+    status: 'pending',
+    outcome: null,
+    executed_at: null,
+    executed_by_user_id: null,
+    last_notes: null,
+    created_at: '2026-06-01T14:00:00.000Z',
+    ...overrides,
   };
 }
 

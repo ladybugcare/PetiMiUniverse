@@ -38,6 +38,7 @@ import publicChargeBundlesRoutes from './modules/hub/routes/publicChargeBundles.
 import publicPrescriptionsRoutes from './modules/hub/routes/publicPrescriptions.js';
 import publicExamReferralsRoutes from './modules/hub/routes/publicExamReferrals.js';
 import publicMercadoPagoRoutes from './modules/hub/routes/publicMercadoPago.js';
+import publicBoardingCareRoutes from './modules/hub/routes/publicBoardingCare.js';
 
 // 🔹 Variáveis de ambiente são carregadas automaticamente por loadEnv.ts
 // quando importamos supabase (config/supabase.ts importa './loadEnv')
@@ -232,6 +233,7 @@ app.use('/api/public', publicChargeBundlesRoutes);
 app.use('/api/public', publicPrescriptionsRoutes);
 app.use('/api/public', publicExamReferralsRoutes);
 app.use('/api/public', publicMercadoPagoRoutes);
+app.use('/api/public', publicBoardingCareRoutes);
 app.use('/health', healthRoutes);
 
 // 🔹 Healthcheck melhorado (verifica dependências)

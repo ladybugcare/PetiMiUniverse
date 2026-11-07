@@ -299,7 +299,7 @@ Conforme plano estratégico:
 Decisão (jun/2026): os módulos abaixo **permanecem no MVP** e têm plano de implementação em fases dedicado.
 
 - **Banho & Tosa** — [HUB_GROOMING_OPERATIONAL_PLAN.md](./HUB_GROOMING_OPERATIONAL_PLAN.md) (Fases 0–3 concluídas).
-- **Hotel & Creche** — [HUB_BOARDING_OPERATIONAL_PLAN.md](./HUB_BOARDING_OPERATIONAL_PLAN.md) (hoje placeholder; agenda/preço já existem).
+- **Hotel & Creche** — [HUB_BOARDING_OPERATIONAL_PLAN.md](./HUB_BOARDING_OPERATIONAL_PLAN.md) (módulo operacional completo: pets presentes, ficha/plano de cuidados, tarefas, intercorrências, pertences, acomodações, passagem de turno e relatório ao tutor).
 - **Leva e Traz** — [HUB_PICKUP_DELIVERY_OPERATIONAL_PLAN.md](./HUB_PICKUP_DELIVERY_OPERATIONAL_PLAN.md) (hoje placeholder; perna de transporte já existe na agenda).
 
 ## Qualidade / release
