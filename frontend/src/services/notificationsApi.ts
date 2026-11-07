@@ -1,7 +1,5 @@
 import { apiRequest } from './api';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3000';
-
 // =================================// INTERFACES
 // =================================
 export interface Notification {
@@ -60,18 +58,7 @@ export const getNotifications = async (
     params.append('unread_only', 'true');
   }
 
-  const response = await fetch(`${API_BASE_URL}/notifications?${params}`, {
-    method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to fetch notifications');
-  }
-
-  return response.json();
+  return apiRequest(`/notifications?${params}`, { method: 'GET' });
 };
 
 /**
@@ -100,21 +87,7 @@ export const getUnreadCount = async (userId: string): Promise<number> => {
  * Marcar notificação como lida
  */
 export const markAsRead = async (notificationId: string): Promise<Notification> => {
-  const response = await fetch(
-    `${API_BASE_URL}/notifications/${notificationId}/read`,
-    {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    }
-  );
-
-  if (!response.ok) {
-    throw new Error('Failed to mark notification as read');
-  }
-
-  const data = await response.json();
+  const data = await apiRequest(`/notifications/${notificationId}/read`, { method: 'PUT' });
   return data.notification;
 };
 
@@ -122,50 +95,27 @@ export const markAsRead = async (notificationId: string): Promise<Notification> 
  * Marcar todas as notificações como lidas
  */
 export const markAllAsRead = async (userId: string): Promise<void> => {
-  const response = await fetch(`${API_BASE_URL}/notifications/read-all`, {
+  await apiRequest('/notifications/read-all', {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify({ user_id: userId }),
   });
-
-  if (!response.ok) {
-    throw new Error('Failed to mark all notifications as read');
-  }
 };
 
 /**
  * Deletar notificação específica
  */
 export const deleteNotification = async (notificationId: string): Promise<void> => {
-  const response = await fetch(`${API_BASE_URL}/notifications/${notificationId}`, {
-    method: 'DELETE',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-  });
-
-  if (!response.ok) {
-    throw new Error('Failed to delete notification');
-  }
+  await apiRequest(`/notifications/${notificationId}`, { method: 'DELETE' });
 };
 
 /**
  * Limpar todas as notificações lidas
  */
 export const clearReadNotifications = async (userId: string): Promise<void> => {
-  const response = await fetch(`${API_BASE_URL}/notifications/clear-read`, {
+  await apiRequest('/notifications/clear-read', {
     method: 'DELETE',
-    headers: {
-      'Content-Type': 'application/json',
-    },
     body: JSON.stringify({ user_id: userId }),
   });
-
-  if (!response.ok) {
-    throw new Error('Failed to clear read notifications');
-  }
 };
 
 // Export all as default object

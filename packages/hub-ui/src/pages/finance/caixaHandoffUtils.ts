@@ -2,7 +2,11 @@ import { hubComandaApi } from '../../api/hubComandaApi';
 import { canCaixaEditOpenComanda } from './hubComandaEditUtils';
 
 const BALANCE_EPSILON = 0.02;
-const CHECKOUT_BULK_CHUNK = 20;
+/**
+ * 1 comanda por request: o checkout-bulk processa em série no backend e o client
+ * aborta em 30s — lotes grandes (ex.: 5+) estouravam timeout no Encerrar turno.
+ */
+const CHECKOUT_BULK_CHUNK = 1;
 
 function ymdToday(): string {
   const d = new Date();
@@ -65,10 +69,11 @@ export async function enviarComandasAbertasAoFinanceiro(
   let handoffCount = 0;
 
   for (const chunk of chunkIds(abertas, CHECKOUT_BULK_CHUNK)) {
+    const chunkIdsList = chunk.map((c) => String(c.id));
     try {
       const res = await hubComandaApi.checkoutBulk({
         clinic_id: clinicId,
-        comanda_ids: chunk.map((c) => String(c.id)),
+        comanda_ids: chunkIdsList,
         action: 'leave_pending',
         due_date: ymdToday(),
         payment_timing: 'on_checkout',
@@ -84,7 +89,9 @@ export async function enviarComandasAbertasAoFinanceiro(
     } catch (e: unknown) {
       const message = (e as Error)?.message ?? 'Erro';
       if (isSkippableFinanceHandoffError(message)) continue;
-      errors.push(message);
+      const prefix =
+        chunkIdsList.length === 1 ? `${chunkIdsList[0].slice(0, 8)}: ` : `${chunkIdsList.length} comandas: `;
+      errors.push(`${prefix}${message}`);
     }
   }
 

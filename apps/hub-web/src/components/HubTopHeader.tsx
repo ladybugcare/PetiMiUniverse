@@ -2,6 +2,7 @@ import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { ChevronRight, Menu, X } from 'lucide-react';
 import HubNotificationBell from './HubNotificationBell';
+import HubSupportButton from './HubSupportButton';
 import HubSidebarUserMenu from './HubSidebarUserMenu';
 import { hubPageCrumbsFromPath } from '../utils/hubPageTitle';
 
@@ -60,6 +61,7 @@ const HubTopHeader: React.FC<HubTopHeaderProps> = ({
           </nav>
         </div>
         <div className="hub-top-header__right">
+          <HubSupportButton />
           <HubNotificationBell />
           <HubSidebarUserMenu />
         </div>

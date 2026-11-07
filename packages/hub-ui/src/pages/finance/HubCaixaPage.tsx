@@ -555,7 +555,11 @@ const HubCaixaPage: React.FC = () => {
             <button
               type="button"
               className="hub-clientes__btn hub-clientes__btn--primary"
-              onClick={() => setShowEncerrarTurno(true)}
+              onClick={() => {
+                setShowEncerrarTurno(true);
+                // Atualiza o resumo ao abrir para não mostrar valores desatualizados/zerados.
+                void load();
+              }}
             >
               <Lock size={15} strokeWidth={2} />
               Encerrar turno
@@ -1089,6 +1093,7 @@ const HubCaixaPage: React.FC = () => {
           dayBoardItems={dayBoardItems}
           expectedBalance={expectedBalance}
           methodsTotal={methodsTotal}
+          dataLoading={loading || refreshing || cashSummary == null}
           onClosed={async () => {
             setShowEncerrarTurno(false);
             showSuccess('Caixa fechado com sucesso.');

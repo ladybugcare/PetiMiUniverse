@@ -519,7 +519,7 @@ export const createFirstUnit = async (req: Request<{}, {}, UnitBody & { clinic_n
     // ✅ 1. Verificar clinic_user (deve existir com clinic_id = NULL e status = 'pending_clinic')
     const { data: clinicUser, error: clinicUserError } = await supabase
       .from('clinic_users')
-      .select('id, role, clinic_id, status')
+      .select('id, role, clinic_id, status, onboarding_state')
       .eq('user_id', user_id)
       .eq('role', 'CADMIN')
       .maybeSingle();
@@ -650,6 +650,10 @@ export const createFirstUnit = async (req: Request<{}, {}, UnitBody & { clinic_n
     
     // ✅ 7. Atualizar clinic_user com clinic_id e unit_id
     const nowIso = new Date().toISOString();
+    const previousOnboarding =
+      clinicUser.onboarding_state && typeof clinicUser.onboarding_state === 'object'
+        ? (clinicUser.onboarding_state as Record<string, unknown>)
+        : {};
     const { error: updateClinicUserError } = await supabase
       .from('clinic_users')
       .update({ 
@@ -658,9 +662,11 @@ export const createFirstUnit = async (req: Request<{}, {}, UnitBody & { clinic_n
         status: 'active',          // ✅ Ativa o usuário
         first_login_completed_at: nowIso,
         onboarding_state: {
+          ...previousOnboarding,
           last_step: 'unit',
           completed: true,
           completed_at: nowIso,
+          source: previousOnboarding.source || 'shift',
         },
         updated_at: nowIso,
       })

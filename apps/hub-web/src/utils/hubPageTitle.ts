@@ -116,6 +116,7 @@ const ROUTES: RouteTitle[] = [
   { path: '/hub/relatorios', crumbs: [{ label: 'Relatórios' }] },
   { path: '/hub/encounters', crumbs: [{ label: 'Atendimentos' }] },
   { path: '/hub/notificacoes', crumbs: [{ label: 'Notificações' }] },
+  { path: '/hub/suporte', crumbs: [{ label: 'Suporte' }] },
   { path: '/hub/meu-perfil', crumbs: [{ label: 'Meu Perfil' }] },
   { path: '/hub/perfil-clinica', crumbs: [{ label: 'Perfil da Clínica' }] },
 ];

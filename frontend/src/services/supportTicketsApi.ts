@@ -4,11 +4,16 @@ import { apiRequest } from './api';
 // =================================
 // TIPOS
 // =================================
+export type SupportProduct = 'hub' | 'shift';
+
 export interface SupportTicket {
   id: string;
   user_id: string | null;
   user_role: 'clinic' | 'vet' | 'freelancer' | 'admin' | 'guest';
   user_name?: string; // Nome do usuário (clínica, veterinário, freelancer ou admin)
+  product: SupportProduct;
+  clinic_id?: string | null;
+  clinic_name?: string | null; // Preenchido pela fila admin para tickets do Hub
   message: string;
   status: 'open' | 'in_progress' | 'resolved' | 'closed';
   category?: 'técnico' | 'financeiro' | 'conta_perfil' | 'demanda' | 'marketplace' | 'outro';
@@ -52,6 +57,8 @@ export interface CreateTicketData {
   category?: 'técnico' | 'financeiro' | 'conta_perfil' | 'demanda' | 'marketplace' | 'outro';
   priority?: 'baixa' | 'normal' | 'alta' | 'urgente';
   attachments?: string[];
+  product?: SupportProduct;
+  clinic_id?: string | null;
 }
 
 export interface AddMessageData {
@@ -90,7 +97,7 @@ export const supportTicketsApi = {
   create: async (data: CreateTicketData): Promise<{ ticket: SupportTicket }> => {
     return apiRequest('/support/tickets', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: JSON.stringify({ product: 'shift', ...data }),
     });
   },
 
@@ -104,15 +111,21 @@ export const supportTicketsApi = {
 
   // Obter tickets do usuário logado
   getUserTickets: async (userId: string): Promise<{ tickets: SupportTicket[] }> => {
-    return apiRequest(`/support/tickets/my?user_id=${userId}`);
+    return apiRequest(`/support/tickets/my?user_id=${userId}&product=shift`);
   },
 
   // Obter todos os tickets (admin) com filtros opcionais
-  getAllTickets: async (status?: string, category?: string, priority?: string): Promise<{ tickets: SupportTicket[] }> => {
+  getAllTickets: async (
+    status?: string,
+    category?: string,
+    priority?: string,
+    product?: SupportProduct | 'all'
+  ): Promise<{ tickets: SupportTicket[] }> => {
     const params = new URLSearchParams();
     if (status && status !== 'all') params.append('status', status);
     if (category && category !== 'all') params.append('category', category);
     if (priority && priority !== 'all') params.append('priority', priority);
+    if (product && product !== 'all') params.append('product', product);
     const queryString = params.toString();
     return apiRequest(`/support/tickets${queryString ? `?${queryString}` : ''}`);
   },
@@ -153,7 +166,7 @@ export const supportTicketsApi = {
 
   // Obter contagem de mensagens não lidas (usuário)
   getUnreadCount: async (userId: string): Promise<{ unread_count: number }> => {
-    return apiRequest(`/support/tickets/unread-count?user_id=${userId}`);
+    return apiRequest(`/support/tickets/unread-count?user_id=${userId}&product=shift`);
   },
 
   // Obter mensagens de um ticket

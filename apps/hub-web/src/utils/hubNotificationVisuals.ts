@@ -3,6 +3,7 @@ import {
   Bell,
   CircleDollarSign,
   LogIn,
+  LifeBuoy,
   LogOut,
   PackageMinus,
   Scissors,
@@ -49,6 +50,7 @@ const VISUALS: Record<string, HubNotificationVisual> = {
     tint: '#fdece6',
   },
   unit_invitation: { Icon: UserPlus, label: 'Convite', color: '#c86a4d', tint: '#fdece6' },
+  support_reply: { Icon: LifeBuoy, label: 'Suporte', color: '#1d4ed8', tint: '#dbeafe' },
 };
 
 export function hubNotificationVisual(type: string | null | undefined): HubNotificationVisual {

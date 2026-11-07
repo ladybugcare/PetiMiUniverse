@@ -61,7 +61,22 @@ const hubOnboardingBodySchema = z.object({
   beta_terms_accepted: z.boolean().optional(),
 });
 
-async function ensureClinicUserForSignup(userId: string) {
+async function ensureClinicUserForSignup(
+  userId: string,
+  profile: { name: string; email: string; phone?: string | null },
+) {
+  const nowIso = new Date().toISOString();
+  const signupFields = {
+    name: profile.name,
+    email: profile.email.trim().toLowerCase(),
+    phone: profile.phone?.trim() || null,
+    onboarding_state: {
+      source: 'hub',
+      last_step: 'person',
+      completed: false,
+    },
+  };
+
   const { data: existing, error: fetchError } = await supabaseAdmin
     .from('clinic_users')
     .select('id, status, clinic_id, role')
@@ -78,8 +93,9 @@ async function ensureClinicUserForSignup(userId: string) {
       unit_id: null,
       role: 'CADMIN',
       status: 'pending_clinic',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      ...signupFields,
+      created_at: nowIso,
+      updated_at: nowIso,
     });
     if (insertError) throw insertError;
     return;
@@ -94,7 +110,8 @@ async function ensureClinicUserForSignup(userId: string) {
       unit_id: null,
       role: 'CADMIN',
       status: 'pending_clinic',
-      updated_at: new Date().toISOString(),
+      ...signupFields,
+      updated_at: nowIso,
     })
     .eq('id', existing.id);
 
@@ -150,7 +167,11 @@ export const postHubSignup = asyncHandler(async (req: Request, res: Response) =>
       await sendHubSignupConfirmationEmail(email.trim().toLowerCase(), emailRedirectTo);
     }
 
-    await ensureClinicUserForSignup(userId);
+    await ensureClinicUserForSignup(userId, {
+      name: full_name,
+      email: email.trim().toLowerCase(),
+      phone: phone?.trim() || null,
+    });
   } catch (e) {
     await supabaseAdmin.auth.admin.deleteUser(userId);
     throw e;

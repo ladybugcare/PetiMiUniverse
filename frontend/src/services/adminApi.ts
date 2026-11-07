@@ -125,6 +125,28 @@ export type PatchClinicHubSubscription = {
   status?: string;
 };
 
+export type SignupProduct = 'hub' | 'shift' | 'unknown';
+
+export interface RecentSignup {
+  id: string;
+  user_id: string;
+  product: SignupProduct;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  status: string;
+  onboarding_completed: boolean;
+  created_at: string;
+  clinic: {
+    id: string;
+    name: string;
+    email: string | null;
+    cnpj: string | null;
+    status: string | null;
+    created_at: string;
+  } | null;
+}
+
 // Serviços administrativos
 export const adminApi = {
   // Listar unidades pendentes
@@ -158,6 +180,13 @@ export const adminApi = {
   // Buscar administradores
   getAdmins: async (): Promise<{ admins: Admin[] }> =>
     apiRequest('/admin/users/admins'),
+
+  // Cadastros recentes Hub + Shift
+  getRecentSignups: async (
+    product: 'all' | 'hub' | 'shift' = 'all',
+    limit = 50,
+  ): Promise<{ signups: RecentSignup[]; count: number; product: string }> =>
+    apiRequest(`/admin/signups?product=${product}&limit=${limit}`),
 
   // ===========================================================
   // 🩺 APROVAÇÃO DE VETERINÁRIOS

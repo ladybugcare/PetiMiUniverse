@@ -3,6 +3,7 @@ import {
   BarChart2,
   Building2,
   Users,
+  UserPlus,
   ClipboardList,
   MessageCircle,
   Settings,
@@ -89,6 +90,14 @@ export class SidebarMenuService {
             icon: <Users size={18} color={colors.brand.primary[500]} />,
             action: 'navigate',
             path: '/admin/users',
+            group: 'Gerenciamento',
+          },
+          {
+            id: 'users-signups',
+            label: 'Novas contas',
+            icon: <UserPlus size={18} color={colors.brand.primary[500]} />,
+            action: 'navigate',
+            path: '/admin/signups',
             group: 'Gerenciamento',
           },
           {

@@ -33,6 +33,7 @@ import {
   HubFinanceiroPage,
   HubDashboardPage,
   HubRelatoriosPage,
+  HubSupportTicketsPage,
 } from '@petimi/hub-ui';
 import HubProtectedRoute from './routes/HubProtectedRoute';
 import HubLoginPage from './pages/HubLoginPage';
@@ -140,6 +141,7 @@ const router = createBrowserRouter(
         <Route path="relatorios" element={<HubRelatoriosPage />} />
         <Route path="encounters" element={<Navigate to="/hub/clinica" replace />} />
         <Route path="notificacoes" element={<HubNotificationsPage />} />
+        <Route path="suporte" element={<HubSupportTicketsPage />} />
         <Route path="meu-perfil" element={<HubMeuPerfilPage />} />
         <Route path="perfil-clinica" element={<HubClinicaPerfilPage />} />
         <Route path="design-system" element={<HubDesignSystemPage />} />

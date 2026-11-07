@@ -2,6 +2,14 @@ import { apiRequest, getApiBaseUrl, getSupabase } from '@petimi/web-core';
 
 const base = '/api/hub/finance';
 
+/** Disparado após abrir/fechar sessão de caixa — o shell atualiza badge/guard. */
+export const HUB_CASH_SESSION_UPDATED_EVENT = 'petimi:hub-cash-session-updated';
+
+export function notifyHubCashSessionUpdated(): void {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new Event(HUB_CASH_SESSION_UPDATED_EVENT));
+}
+
 export type HubFinanceUnbilledSourceType =
   | 'grooming_session'
   | 'encounter'
@@ -926,19 +934,24 @@ export const hubFinancialApi = {
     opening_balance: number;
     opened_by_staff_id?: string | null;
   }): Promise<{ cash_session: HubCashSession }> {
-    return apiRequest(`${base}/cash-sessions/open`, { method: 'POST', body: JSON.stringify(body) }) as Promise<{
-      cash_session: HubCashSession;
-    }>;
+    const result = (await apiRequest(`${base}/cash-sessions/open`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    })) as { cash_session: HubCashSession };
+    notifyHubCashSessionUpdated();
+    return result;
   },
 
   async closeCashSession(
     sessionId: string,
     body: { clinic_id: string; closing_balance: number; notes?: string | null }
   ): Promise<{ cash_session: HubCashSession }> {
-    return apiRequest(`${base}/cash-sessions/${encodeURIComponent(sessionId)}/close`, {
+    const result = (await apiRequest(`${base}/cash-sessions/${encodeURIComponent(sessionId)}/close`, {
       method: 'POST',
       body: JSON.stringify(body),
-    }) as Promise<{ cash_session: HubCashSession }>;
+    })) as { cash_session: HubCashSession };
+    notifyHubCashSessionUpdated();
+    return result;
   },
 
   async getDashboardSummary(

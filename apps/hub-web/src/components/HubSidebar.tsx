@@ -20,6 +20,7 @@ import {
   CreditCard,
   Settings,
   MessageCircle,
+  LifeBuoy,
   ChevronDown,
   PanelLeftClose,
   PanelLeft,
@@ -28,6 +29,7 @@ import { usePermissions } from '@petimi/web-core';
 import HubSidebarFooter from './HubSidebarFooter';
 import { useHubCashSession } from '../contexts/HubCashSessionContext';
 import { getHubSupportWhatsappHref } from '../constants/hubSupportWhatsapp';
+import { useHubSupportUnread } from '../hooks/useHubSupportUnread';
 
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
 const logoSrc = `${baseUrl}petmi-hub.svg`;
@@ -157,22 +159,14 @@ const navSections: NavSection[] = [
   },
 ];
 
+const HUB_SUPPORT_PATH = '/hub/suporte';
+
 function buildNavSections(supportHref: string | null): NavSection[] {
-  if (!supportHref) return navSections;
-  return [
-    ...navSections,
-    {
-      id: 'ajuda',
-      title: 'Ajuda',
-      items: [
-        {
-          href: supportHref,
-          label: 'Feedback beta',
-          icon: MessageCircle,
-        },
-      ],
-    },
-  ];
+  const helpItems: NavItem[] = [{ to: HUB_SUPPORT_PATH, label: 'Meus tickets', icon: LifeBuoy }];
+  if (supportHref) {
+    helpItems.push({ href: supportHref, label: 'Feedback beta', icon: MessageCircle });
+  }
+  return [...navSections, { id: 'ajuda', title: 'Ajuda', items: helpItems }];
 }
 
 function itemAllowed(
@@ -243,6 +237,7 @@ const HubSidebar: React.FC<HubSidebarProps> = ({
   const { pathname } = useLocation();
   const { hasPermission, loading: permLoading } = usePermissions();
   const { isOpen: caixaOpen, pendingBillingCount } = useHubCashSession();
+  const supportUnread = useHubSupportUnread();
 
   const allSections = useMemo(() => buildNavSections(getHubSupportWhatsappHref()), []);
 
@@ -443,6 +438,7 @@ const HubSidebar: React.FC<HubSidebarProps> = ({
                   }
 
                   const { to, end } = item;
+                  const showSupportUnread = to === HUB_SUPPORT_PATH && supportUnread > 0;
                   return (
                     <NavLink
                       key={to}
@@ -455,6 +451,17 @@ const HubSidebar: React.FC<HubSidebarProps> = ({
                     >
                       <Icon size={18} strokeWidth={1.75} className="hub-sidebar__icon" aria-hidden />
                       {showLabels && <span>{label}</span>}
+                      {showLabels && showSupportUnread && (
+                        <span
+                          className="hub-sidebar__badge hub-sidebar__badge--warn"
+                          aria-label={`${supportUnread} resposta(s) do suporte não lida(s)`}
+                        >
+                          {supportUnread}
+                        </span>
+                      )}
+                      {!showLabels && showSupportUnread && (
+                        <span className="hub-sidebar__dot hub-sidebar__dot--warn" aria-hidden />
+                      )}
                       {showLabels && to === '/hub/caixa' && caixaOpen && (
                         <span
                           className={[

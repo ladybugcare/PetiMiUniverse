@@ -9,6 +9,7 @@ import { createClinic } from '../controllers/admin/createClinic';
 import { createVet } from '../controllers/admin/createVet';
 import { createFreelancer } from '../controllers/admin/createFreelancer';
 import { getAdmins } from '../controllers/admin/getAdmins';
+import { getRecentSignups } from '../controllers/admin/getRecentSignups';
 
 // Controllers de unidades
 import { getPendingUnits } from '../controllers/units/getPendingUnits';
@@ -50,6 +51,9 @@ router.post('/users/create/admin', authenticateUser, createAdmin);
 
 // Listar administradores
 router.get('/users/admins', authenticateUser, getAdmins);
+
+// Listar cadastros recentes (Hub + Shift)
+router.get('/signups', authenticateUser, getRecentSignups);
 
 /**
  * ==============================================

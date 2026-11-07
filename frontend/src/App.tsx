@@ -42,6 +42,7 @@ import AdminVetsPage from './pages/AdminVetsPage';
 import AdminFreelancersPage from './pages/AdminFreelancersPage';
 import AdminDemandsPage from './pages/AdminDemandsPage';
 import AdminUsersPage from './pages/AdminUsersPage';
+import AdminSignupsPage from './pages/AdminSignupsPage';
 import AdminSupportTicketsPage from './pages/AdminSupportTicketsPage';
 import AdminReportsPage from './pages/AdminReportsPage';
 import VetOnboardingPage from './pages/VetOnboardingPage';
@@ -238,6 +239,14 @@ function App() {
                 element={
                   <ProtectedRoute allowedRoles={['ADMIN']}>
                     <AdminUsersPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/signups"
+                element={
+                  <ProtectedRoute allowedRoles={['ADMIN']}>
+                    <AdminSignupsPage />
                   </ProtectedRoute>
                 }
               />

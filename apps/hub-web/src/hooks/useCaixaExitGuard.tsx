@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useBlocker } from 'react-router-dom';
 import { enviarPendentesAoFinanceiro } from '@petimi/hub-ui';
 import { useHubCashSession } from '../contexts/HubCashSessionContext';
@@ -15,6 +15,7 @@ export function useCaixaExitGuard() {
   const unitId = selectedUnit?.id ?? null;
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [handoffError, setHandoffError] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
 
   const shouldBlock = useCallback(
     ({
@@ -34,6 +35,31 @@ export function useCaixaExitGuard() {
 
   const blocker = useBlocker(shouldBlock);
   const isBlocked = blocker.state === 'blocked';
+
+  // Revalida no servidor: após fechar o turno a página local já muda, mas o
+  // contexto global pode estar atrasado e disparar o modal indevidamente.
+  useEffect(() => {
+    if (blocker.state !== 'blocked') {
+      setVerifying(false);
+      return;
+    }
+    let cancelled = false;
+    setVerifying(true);
+    const proceed = blocker.proceed;
+    void (async () => {
+      const status = await refresh();
+      if (cancelled) return;
+      if (status && (!status.isOpen || status.pendingBillingCount <= 0)) {
+        setVerifying(false);
+        proceed?.();
+        return;
+      }
+      setVerifying(false);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [blocker.state, blocker.proceed, refresh]);
 
   const handleStay = useCallback(() => {
     setHandoffError(null);
@@ -69,6 +95,48 @@ export function useCaixaExitGuard() {
 
   const ExitGuardModal: React.FC = useCallback(() => {
     if (!isBlocked) return null;
+
+    if (verifying) {
+      return (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="caixa-exit-guard-title"
+          aria-busy="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 9999,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            background: 'rgba(0,0,0,0.45)',
+          }}
+        >
+          <div
+            style={{
+              background: '#fff',
+              borderRadius: 16,
+              padding: '28px 32px',
+              maxWidth: 420,
+              width: '100%',
+              margin: '0 16px',
+              boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
+            }}
+          >
+            <h2
+              id="caixa-exit-guard-title"
+              style={{ margin: '0 0 10px', fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}
+            >
+              Verificando caixa…
+            </h2>
+            <p style={{ margin: 0, fontSize: 14, color: '#555', lineHeight: 1.5 }}>
+              Confirmando se o turno ainda está aberto antes de sair.
+            </p>
+          </div>
+        </div>
+      );
+    }
 
     return (
       <div
@@ -178,7 +246,16 @@ export function useCaixaExitGuard() {
         </div>
       </div>
     );
-  }, [isBlocked, pendingBillingCount, handoffBusy, handoffError, handleStay, handleHandoffAndLeave, handleLeaveAnyway]);
+  }, [
+    isBlocked,
+    verifying,
+    pendingBillingCount,
+    handoffBusy,
+    handoffError,
+    handleStay,
+    handleHandoffAndLeave,
+    handleLeaveAnyway,
+  ]);
 
   return { ExitGuardModal };
 }

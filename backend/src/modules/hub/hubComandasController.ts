@@ -4778,9 +4778,8 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
         }
         const receivableId = rec.id as string;
 
-        let sort = 0;
-        for (const it of items) {
-          await supabaseAdmin.from('hub_receivable_lines').insert({
+        const { error: linesErr } = await supabaseAdmin.from('hub_receivable_lines').insert(
+          items.map((it, sort) => ({
             clinic_id,
             receivable_id: receivableId,
             comanda_id: comandaId,
@@ -4793,8 +4792,17 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
             quantity: Number(it.quantity ?? 1),
             unit_sale_amount: Number(it.unit_amount ?? 0),
             line_total: Number(it.line_total ?? 0),
-            sort_order: sort++,
+            sort_order: sort,
+          })),
+        );
+        if (linesErr) {
+          await supabaseAdmin.from('hub_receivables').delete().eq('id', receivableId);
+          results.push({
+            comanda_id: comandaId,
+            receivable_ids: [],
+            error: linesErr.message ?? 'Erro ao criar linhas do recebível',
           });
+          continue;
         }
 
         if (action === 'receive_now' && payment_method) {
@@ -4833,9 +4841,11 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
             .update({ finance_handoff_at: new Date().toISOString() })
             .eq('id', comandaId)
             .eq('clinic_id', clinic_id);
+          // leave_pending mantém saldo em aberto — auto-close seria no-op após outro
+          // getHubComandaDetailPayload completo (custo alto em lote).
+        } else {
+          await tryAutoCloseComanda(comandaId, clinic_id);
         }
-
-        await tryAutoCloseComanda(comandaId, clinic_id);
 
         results.push({ comanda_id: comandaId, receivable_ids: [receivableId] });
       } catch (itemErr: unknown) {

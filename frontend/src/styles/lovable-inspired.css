@@ -2306,8 +2306,9 @@ body {
 }
 
 .login-page-logo-img {
-  width: 48px;
   height: 48px;
+  width: auto;
+  max-width: 100%;
   object-fit: contain;
 }
 

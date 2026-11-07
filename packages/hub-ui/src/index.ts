@@ -84,6 +84,21 @@ export { default as HubSystemSettingsRoutes } from './pages/configuracoes/HubSys
 export { default as HubServiceTypesPage } from './pages/HubServiceTypesPage';
 export { default as HubEstoqueRoutes } from './pages/estoque/HubEstoqueRoutes';
 export { default as HubStaffPage } from './pages/equipe/HubStaffPage';
+export { default as HubSupportTicketsPage } from './pages/suporte/HubSupportTicketsPage';
+export { HubSupportTicketModal } from './pages/suporte/HubSupportTicketModal';
+export {
+  hubSupportTicketsApi,
+  HUB_SUPPORT_TICKETS_UPDATED_EVENT,
+  notifyHubSupportTicketsUpdated,
+} from './api/hubSupportTicketsApi';
+export type {
+  HubSupportTicket,
+  HubSupportTicketCategory,
+  HubSupportTicketPriority,
+  HubSupportTicketStatus,
+  HubTicketMessage,
+  HubTicketEvaluation,
+} from './api/hubSupportTicketsApi';
 export { default as HubAgendaPage } from './pages/agenda/HubAgendaPage';
 export { default as HubClinicRoutes } from './pages/clinica/HubClinicRoutes';
 export { default as HubStandalonePrescriptionPage } from './pages/clinica/HubStandalonePrescriptionPage';
@@ -184,7 +199,11 @@ export type { HubComandaOriginType, HubComandaItem, HubComandaDetailResponse, Hu
 export { hubComandaApi, openHubComandaPdf, downloadHubComandaPdf } from './api/hubComandaApi';
 export { ComandaCheckoutDrawer } from './pages/finance/ComandaCheckoutDrawer';
 export type { ComandaCheckoutDrawerProps } from './pages/finance/ComandaCheckoutDrawer';
-export { hubFinancialApi } from './api/hubFinancialApi';
+export {
+  hubFinancialApi,
+  HUB_CASH_SESSION_UPDATED_EVENT,
+  notifyHubCashSessionUpdated,
+} from './api/hubFinancialApi';
 export type {
   HubFinanceUnbilledItem,
   HubFinanceUnbilledSourceType,

@@ -18,6 +18,7 @@ import { useAuth } from '../AuthContext';
 import { 
   supportTicketsApi, 
   SupportTicket, 
+  SupportProduct,
   TicketMessage 
 } from '../services/supportTicketsApi';
 import { SuccessModal } from '../components/SuccessModal';
@@ -34,6 +35,7 @@ const AdminSupportTicketsPage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [sending, setSending] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [productFilter, setProductFilter] = useState<SupportProduct | 'all'>('all');
   const [showErrorModal, setShowErrorModal] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -44,7 +46,7 @@ const AdminSupportTicketsPage: React.FC = () => {
 
   useEffect(() => {
     loadTickets();
-  }, [statusFilter]);
+  }, [statusFilter, productFilter]);
 
   useEffect(() => {
     if (selectedTicket) {
@@ -63,7 +65,7 @@ const AdminSupportTicketsPage: React.FC = () => {
   const loadTickets = async () => {
     try {
       setLoading(true);
-      const result = await supportTicketsApi.getAllTickets(statusFilter);
+      const result = await supportTicketsApi.getAllTickets(statusFilter, undefined, undefined, productFilter);
       setTickets(result.tickets);
     } catch (error: any) {
       console.error('Error loading tickets:', error);
@@ -207,6 +209,32 @@ const AdminSupportTicketsPage: React.FC = () => {
     );
   };
 
+  const getProductBadge = (product: SupportProduct | undefined) => {
+    const productConfig: Record<SupportProduct, { label: string; color: string; backgroundColor: string }> = {
+      hub: { label: 'Hub', color: '#0f766e', backgroundColor: '#ccfbf1' },
+      shift: { label: 'Shift', color: '#1d4ed8', backgroundColor: '#dbeafe' },
+    };
+
+    const config = productConfig[product ?? 'shift'];
+
+    return (
+      <span
+        style={{
+          ...styles.roleBadge,
+          color: config.color,
+          backgroundColor: config.backgroundColor,
+        }}
+      >
+        {config.label}
+      </span>
+    );
+  };
+
+  const getTicketUserLabel = (ticket: SupportTicket) => {
+    const name = ticket.user_name || (ticket.user_id ? ticket.user_id.substring(0, 8) + '...' : 'N/A');
+    return ticket.clinic_name ? `${name} · ${ticket.clinic_name}` : name;
+  };
+
   const renderStars = (rating: number) => {
     return (
       <div style={styles.starsContainer}>
@@ -243,6 +271,16 @@ const AdminSupportTicketsPage: React.FC = () => {
             </div>
 
             <div style={styles.filterContainer}>
+              <label style={styles.filterLabel}>Produto:</label>
+              <select
+                value={productFilter}
+                onChange={(e) => setProductFilter(e.target.value as SupportProduct | 'all')}
+                style={styles.filterSelect}
+              >
+                <option value="all">Todos</option>
+                <option value="hub">Hub</option>
+                <option value="shift">Shift</option>
+              </select>
               <label style={styles.filterLabel}>Filtrar por status:</label>
               <select
                 value={statusFilter}
@@ -284,7 +322,7 @@ const AdminSupportTicketsPage: React.FC = () => {
                       <User size={16} color={colors.brand.primary[500]} />
                       <div style={styles.userInfo}>
                         <span style={styles.ticketUserId}>
-                          {ticket.user_name || (ticket.user_id ? ticket.user_id.substring(0, 8) + '...' : 'N/A')}
+                          {getTicketUserLabel(ticket)}
                         </span>
                         <span style={styles.ticketDate}>
                           {new Date(ticket.created_at).toLocaleDateString('pt-BR', {
@@ -296,6 +334,7 @@ const AdminSupportTicketsPage: React.FC = () => {
                       </div>
                     </div>
                     <div style={styles.badgesContainer}>
+                      {getProductBadge(ticket.product)}
                       {getRoleBadge(ticket.user_role)}
                       {getStatusBadge(ticket.status)}
                     </div>
@@ -348,8 +387,9 @@ const AdminSupportTicketsPage: React.FC = () => {
           <div style={styles.conversationInfo}>
             <User size={16} color={colors.brand.primary[500]} />
             <span style={styles.userName}>
-              {selectedTicket.user_name || (selectedTicket.user_id ? selectedTicket.user_id.substring(0, 8) + '...' : 'N/A')}
+              {getTicketUserLabel(selectedTicket)}
             </span>
+            {getProductBadge(selectedTicket.product)}
             {getRoleBadge(selectedTicket.user_role)}
             {getStatusBadge(selectedTicket.status)}
             <span style={styles.ticketId}>#{selectedTicket.id.substring(0, 8)}</span>

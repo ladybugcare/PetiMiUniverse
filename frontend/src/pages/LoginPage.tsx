@@ -86,16 +86,13 @@ const LoginPage: React.FC = () => {
 
       <div className="login-page-card">
         <div className="login-page-logo-row">
-          {/* Mesmo arquivo que `frontend/assets/favicon.png` — servido em `public/favicon.png` */}
           <img
-            src={`${process.env.PUBLIC_URL || ''}/favicon.png`}
-            alt="PetMi"
+            src="/petmi-shift.svg"
+            alt="PetMi Shift"
             className="login-page-logo-img"
+            width={220}
+            height={48}
           />
-          <div className="login-page-brand-block">
-            <span className="login-page-brand-name">PetMi Shift</span>
-            <span className="login-page-tagline">CUIDADO QUE CONECTA</span>
-          </div>
         </div>
 
         <h1 className="login-page-welcome">Bem-vindo de volta! 👋</h1>

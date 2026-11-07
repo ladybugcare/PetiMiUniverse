@@ -1,8 +1,39 @@
 import { Request, Response } from 'express';
-import { supabase, supabaseAdmin } from '../config/supabase';
-import { createNotification } from './notificationsController';
+import { supabaseAdmin } from '../config/supabase';
+// Acesso: o banco é compartilhado por todos os produtos e as tabelas de suporte
+// são lidas/escritas com service role, então o escopo é validado aqui.
+const isPlatformAdmin = (req: Request): boolean => req.user?.role?.toLowerCase() === 'admin';
+
+const canActAsUser = (req: Request, userId: unknown): boolean =>
+  typeof userId === 'string' && (req.user?.id === userId || isPlatformAdmin(req));
+
+/** Carrega o ticket se o requisitante for o dono ou admin; senão responde 404/403 e retorna null. */
+async function loadAccessibleTicket(req: Request, res: Response, ticketId: string) {
+  const { data: ticket, error } = await supabaseAdmin
+    .from('support_tickets')
+    .select('*')
+    .eq('id', ticketId)
+    .maybeSingle();
+
+  if (error || !ticket) {
+    res.status(404).json({ error: 'Ticket não encontrado' });
+    return null;
+  }
+  if (!isPlatformAdmin(req) && ticket.user_id !== req.user?.id) {
+    res.status(403).json({ error: 'Acesso negado a este ticket' });
+    return null;
+  }
+  return ticket;
+}
 
 // Tipos
+type SupportProduct = 'hub' | 'shift';
+
+const SUPPORT_PRODUCTS: SupportProduct[] = ['hub', 'shift'];
+
+const isSupportProduct = (value: unknown): value is SupportProduct =>
+  typeof value === 'string' && (SUPPORT_PRODUCTS as string[]).includes(value);
+
 interface CreateTicketBody {
   user_id: string;
   user_role: 'clinic' | 'vet' | 'freelancer' | 'admin';
@@ -10,6 +41,8 @@ interface CreateTicketBody {
   category?: 'técnico' | 'financeiro' | 'conta_perfil' | 'demanda' | 'marketplace' | 'outro';
   priority?: 'baixa' | 'normal' | 'alta' | 'urgente';
   attachments?: string[];
+  product?: SupportProduct;
+  clinic_id?: string | null;
 }
 
 interface ReplyToTicketBody {
@@ -47,6 +80,10 @@ export const createTicket = async (
       return res.status(400).json({ error: 'user_id, user_role e message são obrigatórios' });
     }
 
+    if (req.user?.id !== user_id) {
+      return res.status(403).json({ error: 'Não é possível abrir ticket em nome de outro usuário' });
+    }
+
     if (message.trim().length < 10) {
       return res.status(400).json({ error: 'A mensagem deve ter pelo menos 10 caracteres' });
     }
@@ -55,10 +92,15 @@ export const createTicket = async (
       return res.status(400).json({ error: 'user_role deve ser clinic, vet, freelancer ou admin' });
     }
 
+    const product = req.body.product ?? 'shift';
+    if (!isSupportProduct(product)) {
+      return res.status(400).json({ error: 'product deve ser hub ou shift' });
+    }
+
     const now = new Date().toISOString();
 
     // Criar ticket
-    const { data: ticket, error: ticketError } = await supabase
+    const { data: ticket, error: ticketError } = await supabaseAdmin
       .from('support_tickets')
       .insert([
         {
@@ -71,6 +113,8 @@ export const createTicket = async (
           category: req.body.category || 'outro',
           priority: req.body.priority || 'normal',
           attachments: req.body.attachments || [],
+          product,
+          clinic_id: req.body.clinic_id || null,
         },
       ])
       .select()
@@ -82,7 +126,7 @@ export const createTicket = async (
     }
 
     // Criar primeira mensagem na tabela de mensagens
-    const { error: messageError } = await supabase
+    const { error: messageError } = await supabaseAdmin
       .from('ticket_messages')
       .insert([
         {
@@ -201,17 +245,27 @@ export const createPublicTicket = async (
 // ========================================
 export const getUserTickets = async (req: Request, res: Response) => {
   try {
-    const { user_id } = req.query;
+    const { user_id, product } = req.query;
 
     if (!user_id) {
       return res.status(400).json({ error: 'user_id é obrigatório' });
     }
 
+    if (!canActAsUser(req, user_id)) {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
+
     // Buscar tickets
-    const { data: tickets, error: ticketsError } = await supabase
+    let ticketsQuery = supabaseAdmin
       .from('support_tickets')
       .select('*')
-      .eq('user_id', user_id)
+      .eq('user_id', user_id);
+
+    if (isSupportProduct(product)) {
+      ticketsQuery = ticketsQuery.eq('product', product);
+    }
+
+    const { data: tickets, error: ticketsError } = await ticketsQuery
       .order('last_message_at', { ascending: false });
 
     if (ticketsError) {
@@ -223,7 +277,7 @@ export const getUserTickets = async (req: Request, res: Response) => {
     const ticketsWithDetails = await Promise.all(
       (tickets || []).map(async (ticket) => {
         // Buscar última mensagem
-        const { data: lastMessage } = await supabase
+        const { data: lastMessage } = await supabaseAdmin
           .from('ticket_messages')
           .select('*')
           .eq('ticket_id', ticket.id)
@@ -232,14 +286,14 @@ export const getUserTickets = async (req: Request, res: Response) => {
           .single();
 
         // Buscar avaliação
-        const { data: evaluation } = await supabase
+        const { data: evaluation } = await supabaseAdmin
           .from('ticket_evaluations')
           .select('*')
           .eq('ticket_id', ticket.id)
           .single();
 
         // Contar mensagens não lidas do admin
-        const { data: unreadMessages } = await supabase
+        const { data: unreadMessages } = await supabaseAdmin
           .from('ticket_messages')
           .select('id')
           .eq('ticket_id', ticket.id)
@@ -267,11 +321,15 @@ export const getUserTickets = async (req: Request, res: Response) => {
 // ========================================
 export const getAllTickets = async (req: Request, res: Response) => {
   try {
-    const { status, category, priority } = req.query;
+    const { status, category, priority, product } = req.query;
 
-    let query = supabase
+    let query = supabaseAdmin
       .from('support_tickets')
       .select('*');
+
+    if (isSupportProduct(product)) {
+      query = query.eq('product', product);
+    }
 
     // Filtrar por status se fornecido
     if (status && status !== 'all') {
@@ -303,11 +361,29 @@ export const getAllTickets = async (req: Request, res: Response) => {
     const ticketsWithNames = await Promise.all(
       (data || []).map(async (ticket) => {
         let userName = 'Usuário';
+        let clinicName: string | null = null;
 
         try {
-          if (ticket.user_role === 'clinic') {
+          if (ticket.product === 'hub') {
+            // Staff Hub: user_id é auth.users; a clínica vem de clinic_id
+            if (ticket.user_id) {
+              const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(ticket.user_id);
+              userName = authUser?.user?.user_metadata?.name ||
+                        authUser?.user?.user_metadata?.full_name ||
+                        authUser?.user?.email?.split('@')[0] ||
+                        'Usuário Hub';
+            }
+            if (ticket.clinic_id) {
+              const { data: clinic } = await supabaseAdmin
+                .from('clinics')
+                .select('name')
+                .eq('id', ticket.clinic_id)
+                .maybeSingle();
+              clinicName = clinic?.name || null;
+            }
+          } else if (ticket.user_role === 'clinic') {
             // Buscar nome na tabela clinics
-            const { data: clinic } = await supabase
+            const { data: clinic } = await supabaseAdmin
               .from('clinics')
               .select('name')
               .eq('id', ticket.user_id)
@@ -315,7 +391,7 @@ export const getAllTickets = async (req: Request, res: Response) => {
             userName = clinic?.name || 'Clínica';
           } else if (ticket.user_role === 'vet') {
             // Buscar nome na tabela vets
-            const { data: vet } = await supabase
+            const { data: vet } = await supabaseAdmin
               .from('vets')
               .select('name')
               .eq('id', ticket.user_id)
@@ -323,7 +399,7 @@ export const getAllTickets = async (req: Request, res: Response) => {
             userName = vet?.name || 'Veterinário';
           } else if (ticket.user_role === 'freelancer') {
             // Buscar nome na tabela freelancers
-            const { data: freelancer } = await supabase
+            const { data: freelancer } = await supabaseAdmin
               .from('freelancers')
               .select('name')
               .eq('id', ticket.user_id)
@@ -343,6 +419,7 @@ export const getAllTickets = async (req: Request, res: Response) => {
         return {
           ...ticket,
           user_name: userName,
+          clinic_name: clinicName,
         };
       })
     );
@@ -374,7 +451,7 @@ export const replyToTicket = async (
     }
 
     // Atualizar ticket com resposta do admin e marcar como não lido pelo usuário
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('support_tickets')
       .update({
         admin_reply: admin_reply.trim(),
@@ -430,7 +507,7 @@ export const updateTicketStatus = async (
       updateData.resolved_at = new Date().toISOString();
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('support_tickets')
       .update(updateData)
       .eq('id', id)
@@ -455,7 +532,7 @@ export const updateTicketStatus = async (
 export const getTicketsCount = async (req: Request, res: Response) => {
   try {
     // Buscar contagem por status
-    const { data: tickets, error } = await supabase
+    const { data: tickets, error } = await supabaseAdmin
       .from('support_tickets')
       .select('status');
 
@@ -496,7 +573,10 @@ export const markTicketAsRead = async (
   try {
     const { id } = req.params;
 
-    const { data, error } = await supabase
+    const ticket = await loadAccessibleTicket(req, res, id);
+    if (!ticket) return;
+
+    const { data, error } = await supabaseAdmin
       .from('support_tickets')
       .update({
         user_read: true,
@@ -523,17 +603,27 @@ export const markTicketAsRead = async (
 // ========================================
 export const getUnreadCount = async (req: Request, res: Response) => {
   try {
-    const { user_id } = req.query;
+    const { user_id, product } = req.query;
 
     if (!user_id) {
       return res.status(400).json({ error: 'user_id é obrigatório' });
     }
 
+    if (!canActAsUser(req, user_id)) {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
+
     // Buscar tickets do usuário
-    const { data: tickets, error: ticketsError } = await supabase
+    let ticketsQuery = supabaseAdmin
       .from('support_tickets')
       .select('id')
       .eq('user_id', user_id);
+
+    if (isSupportProduct(product)) {
+      ticketsQuery = ticketsQuery.eq('product', product);
+    }
+
+    const { data: tickets, error: ticketsError } = await ticketsQuery;
 
     if (ticketsError) {
       console.error('Error fetching user tickets:', ticketsError);
@@ -547,7 +637,7 @@ export const getUnreadCount = async (req: Request, res: Response) => {
     const ticketIds = tickets.map(t => t.id);
 
     // Contar mensagens não lidas de admins nos tickets do usuário
-    const { data: unreadMessages, error: messagesError } = await supabase
+    const { data: unreadMessages, error: messagesError } = await supabaseAdmin
       .from('ticket_messages')
       .select('id')
       .in('ticket_id', ticketIds)
@@ -594,19 +684,19 @@ export const addMessage = async (
       return res.status(400).json({ error: 'sender_role deve ser user ou admin' });
     }
 
-    // Verificar se o ticket existe
-    const { data: ticket, error: ticketError } = await supabase
-      .from('support_tickets')
-      .select('*')
-      .eq('id', ticket_id)
-      .single();
-
-    if (ticketError || !ticket) {
-      return res.status(404).json({ error: 'Ticket não encontrado' });
+    if (sender_id !== req.user?.id) {
+      return res.status(403).json({ error: 'Não é possível enviar mensagem em nome de outro usuário' });
     }
 
+    if (sender_role === 'admin' && !isPlatformAdmin(req)) {
+      return res.status(403).json({ error: 'Somente administradores podem responder como suporte' });
+    }
+
+    const ticket = await loadAccessibleTicket(req, res, ticket_id);
+    if (!ticket) return;
+
     // Verificar se o ticket já foi avaliado (não pode mais enviar mensagens)
-    const { data: evaluation } = await supabase
+    const { data: evaluation } = await supabaseAdmin
       .from('ticket_evaluations')
       .select('id')
       .eq('ticket_id', ticket_id)
@@ -621,7 +711,7 @@ export const addMessage = async (
     const now = new Date().toISOString();
 
     // Criar mensagem
-    const { data: newMessage, error: messageError } = await supabase
+    const { data: newMessage, error: messageError } = await supabaseAdmin
       .from('ticket_messages')
       .insert([
         {
@@ -652,7 +742,7 @@ export const addMessage = async (
       updateData.status = 'in_progress';
     }
 
-    const { error: updateError } = await supabase
+    const { error: updateError } = await supabaseAdmin
       .from('support_tickets')
       .update(updateData)
       .eq('id', ticket_id);
@@ -661,17 +751,26 @@ export const addMessage = async (
       console.error('Error updating ticket:', updateError);
     }
 
-    // Create notification if admin is replying to user
-    if (sender_role === 'admin') {
-      await createNotification({
-        user_id: ticket.user_id,
-        type: 'support_reply',
-        title: 'Resposta de Suporte',
-        message: 'Você recebeu uma resposta do suporte',
-        link: `/my-support-tickets`,
-        entity_type: 'ticket',
-        entity_id: ticket_id
-      });
+    // Notifica o usuário quando o suporte responde (guest não tem conta para receber)
+    if (sender_role === 'admin' && ticket.user_id) {
+      const { error: notifyError } = await supabaseAdmin.from('notifications').insert([
+        {
+          user_id: ticket.user_id,
+          type: 'support_reply',
+          title: 'Resposta do suporte',
+          message: message.trim().length > 120 ? `${message.trim().slice(0, 117)}…` : message.trim(),
+          link:
+            ticket.product === 'hub'
+              ? `/hub/suporte?ticket=${encodeURIComponent(ticket_id)}`
+              : '/my-support-tickets',
+          entity_type: 'ticket',
+          entity_id: ticket_id,
+          read: false,
+        },
+      ]);
+      if (notifyError) {
+        console.error('Error creating support_reply notification:', notifyError);
+      }
     }
 
     res.status(201).json({ message: newMessage });
@@ -691,19 +790,11 @@ export const getTicketMessages = async (
   try {
     const { id: ticket_id } = req.params;
 
-    // Verificar se o ticket existe
-    const { data: ticket, error: ticketError } = await supabase
-      .from('support_tickets')
-      .select('*')
-      .eq('id', ticket_id)
-      .single();
-
-    if (ticketError || !ticket) {
-      return res.status(404).json({ error: 'Ticket não encontrado' });
-    }
+    const ticket = await loadAccessibleTicket(req, res, ticket_id);
+    if (!ticket) return;
 
     // Buscar todas as mensagens do ticket
-    const { data: messages, error: messagesError } = await supabase
+    const { data: messages, error: messagesError } = await supabaseAdmin
       .from('ticket_messages')
       .select('*')
       .eq('ticket_id', ticket_id)
@@ -736,8 +827,15 @@ export const markMessagesAsRead = async (
       return res.status(400).json({ error: 'user_id é obrigatório' });
     }
 
+    if (!canActAsUser(req, user_id)) {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
+
+    const ticket = await loadAccessibleTicket(req, res, ticket_id);
+    if (!ticket) return;
+
     // Marcar mensagens do admin como lidas (usuário está lendo)
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('ticket_messages')
       .update({ read_by_receiver: true })
       .eq('ticket_id', ticket_id)
@@ -776,19 +874,11 @@ export const createEvaluation = async (
       return res.status(400).json({ error: 'Comentário deve ter no máximo 500 caracteres' });
     }
 
-    // Verificar se o ticket existe
-    const { data: ticket, error: ticketError } = await supabase
-      .from('support_tickets')
-      .select('*')
-      .eq('id', ticket_id)
-      .single();
-
-    if (ticketError || !ticket) {
-      return res.status(404).json({ error: 'Ticket não encontrado' });
-    }
+    const ticket = await loadAccessibleTicket(req, res, ticket_id);
+    if (!ticket) return;
 
     // Verificar se já existe avaliação
-    const { data: existingEvaluation } = await supabase
+    const { data: existingEvaluation } = await supabaseAdmin
       .from('ticket_evaluations')
       .select('id')
       .eq('ticket_id', ticket_id)
@@ -801,7 +891,7 @@ export const createEvaluation = async (
     const now = new Date().toISOString();
 
     // Criar avaliação
-    const { data: evaluation, error: evaluationError } = await supabase
+    const { data: evaluation, error: evaluationError } = await supabaseAdmin
       .from('ticket_evaluations')
       .insert([
         {
@@ -819,7 +909,7 @@ export const createEvaluation = async (
     }
 
     // AUTOMATICAMENTE marcar ticket como resolved
-    const { data: updatedTicket, error: updateError } = await supabase
+    const { data: updatedTicket, error: updateError } = await supabaseAdmin
       .from('support_tickets')
       .update({
         status: 'resolved',

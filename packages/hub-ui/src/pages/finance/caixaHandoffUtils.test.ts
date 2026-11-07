@@ -87,14 +87,16 @@ describe('enviarComandasAbertasAoFinanceiro', () => {
     expect(checkoutBulk).not.toHaveBeenCalled();
   });
 
-  it('envia em um único checkout-bulk', async () => {
-    checkoutBulk.mockResolvedValueOnce({
-      results: [
-        { comanda_id: 'aaaa1111-aaaa-bbbb-cccc-dddddddddddd', receivable_ids: ['r1'] },
-        { comanda_id: 'bbbb2222-aaaa-bbbb-cccc-dddddddddddd', receivable_ids: ['r2'] },
-      ],
-      partial_errors: false,
-    });
+  it('envia uma comanda por checkout-bulk (evita timeout de lote)', async () => {
+    checkoutBulk
+      .mockResolvedValueOnce({
+        results: [{ comanda_id: 'aaaa1111-aaaa-bbbb-cccc-dddddddddddd', receivable_ids: ['r1'] }],
+        partial_errors: false,
+      })
+      .mockResolvedValueOnce({
+        results: [{ comanda_id: 'bbbb2222-aaaa-bbbb-cccc-dddddddddddd', receivable_ids: ['r2'] }],
+        partial_errors: false,
+      });
     const result = await enviarComandasAbertasAoFinanceiro(
       [
         openComandaRow('aaaa1111-aaaa-bbbb-cccc-dddddddddddd'),
@@ -102,8 +104,9 @@ describe('enviarComandasAbertasAoFinanceiro', () => {
       ],
       'clinic-1',
     );
-    expect(checkoutBulk).toHaveBeenCalledTimes(1);
-    expect(checkoutBulk.mock.calls[0][0].comanda_ids).toHaveLength(2);
+    expect(checkoutBulk).toHaveBeenCalledTimes(2);
+    expect(checkoutBulk.mock.calls[0][0].comanda_ids).toEqual(['aaaa1111-aaaa-bbbb-cccc-dddddddddddd']);
+    expect(checkoutBulk.mock.calls[1][0].comanda_ids).toEqual(['bbbb2222-aaaa-bbbb-cccc-dddddddddddd']);
     expect(result.success).toBe(true);
     expect(result.handoffCount).toBe(2);
   });

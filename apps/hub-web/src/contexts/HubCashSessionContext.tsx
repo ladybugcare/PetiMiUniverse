@@ -7,9 +7,18 @@ import React, {
   useState,
   type ReactNode,
 } from 'react';
-import { hubFinancialApi, type HubCashSession } from '@petimi/hub-ui';
+import {
+  HUB_CASH_SESSION_UPDATED_EVENT,
+  hubFinancialApi,
+  type HubCashSession,
+} from '@petimi/hub-ui';
 import { usePermissions } from '@petimi/web-core';
 import { useHubUnit } from './HubUnitContext';
+
+export type HubCashSessionStatusSnapshot = {
+  isOpen: boolean;
+  pendingBillingCount: number;
+};
 
 type HubCashSessionContextValue = {
   cashSession: HubCashSession | null;
@@ -18,7 +27,7 @@ type HubCashSessionContextValue = {
   isPreviousDay: boolean;
   pendingBillingCount: number;
   loading: boolean;
-  refresh: () => Promise<void>;
+  refresh: () => Promise<HubCashSessionStatusSnapshot | null>;
 };
 
 const HubCashSessionContext = createContext<HubCashSessionContextValue | undefined>(undefined);
@@ -45,19 +54,25 @@ export const HubCashSessionProvider: React.FC<{ children: ReactNode }> = ({ chil
   const [loading, setLoading] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (): Promise<HubCashSessionStatusSnapshot | null> => {
     if (!clinicId || !unitId || !canReadCash) {
       setCashSession(null);
       setPendingBillingCount(0);
-      return;
+      return { isOpen: false, pendingBillingCount: 0 };
     }
     setLoading(true);
     try {
       const statusRes = await hubFinancialApi.getCashSessionStatus(clinicId, unitId);
-      setCashSession(statusRes.cash_session ?? null);
+      const session = statusRes.cash_session ?? null;
+      setCashSession(session);
       setPendingBillingCount(statusRes.pending_billing_count);
+      return {
+        isOpen: session?.status === 'open',
+        pendingBillingCount: statusRes.pending_billing_count,
+      };
     } catch {
       // Badge de caixa é não-crítico — falha silenciosa
+      return null;
     } finally {
       setLoading(false);
     }
@@ -71,6 +86,14 @@ export const HubCashSessionProvider: React.FC<{ children: ReactNode }> = ({ chil
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
+  }, [refresh]);
+
+  useEffect(() => {
+    const onCashSessionUpdated = () => {
+      void refresh();
+    };
+    window.addEventListener(HUB_CASH_SESSION_UPDATED_EVENT, onCashSessionUpdated);
+    return () => window.removeEventListener(HUB_CASH_SESSION_UPDATED_EVENT, onCashSessionUpdated);
   }, [refresh]);
 
   const isOpen = cashSession?.status === 'open';
@@ -101,7 +124,7 @@ const FALLBACK_CASH_SESSION: HubCashSessionContextValue = {
   isPreviousDay: false,
   pendingBillingCount: 0,
   loading: false,
-  refresh: async () => undefined,
+  refresh: async () => ({ isOpen: false, pendingBillingCount: 0 }),
 };
 
 export function useHubCashSession(): HubCashSessionContextValue {

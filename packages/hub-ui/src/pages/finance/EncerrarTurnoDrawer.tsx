@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { AlertCircle, ArrowRight, CheckCircle, Coins, X } from 'lucide-react';
 import type { HubCashSession, HubCashSessionSummary, HubFinanceDayBoardItem } from '../../api/hubFinancialApi';
 import { hubFinancialApi } from '../../api/hubFinancialApi';
+import { HubLoading } from '../../components/HubLoading';
 import { enviarComandasAbertasAoFinanceiro, contarComandasAbertasEditaveis } from './caixaHandoffUtils';
 import { sumDayBoardPendingAmount, sumOpenComandasPendingAmount } from './hubCaixaSessionHistory';
 
@@ -25,6 +26,8 @@ export type EncerrarTurnoDrawerProps = {
   dayBoardItems: HubFinanceDayBoardItem[];
   expectedBalance: number;
   methodsTotal: number;
+  /** True enquanto o resumo da sessão ainda está sendo carregado/atualizado. */
+  dataLoading?: boolean;
   onClosed: () => void;
 };
 
@@ -38,6 +41,7 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
   dayBoardItems,
   expectedBalance,
   methodsTotal,
+  dataLoading = false,
   onClosed,
 }) => {
   const [step, setStep] = useState<Step>('resumo');
@@ -229,73 +233,111 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
         {/* ── Passo 1: Resumo ── */}
         {step === 'resumo' && (
           <>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 28 }}>
-              {[
-                {
-                  label: 'Total recebido',
-                  value: formatBrl(methodsTotal),
-                  tone: 'green',
-                },
-                {
-                  label: 'A receber no dia',
-                  value: formatBrl(dayPendingTotal),
-                  tone: dayPendingTotal > 0 ? 'amber' : 'green',
-                },
-                {
-                  label: 'Comandas abertas',
-                  value: openComandasCount > 0 ? `${openComandasCount} em aberto` : 'Nenhuma',
-                  tone: openComandasCount > 0 ? 'amber' : 'green',
-                },
-                {
-                  label: 'Saldo esperado da gaveta',
-                  value: formatBrl(expectedBalance),
-                  tone: 'neutral',
-                },
-              ].map(({ label, value, tone }) => (
-                <div
-                  key={label}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '10px 14px',
-                    borderRadius: 10,
-                    background: tone === 'green' ? '#f0fdf4' : tone === 'amber' ? '#fffbeb' : '#fafafa',
-                    border: `1px solid ${tone === 'green' ? '#bbf7d0' : tone === 'amber' ? '#fde68a' : '#e5e5e5'}`,
-                  }}
-                >
-                  <span style={{ fontSize: 13, color: '#555' }}>{label}</span>
-                  <strong
+            {dataLoading ? (
+              <div
+                style={{ marginBottom: 28 }}
+                aria-busy="true"
+                aria-live="polite"
+              >
+                <HubLoading variant="block" label="Carregando resumo da sessão…" />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 16 }}>
+                  {['Total recebido', 'A receber no dia', 'Comandas abertas', 'Saldo esperado da gaveta'].map(
+                    (label) => (
+                      <div
+                        key={label}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '10px 14px',
+                          borderRadius: 10,
+                          background: '#fafafa',
+                          border: '1px solid #e5e5e5',
+                        }}
+                      >
+                        <span style={{ fontSize: 13, color: '#555' }}>{label}</span>
+                        <strong style={{ fontSize: 14, color: '#bbb' }}>—</strong>
+                      </div>
+                    ),
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 28 }}>
+                {[
+                  {
+                    label: 'Total recebido',
+                    value: formatBrl(methodsTotal),
+                    tone: 'green',
+                  },
+                  {
+                    label: 'A receber no dia',
+                    value: formatBrl(dayPendingTotal),
+                    tone: dayPendingTotal > 0 ? 'amber' : 'green',
+                  },
+                  {
+                    label: 'Comandas abertas',
+                    value: openComandasCount > 0 ? `${openComandasCount} em aberto` : 'Nenhuma',
+                    tone: openComandasCount > 0 ? 'amber' : 'green',
+                  },
+                  {
+                    label: 'Saldo esperado da gaveta',
+                    value: formatBrl(expectedBalance),
+                    tone: 'neutral',
+                  },
+                ].map(({ label, value, tone }) => (
+                  <div
+                    key={label}
                     style={{
-                      fontSize: 14,
-                      color: tone === 'green' ? '#065f46' : tone === 'amber' ? '#92400e' : '#1a1a1a',
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      padding: '10px 14px',
+                      borderRadius: 10,
+                      background: tone === 'green' ? '#f0fdf4' : tone === 'amber' ? '#fffbeb' : '#fafafa',
+                      border: `1px solid ${tone === 'green' ? '#bbf7d0' : tone === 'amber' ? '#fde68a' : '#e5e5e5'}`,
                     }}
                   >
-                    {value}
-                  </strong>
-                </div>
-              ))}
-            </div>
+                    <span style={{ fontSize: 13, color: '#555' }}>{label}</span>
+                    <strong
+                      style={{
+                        fontSize: 14,
+                        color: tone === 'green' ? '#065f46' : tone === 'amber' ? '#92400e' : '#1a1a1a',
+                      }}
+                    >
+                      {value}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            )}
             <button
               type="button"
               onClick={() => setStep('pendencias')}
+              disabled={dataLoading}
+              aria-disabled={dataLoading}
               style={{
                 width: '100%',
                 padding: '12px 16px',
                 borderRadius: 12,
                 border: 'none',
-                background: '#f0642f',
+                background: dataLoading ? '#ccc' : '#f0642f',
                 color: '#fff',
                 fontWeight: 700,
                 fontSize: 14,
-                cursor: 'pointer',
+                cursor: dataLoading ? 'not-allowed' : 'pointer',
+                opacity: dataLoading ? 0.7 : 1,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 8,
               }}
             >
-              Próximo <ArrowRight size={16} />
+              {dataLoading ? 'Aguardando dados…' : (
+                <>
+                  Próximo <ArrowRight size={16} />
+                </>
+              )}
             </button>
           </>
         )}
@@ -397,7 +439,7 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
                   marginBottom: 10,
                 }}
               >
-                {busy ? 'Enviando…' : 'Enviar pendentes ao financeiro'}
+                {busy ? 'Enviando pendentes…' : 'Enviar pendentes ao financeiro'}
               </button>
             ) : null}
 

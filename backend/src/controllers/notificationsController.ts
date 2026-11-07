@@ -1,5 +1,10 @@
 import type { Request, Response } from 'express';
-import { supabase } from '../config/supabase';
+import { supabaseAdmin } from '../config/supabase';
+
+// O banco é compartilhado por todos os produtos e `notifications` é acessada com service role:
+// cada rota só pode ler/alterar notificações do próprio usuário autenticado.
+const isOwnUser = (req: Request, userId: unknown): boolean =>
+  typeof userId === 'string' && userId === req.user?.id;
 
 // ========================================
 // INTERFACES
@@ -51,7 +56,7 @@ interface GetNotificationsQuery {
 
 export const createNotification = async (data: NotificationData): Promise<void> => {
   try {
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('notifications')
       .insert([{
         user_id: data.user_id,
@@ -88,13 +93,17 @@ export const getNotifications = async (
     return res.status(400).json({ error: 'user_id is required' });
   }
 
+  if (!isOwnUser(req, user_id)) {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
+
   try {
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const offset = (pageNum - 1) * limitNum;
 
     // Build query
-    let query = supabase
+    let query = supabaseAdmin
       .from('notifications')
       .select('*', { count: 'exact' })
       .eq('user_id', user_id);
@@ -137,8 +146,12 @@ export const getUnreadCount = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'user_id is required' });
   }
 
+  if (!isOwnUser(req, user_id)) {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
+
   try {
-    const { count, error } = await supabase
+    const { count, error } = await supabaseAdmin
       .from('notifications')
       .select('*', { count: 'exact', head: true })
       .eq('user_id', user_id as string)
@@ -168,10 +181,11 @@ export const markAsRead = async (
   }
 
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
       .from('notifications')
       .update({ read: true })
       .eq('id', id)
+      .eq('user_id', req.user!.id)
       .select()
       .single();
 
@@ -195,8 +209,12 @@ export const markAllAsRead = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'user_id is required' });
   }
 
+  if (!isOwnUser(req, user_id)) {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
+
   try {
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('notifications')
       .update({ read: true })
       .eq('user_id', user_id)
@@ -226,10 +244,11 @@ export const deleteNotification = async (
   }
 
   try {
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('notifications')
       .delete()
-      .eq('id', id);
+      .eq('id', id)
+      .eq('user_id', req.user!.id);
 
     if (error) throw error;
 
@@ -251,8 +270,12 @@ export const clearReadNotifications = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'user_id is required' });
   }
 
+  if (!isOwnUser(req, user_id)) {
+    return res.status(403).json({ error: 'Acesso negado' });
+  }
+
   try {
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
       .from('notifications')
       .delete()
       .eq('user_id', user_id)
@@ -289,7 +312,7 @@ export const notifyProfessionalsByCategory = async (
 
     // Buscar profissionais ativos baseado na categoria
     if (category === 'vet') {
-      const { data: vets, error: vetsError } = await supabase
+      const { data: vets, error: vetsError } = await supabaseAdmin
         .from('vets')
         .select('id')
         .eq('status', 'active');
@@ -301,7 +324,7 @@ export const notifyProfessionalsByCategory = async (
 
       professionals = vets || [];
     } else if (category === 'freelancer') {
-      const { data: freelancers, error: freelancersError } = await supabase
+      const { data: freelancers, error: freelancersError } = await supabaseAdmin
         .from('freelancers')
         .select('id')
         .eq('status', 'active');
@@ -320,8 +343,8 @@ export const notifyProfessionalsByCategory = async (
     } else if (category === 'other') {
       // Para "other", buscar vets e freelancers ativos
       const [vetsResult, freelancersResult] = await Promise.all([
-        supabase.from('vets').select('id').eq('status', 'active'),
-        supabase.from('freelancers').select('id').eq('status', 'active'),
+        supabaseAdmin.from('vets').select('id').eq('status', 'active'),
+        supabaseAdmin.from('freelancers').select('id').eq('status', 'active'),
       ]);
 
       if (vetsResult.error) {
