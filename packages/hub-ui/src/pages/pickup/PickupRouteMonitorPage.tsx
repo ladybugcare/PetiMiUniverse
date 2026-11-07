@@ -532,6 +532,16 @@ const PickupRouteMonitorPage: React.FC<Props> = ({ routeId: routeIdProp }) => {
                       {addressText(s) ? (
                         <p className="hub-pickup-monitor__stop-address">{addressText(s)}</p>
                       ) : null}
+                      {s.status === 'failed' && s.failure_reason ? (
+                        <p className="hub-pickup-monitor__stop-failure">
+                          {s.failure_reason}
+                          {s.failure_outcome === 'return_to_clinic'
+                            ? s.failure_resolution === 'pending'
+                              ? ' · pet voltando à clínica'
+                              : ' · pet de volta à clínica'
+                            : ''}
+                        </p>
+                      ) : null}
                     </div>
                   </li>
                 );

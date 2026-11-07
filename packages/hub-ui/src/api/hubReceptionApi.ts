@@ -5,7 +5,8 @@ export type ReceptionHandoffKind =
   | 'autorizar_extra'
   | 'encaminhar'
   | 'retirada_balcao'
-  | 'embarque';
+  | 'embarque'
+  | 'lt_falha';
 
 export type ReceptionHandoffStatus = 'open' | 'done' | 'cancelled';
 
@@ -15,7 +16,16 @@ export type ReceptionResolveAction =
   | 'chegou'
   | 'autorizar'
   | 'dispensar'
-  | 'recebi';
+  | 'recebi'
+  | 'tutor_busca'
+  | 'novo_lt';
+
+/** Só para `novo_lt`: sem `sale_amount`, cobra o mesmo valor da perna que falhou. */
+export type ReceptionResolvePayload = {
+  charge?: boolean;
+  sale_amount?: number | null;
+  starts_at?: string | null;
+};
 
 export type ReceptionContext = {
   label?: string;
@@ -25,6 +35,11 @@ export type ReceptionContext = {
   session_id?: string | null;
   appointment_id?: string | null;
   extra_name?: string | null;
+  failure_reason?: string | null;
+  failed_stop_id?: string | null;
+  failed_direction?: 'pickup' | 'delivery' | null;
+  route_id?: string | null;
+  failed_at?: string | null;
 };
 
 export type ReceptionBoardItem = {
@@ -84,10 +99,10 @@ export const hubReceptionApi = {
     const q = new URLSearchParams({ clinic_id: clinicId });
     return apiRequest(`/api/hub/reception/handoffs/${encodeURIComponent(id)}?${q}`) as Promise<ReceptionHandoffDetail>;
   },
-  resolve(id: string, clinicId: string, action: ReceptionResolveAction) {
+  resolve(id: string, clinicId: string, action: ReceptionResolveAction, payload?: ReceptionResolvePayload) {
     return apiRequest(`/api/hub/reception/handoffs/${encodeURIComponent(id)}/resolve`, {
       method: 'POST',
-      body: JSON.stringify({ clinic_id: clinicId, action }),
+      body: JSON.stringify({ clinic_id: clinicId, action, ...(payload ?? {}) }),
     }) as Promise<{ ok: true }>;
   },
 };

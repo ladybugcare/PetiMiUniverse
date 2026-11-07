@@ -258,3 +258,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 120. **`120_create_hub_resources.sql`** — catálogo de recursos físicos por unidade e grupo (`hub_resource_group_settings`, `hub_resource_kinds`, `hub_resources`, `hub_service_type_resource_kinds`) e colunas `hub_resource_id` / `resource_released_at` em `hub_appointments`. Executar depois dos itens 3 e 12. Leva e Traz continua na frota.
 
 121. **`121_create_hub_reception_handoffs.sql`** — fila de custódia da Operação da Recepção (`hub_reception_handoffs`). Não duplica o status de banho, clínica, hotel ou transporte. Sessões já prontas são reconciliadas ao abrir o quadro do dia, sem fechar o banho sozinhas. Executar depois dos itens 12, 31 e 51.
+
+122. **`122_alter_hub_pickup_stops_failure_return.sql`** — desfecho da falha no Leva e Traz (`failure_outcome`, `failure_resolution`, `failed_at`, `return_stop_id`, `retry_appointment_id` em `hub_pickup_stops`) e tarefa `lt_falha` na recepção. Com pet a bordo, a falha gera retorno à clínica e a recepção decide entre tutor buscar ou novo Leva e Traz. Executar depois do item 121.

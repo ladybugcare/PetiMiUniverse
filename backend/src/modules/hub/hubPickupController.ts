@@ -521,7 +521,7 @@ export const getHubPickupDayBoard = async (req: Request, res: Response) => {
     // 2. Paradas já registradas (inclui soltas com hub_pickup_route_id null — ex.: avanço no kanban)
     const { data: stopsRaw } = await supabaseAdmin
       .from('hub_pickup_stops')
-      .select('id, hub_appointment_id, hub_pickup_route_id, direction, sequence, cage_id, status, planned_at, completed_at, failure_reason, notes')
+      .select('id, hub_appointment_id, hub_pickup_route_id, direction, sequence, cage_id, status, planned_at, completed_at, failure_reason, failure_outcome, failure_resolution, notes')
       .in('hub_appointment_id', apptIds);
 
     type StopRow = {
@@ -535,6 +535,8 @@ export const getHubPickupDayBoard = async (req: Request, res: Response) => {
       planned_at: string | null;
       completed_at: string | null;
       failure_reason: string | null;
+      failure_outcome: string | null;
+      failure_resolution: string | null;
       notes: string | null;
     };
 
@@ -643,6 +645,8 @@ export const getHubPickupDayBoard = async (req: Request, res: Response) => {
           planned_at: stop?.planned_at ?? null,
           completed_at: stop?.completed_at ?? null,
           failure_reason: stop?.failure_reason ?? null,
+          failure_outcome: stop?.failure_outcome ?? null,
+          failure_resolution: stop?.failure_resolution ?? null,
           service_type: serviceType ? { id: serviceType.id, name: serviceType.name, service_group: serviceType.service_group } : null,
           pet: pet ?? null,
           guardian: gu ? { id: gu.id, full_name: gu.full_name, phone: gu.phone ?? null } : null,
@@ -1315,7 +1319,7 @@ export const getHubPickupRoute = async (req: Request, res: Response) => {
     const { data: stopsRaw, error: stopsErr } = await supabaseAdmin
       .from('hub_pickup_stops')
       .select(
-        'id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, status, planned_at, completed_at, failure_reason, notes, updated_at',
+        'id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, status, planned_at, completed_at, failure_reason, failure_outcome, failure_resolution, return_stop_id, notes, updated_at',
       )
       .eq('hub_pickup_route_id', id)
       .order('sequence', { ascending: true });
@@ -1444,7 +1448,7 @@ export const patchHubPickupStop = async (req: Request, res: Response) => {
 
     const { data: current, error: fetchErr } = await supabaseAdmin
       .from('hub_pickup_stops')
-      .select('id, status, direction, hub_appointment_id, hub_pickup_route_id')
+      .select('id, status, direction, sequence, hub_appointment_id, hub_pickup_route_id')
       .eq('id', id)
       .eq('clinic_id', clinic_id)
       .maybeSingle();
@@ -1454,6 +1458,7 @@ export const patchHubPickupStop = async (req: Request, res: Response) => {
     const cur = current as {
       status: string;
       direction: string;
+      sequence: number;
       hub_appointment_id: string | null;
       hub_pickup_route_id: string | null;
     };
@@ -1481,13 +1486,27 @@ export const patchHubPickupStop = async (req: Request, res: Response) => {
     if (newStatus === 'completed' && !rest.completed_at) {
       patch.completed_at = new Date().toISOString();
     }
+    if (newStatus === 'failed' && cur.status !== 'failed' && cur.direction !== 'clinic_return') {
+      Object.assign(
+        patch,
+        await buildFailurePatch({
+          clinic_id,
+          direction: cur.direction,
+          from_status: cur.status,
+          route_id: cur.hub_pickup_route_id,
+          sequence: cur.sequence,
+        }),
+      );
+    }
 
     const { data: updated, error: updateErr } = await supabaseAdmin
       .from('hub_pickup_stops')
       .update(patch)
       .eq('id', id)
       .eq('clinic_id', clinic_id)
-      .select('id, status, completed_at, failure_reason, notes, sequence, direction, planned_at, updated_at')
+      .select(
+        'id, status, completed_at, failure_reason, notes, sequence, direction, planned_at, updated_at, failure_outcome, failure_resolution, failed_at, return_stop_id',
+      )
       .single();
     if (updateErr) return res.status(500).json({ error: updateErr.message });
 
@@ -1559,7 +1578,12 @@ export const patchHubPickupStop = async (req: Request, res: Response) => {
       });
     }
 
-    // Auto-concluir rota se todas as paradas estiverem concluídas ou com falha
+    if (cur.direction === 'clinic_return' && newStatus === 'completed' && cur.status !== 'completed') {
+      void syncReceptionForReturnedFailures(clinic_id, id);
+    }
+
+    // Auto-concluir rota se todas as paradas estiverem concluídas ou com falha.
+    // Falha com pet a bordo já deixou um clinic_return pendente, então a rota segue aberta.
     if (newStatus && ['completed', 'failed'].includes(newStatus) && cur.hub_pickup_route_id) {
       const { data: remainingStops } = await supabaseAdmin
         .from('hub_pickup_stops')
@@ -1577,20 +1601,7 @@ export const patchHubPickupStop = async (req: Request, res: Response) => {
     }
 
     if (cur.hub_appointment_id) {
-      const { data: leg } = await supabaseAdmin
-        .from('hub_appointments')
-        .select('pet_id, parent_appointment_id')
-        .eq('id', cur.hub_appointment_id)
-        .maybeSingle();
-      let petId = (leg?.pet_id as string | null) ?? null;
-      if (!petId && leg?.parent_appointment_id) {
-        const { data: parent } = await supabaseAdmin
-          .from('hub_appointments')
-          .select('pet_id')
-          .eq('id', leg.parent_appointment_id as string)
-          .maybeSingle();
-        petId = (parent?.pet_id as string | null) ?? null;
-      }
+      const petId = await petIdForLegAppointment(cur.hub_appointment_id);
       if (petId) {
         const { scheduleReceptionSync } = await import('./receptionSync');
         scheduleReceptionSync(clinic_id, petId);
@@ -1612,6 +1623,7 @@ const createLooseStopSchema = z
     hub_appointment_id: uuidStr,
     direction: z.enum(['pickup', 'delivery']),
     status: z.enum(STOP_STATUSES).default('pending'),
+    failure_reason: z.string().max(1000).optional().nullable(),
   })
   .strict();
 
@@ -1623,7 +1635,20 @@ export const createOrUpdateLooseStop = async (req: Request, res: Response) => {
   try {
     const parsed = createLooseStopSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-    const { clinic_id, hub_appointment_id, direction, status } = parsed.data;
+    const { clinic_id, hub_appointment_id, direction, status, failure_reason } = parsed.data;
+    const failureFields = async (fromStatus: string | null) =>
+      status === 'failed' && fromStatus !== 'failed'
+        ? {
+            failure_reason: failure_reason ?? null,
+            ...(await buildFailurePatch({
+              clinic_id,
+              direction,
+              from_status: fromStatus,
+              route_id: null,
+              sequence: 0,
+            })),
+          }
+        : {};
 
     // Verificar que o agendamento pertence à clínica e é pickup_route
     const { data: appt, error: apptErr } = await supabaseAdmin
@@ -1675,6 +1700,7 @@ export const createOrUpdateLooseStop = async (req: Request, res: Response) => {
       }
       const patch: Record<string, unknown> = { status };
       if (status === 'completed') patch.completed_at = new Date().toISOString();
+      Object.assign(patch, await failureFields(ex.status));
 
       const { data: updated, error: updErr } = await supabaseAdmin
         .from('hub_pickup_stops')
@@ -1699,6 +1725,7 @@ export const createOrUpdateLooseStop = async (req: Request, res: Response) => {
           status,
           sequence: 0,
           address_snapshot: addressSnapshot,
+          ...(await failureFields(null)),
         })
         .select('id, status, direction, sequence, planned_at, completed_at, failure_reason, notes, updated_at')
         .single();
@@ -1760,6 +1787,14 @@ export const createOrUpdateLooseStop = async (req: Request, res: Response) => {
       });
     }
 
+    if (statusChanged) {
+      const petId = a.pet_id ?? (await petIdForLegAppointment(hub_appointment_id));
+      if (petId) {
+        const { scheduleReceptionSync } = await import('./receptionSync');
+        scheduleReceptionSync(clinic_id, petId);
+      }
+    }
+
     return res.status(existing ? 200 : 201).json({ stop });
   } catch (e) {
     console.error('[hubPickupController] createOrUpdateLooseStop', e);
@@ -1773,7 +1808,7 @@ async function loadEnrichedStopsForRoute(routeId: string) {
   const { data: stops, error: stopsErr } = await supabaseAdmin
     .from('hub_pickup_stops')
     .select(
-      'id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, cage_id, status, planned_at, completed_at, failure_reason, notes, updated_at',
+      'id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, cage_id, status, planned_at, completed_at, failure_reason, failure_outcome, failure_resolution, return_stop_id, notes, updated_at',
     )
     .eq('hub_pickup_route_id', routeId)
     .order('sequence', { ascending: true });
@@ -1792,6 +1827,9 @@ async function loadEnrichedStopsForRoute(routeId: string) {
     planned_at: string | null;
     completed_at: string | null;
     failure_reason: string | null;
+    failure_outcome?: string | null;
+    failure_resolution?: string | null;
+    return_stop_id?: string | null;
     notes: string | null;
     updated_at?: string;
   }>;
@@ -1827,7 +1865,7 @@ async function insertClinicReturnStop(opts: {
   route_id: string;
   unit_id?: string | null;
   sequence: number;
-}): Promise<void> {
+}): Promise<string | null> {
   const resolved = await resolveClinicOrUnitAddress(opts.clinic_id, opts.unit_id);
   const { data: routeCoords } = await supabaseAdmin
     .from('hub_pickup_routes')
@@ -1857,17 +1895,309 @@ async function insertClinicReturnStop(opts: {
     addressSnapshot.lng = lng;
   }
 
-  await supabaseAdmin.from('hub_pickup_stops').insert({
+  const { data: created, error } = await supabaseAdmin
+    .from('hub_pickup_stops')
+    .insert({
+      clinic_id: opts.clinic_id,
+      hub_pickup_route_id: opts.route_id,
+      hub_appointment_id: null,
+      pet_id: null,
+      guardian_id: null,
+      direction: 'clinic_return',
+      address_snapshot: addressSnapshot,
+      sequence: opts.sequence,
+      status: 'pending',
+    })
+    .select('id')
+    .single();
+  if (error) {
+    console.error('[hubPickupController] insertClinicReturnStop', error);
+    return null;
+  }
+  return (created as { id: string }).id;
+}
+
+/** Pet a bordo na falha: entrega sempre; coleta só depois do embarque (`in_transit`). */
+export function failureReturnsToClinic(direction: string, fromStatus: string | null): boolean {
+  if (direction === 'delivery') return true;
+  return direction === 'pickup' && fromStatus === 'in_transit';
+}
+
+/**
+ * Garante uma parada `clinic_return` pendente depois da parada que falhou.
+ * Reaproveita o retorno já planejado na rota; senão cria um no fim.
+ */
+async function ensureClinicReturnAfterFailure(opts: {
+  clinic_id: string;
+  route_id: string;
+  failed_sequence: number;
+}): Promise<string | null> {
+  const { data: pendingReturns } = await supabaseAdmin
+    .from('hub_pickup_stops')
+    .select('id, sequence')
+    .eq('hub_pickup_route_id', opts.route_id)
+    .eq('clinic_id', opts.clinic_id)
+    .eq('direction', 'clinic_return')
+    .not('status', 'in', '("completed","failed")')
+    .gte('sequence', opts.failed_sequence)
+    .order('sequence', { ascending: true })
+    .limit(1);
+  const existing = (pendingReturns ?? [])[0] as { id: string } | undefined;
+  if (existing) return existing.id;
+
+  const { data: route } = await supabaseAdmin
+    .from('hub_pickup_routes')
+    .select('unit_id')
+    .eq('id', opts.route_id)
+    .eq('clinic_id', opts.clinic_id)
+    .maybeSingle();
+  const { data: maxRow } = await supabaseAdmin
+    .from('hub_pickup_stops')
+    .select('sequence')
+    .eq('hub_pickup_route_id', opts.route_id)
+    .order('sequence', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  const nextSeq = ((maxRow as { sequence?: number } | null)?.sequence ?? -1) + 1;
+  return insertClinicReturnStop({
     clinic_id: opts.clinic_id,
-    hub_pickup_route_id: opts.route_id,
-    hub_appointment_id: null,
-    pet_id: null,
-    guardian_id: null,
-    direction: 'clinic_return',
-    address_snapshot: addressSnapshot,
-    sequence: opts.sequence,
-    status: 'pending',
+    route_id: opts.route_id,
+    unit_id: (route as { unit_id?: string | null } | null)?.unit_id ?? null,
+    sequence: nextSeq,
   });
+}
+
+/** Campos de desfecho gravados junto com `status = failed`. */
+async function buildFailurePatch(opts: {
+  clinic_id: string;
+  direction: string;
+  from_status: string | null;
+  route_id: string | null;
+  sequence: number;
+}): Promise<Record<string, unknown>> {
+  const returns = failureReturnsToClinic(opts.direction, opts.from_status);
+  const patch: Record<string, unknown> = {
+    failed_at: new Date().toISOString(),
+    failure_outcome: returns ? 'return_to_clinic' : 'no_pet',
+    failure_resolution: returns ? 'pending' : 'none',
+  };
+  if (returns && opts.route_id) {
+    patch.return_stop_id = await ensureClinicReturnAfterFailure({
+      clinic_id: opts.clinic_id,
+      route_id: opts.route_id,
+      failed_sequence: opts.sequence,
+    });
+  }
+  return patch;
+}
+
+async function petIdForLegAppointment(appointmentId: string): Promise<string | null> {
+  const { data: leg } = await supabaseAdmin
+    .from('hub_appointments')
+    .select('pet_id, parent_appointment_id')
+    .eq('id', appointmentId)
+    .maybeSingle();
+  let petId = (leg?.pet_id as string | null) ?? null;
+  if (!petId && leg?.parent_appointment_id) {
+    const { data: parent } = await supabaseAdmin
+      .from('hub_appointments')
+      .select('pet_id')
+      .eq('id', leg.parent_appointment_id as string)
+      .maybeSingle();
+    petId = (parent?.pet_id as string | null) ?? null;
+  }
+  return petId;
+}
+
+/** Retorno concluído: a recepção passa a ver as falhas que voltaram nesta parada. */
+async function syncReceptionForReturnedFailures(clinicId: string, returnStopId: string): Promise<void> {
+  const { data: failed } = await supabaseAdmin
+    .from('hub_pickup_stops')
+    .select('pet_id, hub_appointment_id')
+    .eq('clinic_id', clinicId)
+    .eq('return_stop_id', returnStopId)
+    .eq('status', 'failed');
+  const { scheduleReceptionSync } = await import('./receptionSync');
+  const seen = new Set<string>();
+  for (const row of (failed ?? []) as Array<{ pet_id: string | null; hub_appointment_id: string | null }>) {
+    const petId =
+      row.pet_id ?? (row.hub_appointment_id ? await petIdForLegAppointment(row.hub_appointment_id) : null);
+    if (!petId || seen.has(petId)) continue;
+    seen.add(petId);
+    scheduleReceptionSync(clinicId, petId);
+  }
+}
+
+export type FailedStopResolution =
+  | { action: 'tutor_busca' }
+  | { action: 'novo_lt'; charge: boolean; sale_amount?: number | null; starts_at?: string | null };
+
+/**
+ * Decisão da recepção sobre uma falha com pet de volta à clínica.
+ * `novo_lt` cria nova perna de entrega (sem rota) copiando o preço da perna que falhou;
+ * sem cobrança, a venda fica zerada e o custo é mantido.
+ */
+export async function resolveFailedPickupStop(opts: {
+  clinicId: string;
+  stopId: string;
+  resolution: FailedStopResolution;
+  actorStaffId: string | null;
+}): Promise<{ retryAppointmentId: string | null }> {
+  const { clinicId, stopId, resolution } = opts;
+  const { data: stopRow, error: stopErr } = await supabaseAdmin
+    .from('hub_pickup_stops')
+    .select('id, status, direction, hub_appointment_id, failure_resolution')
+    .eq('id', stopId)
+    .eq('clinic_id', clinicId)
+    .maybeSingle();
+  if (stopErr) throw new Error(stopErr.message);
+  if (!stopRow) throw new Error('Parada não encontrada.');
+  const stop = stopRow as {
+    status: string;
+    direction: string;
+    hub_appointment_id: string | null;
+    failure_resolution: string | null;
+  };
+  if (stop.status !== 'failed' || stop.failure_resolution !== 'pending') {
+    throw new Error('Esta falha já foi resolvida.');
+  }
+
+  if (resolution.action === 'tutor_busca') {
+    const { error } = await supabaseAdmin
+      .from('hub_pickup_stops')
+      .update({ failure_resolution: 'tutor_pickup' })
+      .eq('id', stopId)
+      .eq('clinic_id', clinicId)
+      .eq('failure_resolution', 'pending');
+    if (error) throw new Error(error.message);
+    return { retryAppointmentId: null };
+  }
+
+  if (!stop.hub_appointment_id) throw new Error('Parada sem agendamento de Leva e Traz.');
+  const { data: legRow, error: legErr } = await supabaseAdmin
+    .from('hub_appointments')
+    .select(
+      'id, unit_id, hub_service_type_id, pet_id, guardian_id, starts_at, ends_at, resource_label, parent_appointment_id, pricing_porte_tier, pricing_coat_type, title',
+    )
+    .eq('id', stop.hub_appointment_id)
+    .eq('clinic_id', clinicId)
+    .maybeSingle();
+  if (legErr) throw new Error(legErr.message);
+  if (!legRow) throw new Error('Perna de Leva e Traz não encontrada.');
+  const leg = legRow as {
+    id: string;
+    unit_id: string | null;
+    hub_service_type_id: string | null;
+    pet_id: string | null;
+    guardian_id: string | null;
+    starts_at: string | null;
+    ends_at: string | null;
+    resource_label: string | null;
+    parent_appointment_id: string | null;
+    pricing_porte_tier: string | null;
+    pricing_coat_type: string | null;
+    title: string | null;
+  };
+
+  const durationMs =
+    leg.starts_at && leg.ends_at
+      ? Math.max(15 * 60_000, new Date(leg.ends_at).getTime() - new Date(leg.starts_at).getTime())
+      : 30 * 60_000;
+  const startsAt = resolution.starts_at ? new Date(resolution.starts_at) : new Date(Date.now() + 30 * 60_000);
+  const endsAt = new Date(startsAt.getTime() + durationMs);
+
+  const { data: lines, error: linesErr } = await supabaseAdmin
+    .from('hub_appointment_services')
+    .select(
+      'hub_service_type_id, duration_minutes, order_index, pricing_porte_tier_applied, pricing_coat_type_applied, cost_amount_applied, sale_amount_applied, pricing_variant',
+    )
+    .eq('appointment_id', leg.id)
+    .order('order_index', { ascending: true });
+  if (linesErr) throw new Error(linesErr.message);
+  const lineRows = (lines ?? []) as Array<Record<string, unknown> & { sale_amount_applied: number | null }>;
+
+  const { data: created, error: insErr } = await supabaseAdmin
+    .from('hub_appointments')
+    .insert({
+      clinic_id: clinicId,
+      unit_id: leg.unit_id,
+      hub_service_type_id: leg.hub_service_type_id,
+      hub_staff_member_id: null,
+      pet_id: leg.pet_id,
+      guardian_id: leg.guardian_id,
+      starts_at: startsAt.toISOString(),
+      ends_at: endsAt.toISOString(),
+      status: 'confirmed',
+      resource_label: leg.resource_label,
+      appointment_kind: 'pickup_route',
+      parent_appointment_id: leg.parent_appointment_id ?? leg.id,
+      pricing_porte_tier: leg.pricing_porte_tier,
+      pricing_coat_type: leg.pricing_coat_type,
+      title: leg.title,
+    })
+    .select('id')
+    .single();
+  if (insErr || !created) throw new Error(insErr?.message || 'Erro ao criar novo Leva e Traz.');
+  const retryId = (created as { id: string }).id;
+
+  const customSale =
+    resolution.charge && typeof resolution.sale_amount === 'number' && Number.isFinite(resolution.sale_amount)
+      ? Math.max(0, Math.round(resolution.sale_amount * 100) / 100)
+      : null;
+  if (lineRows.length > 0) {
+    const svcInsert = lineRows.map((row, idx) => ({
+      appointment_id: retryId,
+      hub_service_type_id: row.hub_service_type_id,
+      duration_minutes: Math.round(durationMs / 60_000),
+      order_index: row.order_index,
+      pricing_porte_tier_applied: row.pricing_porte_tier_applied,
+      pricing_coat_type_applied: row.pricing_coat_type_applied,
+      cost_amount_applied: row.cost_amount_applied,
+      sale_amount_applied: !resolution.charge
+        ? 0
+        : customSale != null
+          ? idx === 0
+            ? customSale
+            : 0
+          : row.sale_amount_applied,
+      pricing_variant: row.pricing_variant,
+    }));
+    const { error: svcErr } = await supabaseAdmin.from('hub_appointment_services').insert(svcInsert);
+    if (svcErr) {
+      await supabaseAdmin.from('hub_appointments').delete().eq('id', retryId).eq('clinic_id', clinicId);
+      throw new Error(svcErr.message);
+    }
+  }
+
+  let addressSnapshot: Record<string, unknown> | null = null;
+  if (leg.guardian_id) {
+    const { data: gu } = await supabaseAdmin
+      .from('hub_guardians')
+      .select('id, street, street_number, district, city, state, postal_code')
+      .eq('id', leg.guardian_id)
+      .maybeSingle();
+    if (gu) addressSnapshot = await enrichSnapshotCoords(gu as Record<string, unknown>, gu as GuardianRow);
+  }
+  const { error: looseErr } = await supabaseAdmin.from('hub_pickup_stops').insert({
+    clinic_id: clinicId,
+    hub_appointment_id: retryId,
+    pet_id: leg.pet_id,
+    guardian_id: leg.guardian_id,
+    direction: 'delivery',
+    status: 'pending',
+    sequence: 0,
+    address_snapshot: addressSnapshot,
+  });
+  if (looseErr) console.error('[hubPickupController] resolveFailedPickupStop loose stop', looseErr);
+
+  const { error: resErr } = await supabaseAdmin
+    .from('hub_pickup_stops')
+    .update({ failure_resolution: 'new_leg', retry_appointment_id: retryId })
+    .eq('id', stopId)
+    .eq('clinic_id', clinicId);
+  if (resErr) throw new Error(resErr.message);
+
+  return { retryAppointmentId: retryId };
 }
 
 // ─── GET /api/hub/pickup/my-route ─────────────────────────────────────────

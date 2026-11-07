@@ -142,12 +142,14 @@ const PickupStopDrawer: React.FC<PickupStopDrawerProps> = ({
     }
     setBusy(true);
     try {
+      let returns = false;
       if (item.stop_id) {
-        await hubPickupApi.patchStop(item.stop_id, {
+        const res = await hubPickupApi.patchStop(item.stop_id, {
           clinic_id: clinicId,
           status: 'failed',
           failure_reason: failureReason.trim(),
         });
+        returns = res.stop?.failure_outcome === 'return_to_clinic';
       } else {
         const looseDir: 'pickup' | 'delivery' = direction === 'delivery' ? 'delivery' : 'pickup';
         await hubPickupApi.createLooseStop({
@@ -155,10 +157,20 @@ const PickupStopDrawer: React.FC<PickupStopDrawerProps> = ({
           hub_appointment_id: item.appointment_id,
           direction: looseDir,
           status: 'failed',
+          failure_reason: failureReason.trim(),
         });
-        await hubAgendaApi.patch(item.appointment_id, { clinic_id: clinicId, status: 'cancelled' });
+        returns = looseDir === 'delivery';
+        if (!returns) {
+          await hubAgendaApi.patch(item.appointment_id, { clinic_id: clinicId, status: 'cancelled' });
+        }
       }
-      showSuccess('Parada marcada como falhou.');
+      showSuccess(
+        returns
+          ? item.route_id
+            ? 'Parada falhou. Próximo: retorno à clínica com o pet.'
+            : 'Parada falhou. A recepção decide com o tutor quando o pet voltar.'
+          : 'Parada marcada como falhou.',
+      );
       setShowFailForm(false);
       setFailureReason('');
       onUpdated();
@@ -277,6 +289,17 @@ const PickupStopDrawer: React.FC<PickupStopDrawerProps> = ({
             <span className="psd__failure-icon">⚠</span>
             {item.failure_reason}
           </div>
+        ) : null}
+        {item.failure_outcome === 'return_to_clinic' ? (
+          <p className="psd__failure-followup">
+            {item.failure_resolution === 'pending'
+              ? 'Pet voltando à clínica. A recepção decide com o tutor: buscar no balcão ou novo Leva e Traz.'
+              : item.failure_resolution === 'new_leg'
+                ? 'Recepção agendou um novo Leva e Traz.'
+                : item.failure_resolution === 'tutor_pickup'
+                  ? 'Tutor vai buscar o pet na recepção.'
+                  : null}
+          </p>
         ) : null}
 
         {/* ── Contato ─────────────────────────────────────────────────── */}

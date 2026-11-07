@@ -54,6 +54,8 @@ export type PickupDayBoardItem = {
   planned_at?: string | null;
   completed_at?: string | null;
   failure_reason?: string | null;
+  failure_outcome?: 'no_pet' | 'return_to_clinic' | null;
+  failure_resolution?: 'pending' | 'tutor_pickup' | 'new_leg' | 'none' | null;
 };
 
 export type PickupDayBoardResponse = {
@@ -114,6 +116,10 @@ export type PickupStop = {
   planned_at?: string | null;
   completed_at?: string | null;
   failure_reason?: string | null;
+  /** Só em falha: `return_to_clinic` quando o pet estava a bordo. */
+  failure_outcome?: 'no_pet' | 'return_to_clinic' | null;
+  failure_resolution?: 'pending' | 'tutor_pickup' | 'new_leg' | 'none' | null;
+  return_stop_id?: string | null;
   notes?: string | null;
   updated_at?: string | null;
   pet?: PickupDayBoardPet | null;
@@ -319,6 +325,7 @@ export const hubPickupApi = {
     hub_appointment_id: string;
     direction: 'pickup' | 'delivery';
     status: PickupStopStatus;
+    failure_reason?: string | null;
   }) {
     return apiRequest(`${pickupBase}/stops`, {
       method: 'POST',

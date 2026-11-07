@@ -306,6 +306,129 @@ describe('planCustody', () => {
   });
 });
 
+describe('planCustody — falha no Leva e Traz', () => {
+  const ready = {
+    id: 's1',
+    unit_id: 'u1',
+    guardian_id: 'g1',
+    hub_appointment_id: 'a1',
+    grooming_stage: 'ready' as const,
+    ready_at: '2026-11-06T14:00:00.000Z',
+  };
+  const failedDelivery = {
+    parent_appointment_id: 'a1',
+    appointment_status: 'in_progress',
+    direction: 'delivery' as const,
+    stop_status: 'failed',
+    route_id: 'r1',
+    driver_id: 'd1',
+    failure_outcome: 'return_to_clinic' as const,
+  };
+  const failure = {
+    stop_id: 'st1',
+    unit_id: 'u1',
+    guardian_id: 'g1',
+    direction: 'delivery' as const,
+    appointment_id: 'leg1',
+    route_id: 'r1',
+    failure_reason: 'Tutor ausente',
+    failed_at: '2026-11-06T15:00:00.000Z',
+  };
+
+  it('pet ainda voltando segura a saída e não abre tarefa', () => {
+    const plan = planCustody(
+      snap({
+        groomingSessions: [ready],
+        legs: [failedDelivery],
+        failedReturns: [{ ...failure, returned_at: null }],
+      }),
+    );
+    expect(plan.handoffs).toEqual([]);
+  });
+
+  it('retorno concluído abre lt_falha no lugar da retirada', () => {
+    const plan = planCustody(
+      snap({
+        groomingSessions: [ready],
+        legs: [failedDelivery],
+        failedReturns: [{ ...failure, returned_at: '2026-11-06T15:30:00.000Z' }],
+      }),
+    );
+    expect(plan.handoffs.map((h) => h.kind)).toEqual(['lt_falha']);
+    expect(plan.handoffs[0].source_id).toBe('st1');
+    expect(plan.handoffs[0].context.failure_reason).toBe('Tutor ausente');
+  });
+
+  it('tutor vai buscar (falha resolvida) volta a gerar retirada no balcão', () => {
+    const plan = planCustody(snap({ groomingSessions: [ready], legs: [failedDelivery] }));
+    expect(plan.handoffs.map((h) => h.kind)).toEqual(['retirada_balcao']);
+  });
+
+  it('novo Leva e Traz sem rota gera embarque', () => {
+    const plan = planCustody(
+      snap({
+        groomingSessions: [ready],
+        legs: [
+          failedDelivery,
+          {
+            parent_appointment_id: 'a1',
+            appointment_status: 'confirmed',
+            direction: 'delivery',
+            stop_status: 'pending',
+            route_id: null,
+            driver_id: null,
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs.map((h) => h.kind)).toEqual(['embarque']);
+  });
+
+  it('coleta que falhou com pet a bordo não vira "tutor traz"', () => {
+    const plan = planCustody(
+      snap({
+        appointments: [
+          {
+            id: 'a1',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            status: 'confirmed',
+            appointment_kind: 'standard',
+            starts_at: '2026-11-06T16:00:00.000Z',
+            service_group: 'banho_tosa',
+            service_name: 'Banho',
+            parent_appointment_id: null,
+          },
+        ],
+        legs: [{ ...failedDelivery, direction: 'pickup' }],
+      }),
+    );
+    expect(plan.handoffs.some((h) => h.kind === 'chegada')).toBe(false);
+  });
+
+  it('lt_falha resolvida não é reaberta', () => {
+    const desired = planCustody(
+      snap({ failedReturns: [{ ...failure, returned_at: '2026-11-06T15:30:00.000Z' }] }),
+    ).handoffs;
+    const out = reconcileHandoffRows(
+      [
+        {
+          id: 'h1',
+          kind: 'lt_falha',
+          source_type: 'pickup_stop',
+          source_id: 'st1',
+          status: 'done',
+          resolved_at: '2026-11-06T15:40:00.000Z',
+          context: desired[0].context,
+        },
+      ],
+      desired,
+      '2026-11-06',
+    );
+    expect(out.insert).toEqual([]);
+  });
+});
+
 describe('reconcileHandoffRows', () => {
   const desired = {
     kind: 'retirada_balcao' as const,

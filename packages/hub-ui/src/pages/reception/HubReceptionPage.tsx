@@ -15,6 +15,7 @@ import {
   hubReceptionApi,
   type ReceptionBoardItem,
   type ReceptionResolveAction,
+  type ReceptionResolvePayload,
 } from '../../api/hubReceptionApi';
 import ReceptionHandoffPanel from './ReceptionHandoffPanel';
 import { caixaSearchHref } from '../finance/hubRelatoriosLinks';
@@ -50,12 +51,14 @@ function kindLabel(item: ReceptionBoardItem): string {
   if (item.kind === 'autorizar_extra') return 'Extra';
   if (item.kind === 'encaminhar') return 'Encaminhar';
   if (item.kind === 'embarque') return 'Embarque';
+  if (item.kind === 'lt_falha') return 'Falha L&T';
   return 'Retirada';
 }
 
 function pillClass(item: ReceptionBoardItem): string {
   if (item.status === 'done') return 'hub-clientes__pill hub-clinic-queue__pill--done';
   if (item.status === 'cancelled') return 'hub-clientes__pill hub-clinic-queue__pill--waiting';
+  if (item.kind === 'lt_falha') return 'hub-clientes__pill hub-reception__pill--failure';
   if (item.kind === 'autorizar_extra' || item.kind === 'encaminhar') {
     return 'hub-clientes__pill hub-clinic-queue__pill--waiting';
   }
@@ -162,7 +165,9 @@ const HubReceptionPage: React.FC = () => {
     const chegadas = open
       .filter((i) => i.kind === 'chegada')
       .sort((a, b) => String(a.context?.starts_at || a.opened_at).localeCompare(String(b.context?.starts_at || b.opened_at)));
-    const atencao = open.filter((i) => i.kind === 'autorizar_extra' || i.kind === 'encaminhar');
+    const atencao = open
+      .filter((i) => i.kind === 'lt_falha' || i.kind === 'autorizar_extra' || i.kind === 'encaminhar')
+      .sort((a, b) => Number(b.kind === 'lt_falha') - Number(a.kind === 'lt_falha'));
     const saidas = open
       .filter((i) => i.kind === 'retirada_balcao' || i.kind === 'embarque')
       .sort((a, b) => String(a.opened_at).localeCompare(String(b.opened_at)));
@@ -172,12 +177,22 @@ const HubReceptionPage: React.FC = () => {
     return { chegadas, atencao, saidas, feitos };
   }, [items]);
 
-  const run = async (item: ReceptionBoardItem, action: ReceptionResolveAction) => {
+  const run = async (
+    item: ReceptionBoardItem,
+    action: ReceptionResolveAction,
+    payload?: ReceptionResolvePayload,
+  ) => {
     if (!clinicId || !canManage) return;
     setBusyId(item.id);
     try {
-      await hubReceptionApi.resolve(item.id, clinicId, action);
-      showSuccess('Tarefa concluída.');
+      await hubReceptionApi.resolve(item.id, clinicId, action, payload);
+      showSuccess(
+        action === 'novo_lt'
+          ? 'Novo Leva e Traz criado. Atribua a uma rota no quadro do Leva e Traz.'
+          : action === 'tutor_busca'
+            ? 'Combinado: o tutor busca no balcão.'
+            : 'Tarefa concluída.',
+      );
       if (canSeeChargeHint && (action === 'entreguei' || action === 'embarquei')) {
         try {
           const detail = await hubReceptionApi.detail(item.id, clinicId);
@@ -296,6 +311,9 @@ const HubReceptionPage: React.FC = () => {
                       </div>
                       {late ? <p className="hub-clientes__pill hub-clinic-queue__pill--waiting" style={{ marginTop: 6, marginBottom: 0 }}>Atrasado</p> : null}
                       <p className="hub-clientes__muted hub-clinic-queue__meta">{item.context?.label || 'Operação'}</p>
+                      {item.kind === 'lt_falha' && item.context?.failure_reason ? (
+                        <p className="hub-reception__failure-reason">{item.context.failure_reason}</p>
+                      ) : null}
                       <p className="hub-clientes__muted hub-clinic-queue__meta">
                         {wait ? `${wait} · ` : ''}
                         {item.guardian?.full_name || 'Sem tutor'}
@@ -312,6 +330,25 @@ const HubReceptionPage: React.FC = () => {
                           >
                             Agendar destino
                           </button>
+                        ) : null}
+                        {item.status === 'open' && canManage && item.kind === 'lt_falha' ? (
+                          <>
+                            <button
+                              type="button"
+                              className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                              onClick={() => setSelected(item)}
+                            >
+                              Resolver
+                            </button>
+                            <button
+                              type="button"
+                              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                              disabled={busyId === item.id}
+                              onClick={() => void run(item, 'tutor_busca')}
+                            >
+                              {busyId === item.id ? 'Salvando…' : 'Tutor busca'}
+                            </button>
+                          </>
                         ) : null}
                         {item.status === 'open' && canManage && action ? (
                           <button
@@ -363,7 +400,7 @@ const HubReceptionPage: React.FC = () => {
           canManage={canManage}
           busy={Boolean(selected && busyId === selected.id)}
           onClose={() => setSelected(null)}
-          onAction={(item, action) => void run(item, action)}
+          onAction={(item, action, payload) => void run(item, action, payload)}
           onScheduleDestination={(item) => {
             const dest = scheduleDestinationPath(item, day);
             navigate(`${dest.pathname}${dest.search}`, { state: dest.state });

@@ -241,12 +241,16 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
     }
     setBusy(true);
     try {
-      await hubPickupApi.patchStop(nextStop.id, {
+      const res = await hubPickupApi.patchStop(nextStop.id, {
         clinic_id: clinicId,
         status: 'failed',
         failure_reason: failureReason.trim(),
       });
-      showSuccess('Parada marcada como falhou.');
+      showSuccess(
+        res.stop?.failure_outcome === 'return_to_clinic'
+          ? 'Parada falhou. Próximo: retorno à clínica com o pet.'
+          : 'Parada marcada como falhou.',
+      );
       setShowFailForm(false);
       setFailureReason('');
       await load();
@@ -308,6 +312,12 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
   const schedulePetLine = nextStop
     ? scheduleAndPetLabel(pet, nextStop.planned_at)
     : null;
+  const returningPets = isClinicReturn
+    ? stops.filter((s) => s.status === 'failed' && s.return_stop_id === nextStop?.id)
+    : [];
+  const failWillReturn =
+    nextStop?.direction === 'delivery' ||
+    (nextStop?.direction === 'pickup' && nextStop.status === 'in_transit');
 
   return (
     <div className="hub-pickup-driver-view">
@@ -414,6 +424,18 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
           ) : isClinicReturn ? (
             <p className="hub-pickup-driver-view__stop-meta">Desembarque na unidade</p>
           ) : null}
+          {returningPets.length > 0 ? (
+            <div className="hub-pickup-driver-view__return-alert" role="status">
+              <strong>Voltando com pet de parada que falhou</strong>
+              {returningPets.map((s) => (
+                <span key={s.id}>
+                  {s.pet?.name?.trim() || 'Pet'} · {s.direction === 'pickup' ? 'coleta' : 'entrega'} não
+                  concluída
+                </span>
+              ))}
+              <span>Entregue o pet na recepção ao chegar.</span>
+            </div>
+          ) : null}
 
           {address ? (
             <div className="hub-pickup-driver-view__stop-address">
@@ -478,6 +500,12 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
             </div>
           ) : (
             <div className="hub-pickup-driver-view__fail-form">
+              {failWillReturn ? (
+                <p className="hub-pickup-driver-view__fail-hint">
+                  O pet está com você: depois da falha, a rota ganha um retorno à clínica e a recepção
+                  decide com o tutor.
+                </p>
+              ) : null}
               <textarea
                 className="hub-clientes__input hub-pickup-driver-view__fail-input"
                 placeholder="Motivo da falha (obrigatório)…"
@@ -553,7 +581,13 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
                   {stopGuardian ? (
                     <span className="hub-pickup-driver-view__queue-guardian">{stopGuardian}</span>
                   ) : null}
-                  {isDone ? <CheckCircle size={14} color="#16a34a" aria-hidden /> : null}
+                  {stop.status === 'failed' ? (
+                    <span className="hub-pickup-driver-view__queue-failed">
+                      {stop.failure_outcome === 'return_to_clinic' ? 'Falhou · volta' : 'Falhou'}
+                    </span>
+                  ) : isDone ? (
+                    <CheckCircle size={14} color="#16a34a" aria-hidden />
+                  ) : null}
                   {stopMaps?.google ? (
                     <button
                       type="button"

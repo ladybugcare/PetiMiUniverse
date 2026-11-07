@@ -15,6 +15,7 @@ import {
   type ReceptionBoardItem,
   type ReceptionHandoffDetail,
   type ReceptionResolveAction,
+  type ReceptionResolvePayload,
 } from '../../api/hubReceptionApi';
 import { caixaSearchHref } from '../finance/hubRelatoriosLinks';
 import '../clientes/clientes.css';
@@ -96,6 +97,16 @@ function taskTimeline(view: ReceptionHandoffDetail): Array<{ label: string; valu
       value: formatWhen(view.opened_at),
       hint: openedRel?.kind === 'past' || openedRel?.kind === 'now' ? openedRel.text : undefined,
     });
+  } else if (view.kind === 'lt_falha') {
+    const failedAt = view.context?.failed_at ? String(view.context.failed_at) : null;
+    if (failedAt) {
+      rows.push({ label: 'Falha registrada em', value: formatWhen(failedAt) });
+    }
+    rows.push({
+      label: 'Pet de volta na clínica em',
+      value: formatWhen(view.opened_at),
+      hint: openedRel?.kind === 'past' || openedRel?.kind === 'now' ? openedRel.text : undefined,
+    });
   } else if (view.kind === 'encaminhar') {
     rows.push({
       label: 'Chegou na clínica em',
@@ -132,6 +143,7 @@ function taskKindLabel(kind: ReceptionBoardItem['kind']): string {
   if (kind === 'autorizar_extra') return 'Autorizar extra';
   if (kind === 'encaminhar') return 'Encaminhar';
   if (kind === 'embarque') return 'Embarque';
+  if (kind === 'lt_falha') return 'Falha no Leva e Traz';
   return 'Retirada no balcão';
 }
 
@@ -139,8 +151,25 @@ function taskKindLabel(kind: ReceptionBoardItem['kind']): string {
 function columnTitle(item: Pick<ReceptionBoardItem, 'kind' | 'status'>): string {
   if (item.status === 'done' || item.status === 'cancelled') return 'Feitos';
   if (item.kind === 'chegada') return 'Chegada';
-  if (item.kind === 'autorizar_extra' || item.kind === 'encaminhar') return 'Atenção';
+  if (item.kind === 'autorizar_extra' || item.kind === 'encaminhar' || item.kind === 'lt_falha') {
+    return 'Atenção';
+  }
   return 'Saída';
+}
+
+/** `datetime-local` no fuso do navegador, arredondado para 5 min. */
+function defaultRetryLocal(): string {
+  const d = new Date(Date.now() + 30 * 60_000);
+  d.setMinutes(Math.ceil(d.getMinutes() / 5) * 5, 0, 0);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function parseMoneyInput(raw: string): number | null {
+  const cleaned = raw.trim().replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.');
+  if (!cleaned) return null;
+  const n = Number(cleaned);
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) / 100 : null;
 }
 
 function primaryAction(item: ReceptionBoardItem): { action: ReceptionResolveAction; label: string } | null {
@@ -168,7 +197,7 @@ export type ReceptionHandoffPanelProps = {
   canManage: boolean;
   busy: boolean;
   onClose: () => void;
-  onAction: (item: ReceptionBoardItem, action: ReceptionResolveAction) => void;
+  onAction: (item: ReceptionBoardItem, action: ReceptionResolveAction, payload?: ReceptionResolvePayload) => void;
   onScheduleDestination: (item: ReceptionBoardItem) => void;
 };
 
@@ -186,6 +215,15 @@ const ReceptionHandoffPanel: React.FC<ReceptionHandoffPanelProps> = ({
   const templates = useMessageTemplates();
   const [detail, setDetail] = useState<ReceptionHandoffDetail | null>(null);
   const [loading, setLoading] = useState(false);
+  const [chargeLeg, setChargeLeg] = useState(true);
+  const [customAmount, setCustomAmount] = useState('');
+  const [retryAt, setRetryAt] = useState(defaultRetryLocal);
+
+  useEffect(() => {
+    setChargeLeg(true);
+    setCustomAmount('');
+    setRetryAt(defaultRetryLocal());
+  }, [item?.id]);
 
   useEffect(() => {
     if (!open || !item) {
@@ -270,6 +308,39 @@ const ReceptionHandoffPanel: React.FC<ReceptionHandoffPanelProps> = ({
         </button>
       );
     }
+    if (current.kind === 'lt_falha') {
+      const amountInvalid = chargeLeg && customAmount.trim() !== '' && parseMoneyInput(customAmount) == null;
+      return (
+        <div className="hub-clinic-queue__actions" style={{ marginTop: 0 }}>
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+            disabled={busy || amountInvalid}
+            onClick={() => {
+              const startsAt = retryAt ? new Date(retryAt) : null;
+              onAction(current, 'novo_lt', {
+                charge: chargeLeg,
+                sale_amount: chargeLeg ? parseMoneyInput(customAmount) : null,
+                starts_at: startsAt && !Number.isNaN(startsAt.getTime()) ? startsAt.toISOString() : null,
+              });
+            }}
+          >
+            {busy ? 'Salvando…' : 'Novo Leva e Traz'}
+          </button>
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+            disabled={busy}
+            onClick={() => onAction(current, 'tutor_busca')}
+          >
+            Tutor vai buscar
+          </button>
+          <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm" onClick={onClose}>
+            Fechar
+          </button>
+        </div>
+      );
+    }
     return (
       <div className="hub-clinic-queue__actions" style={{ marginTop: 0 }}>
         {current.kind === 'encaminhar' ? (
@@ -322,7 +393,20 @@ const ReceptionHandoffPanel: React.FC<ReceptionHandoffPanelProps> = ({
         </button>
       </div>
     );
-  }, [view, boardFallback, canManage, action, busy, wa, onAction, onClose, onScheduleDestination]);
+  }, [
+    view,
+    boardFallback,
+    canManage,
+    action,
+    busy,
+    wa,
+    onAction,
+    onClose,
+    onScheduleDestination,
+    chargeLeg,
+    customAmount,
+    retryAt,
+  ]);
 
   return (
     <HubSidePanel
@@ -417,6 +501,51 @@ const ReceptionHandoffPanel: React.FC<ReceptionHandoffPanelProps> = ({
               <p className="hub-reception-panel__next-label">O que fazer</p>
               <p className="hub-reception-panel__next-text">{view.next_step}</p>
             </div>
+          ) : null}
+
+          {view.kind === 'lt_falha' && view.status === 'open' && canManage ? (
+            <section className="hub-reception-panel__section" aria-label="Novo Leva e Traz">
+              <h3 className="hub-reception-panel__section-title">Se for novo Leva e Traz</h3>
+              <div className="hub-reception-panel__retry">
+                <label className="hub-reception-panel__retry-field">
+                  <span>Horário da nova entrega</span>
+                  <input
+                    type="datetime-local"
+                    className="hub-clientes__input"
+                    value={retryAt}
+                    onChange={(e) => setRetryAt(e.target.value)}
+                  />
+                </label>
+                <label className="hub-reception-panel__retry-toggle">
+                  <input
+                    type="checkbox"
+                    checked={chargeLeg}
+                    onChange={(e) => setChargeLeg(e.target.checked)}
+                  />
+                  <span>
+                    <strong>Cobrar esta perna</strong>
+                    <small>
+                      {chargeLeg
+                        ? 'Entra na comanda quando a entrega for concluída.'
+                        : 'A perna sai sem cobrança para o tutor.'}
+                    </small>
+                  </span>
+                </label>
+                {chargeLeg ? (
+                  <label className="hub-reception-panel__retry-field">
+                    <span>Valor (R$)</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="hub-clientes__input"
+                      placeholder="Mesmo valor da perna original"
+                      value={customAmount}
+                      onChange={(e) => setCustomAmount(e.target.value)}
+                    />
+                  </label>
+                ) : null}
+              </div>
+            </section>
           ) : null}
 
           {view.cues.length > 0 ? (

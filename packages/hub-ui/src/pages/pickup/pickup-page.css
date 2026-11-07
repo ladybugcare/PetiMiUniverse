@@ -1395,6 +1395,13 @@
   line-height: 1.5;
 }
 
+.psd__failure-followup {
+  margin: -0.25rem 1.25rem 0.75rem;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: #92400e;
+}
+
 .psd__failure-icon {
   flex-shrink: 0;
   font-style: normal;
@@ -2022,6 +2029,37 @@
   flex-direction: column;
   gap: 0.5rem;
   margin-top: 0.5rem;
+}
+
+.hub-pickup-driver-view__fail-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: #92400e;
+}
+
+.hub-pickup-driver-view__return-alert {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  margin-top: 0.5rem;
+  padding: 0.6rem 0.75rem;
+  border-left: 3px solid #d97706;
+  border-radius: 8px;
+  background: #fffbeb;
+  font-size: 0.85rem;
+  color: #78350f;
+}
+
+.hub-pickup-driver-view__return-alert strong {
+  font-weight: 700;
+}
+
+.hub-pickup-driver-view__queue-failed {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #b91c1c;
+  white-space: nowrap;
 }
 
 .hub-pickup-driver-view__fail-input {
@@ -2970,6 +3008,14 @@
   margin: 0.3rem 0 0;
   font-size: 0.75rem;
   color: var(--hc-text-muted, #8e6e67);
+  line-height: 1.35;
+}
+
+.hub-pickup-monitor__stop-failure {
+  margin: 0.3rem 0 0;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #b91c1c;
   line-height: 1.35;
 }
 

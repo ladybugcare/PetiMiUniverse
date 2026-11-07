@@ -11,6 +11,7 @@ export const RECEPTION_HANDOFF_KINDS = [
   'encaminhar',
   'retirada_balcao',
   'embarque',
+  'lt_falha',
 ] as const;
 
 export type ReceptionHandoffKind = (typeof RECEPTION_HANDOFF_KINDS)[number];
@@ -23,6 +24,11 @@ export type ReceptionContext = {
   session_id?: string | null;
   appointment_id?: string | null;
   extra_name?: string | null;
+  failure_reason?: string | null;
+  failed_stop_id?: string | null;
+  failed_direction?: 'pickup' | 'delivery' | null;
+  route_id?: string | null;
+  failed_at?: string | null;
 };
 
 export type DesiredHandoff = {
@@ -105,6 +111,7 @@ export type CustodyLeg = {
   stop_status: string | null;
   route_id: string | null;
   driver_id: string | null;
+  failure_outcome?: 'no_pet' | 'return_to_clinic' | null;
 };
 
 export type CustodyArrival = {
@@ -112,6 +119,22 @@ export type CustodyArrival = {
   unit_id: string | null;
   guardian_id: string | null;
   completed_at: string;
+};
+
+/**
+ * Falha com pet a bordo sem decisão da recepção.
+ * `returned_at` nulo = pet ainda voltando com o motorista (segura a saída, sem tarefa).
+ */
+export type CustodyFailedReturn = {
+  stop_id: string;
+  unit_id: string | null;
+  guardian_id: string | null;
+  direction: 'pickup' | 'delivery';
+  appointment_id: string | null;
+  route_id: string | null;
+  failure_reason: string | null;
+  failed_at: string | null;
+  returned_at: string | null;
 };
 
 export type CustodySnapshot = {
@@ -127,6 +150,7 @@ export type CustodySnapshot = {
   boarding: CustodyBoarding[];
   legs: CustodyLeg[];
   unresolvedArrivals: CustodyArrival[];
+  failedReturns?: CustodyFailedReturn[];
 };
 
 export type CustodyPlan = {
@@ -227,7 +251,7 @@ function tutorBrings(snap: CustodySnapshot, appointmentId: string): boolean {
       l.appointment_status !== 'cancelled',
   );
   if (incoming.length === 0) return true;
-  return incoming.every((l) => l.stop_status === 'failed');
+  return incoming.every((l) => l.stop_status === 'failed' && l.failure_outcome !== 'return_to_clinic');
 }
 
 function pushExit(
@@ -318,6 +342,29 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
     });
   }
 
+  const failedReturns = snap.failedReturns ?? [];
+  for (const failure of failedReturns) {
+    if (!failure.returned_at) continue;
+    handoffs.push({
+      kind: 'lt_falha',
+      source_type: 'pickup_stop',
+      source_id: failure.stop_id,
+      pet_id: snap.petId,
+      guardian_id: failure.guardian_id,
+      unit_id: failure.unit_id,
+      opened_at: failure.returned_at,
+      context: {
+        label: failure.direction === 'pickup' ? 'Coleta não concluída' : 'Entrega não concluída',
+        appointment_id: failure.appointment_id,
+        failure_reason: failure.failure_reason,
+        failed_stop_id: failure.stop_id,
+        failed_direction: failure.direction,
+        route_id: failure.route_id,
+        failed_at: failure.failed_at,
+      },
+    });
+  }
+
   const ready = snap.groomingSessions.filter(
     (s) => !s.deleted_at && (s.grooming_stage === 'ready' || s.grooming_stage === 'delivered'),
   );
@@ -338,6 +385,11 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
 
   if (stay) {
     for (const s of readyLive) closeGroomingSessionIds.push(s.id);
+    return { handoffs, closeGroomingSessionIds };
+  }
+
+  // Saída só depois da decisão sobre a falha (tutor busca ou novo Leva e Traz).
+  if (failedReturns.length > 0) {
     return { handoffs, closeGroomingSessionIds };
   }
 
@@ -474,7 +526,7 @@ export function reconcileHandoffRows(
       if (already) continue;
     }
 
-    if (d.kind === 'autorizar_extra' || d.kind === 'encaminhar') {
+    if (d.kind === 'autorizar_extra' || d.kind === 'encaminhar' || d.kind === 'lt_falha') {
       const already = existing.some(
         (e) =>
           e.status === 'done' &&

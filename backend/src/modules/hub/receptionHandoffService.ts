@@ -52,6 +52,86 @@ function petHasDestinationService(
   return false;
 }
 
+const STOP_COLUMNS =
+  'id, hub_appointment_id, direction, status, hub_pickup_route_id, completed_at, failure_outcome, failure_resolution, failure_reason, failed_at, return_stop_id';
+
+/** Situação dos retornos à clínica ligados a falhas pendentes. */
+async function loadReturnStops(
+  clinicId: string,
+  stops: Array<Record<string, unknown>>,
+): Promise<Map<string, { status: string; completed_at: string | null }>> {
+  const ids = [
+    ...new Set(
+      stops
+        .filter((s) => s.status === 'failed' && s.failure_resolution === 'pending')
+        .map((s) => s.return_stop_id)
+        .filter((id): id is string => typeof id === 'string'),
+    ),
+  ];
+  const out = new Map<string, { status: string; completed_at: string | null }>();
+  for (const part of chunkIds(ids)) {
+    const { data, error } = await supabaseAdmin
+      .from('hub_pickup_stops')
+      .select('id, status, completed_at')
+      .eq('clinic_id', clinicId)
+      .in('id', part);
+    if (error) throw new Error(error.message);
+    for (const r of data ?? []) {
+      out.set(r.id as string, {
+        status: String(r.status),
+        completed_at: (r.completed_at as string | null) ?? null,
+      });
+    }
+  }
+  return out;
+}
+
+function buildFailedReturns(
+  appointments: ApptRow[],
+  stops: Array<Record<string, unknown>>,
+  returnStops: Map<string, { status: string; completed_at: string | null }>,
+  nowIso: string,
+): NonNullable<CustodySnapshot['failedReturns']> {
+  const out: NonNullable<CustodySnapshot['failedReturns']> = [];
+  for (const stop of stops) {
+    if (stop.status !== 'failed' || stop.failure_resolution !== 'pending') continue;
+    const direction = stop.direction === 'pickup' ? 'pickup' : stop.direction === 'delivery' ? 'delivery' : null;
+    if (!direction) continue;
+    const leg = appointments.find((a) => a.id === stop.hub_appointment_id);
+    if (!leg) continue;
+    const parent = leg.parent_appointment_id
+      ? appointments.find((a) => a.id === leg.parent_appointment_id) ?? null
+      : null;
+    const returnId = (stop.return_stop_id as string | null) ?? null;
+    const failedAt = (stop.failed_at as string | null) ?? null;
+    let returnedAt: string | null;
+    if (!returnId) {
+      returnedAt = failedAt || nowIso;
+    } else {
+      const ret = returnStops.get(returnId);
+      if (!ret || ret.status === 'failed') returnedAt = failedAt || nowIso;
+      else returnedAt = ret.status === 'completed' ? ret.completed_at || nowIso : null;
+    }
+    out.push({
+      stop_id: stop.id as string,
+      unit_id: parent?.unit_id ?? leg.unit_id ?? null,
+      guardian_id: parent?.guardian_id ?? leg.guardian_id ?? null,
+      direction,
+      appointment_id: leg.id,
+      route_id: (stop.hub_pickup_route_id as string | null) ?? null,
+      failure_reason: (stop.failure_reason as string | null) ?? null,
+      failed_at: failedAt,
+      returned_at: returnedAt,
+    });
+  }
+  return out;
+}
+
+function failureOutcomeOf(stop: Record<string, unknown> | undefined): 'no_pet' | 'return_to_clinic' | null {
+  const v = stop?.failure_outcome;
+  return v === 'no_pet' || v === 'return_to_clinic' ? v : null;
+}
+
 export async function syncReceptionHandoffsForPet(clinicId: string, petId: string, dayYmd?: string): Promise<void> {
   const day = dayYmd || todayYmdSaoPaulo();
   const snap = await loadSnapshot(clinicId, petId, day);
@@ -214,7 +294,7 @@ async function loadSnapshot(clinicId: string, petId: string, dayYmd: string): Pr
   if (apptIds.length > 0) {
     const { data: stopRows, error: stErr } = await supabaseAdmin
       .from('hub_pickup_stops')
-      .select('id, hub_appointment_id, direction, status, hub_pickup_route_id, completed_at')
+      .select(STOP_COLUMNS)
       .eq('clinic_id', clinicId)
       .in('hub_appointment_id', apptIds);
     if (stErr) throw new Error(stErr.message);
@@ -250,8 +330,12 @@ async function loadSnapshot(clinicId: string, petId: string, dayYmd: string): Pr
         stop_status: (stop?.status as string | null) ?? null,
         route_id: routeId,
         driver_id: routeId ? driverByRoute.get(routeId) ?? null : null,
+        failure_outcome: failureOutcomeOf(stop),
       };
     });
+
+  const nowIso = new Date().toISOString();
+  const failedReturns = buildFailedReturns(appointments, stops, await loadReturnStops(clinicId, stops), nowIso);
 
   const unresolvedArrivals: CustodySnapshot['unresolvedArrivals'] = [];
   const hasDestination = petHasDestinationService(appointments, typeById);
@@ -283,7 +367,7 @@ async function loadSnapshot(clinicId: string, petId: string, dayYmd: string): Pr
   return {
     petId,
     dayYmd,
-    nowIso: new Date().toISOString(),
+    nowIso,
     appointments: appointments.map((a) => ({
       id: a.id,
       unit_id: a.unit_id,
@@ -331,6 +415,7 @@ async function loadSnapshot(clinicId: string, petId: string, dayYmd: string): Pr
     })),
     legs,
     unresolvedArrivals,
+    failedReturns,
   };
 }
 
@@ -545,7 +630,7 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
       for (const part of chunkIds(apptIds)) {
         const { data, error } = await supabaseAdmin
           .from('hub_pickup_stops')
-          .select('id, hub_appointment_id, direction, status, hub_pickup_route_id, completed_at')
+          .select(STOP_COLUMNS)
           .eq('clinic_id', clinicId)
           .in('hub_appointment_id', part);
         if (error) throw new Error(error.message);
@@ -602,6 +687,7 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
   }
 
   const nowIso = new Date().toISOString();
+  const returnStops = await loadReturnStops(clinicId, stopRows);
   const closeSessionIds: string[] = [];
   const cancelIds: string[] = [];
   const inserts: DesiredHandoff[] = [];
@@ -620,8 +706,16 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
           stop_status: (stop?.status as string | null) ?? null,
           route_id: routeId,
           driver_id: routeId ? driverByRoute.get(routeId) ?? null : null,
+          failure_outcome: failureOutcomeOf(stop),
         };
       });
+    const apptIdSet = new Set(appointments.map((a) => a.id));
+    const failedReturns = buildFailedReturns(
+      appointments,
+      stopRows.filter((s) => apptIdSet.has(s.hub_appointment_id as string)),
+      returnStops,
+      nowIso,
+    );
 
     const unresolvedArrivals: CustodySnapshot['unresolvedArrivals'] = [];
     const hasDestination = petHasDestinationService(appointments, typeById);
@@ -702,6 +796,7 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
       })),
       legs,
       unresolvedArrivals,
+      failedReturns,
     };
 
     const plan = planCustody(snap);
@@ -765,6 +860,13 @@ const ACTION_BY_KIND: Record<string, string[]> = {
   chegada: ['chegou'],
   autorizar_extra: ['autorizar', 'dispensar'],
   encaminhar: ['recebi'],
+  lt_falha: ['tutor_busca', 'novo_lt'],
+};
+
+export type ReceptionResolvePayload = {
+  charge?: boolean;
+  sale_amount?: number | null;
+  starts_at?: string | null;
 };
 
 export async function resolveReceptionHandoff(opts: {
@@ -772,6 +874,7 @@ export async function resolveReceptionHandoff(opts: {
   handoffId: string;
   action: string;
   staffId: string | null;
+  payload?: ReceptionResolvePayload;
 }): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
   const { data: row, error } = await supabaseAdmin
     .from('hub_reception_handoffs')
@@ -806,7 +909,7 @@ export async function resolveReceptionHandoff(opts: {
   if (!claimed) return { ok: false, status: 409, error: 'Esta tarefa já foi concluída por outra pessoa.' };
 
   try {
-    await applyResolution(opts.clinicId, row as HandoffClaim, opts.action, opts.staffId);
+    await applyResolution(opts.clinicId, row as HandoffClaim, opts.action, opts.staffId, opts.payload);
   } catch (e) {
     await supabaseAdmin
       .from('hub_reception_handoffs')
@@ -831,9 +934,35 @@ type HandoffClaim = {
   context: ReceptionContext | null;
 };
 
-async function applyResolution(clinicId: string, row: HandoffClaim, action: string, staffId: string | null): Promise<void> {
+async function applyResolution(
+  clinicId: string,
+  row: HandoffClaim,
+  action: string,
+  staffId: string | null,
+  payload?: ReceptionResolvePayload,
+): Promise<void> {
   const ctx = row.context ?? { label: '' };
   if (action === 'dispensar' || action === 'recebi') return;
+
+  if (action === 'tutor_busca' || action === 'novo_lt') {
+    if (row.source_type !== 'pickup_stop') throw new Error('Tarefa sem parada de Leva e Traz.');
+    const { resolveFailedPickupStop } = await import('./hubPickupController');
+    await resolveFailedPickupStop({
+      clinicId,
+      stopId: row.source_id,
+      actorStaffId: staffId,
+      resolution:
+        action === 'tutor_busca'
+          ? { action }
+          : {
+              action,
+              charge: Boolean(payload?.charge),
+              sale_amount: payload?.sale_amount ?? null,
+              starts_at: payload?.starts_at ?? null,
+            },
+    });
+    return;
+  }
 
   if (action === 'entreguei' || action === 'embarquei') {
     if (row.pet_id) {

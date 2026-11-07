@@ -228,7 +228,10 @@ export const getHubReceptionBoard = async (req: Request, res: Response) => {
 const resolveBody = z
   .object({
     clinic_id: uuidStr,
-    action: z.enum(['entreguei', 'embarquei', 'chegou', 'autorizar', 'dispensar', 'recebi']),
+    action: z.enum(['entreguei', 'embarquei', 'chegou', 'autorizar', 'dispensar', 'recebi', 'tutor_busca', 'novo_lt']),
+    charge: z.boolean().optional(),
+    sale_amount: z.number().min(0).max(100000).nullable().optional(),
+    starts_at: z.string().datetime({ offset: true }).nullable().optional(),
   })
   .strict();
 
@@ -396,6 +399,21 @@ async function buildReceptionCues(opts: {
     });
     nextStep =
       'Agende o destino (banho, consulta, hotel…) com o pet já preenchido. Depois disso a tarefa some sozinha; use “Só recebi” só se ainda não for agendar.';
+  } else if (opts.kind === 'lt_falha') {
+    const direction = opts.context.failed_direction === 'pickup' ? 'Coleta' : 'Entrega';
+    const reason = typeof opts.context.failure_reason === 'string' ? opts.context.failure_reason.trim() : '';
+    cues.push({
+      key: 'lt_failed',
+      label: `${direction} não concluída`,
+      detail: reason ? `Motivo do motorista: ${reason}` : 'O motorista registrou falha e trouxe o pet de volta.',
+    });
+    cues.push({
+      key: 'lt_back_at_clinic',
+      label: 'Pet de volta na clínica',
+      detail: 'O retorno à clínica foi concluído pelo motorista.',
+    });
+    nextStep =
+      'Fale com o tutor: ele vem buscar no balcão ou agende um novo Leva e Traz (com ou sem cobrança da perna).';
   }
 
   if (opts.sourceType === 'hospitalization') {
@@ -562,6 +580,11 @@ export const postHubReceptionResolve = async (req: Request, res: Response) => {
       handoffId: id.data,
       action: body.data.action,
       staffId,
+      payload: {
+        charge: body.data.charge,
+        sale_amount: body.data.sale_amount ?? null,
+        starts_at: body.data.starts_at ?? null,
+      },
     });
     if (!result.ok) return res.status(result.status).json({ error: result.error });
     return res.json({ ok: true });
