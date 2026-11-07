@@ -87,6 +87,14 @@ function sortByStartsAt(a: GroomingDayBoardItem, b: GroomingDayBoardItem): numbe
   return String(a.starts_at).localeCompare(String(b.starts_at));
 }
 
+/** Pets em atendimento agora — a banhista pode ter vários ao mesmo tempo. */
+export function countInService(items: GroomingDayBoardItem[]): number {
+  return items.filter((i) => {
+    const s = getItemBoardStage(i);
+    return s === 'in_service' || s === 'finishing';
+  }).length;
+}
+
 /** Pet em destaque: em atendimento; senão o próximo da fila; senão quem está chegando. Pronto já saiu da fila. */
 export function pickFeaturedItem(items: GroomingDayBoardItem[]): GroomingDayBoardItem | null {
   const active = items
@@ -189,6 +197,8 @@ const GroomingFloorView: React.FC<GroomingFloorViewProps> = ({
     [items],
   );
 
+  const inServiceCount = useMemo(() => countInService(items), [items]);
+
   const featuredStage = featured ? getItemBoardStage(featured) : null;
   const featuredQuick = featured ? resolveGroomingQuickAction(featured, canWrite) : null;
   const canPauseFeatured =
@@ -201,6 +211,7 @@ const GroomingFloorView: React.FC<GroomingFloorViewProps> = ({
         <div className="hub-grooming-floor__header-text">
           <span className="hub-grooming-floor__date">{dateLabel}</span>
           <span className="hub-grooming-floor__progress">
+            {inServiceCount > 0 ? `${inServiceCount} em atendimento · ` : ''}
             {doneCount}/{items.length || 0} finalizados
           </span>
         </div>
@@ -355,18 +366,34 @@ const GroomingFloorView: React.FC<GroomingFloorViewProps> = ({
           listItems.map((item) => {
             const stage = getItemBoardStage(item);
             const isFeatured = featured ? itemBoardKey(item) === itemBoardKey(featured) : false;
+            const quick = resolveGroomingQuickAction(item, canWrite);
             return (
-              <button
+              <div
                 key={itemBoardKey(item)}
-                type="button"
-                className={`hub-grooming-floor__queue-item${isFeatured ? ' hub-grooming-floor__queue-item--current' : ''}`}
-                onClick={() => onFeaturedOverride?.(item)}
+                className={`hub-grooming-floor__queue-item hub-grooming-floor__queue-item--row${isFeatured ? ' hub-grooming-floor__queue-item--current' : ''}`}
               >
-                <span className="hub-grooming-floor__queue-pet">{item.pet?.name || 'Sem pet'}</span>
-                <span className="hub-grooming-floor__queue-meta">
-                  {formatTime(item.starts_at)} · {GROOMING_STAGE_LABELS[stage]}
-                </span>
-              </button>
+                <button
+                  type="button"
+                  className="hub-grooming-floor__queue-select"
+                  onClick={() => onFeaturedOverride?.(item)}
+                >
+                  <span className="hub-grooming-floor__queue-pet">{item.pet?.name || 'Sem pet'}</span>
+                  <span className="hub-grooming-floor__queue-meta">
+                    {formatTime(item.starts_at)} · {GROOMING_STAGE_LABELS[stage]}
+                    {item.paused_at ? ' · Pausado' : ''}
+                  </span>
+                </button>
+                {quick ? (
+                  <button
+                    type="button"
+                    className="hub-grooming-floor__queue-action"
+                    disabled={busy}
+                    onClick={() => void onQuickAction(item, quick)}
+                  >
+                    {quickActionLabel(quick, item)}
+                  </button>
+                ) : null}
+              </div>
             );
           })
         )}

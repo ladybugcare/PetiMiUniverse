@@ -4,6 +4,8 @@ Plano de implementação da **fila operacional diária** de Banho & Tosa (`/hub/
 
 > **Atualização (dia a dia):** a UI operacional é **lista do dia** + **Minha fila** (abas), não Kanban com DnD. O avanço rápido pula `finishing` e `delivered` (`in_service` → `ready` → `closed`). Check-in / chegada L&T entram em `queued`. `closed` espelha agenda `done` (não `paid`); `paid` na agenda só após quitação no caixa. Checklist: padrão por grupo da clínica + override opcional por tipo de serviço (`hub_service_types.checklist_items`). Badge/filtro L&T usa `has_pickup_legs` (filhos `pickup_route`), não o `appointment_kind` do pai. Pedido de serviço (`extra_request`) pode ser convertido em adicional na recepção.
 
+> **Atendimentos simultâneos:** a mesma banhista pode ter vários pets em `in_service` ao mesmo tempo (ex.: um secando enquanto outro toma banho). Não há trava por profissional. Na Minha fila, cada item da lista tem a própria ação («Iniciar» / «Pronto») e o cabeçalho mostra quantos estão em atendimento. Se todas as banheiras do catálogo estiverem ocupadas, o diálogo oferece «Iniciar sem alocar» (exceto na política `required_on_start`).
+
 **Estado atual (baseline histórico do plano — várias linhas abaixo já foram entregues):**
 
 | Item | Situação |

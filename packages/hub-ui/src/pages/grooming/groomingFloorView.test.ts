@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { GroomingDayBoardItem } from '../../api/hubGroomingApi';
-import { pickFeaturedItem } from './GroomingFloorView';
+import { countInService, pickFeaturedItem } from './GroomingFloorView';
 
 function item(
   partial: Partial<GroomingDayBoardItem> & { grooming_stage: string; starts_at: string },
@@ -32,6 +32,14 @@ describe('pickFeaturedItem', () => {
     expect(featured?.pet?.name).toBe('Mia');
   });
 
+  it('mantém o primeiro em atendimento em destaque quando há vários', () => {
+    const featured = pickFeaturedItem([
+      item({ grooming_stage: 'in_service', starts_at: '2026-09-08T11:00:00', pet: { id: 'p2', name: 'Luna' } }),
+      item({ grooming_stage: 'in_service', starts_at: '2026-09-08T10:00:00', pet: { id: 'p3', name: 'Rex' } }),
+    ]);
+    expect(featured?.pet?.name).toBe('Rex');
+  });
+
   it('retorna null se só finalizados', () => {
     expect(
       pickFeaturedItem([
@@ -40,5 +48,18 @@ describe('pickFeaturedItem', () => {
         item({ grooming_stage: 'ready', starts_at: '2026-09-08T07:00:00' }),
       ]),
     ).toBeNull();
+  });
+});
+
+describe('countInService', () => {
+  it('conta todos os pets em atendimento ao mesmo tempo', () => {
+    expect(
+      countInService([
+        item({ grooming_stage: 'in_service', starts_at: '2026-09-08T10:00:00' }),
+        item({ grooming_stage: 'in_service', starts_at: '2026-09-08T10:30:00' }),
+        item({ grooming_stage: 'queued', starts_at: '2026-09-08T11:00:00' }),
+        item({ grooming_stage: 'ready', starts_at: '2026-09-08T09:00:00' }),
+      ]),
+    ).toBe(2);
   });
 });

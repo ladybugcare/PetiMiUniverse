@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import type { ResourceAvailability } from '../../api/hubResourcesApi';
+import { HubSearchableCombobox, type HubComboboxOption } from '../../components/HubSearchableCombobox';
 import './grooming-resource-dialog.css';
 
 export type GroomingResourceChoice = {
@@ -21,10 +22,19 @@ export const GroomingResourceDialog: React.FC<GroomingResourceDialogProps> = ({
   onCancel,
 }) => {
   const free = availability.resources.filter((r) => !r.busy);
-  const suggested = free[0]?.id ?? '';
-  const [selected, setSelected] = useState(suggested);
+  const busy = availability.resources.filter((r) => r.busy);
+  const [selected, setSelected] = useState(free[0]?.id ?? '');
   const required = availability.policy === 'required_on_start';
   const label = availability.field_label;
+  const noun = label.toLowerCase();
+  const allBusy = free.length === 0 && availability.resources.length > 0;
+
+  const options: HubComboboxOption[] = free.map((r) => ({
+    value: r.id,
+    label: r.kind_name ? `${r.kind_name} · ${r.name}` : r.name,
+  }));
+
+  const skip = () => onConfirm({ hubResourceId: null, skipResource: true });
 
   return (
     <div
@@ -40,59 +50,73 @@ export const GroomingResourceDialog: React.FC<GroomingResourceDialogProps> = ({
         aria-modal="true"
         aria-labelledby="grooming-resource-title"
       >
-        <h2 id="grooming-resource-title">Escolher {label.toLowerCase()}</h2>
-        {busyName ? (
+        <h2 id="grooming-resource-title">Escolher {noun}</h2>
+        {allBusy ? (
+          required ? (
+            <p className="grooming-resource-dialog__warn">
+              Todas as opções de {noun} estão em uso. Marque um pet como pronto para liberar uma.
+            </p>
+          ) : (
+            <p className="grooming-resource-dialog__warn">
+              Todas as opções de {noun} estão em uso. Você pode iniciar este pet mesmo assim, sem alocar.
+            </p>
+          )
+        ) : busyName ? (
           <p className="grooming-resource-dialog__warn">
             {label} «{busyName}» ainda está em uso. Escolha outra livre.
           </p>
         ) : required ? (
-          <p>Escolha {label.toLowerCase()} livre para iniciar o atendimento.</p>
+          <p>Escolha {noun} livre para iniciar o atendimento.</p>
         ) : (
           <p>Escolha onde o atendimento vai ser feito, ou siga sem alocar.</p>
         )}
         {free.length === 0 ? (
-          <p>Não há {label.toLowerCase()} livre neste momento.</p>
+          allBusy ? null : <p>Não há {noun} livre neste momento.</p>
         ) : (
-          <label className="grooming-resource-dialog__field">
-            <span>{label}</span>
-            <select value={selected} onChange={(e) => setSelected(e.target.value)}>
-              {!required ? <option value="">Definir sem alocar</option> : null}
-              {availability.resources.map((r) => (
-                <option key={r.id} value={r.id} disabled={r.busy}>
-                  {r.kind_name ? `${r.kind_name} · ${r.name}` : r.name}
-                  {r.busy ? ' (em uso)' : ''}
-                </option>
-              ))}
-            </select>
-          </label>
+          <div className="grooming-resource-dialog__field">
+            <label htmlFor="grooming-resource-select">{label}</label>
+            <HubSearchableCombobox
+              id="grooming-resource-select"
+              className="hub-combobox--clientes"
+              options={options}
+              value={selected}
+              onChange={setSelected}
+              placeholder={`Selecione ${noun}…`}
+              searchPlaceholder={`Buscar ${noun}…`}
+              ariaLabel={`Selecionar ${noun}`}
+            />
+            {busy.length > 0 ? (
+              <span className="grooming-resource-dialog__hint">
+                Em uso: {busy.map((r) => r.name).join(', ')}
+              </span>
+            ) : null}
+          </div>
         )}
         <div className="grooming-resource-dialog__actions">
-          <button type="button" className="grooming-resource-dialog__ghost" onClick={onCancel}>
+          <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={onCancel}>
             Voltar
           </button>
-          {!required ? (
-            <button
-              type="button"
-              className="grooming-resource-dialog__ghost"
-              onClick={() => onConfirm({ hubResourceId: null, skipResource: true })}
-            >
-              Seguir sem alocar
+          {!required && free.length === 0 ? (
+            <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" onClick={skip}>
+              Iniciar sem alocar
             </button>
-          ) : null}
-          <button
-            type="button"
-            className="grooming-resource-dialog__primary"
-            disabled={required && !selected}
-            onClick={() => {
-              if (!selected) {
-                onConfirm({ hubResourceId: null, skipResource: true });
-                return;
-              }
-              onConfirm({ hubResourceId: selected, skipResource: false });
-            }}
-          >
-            Iniciar
-          </button>
+          ) : (
+            <>
+              {!required ? (
+                <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={skip}>
+                  Seguir sem alocar
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary"
+                disabled={!selected}
+                onClick={() => onConfirm({ hubResourceId: selected, skipResource: false })}
+              >
+                Iniciar
+              </button>
+            </>
+          )}
         </div>
       </div>
     </div>
