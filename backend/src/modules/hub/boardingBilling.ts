@@ -268,12 +268,10 @@ export function shouldIncludeInUnbilledBoarding(
 
 export function estimateBoardingUnbilledAmount(
   reservation: BoardingReservationBillingInput,
+  extras: BoardingExtraInput[] = [],
   opts?: BoardingQuantityOptions,
 ): number {
-  const { checkIn, checkOut } = resolveBoardingCheckInOut(reservation);
-  const quantity = computeBoardingQuantity(reservation.mode, checkIn, checkOut, opts);
-  const dailyRateCents = reservation.daily_rate_cents ?? 0;
-  return computeBoardingLineAmount(dailyRateCents, quantity).lineTotal;
+  return estimateBoardingStayTotal(reservation, extras, opts).total;
 }
 
 export type DayBoardBilling = {

@@ -419,8 +419,9 @@ export function previewLevaTrazBandPricing(
   if (matrix && (matrix.kind === 'km_banda' || matrix.kind === 'personalizado')) {
     const idx = Math.max(0, Math.min(Math.floor(Number(tierIndex)) || 0, matrix.tiers.length - 1));
     const t = matrix.tiers[idx]!;
+    const rawLabel = typeof t.label === 'string' ? t.label.trim() : '';
     return {
-      bandLabel: t.label || `Opção ${idx + 1}`,
+      bandLabel: rawLabel || `Opção ${idx + 1}`,
       catalogSale: round2(t.sale_amount),
       catalogCost: round2(t.cost_amount),
     };

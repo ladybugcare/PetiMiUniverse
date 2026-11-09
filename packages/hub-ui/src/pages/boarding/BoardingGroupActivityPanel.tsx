@@ -8,7 +8,11 @@ import { boardingModeLabel } from './boardingCareUi';
 
 type Kind = 'recreation' | 'walk' | 'custom';
 
-const KIND_LABELS: Record<Kind, string> = { recreation: 'Recreação', walk: 'Passeio', custom: 'Outra atividade' };
+const KIND_LABELS: Record<Kind, string> = {
+  recreation: 'Atividade em grupo',
+  walk: 'Atividade',
+  custom: 'Outra atividade',
+};
 
 type Props = {
   open: boolean;
@@ -122,7 +126,9 @@ const BoardingGroupActivityPanel: React.FC<Props> = ({ open, clinicId, stays, in
             id="group-activity-title"
             className="hub-clientes__input"
             value={title}
-            placeholder={kind === 'recreation' ? 'Ex.: recreação no pátio' : kind === 'walk' ? 'Ex.: passeio da tarde' : 'Ex.: escovação'}
+            placeholder={
+              kind === 'recreation' ? 'Ex.: brincadeira no pátio' : kind === 'walk' ? 'Ex.: socialização da tarde' : 'Ex.: escovação'
+            }
             onChange={(e) => setTitle(e.target.value)}
           />
         </div>

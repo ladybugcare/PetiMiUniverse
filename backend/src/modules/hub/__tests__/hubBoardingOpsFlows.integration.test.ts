@@ -77,7 +77,7 @@ describe('Boarding ops flows (integração)', () => {
           feeding: {
             food_source: 'own',
             food_name: 'Ração Premium',
-            meals: [{ time: '08:00', amount: '1 xícara', notes: null }],
+            meals: [{ slot: 'breakfast', amount: '1 xícara', notes: null }],
           },
           medications: [],
           handling: { sociability: 'sociable', group_play_allowed: true },

@@ -353,6 +353,16 @@ async function isOperationalCompleteForComanda(comanda: Record<string, unknown>)
       .maybeSingle();
     return String(e?.status ?? '') === 'completed';
   }
+  if (originType === 'boarding_reservation') {
+    const { data: r } = await supabaseAdmin
+      .from('hub_boarding_reservations')
+      .select('status')
+      .eq('id', originId)
+      .eq('clinic_id', clinicId)
+      .is('deleted_at', null)
+      .maybeSingle();
+    return String(r?.status ?? '') === 'checked_out';
+  }
   return true;
 }
 

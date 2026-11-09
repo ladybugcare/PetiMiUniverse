@@ -75,7 +75,22 @@ export const AppointmentResourceField: React.FC<AppointmentResourceFieldProps> =
         mode: 'window',
       })
       .then((res) => {
-        if (!cancelled) setAvailability(res);
+        if (!cancelled) {
+          setAvailability({
+            ...EMPTY_AVAILABILITY,
+            ...res,
+            field_label:
+              typeof res.field_label === 'string' && res.field_label.trim()
+                ? res.field_label
+                : EMPTY_AVAILABILITY.field_label,
+            capacity_warning:
+              typeof res.capacity_warning === 'string' && res.capacity_warning.trim()
+                ? res.capacity_warning
+                : null,
+            resources: Array.isArray(res.resources) ? res.resources : [],
+            kinds: Array.isArray(res.kinds) ? res.kinds : [],
+          });
+        }
       })
       .catch(() => {
         if (!cancelled) setAvailability(EMPTY_AVAILABILITY);
@@ -84,6 +99,15 @@ export const AppointmentResourceField: React.FC<AppointmentResourceFieldProps> =
       cancelled = true;
     };
   }, [clinicId, unitId, serviceTypeId, window, excludeAppointmentId]);
+
+  const fieldLabel =
+    typeof availability.field_label === 'string' && availability.field_label.trim()
+      ? availability.field_label
+      : EMPTY_AVAILABILITY.field_label;
+  const capacityWarning =
+    typeof availability.capacity_warning === 'string' && availability.capacity_warning.trim()
+      ? availability.capacity_warning
+      : null;
 
   const multipleKinds = new Set(availability.resources.map((r) => r.kind_name)).size > 1;
   const options = availability.resources.map((r) => ({
@@ -112,7 +136,7 @@ export const AppointmentResourceField: React.FC<AppointmentResourceFieldProps> =
   return (
     <div className="nam-field">
       <label className="nam-label" htmlFor={id}>
-        {availability.field_label}
+        {fieldLabel}
       </label>
       <HubSearchableCombobox
         id={id}
@@ -126,13 +150,13 @@ export const AppointmentResourceField: React.FC<AppointmentResourceFieldProps> =
           });
         }}
         placeholder="Definir na hora do atendimento"
-        searchPlaceholder={`Buscar ${availability.field_label.toLowerCase()}…`}
+        searchPlaceholder={`Buscar ${fieldLabel.toLowerCase()}…`}
         clearable
-        ariaLabel={availability.field_label}
+        ariaLabel={fieldLabel}
       />
-      {availability.capacity_warning ? (
+      {capacityWarning ? (
         <p className="nam-staff-compat-warn" role="status">
-          {availability.capacity_warning}
+          {capacityWarning}
         </p>
       ) : null}
     </div>

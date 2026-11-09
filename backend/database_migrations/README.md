@@ -6,6 +6,7 @@ Este diretório agrupa migrations SQL por produto:
 |--------|----------|
 | **`petimi_vet/`** | PetMi Shift (demandas, unidades, auth, suporte, seeds, diagnósticos, `BOOTSTRAP_NEW_SUPABASE_ALL_IN_ONE.sql`) |
 | **`petimi_hub/`** | PetMi Hub (`hub_guardians` + extensões CRM, `hub_pets`, `hub_service_types`, `hub_service_groups`, `hub_appointments`, blocos de calendário, `hub_appointment_series`, `hub_appointment_services`) |
+| **`petimi_match/`** | PetMi Match adoção (`match_users`, `match_pets`, swipes, favoritos, storage) — ver [`petimi_match/README.md`](petimi_match/README.md) |
 
 Os arquivos `.md` de apoio (`README.md`, `EXECUTE_MIGRATIONS_GUIDE.md`, `README_STAGING.md`, …) ficam na **raiz** deste diretório.
 

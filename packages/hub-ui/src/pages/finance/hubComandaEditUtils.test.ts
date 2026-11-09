@@ -5,6 +5,7 @@ import {
   canSendToFinanceiroHandoff,
   isCaixaCarryoverPendingComanda,
   isCaixaOwnedDayBoardItem,
+  isOriginOperationallyComplete,
   resolveComandaCheckoutCTA,
   resolveDayBoardCheckoutLabel,
   resolveSendToFinanceiroConfirmMessage,
@@ -44,6 +45,19 @@ function dayBoardItem(partial: Partial<HubFinanceDayBoardItem['billing']>): HubF
     },
   };
 }
+
+describe('isOriginOperationallyComplete', () => {
+  it('boarding_reservation exige checked_out', () => {
+    expect(isOriginOperationallyComplete('boarding_reservation', 'checked_out')).toBe(true);
+    expect(isOriginOperationallyComplete('boarding_reservation', 'checked_in')).toBe(false);
+    expect(isOriginOperationallyComplete('boarding_reservation', 'reserved')).toBe(false);
+  });
+
+  it('grooming_session exige closed', () => {
+    expect(isOriginOperationallyComplete('grooming_session', 'closed')).toBe(true);
+    expect(isOriginOperationallyComplete('grooming_session', 'ready')).toBe(false);
+  });
+});
 
 describe('resolveComandaCheckoutCTA', () => {
   it('financeiro com itens em aberto abre drawer de faturamento', () => {

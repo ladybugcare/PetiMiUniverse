@@ -165,6 +165,28 @@ describe('boardingBilling', () => {
         })
       ).toBe(450);
     });
+
+    it('soma adicionais ao total estimado', () => {
+      expect(
+        estimateBoardingUnbilledAmount(
+          {
+            id: 'res-1',
+            mode: 'hotel',
+            checked_in_at: '2026-06-01T14:00:00.000Z',
+            checked_out_at: '2026-06-04T10:00:00.000Z',
+            daily_rate_cents: 15000,
+          },
+          [
+            {
+              id: 'ex-1',
+              description: 'Banho',
+              quantity: 1,
+              unit_amount_cents: 8000,
+            },
+          ],
+        )
+      ).toBe(530);
+    });
   });
 
   describe('isBilledViaComandaHandoff', () => {

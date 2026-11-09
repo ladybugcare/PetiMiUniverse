@@ -33,6 +33,9 @@ export const OPERATIONAL_CLINICAL_SERVICE_GROUPS = ['clinica', 'internacao', 'ci
 /** Grupo cuja agenda alimenta a fila operacional Banho & Tosa. */
 export const OPERATIONAL_GROOMING_SERVICE_GROUP = 'banho_tosa' as const;
 
+/** Grupos de Hotel & Creche (estadia / turno). */
+export const BOARDING_SERVICE_GROUPS = ['hotel', 'creche'] as const;
+
 export type OperationalClinicalServiceGroup = (typeof OPERATIONAL_CLINICAL_SERVICE_GROUPS)[number];
 
 export function isOperationalClinicalGroup(group: string): group is OperationalClinicalServiceGroup {
@@ -57,6 +60,19 @@ export function serviceGroupLabel(value: string): string {
 export function normalizeServiceGroupSlug(raw: string | null | undefined): string {
   const s = (raw ?? '').trim();
   return s || 'outros';
+}
+
+export function isBoardingServiceGroup(group: string | null | undefined): boolean {
+  const g = normalizeServiceGroupSlug(group);
+  return (BOARDING_SERVICE_GROUPS as readonly string[]).includes(g);
+}
+
+export function isHotelServiceGroup(group: string | null | undefined): boolean {
+  return normalizeServiceGroupSlug(group) === 'hotel';
+}
+
+export function isCrecheServiceGroup(group: string | null | undefined): boolean {
+  return normalizeServiceGroupSlug(group) === 'creche';
 }
 
 /** Normaliza entrada do combobox (valor existente ou texto «criar novo») para slug de `service_group`. */

@@ -459,7 +459,8 @@ export function enrichAgendaCardsForGrid(list: AgendaAppointment[]): AgendaAppoi
     };
   });
   return enriched.filter(
-    (appt) => !isPickupLegHiddenFromGrid(appt, enriched) && !isExtraBlockChildHiddenFromGrid(appt),
+    (appt) =>
+      !isPickupLegHiddenFromGrid(appt, enriched) && !isExtraBlockChildHiddenFromGrid(appt, enriched),
   );
 }
 

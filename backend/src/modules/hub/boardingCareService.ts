@@ -9,6 +9,7 @@ import {
   diffPlanTasks,
   generatePlanTasks,
   normalizePlanBlocks,
+  resolveMealSlotTimes,
   normalizeProfileBlocks,
   type BlockStatusMap,
   type CarePlanBlocks,
@@ -20,7 +21,7 @@ import { boardingLocalParts } from './boardingBilling';
 import { boardingStayWindow, reservationOverlapsRange } from './boardingOperational';
 
 export const BOARDING_MIGRATION_HINT =
-  'Execute as migrações 123 a 130 de backend/database_migrations/petimi_hub (Hotel & Creche) no Supabase.';
+  'Execute as migrações 123 a 131 de backend/database_migrations/petimi_hub (Hotel & Creche) no Supabase.';
 
 export class BoardingHttpError extends Error {
   constructor(
@@ -47,6 +48,8 @@ export type BoardingUnitSettings = {
   recreation_windows: RecreationWindow[];
   recreation_capacity: number | null;
   overbooking_policy: 'warn' | 'block';
+  /** HH:MM de cada período de refeição na rotina desta unidade. */
+  meal_slot_times: Record<'breakfast' | 'lunch' | 'snack' | 'dinner', string>;
 };
 
 export const EMPTY_UNIT_SETTINGS: BoardingUnitSettings = {
@@ -58,6 +61,7 @@ export const EMPTY_UNIT_SETTINGS: BoardingUnitSettings = {
   recreation_windows: [],
   recreation_capacity: null,
   overbooking_policy: 'warn',
+  meal_slot_times: resolveMealSlotTimes(null),
 };
 
 export function normalizeUnitSettings(row: Record<string, unknown> | null | undefined): BoardingUnitSettings {
@@ -71,6 +75,7 @@ export function normalizeUnitSettings(row: Record<string, unknown> | null | unde
     recreation_windows: Array.isArray(row.recreation_windows) ? (row.recreation_windows as RecreationWindow[]) : [],
     recreation_capacity: (row.recreation_capacity as number | null) ?? null,
     overbooking_policy: row.overbooking_policy === 'block' ? 'block' : 'warn',
+    meal_slot_times: resolveMealSlotTimes(row.meal_slot_times),
   };
 }
 
@@ -224,6 +229,7 @@ export async function syncReservationTasks(
     start: window.start,
     end: window.end,
     recreationWindows: settings.recreation_windows,
+    mealSlotTimes: settings.meal_slot_times,
   });
 
   const { data: existingRows, error: exErr } = await supabaseAdmin
@@ -272,6 +278,29 @@ export async function syncReservationTasks(
     .update({ tasks_generated_at: new Date().toISOString() })
     .eq('id', planRow.id as string);
   return { inserted: toInsert.length, updated: toUpdate.length, deleted: toDelete.length };
+}
+
+/** Reaplica o plano nas estadias abertas da unidade (ex.: horário dos períodos mudou). */
+export async function resyncOpenStayTasks(clinicId: string, unitId: string): Promise<void> {
+  const settings = await loadUnitSettings(clinicId, unitId);
+  const { data, error } = await supabaseAdmin
+    .from('hub_boarding_reservations')
+    .select('*')
+    .eq('clinic_id', clinicId)
+    .eq('unit_id', unitId)
+    .in('status', ['reserved', 'checked_in'])
+    .is('deleted_at', null);
+  if (error) {
+    if (missingTable(error)) return;
+    throw new Error(error.message);
+  }
+  for (const row of data ?? []) {
+    try {
+      await syncReservationTasks(row as ReservationRow, { settings });
+    } catch (e) {
+      console.error('resyncOpenStayTasks', (row as ReservationRow).id, e);
+    }
+  }
 }
 
 /** No check-out (ou cancelamento), remove as tarefas pendentes que ficaram para depois. */

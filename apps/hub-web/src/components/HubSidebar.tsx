@@ -147,7 +147,12 @@ const navSections: NavSection[] = [
         to: '/hub/configuracoes-sistema',
         label: 'Configurações do Sistema',
         icon: Settings,
-        permission: ['hub.service_types.read', 'hub.appointments.read', 'hub.financial.read'],
+        permission: [
+          'hub.service_types.read',
+          'hub.appointments.read',
+          'hub.financial.read',
+          'boarding.reservations.manage',
+        ],
       },
       {
         to: '/hub/assinatura',

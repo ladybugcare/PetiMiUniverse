@@ -97,6 +97,14 @@ export const unitSettingsPatchSchema = z.object({
     .optional(),
   recreation_capacity: z.number().int().positive().nullable().optional(),
   overbooking_policy: z.enum(['warn', 'block']).optional(),
+  meal_slot_times: z
+    .object({
+      breakfast: hm.optional(),
+      lunch: hm.optional(),
+      snack: hm.optional(),
+      dinner: hm.optional(),
+    })
+    .optional(),
 });
 
 export const occupancyQuerySchema = z.object({

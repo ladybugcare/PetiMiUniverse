@@ -38,6 +38,7 @@ import {
   loadUnitSettings,
   missingTable,
   prepareStayCare,
+  resyncOpenStayTasks,
   syncReservationTasks,
   type ReservationRow,
 } from './boardingCareService';
@@ -416,7 +417,19 @@ export const openHubBoardingReservationFromAppointment = async (req: Request, re
     if (!appt) return res.status(404).json({ error: 'Agendamento não encontrado' });
     if (!appt.pet_id) return res.status(422).json({ error: 'Agendamento sem pet associado' });
 
-    const mode = (appt.appointment_kind as string) === 'daycare_block' ? 'daycare' : 'hotel';
+    let mode: 'hotel' | 'daycare' =
+      (appt.appointment_kind as string) === 'daycare_block' ? 'daycare' : 'hotel';
+    if ((appt.appointment_kind as string) !== 'daycare_block' && (appt.appointment_kind as string) !== 'hotel_stay') {
+      const svcId = (appt.hub_service_type_id as string | null) ?? null;
+      if (svcId) {
+        const { data: st } = await supabaseAdmin
+          .from('hub_service_types')
+          .select('service_group')
+          .eq('id', svcId)
+          .maybeSingle();
+        if (String(st?.service_group ?? '').trim() === 'creche') mode = 'daycare';
+      }
+    }
     const capacity = await checkCapacityForCheckIn({
       clinicId: clinic_id,
       unitId: (appt.unit_id as string | null) ?? null,
@@ -651,6 +664,12 @@ export const patchHubBoardingReservation = async (req: Request, res: Response) =
     }
 
     if (newStatus === 'checked_out') void syncOpenComandasAfterBoardingCheckedOut(clinic_id, id);
+    else if (
+      (rest.daily_rate_cents !== undefined || pricingChanged) &&
+      (newStatus ?? previousStatus) === 'checked_out'
+    ) {
+      void syncOpenComandasAfterBoardingCheckedOut(clinic_id, id);
+    }
 
     if (newStatus && newStatus !== previousStatus) {
       const notifyArgs = {
@@ -702,10 +721,17 @@ export const patchHubBoardingUnitSettings = async (req: Request, res: Response) 
     if (error) {
       if (missingTable(error) || /column/i.test(error.message ?? '')) {
         return res.status(503).json({
-          error: 'Configurações novas de Hotel & Creche indisponíveis. Execute a migração 127 no Supabase.',
+          error: 'Configurações novas de Hotel & Creche indisponíveis. Execute as migrações 127 e 131 no Supabase.',
         });
       }
       return res.status(500).json({ error: error.message });
+    }
+    if (fields.meal_slot_times || fields.recreation_windows) {
+      try {
+        await resyncOpenStayTasks(clinic_id, unit_id);
+      } catch (err) {
+        console.error('resyncOpenStayTasks', err);
+      }
     }
     return res.json({ settings: data });
   } catch (e: unknown) {

@@ -1,22 +1,18 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubCancelButton } from '../../components/HubCancelButton';
 import { HubLoading } from '../../components/HubLoading';
 import { useAlert } from '../../components/AlertProvider';
 import { hubBoardingApi, type BoardingDrawerResponse } from '../../api/hubBoardingApi';
-import { hubComandaApi } from '../../api/hubComandaApi';
 import BoardingBelongingsSection from './BoardingBelongingsSection';
 import BoardingTutorReportSection from './BoardingTutorReportSection';
 import { todayYmd } from '../../utils/hubCalendar';
-import { boardingModeLabel, formatBRL } from './boardingCareUi';
+import { boardingModeLabel } from './boardingCareUi';
 
 type Props = {
   open: boolean;
   clinicId: string;
   reservationId: string | null;
-  unitId?: string | null;
-  canManageFinance?: boolean;
   onClose: () => void;
   onDone: () => void;
 };
@@ -25,13 +21,10 @@ const BoardingCheckOutPanel: React.FC<Props> = ({
   open,
   clinicId,
   reservationId,
-  unitId,
-  canManageFinance,
   onClose,
   onDone,
 }) => {
   const { showError, showSuccess } = useAlert();
-  const navigate = useNavigate();
   const [drawer, setDrawer] = useState<BoardingDrawerResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [finished, setFinished] = useState(false);
@@ -62,7 +55,6 @@ const BoardingCheckOutPanel: React.FC<Props> = ({
   const openIncidents = (drawer?.incidents ?? []).filter((i) => i.status === 'open');
   const today = todayYmd();
   const todayPending = (drawer?.tasks ?? []).filter((t) => t.status === 'pending' && t.task_date <= today);
-  const pricing = drawer?.pricing;
 
   const checkout = async () => {
     setBusy(true);
@@ -83,36 +75,11 @@ const BoardingCheckOutPanel: React.FC<Props> = ({
     }
   };
 
-  const billing = async () => {
-    setBusy(true);
-    try {
-      const detail = await hubComandaApi.openComanda({
-        clinic_id: clinicId,
-        origin_type: 'boarding_reservation',
-        origin_id: reservationId,
-        unit_id: unitId ?? undefined,
-      });
-      const comandaId = (detail.comanda as Record<string, unknown>)?.id as string | undefined;
-      showSuccess('Comanda aberta.');
-      if (comandaId) navigate(`/hub/caixa/comanda/${comandaId}`);
-      onClose();
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao gerar cobrança');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const footer = finished ? (
     <div className="hub-clientes__panel-footer">
       <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={onClose}>
         Fechar
       </button>
-      {canManageFinance ? (
-        <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" disabled={busy} onClick={() => void billing()}>
-          {busy ? 'Abrindo…' : 'Gerar cobrança'}
-        </button>
-      ) : null}
     </div>
   ) : (
     <div className="hub-clientes__panel-footer">
@@ -165,7 +132,7 @@ const BoardingCheckOutPanel: React.FC<Props> = ({
 
             {finished ? (
               <div className="hub-grooming-drawer__ready-banner" role="status">
-                Saída registrada. {canManageFinance ? 'Gere a cobrança para fechar a estadia no caixa.' : 'A recepção fecha a cobrança no caixa.'}
+                Saída registrada. Cobrança fica no Caixa.
               </div>
             ) : null}
 
@@ -176,41 +143,6 @@ const BoardingCheckOutPanel: React.FC<Props> = ({
               variant="checkout"
               onChanged={load}
             />
-
-            {pricing ? (
-              <section className="hub-grooming-drawer__section">
-                <h4 className="hub-grooming-drawer__heading">Resumo</h4>
-                <ul className="hub-grooming-drawer__lines">
-                  <li className="hub-grooming-drawer__line">
-                    <span className="hub-grooming-drawer__line-name">
-                      {drawer.service_type?.name ?? boardingModeLabel(drawer.reservation.mode)}
-                      <span className="hub-grooming-drawer__line-state">
-                        {' '}
-                        · {pricing.quantity} {drawer.reservation.mode === 'hotel' ? (pricing.quantity === 1 ? 'diária' : 'diárias') : pricing.quantity === 1 ? 'dia' : 'dias'}
-                      </span>
-                    </span>
-                    <span className="hub-grooming-drawer__line-price">{formatBRL(pricing.base)}</span>
-                  </li>
-                  {pricing.extras > 0 ? (
-                    <li className="hub-grooming-drawer__line">
-                      <span className="hub-grooming-drawer__line-name">Adicionais ({(drawer.extras ?? []).length})</span>
-                      <span className="hub-grooming-drawer__line-price">{formatBRL(pricing.extras)}</span>
-                    </li>
-                  ) : null}
-                  <li className="hub-grooming-drawer__line hub-grooming-drawer__line--done">
-                    <span className="hub-grooming-drawer__line-name">
-                      <strong>Total estimado</strong>
-                    </span>
-                    <strong>{formatBRL(pricing.total)}</strong>
-                  </li>
-                </ul>
-                {!finished && drawer.reservation.mode === 'hotel' && pricing.cutoff_time ? (
-                  <p className="hub-grooming-drawer__subtotal">
-                    Saída depois das {pricing.cutoff_time.slice(0, 5)} conta mais uma diária. O valor final sai na comanda.
-                  </p>
-                ) : null}
-              </section>
-            ) : null}
 
             <BoardingTutorReportSection
               clinicId={clinicId}

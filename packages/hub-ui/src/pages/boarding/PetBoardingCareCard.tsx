@@ -102,7 +102,6 @@ const PetBoardingCareCard: React.FC<Props> = ({ clinicId, petId, petName }) => {
       const payload: Parameters<typeof hubBoardingApi.putCareProfile>[1] = { clinic_id: clinicId };
       if (dirty.has('feeding')) payload.feeding = draft.feeding;
       if (dirty.has('medications')) payload.medications = draft.medications;
-      if (dirty.has('walks')) payload.walks = draft.walks;
       if (dirty.has('handling')) payload.handling = draft.handling;
       if ((notes.trim() || null) !== (profile?.notes ?? null)) payload.notes = notes.trim() || null;
       const r = await hubBoardingApi.putCareProfile(petId, payload);

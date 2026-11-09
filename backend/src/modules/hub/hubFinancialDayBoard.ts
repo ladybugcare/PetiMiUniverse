@@ -8,9 +8,10 @@ export function isDayBoardOperationallyComplete(originType: string, operationalS
       return operationalStatus === 'closed';
     case 'encounter':
       return operationalStatus === 'completed';
+    case 'boarding_reservation':
+      return operationalStatus === 'checked_out';
     case 'quote':
     case 'manual':
-    case 'boarding_reservation':
       return true;
     default:
       return true;

@@ -1,4 +1,4 @@
-import { planCustody, reconcileHandoffRows } from '../receptionCustody';
+import { arrivalPendingAppointmentIds, planCustody, reconcileHandoffRows } from '../receptionCustody';
 
 function snap(partial: Partial<Parameters<typeof planCustody>[0]> = {}) {
   return {
@@ -506,5 +506,95 @@ describe('reconcileHandoffRows', () => {
     const out = reconcileHandoffRows(existing, [embarque], '2026-11-06');
     expect(out.cancelIds).toEqual(['h1']);
     expect(out.insert.map((h) => h.kind)).toEqual(['embarque']);
+  });
+
+  it('cancela chegada de outro dia quando o banho já não espera a recepção', () => {
+    const existing = [
+      {
+        id: 'h-old',
+        kind: 'chegada' as const,
+        source_type: 'appointment',
+        source_id: 'a-old',
+        status: 'open' as const,
+        resolved_at: null,
+        context: { label: 'Banho', starts_at: '2026-11-03T13:00:00.000Z', appointment_id: 'a-old' },
+      },
+    ];
+    const out = reconcileHandoffRows(existing, [], '2026-11-06', {
+      preserveChegadaSourceIds: new Set(),
+    });
+    expect(out.cancelIds).toEqual(['h-old']);
+  });
+
+  it('preserva chegada futura ainda pendente ao sincronizar outro dia', () => {
+    const existing = [
+      {
+        id: 'h-future',
+        kind: 'chegada' as const,
+        source_type: 'appointment',
+        source_id: 'a-future',
+        status: 'open' as const,
+        resolved_at: null,
+        context: { label: 'Banho', starts_at: '2026-11-08T13:00:00.000Z', appointment_id: 'a-future' },
+      },
+    ];
+    const out = reconcileHandoffRows(existing, [], '2026-11-06', {
+      preserveChegadaSourceIds: new Set(['a-future']),
+    });
+    expect(out.cancelIds).toEqual([]);
+  });
+});
+
+describe('planCustody chegada vs banho', () => {
+  const confirmedBanho = {
+    id: 'a1',
+    unit_id: 'u1',
+    guardian_id: 'g1',
+    status: 'confirmed',
+    appointment_kind: 'standard' as const,
+    starts_at: '2026-11-06T13:00:00.000Z',
+    service_group: 'banho_tosa',
+    service_name: 'Banho',
+    parent_appointment_id: null,
+  };
+
+  it('não abre chegada se a sessão de banho já está em andamento ou pronta', () => {
+    for (const stage of ['queued', 'in_service', 'ready'] as const) {
+      const plan = planCustody(
+        snap({
+          appointments: [confirmedBanho],
+          groomingSessions: [
+            {
+              id: 's1',
+              unit_id: 'u1',
+              guardian_id: 'g1',
+              hub_appointment_id: 'a1',
+              grooming_stage: stage,
+              ready_at: stage === 'ready' ? '2026-11-06T14:00:00.000Z' : null,
+            },
+          ],
+        }),
+      );
+      expect(plan.handoffs.some((h) => h.kind === 'chegada')).toBe(false);
+    }
+  });
+
+  it('arrivalPendingAppointmentIds exclui agendamento já avançado no salão', () => {
+    const ids = arrivalPendingAppointmentIds(
+      snap({
+        appointments: [confirmedBanho],
+        groomingSessions: [
+          {
+            id: 's1',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a1',
+            grooming_stage: 'ready',
+            ready_at: '2026-11-06T14:00:00.000Z',
+          },
+        ],
+      }),
+    );
+    expect(ids.has('a1')).toBe(false);
   });
 });

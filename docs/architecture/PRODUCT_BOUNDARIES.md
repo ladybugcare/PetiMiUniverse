@@ -10,10 +10,11 @@ Este documento define **o que pertence a cada domínio**, quem é dono dos dados
 | PetMi ID | `petmi-id` | Identificadores estáveis e portáveis (pet, tutor, profissional, org), consentimento e compartilhamento de histórico |
 | PetMi Hub | `hub` | Operação do negócio pet: agenda, pets/tutores, atendimentos, multi-unidade, filas operacionais, financeiro simples, dashboard operacional |
 | PetMi Shift / Match (staffing) | `vet-match` | Demandas, posições, aplicações, convites, work proof, matching clínica ↔ profissional |
+| PetMi Match (adoção) | `match` | Anúncios de adoção, Petinder (swipes), favoritos, perfil adotante/anunciante/ONG (`match_users`, `match_pets`, …); não é staffing |
 | Marketplace | `marketplace` | Listagens B2B/B2C de itens, mensagens de listing, reputação comercial ligada a transações (não prontuário) |
 | Admin da plataforma | `admin` | Moderação, aprovações globais, relatórios de sistema, suporte |
 
-Produtos futuros (ex.: **PetMi Match adoção**, app **tutor**) consomem **platform** + **petmi-id** + APIs específicas; não duplicam org/unidade do Hub sem decisão explícita.
+**PetMi Match (adoção)** consome **platform** + (futuro) **petmi-id** + tabelas `match_*`; não duplica org/unidade do Hub e **não** se confunde com `vet-match`. App tutor futuro segue a mesma regra.
 
 ---
 

@@ -8,11 +8,18 @@ function toYmd(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
-/** Blocos filhos vinculados ao agendamento principal (não exibir como card separado na grade). */
+/**
+ * Filhos no mesmo dia do pai ficam só no modal do hotel (evita card duplicado).
+ * Filhos em outro dia (ex.: banho na saída) aparecem na grade desse dia.
+ */
 export function isExtraBlockChildHiddenFromGrid(
-  appt: Pick<AgendaAppointment, 'parent_appointment_id'>,
+  appt: Pick<AgendaAppointment, 'id' | 'parent_appointment_id' | 'start'>,
+  all: Array<Pick<AgendaAppointment, 'id' | 'start'>>,
 ): boolean {
-  return Boolean(appt.parent_appointment_id);
+  if (!appt.parent_appointment_id) return false;
+  const parent = all.find((a) => a.id === appt.parent_appointment_id);
+  if (!parent) return false;
+  return toYmd(appt.start) === toYmd(parent.start);
 }
 
 /** Localiza blocos adicionais de um agendamento principal (por vínculo ou heurística legada). */

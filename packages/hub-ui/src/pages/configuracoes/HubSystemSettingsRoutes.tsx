@@ -8,6 +8,7 @@ import HubPaymentMethodsPage from './HubPaymentMethodsPage';
 import HubPickupSettingsPage from './HubPickupSettingsPage';
 import HubResourcesSettingsPage from './HubResourcesSettingsPage';
 import HubPartnerClinicsPage from './HubPartnerClinicsPage';
+import HubBoardingSettingsPage from '../boarding/HubBoardingSettingsPage';
 
 /**
  * Rotas aninhadas sob `/hub/configuracoes-sistema/*`.
@@ -24,6 +25,7 @@ const HubSystemSettingsRoutes: React.FC = () => {
         <Route path="formas-pagamento" element={<HubPaymentMethodsPage />} />
         <Route path="clinicas-parceiras" element={<HubPartnerClinicsPage />} />
         <Route path="leva-e-traz" element={<HubPickupSettingsPage />} />
+        <Route path="hotel-creche" element={<HubBoardingSettingsPage />} />
       </Route>
     </Routes>
   );

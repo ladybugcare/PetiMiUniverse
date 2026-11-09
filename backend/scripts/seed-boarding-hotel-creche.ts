@@ -3,17 +3,18 @@
  *
  * Hotel:
  * - 1 reservado (chegada hoje) — aparece na fila para check-in
- * - 1 check-in em andamento (estadia multi-dia cobrindo hoje) + log diário
+ * - 1 check-in em andamento (estadia multi-dia) com plano confirmado, tarefas do dia,
+ *   acomodação e 1 intercorrência aberta
  * - 1 check-out hoje
  * - 1 agendamento sem reserva (para testar «Abrir reserva»)
  * - 1 atrasado (check-in com saída prevista no passado)
  *
  * Creche:
  * - 1 reservada (turno de hoje)
- * - 1 check-in no turno de hoje
+ * - 1 check-in no turno de hoje com plano + tarefas
  * - 1 walk-in (reserva sem agendamento)
  *
- * Também configura capacidade da unidade (vagas hotel / creche).
+ * Também configura capacidade da unidade (vagas hotel / creche) e 1 baia.
  *
  * A cada execução, soft-deleta o que o seed criou antes e remonta o cenário.
  *
@@ -45,7 +46,10 @@ type Scenario = {
   /** Se true, cria reserva sem hub_appointment_id (walk-in). */
   walkIn?: boolean;
   dailyRateCents?: number;
-  withDailyLog?: boolean;
+  /** Plano confirmado + tarefas do dia (+ intercorrência se withIncident). */
+  withOpsCare?: boolean;
+  withIncident?: boolean;
+  assignSpace?: boolean;
   note?: string;
 };
 
@@ -69,7 +73,9 @@ const SCENARIOS: Scenario[] = [
     checkIn: { dayOffset: -2, hour: 10, minute: 0 },
     checkOut: { dayOffset: 2, hour: 11, minute: 0 },
     dailyRateCents: 15000,
-    withDailyLog: true,
+    withOpsCare: true,
+    withIncident: true,
+    assignSpace: true,
     note: 'Gosta de passeio longo pela manhã.',
   },
   {
@@ -120,7 +126,7 @@ const SCENARIOS: Scenario[] = [
     checkIn: { dayOffset: 0, hour: 8, minute: 30 },
     checkOut: { dayOffset: 0, hour: 17, minute: 30 },
     dailyRateCents: 8500,
-    withDailyLog: true,
+    withOpsCare: true,
     note: 'Já entrou hoje de manhã.',
   },
   {
@@ -203,10 +209,15 @@ async function cleanupPrevious() {
   }
 
   if (rsvIds.size > 0) {
+    const ids = [...rsvIds];
+    await supabaseAdmin.from('hub_boarding_tasks').delete().in('hub_boarding_reservation_id', ids);
+    await supabaseAdmin.from('hub_boarding_task_executions').delete().in('hub_boarding_reservation_id', ids);
+    await supabaseAdmin.from('hub_boarding_incidents').update({ deleted_at: now }).in('hub_boarding_reservation_id', ids);
+    await supabaseAdmin.from('hub_boarding_care_plans').delete().in('hub_boarding_reservation_id', ids);
     await supabaseAdmin
       .from('hub_boarding_reservations')
       .update({ deleted_at: now })
-      .in('id', [...rsvIds]);
+      .in('id', ids);
   }
 
   if (apptIds.length > 0) {
@@ -215,6 +226,13 @@ async function cleanupPrevious() {
       .update({ deleted_at: now })
       .in('id', apptIds);
   }
+
+  await supabaseAdmin
+    .from('hub_boarding_spaces')
+    .update({ deleted_at: now, active: false })
+    .eq('clinic_id', clinicId)
+    .like('name', `${PREFIX}%`)
+    .is('deleted_at', null);
 
   console.log(
     `Limpeza: ${apptIds.length} agendamento(s) e ${rsvIds.size} reserva(s) anterior(es) do seed removido(s).`,
@@ -381,24 +399,146 @@ async function ensurePet(spec: Scenario['pet'], guardianId: string): Promise<str
   return pet.id;
 }
 
-async function insertDailyLog(reservationId: string, staffId: string, mood: string, notes: string) {
-  const logDate = ymdSaoPaulo(0);
-  const { error } = await supabaseAdmin.from('hub_boarding_daily_logs').upsert(
+async function ensureSpace(): Promise<string | null> {
+  const name = `${PREFIX} Baia 1`;
+  const { data: existing } = await supabaseAdmin
+    .from('hub_boarding_spaces')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('unit_id', unitId)
+    .eq('name', name)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (existing) return (existing as { id: string }).id;
+
+  const { data, error } = await supabaseAdmin
+    .from('hub_boarding_spaces')
+    .insert({
+      clinic_id: clinicId,
+      unit_id: unitId,
+      name,
+      kind: 'kennel',
+      mode: 'hotel',
+      capacity: 1,
+      active: true,
+      sort_order: 1,
+    })
+    .select('id')
+    .single();
+  if (error) {
+    console.log(`Aviso: acomodação não criada (${error.message}). Rode as migrações 123–130.`);
+    return null;
+  }
+  console.log('Acomodação criada:', name);
+  return (data as { id: string }).id;
+}
+
+async function seedOpsCare(args: {
+  reservationId: string;
+  petId: string;
+  withIncident?: boolean;
+}) {
+  const today = ymdSaoPaulo(0);
+  const feeding = {
+    food_source: 'own' as const,
+    food_name: 'Ração Premium',
+    meals: [
+      { slot: 'breakfast', amount: '1 xícara', notes: null },
+      { slot: 'dinner', amount: '1 xícara', notes: null },
+    ],
+    restrictions: null,
+  };
+  const handling = {
+    sociability: 'sociable' as const,
+    group_play_allowed: true,
+    contact_restrictions: null,
+    special_care: null,
+  };
+  const blockStatus = {
+    feeding: 'confirmed',
+    medications: 'confirmed',
+    walks: 'confirmed',
+    handling: 'confirmed',
+    recreation: 'confirmed',
+  };
+
+  const { error: profileErr } = await supabaseAdmin.from('hub_pet_care_profiles').upsert(
     {
       clinic_id: clinicId,
-      hub_boarding_reservation_id: reservationId,
-      log_date: logDate,
-      fed: { done: true },
-      medication: { done: false },
-      walks: { done: true, count: 2 },
-      mood,
-      notes: `${MARKER} — ${notes}`,
-      created_by_staff_id: staffId,
+      pet_id: args.petId,
+      feeding,
+      medications: [],
+      walks: { times: ['09:00', '16:00'], notes: 'Passeio médio' },
+      handling,
     },
-    { onConflict: 'hub_boarding_reservation_id,log_date' },
+    { onConflict: 'pet_id' },
   );
-  if (error) console.log(`Aviso: log diário não criado (${error.message}).`);
-  else console.log(`  · log diário de hoje (${logDate})`);
+  if (profileErr) console.log(`Aviso: ficha de cuidados (${profileErr.message}).`);
+
+  const { error: planErr } = await supabaseAdmin.from('hub_boarding_care_plans').upsert(
+    {
+      clinic_id: clinicId,
+      hub_boarding_reservation_id: args.reservationId,
+      pet_id: args.petId,
+      feeding,
+      medications: [],
+      walks: { times: ['09:00', '16:00'], notes: 'Passeio médio' },
+      handling,
+      recreation: { allowed: true, times: ['10:30'] },
+      block_status: blockStatus,
+      instructions: `${MARKER} — plano demo`,
+      confirmed_at: new Date().toISOString(),
+      tasks_generated_at: new Date().toISOString(),
+    },
+    { onConflict: 'hub_boarding_reservation_id' },
+  );
+  if (planErr) {
+    console.log(`Aviso: plano de cuidados não criado (${planErr.message}).`);
+    return;
+  }
+
+  const taskSpecs = [
+    { kind: 'feeding', title: 'Café da manhã', plan_key: 'feeding:breakfast', hm: '08:00' },
+    { kind: 'feeding', title: 'Janta', plan_key: 'feeding:dinner', hm: '19:00' },
+    { kind: 'walk', title: 'Passeio das 09:00', plan_key: 'walk:09:00', hm: '09:00' },
+    { kind: 'recreation', title: 'Recreação das 10:30', plan_key: 'recreation:10:30', hm: '10:30' },
+  ];
+
+  for (const spec of taskSpecs) {
+    const scheduledFor = `${today}T${spec.hm}:00-03:00`;
+    const { error: taskErr } = await supabaseAdmin.from('hub_boarding_tasks').upsert(
+      {
+        clinic_id: clinicId,
+        hub_boarding_reservation_id: args.reservationId,
+        pet_id: args.petId,
+        kind: spec.kind,
+        source: 'plan',
+        title: spec.title,
+        details: {},
+        scheduled_for: scheduledFor,
+        task_date: today,
+        plan_key: spec.plan_key,
+        status: 'pending',
+      },
+      { onConflict: 'hub_boarding_reservation_id,plan_key,task_date' },
+    );
+    if (taskErr) console.log(`Aviso: tarefa ${spec.title} (${taskErr.message}).`);
+  }
+  console.log(`  · plano + ${taskSpecs.length} tarefas (${today})`);
+
+  if (args.withIncident) {
+    const { error: incErr } = await supabaseAdmin.from('hub_boarding_incidents').insert({
+      clinic_id: clinicId,
+      hub_boarding_reservation_id: args.reservationId,
+      kind: 'behavior',
+      severity: 'low',
+      description: `${MARKER} — latidos na chegada da recreação (demo)`,
+      status: 'open',
+      occurred_at: new Date().toISOString(),
+    });
+    if (incErr) console.log(`Aviso: intercorrência (${incErr.message}).`);
+    else console.log('  · intercorrência aberta');
+  }
 }
 
 async function main() {
@@ -424,6 +564,7 @@ async function main() {
   console.log(`Serviços: hotel=${hotelType.name}, creche=${crecheType.name}`);
 
   await ensureUnitSettings();
+  const spaceId = await ensureSpace();
   const staff = await ensureStaff();
   const guardianId = await ensureGuardian();
 
@@ -496,6 +637,7 @@ async function main() {
             checked_in_at: checkedInAt,
             checked_out_at: checkedOutAt,
             daily_rate_cents: sc.dailyRateCents ?? null,
+            space_id: sc.assignSpace && spaceId ? spaceId : null,
             notes,
           })
           .select('id')
@@ -503,13 +645,12 @@ async function main() {
         `reserva ${sc.pet.name}`,
       ) as { id: string };
 
-      if (sc.withDailyLog && sc.stage === 'checked_in') {
-        await insertDailyLog(
-          rsv.id,
-          staff.id,
-          sc.mode === 'daycare' ? 'animada' : 'tranquilo',
-          sc.note ?? sc.label,
-        );
+      if (sc.withOpsCare && sc.stage === 'checked_in') {
+        await seedOpsCare({
+          reservationId: rsv.id,
+          petId,
+          withIncident: Boolean(sc.withIncident),
+        });
       }
     }
 
@@ -525,7 +666,8 @@ async function main() {
 
   console.log(`\nPronto. Abra /hub/hotel-creche na unidade de teste.`);
   console.log(`Profissional: ${staff.full_name}.`);
-  console.log('Abas Hotel e Creche devem listar os cenários de hoje.');
+  if (spaceId) console.log(`Acomodação: ${PREFIX} Baia 1.`);
+  console.log('Painel deve listar estadias com plano, tarefas e (Mel) intercorrência aberta.');
 }
 
 main().catch((e) => {

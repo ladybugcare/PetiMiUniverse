@@ -12,7 +12,9 @@ import {
   isTaskOverdue,
   isValidOutcome,
   normalizeFeeding,
+  resolveMealSlotTimes,
   normalizeMedications,
+  taskDetailsDisplayText,
   type CarePlanBlocks,
   type CareProfileBlocks,
 } from '../boardingCare';
@@ -22,8 +24,8 @@ const profile: CareProfileBlocks = {
     food_source: 'own',
     food_name: 'Ração Premium',
     meals: [
-      { time: '08:00', amount: '1 xícara', notes: null },
-      { time: '18:00', amount: '1 xícara', notes: null },
+      { slot: 'breakfast', amount: '1 xícara', notes: null },
+      { slot: 'dinner', amount: '1 xícara', notes: null },
     ],
     restrictions: null,
   },
@@ -34,9 +36,33 @@ const profile: CareProfileBlocks = {
 
 describe('boardingCare', () => {
   describe('normalização', () => {
-    it('descarta refeições sem horário válido e ordena por horário', () => {
-      const f = normalizeFeeding({ meals: [{ time: '18:00' }, { time: '25:00' }, { time: '07:30:00' }] });
-      expect(f?.meals?.map((m) => m.time)).toEqual(['07:30', '18:00']);
+    it('aceita slots e mapeia HH:mm legado para o período mais próximo', () => {
+      const f = normalizeFeeding({
+        meals: [
+          { slot: 'lunch', amount: '1/2' },
+          { time: '18:00' },
+          { time: '25:00' },
+          { time: '07:30:00' },
+          { slot: 'lunch', amount: null },
+        ],
+      });
+      expect(f?.meals?.map((m) => m.slot)).toEqual(['breakfast', 'lunch', 'dinner']);
+      expect(f?.meals?.find((m) => m.slot === 'lunch')?.amount).toBe('1/2');
+    });
+
+    it('feeds_on_site false zera refeições', () => {
+      const f = normalizeFeeding({
+        feeds_on_site: false,
+        meals: [{ slot: 'lunch', amount: '1' }],
+        food_name: 'Premier',
+      });
+      expect(f).toEqual({
+        food_source: null,
+        food_name: 'Premier',
+        meals: [],
+        restrictions: null,
+        feeds_on_site: false,
+      });
     });
 
     it('medicação: null = não informado, [] = sem medicação', () => {
@@ -151,6 +177,16 @@ describe('boardingCare', () => {
     });
   });
 
+  describe('taskDetailsDisplayText', () => {
+    it('omite objeto vazio e formata campos úteis', () => {
+      expect(taskDetailsDisplayText({})).toBeNull();
+      expect(taskDetailsDisplayText({ amount: '1 scoop', food_name: 'Premier', slot: 'lunch' })).toBe(
+        'Premier · 1 scoop',
+      );
+      expect(taskDetailsDisplayText('  nota  ')).toBe('nota');
+    });
+  });
+
   describe('generatePlanTasks', () => {
     const plan: CarePlanBlocks = { ...profile, recreation: { allowed: true, times: [] } };
 
@@ -162,15 +198,28 @@ describe('boardingCare', () => {
         recreationWindows: [{ start: '16:00', label: 'Tarde' }],
       });
       const byDay = (d: string) => specs.filter((s) => s.task_date === d).map((s) => s.plan_key);
-      expect(byDay('2026-06-01')).toEqual(['recreation:16:00', 'feeding:1:18:00']);
+      expect(byDay('2026-06-01')).toEqual(['recreation:16:00', 'feeding:dinner']);
       expect(byDay('2026-06-02')).toEqual([
-        'feeding:0:08:00',
+        'feeding:breakfast',
         'medication:0:09:00',
-        'walk:10:00',
         'recreation:16:00',
-        'feeding:1:18:00',
+        'feeding:dinner',
       ]);
-      expect(byDay('2026-06-03')).toEqual(['feeding:0:08:00', 'medication:0:09:00', 'walk:10:00']);
+      expect(byDay('2026-06-03')).toEqual(['feeding:breakfast', 'medication:0:09:00']);
+      expect(specs.find((s) => s.plan_key === 'feeding:breakfast')?.title).toBe('Café da manhã');
+      expect(specs.some((s) => s.kind === 'walk')).toBe(false);
+    });
+
+    it('feeds_on_site false não gera refeições', () => {
+      const specs = generatePlanTasks({
+        plan: {
+          ...plan,
+          feeding: { ...plan.feeding!, feeds_on_site: false, meals: [{ slot: 'lunch', amount: '1' }] },
+        },
+        start: '2026-06-02T11:00:00.000Z',
+        end: '2026-06-02T22:00:00.000Z',
+      });
+      expect(specs.some((s) => s.kind === 'feeding')).toBe(false);
     });
 
     it('recreação proibida no manejo não gera tarefa', () => {
@@ -181,6 +230,29 @@ describe('boardingCare', () => {
         recreationWindows: [{ start: '16:00' }],
       });
       expect(specs.some((s) => s.kind === 'recreation')).toBe(false);
+    });
+
+    it('usa o horário do período configurado pela unidade', () => {
+      const specs = generatePlanTasks({
+        plan,
+        start: '2026-06-02T10:00:00.000Z', // 07:00 SP
+        end: '2026-06-02T14:00:00.000Z', // 11:00 SP
+        mealSlotTimes: { breakfast: '06:30', dinner: '10:30' },
+      });
+      const feeding = specs.filter((s) => s.kind === 'feeding').map((s) => s.plan_key);
+      expect(feeding).toEqual(['feeding:dinner']);
+      expect(specs.find((s) => s.plan_key === 'feeding:dinner')?.scheduled_for).toBe(
+        new Date('2026-06-02T10:30:00-03:00').toISOString(),
+      );
+    });
+
+    it('horário de período ausente cai no padrão', () => {
+      expect(resolveMealSlotTimes({ breakfast: '07:15', lunch: 'ruim' })).toEqual({
+        breakfast: '07:15',
+        lunch: '12:00',
+        snack: '16:00',
+        dinner: '19:00',
+      });
     });
 
     it('título da medicação inclui a dose', () => {
@@ -194,7 +266,7 @@ describe('boardingCare', () => {
   });
 
   describe('diffPlanTasks', () => {
-    const spec = (k: string, d = '2026-06-02', title = 'Refeição das 08:00') => ({
+    const spec = (k: string, d = '2026-06-02', title = 'Café da manhã') => ({
       kind: 'feeding' as const,
       title,
       details: {},
@@ -205,13 +277,13 @@ describe('boardingCare', () => {
 
     it('insere novas, atualiza pendentes alteradas e remove pendentes que saíram do plano', () => {
       const existing = [
-        { id: 'a', plan_key: 'feeding:0:08:00', task_date: '2026-06-02', status: 'pending', source: 'plan', title: 'Antigo', scheduled_for: '2026-06-02T11:00:00.000Z', details: {} },
+        { id: 'a', plan_key: 'feeding:breakfast', task_date: '2026-06-02', status: 'pending', source: 'plan', title: 'Antigo', scheduled_for: '2026-06-02T11:00:00.000Z', details: {} },
         { id: 'b', plan_key: 'walk:10:00', task_date: '2026-06-02', status: 'pending', source: 'plan', title: 'Passeio', scheduled_for: null, details: {} },
         { id: 'c', plan_key: 'walk:15:00', task_date: '2026-06-02', status: 'done', source: 'plan', title: 'Passeio', scheduled_for: null, details: {} },
         { id: 'd', plan_key: null, task_date: '2026-06-02', status: 'pending', source: 'manual', title: 'Escovar', scheduled_for: null, details: {} },
       ];
-      const r = diffPlanTasks(existing, [spec('feeding:0:08:00'), spec('feeding:1:18:00')]);
-      expect(r.toInsert.map((s) => s.plan_key)).toEqual(['feeding:1:18:00']);
+      const r = diffPlanTasks(existing, [spec('feeding:breakfast'), spec('feeding:dinner', '2026-06-02', 'Janta')]);
+      expect(r.toInsert.map((s) => s.plan_key)).toEqual(['feeding:dinner']);
       expect(r.toUpdate.map((u) => u.id)).toEqual(['a']);
       expect(r.toDelete).toEqual(['b']);
     });

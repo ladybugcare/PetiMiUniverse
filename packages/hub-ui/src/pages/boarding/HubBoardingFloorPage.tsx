@@ -31,7 +31,7 @@ const HubBoardingFloorPage: React.FC = () => {
   const accessAllowed = hasPermission('boarding.reservations.read');
   const canWrite = hasPermission('boarding.reservations.manage');
   const canDailyReport = hasPermission('boarding.daily_report.write');
-  const canManageFinance = hasPermission('hub.receivables.create');
+  const canViewFinancial = hasPermission('hub.financial.read');
   const canWriteInventory = hasPermission('hub.inventory.write');
 
   const [unitFilter] = useState(() => loadAgendaPersistedFilters().unit ?? 'all');
@@ -132,9 +132,8 @@ const HubBoardingFloorPage: React.FC = () => {
         target={stayTarget}
         canManage={canWrite}
         canDailyReport={canDailyReport}
-        canManageFinance={canManageFinance}
+        canViewFinancial={canViewFinancial}
         canWriteInventory={canWriteInventory}
-        unitId={unitIdParam}
         onClose={() => setStayTarget(null)}
         onUpdated={refresh}
         onRequestCheckIn={(req) => setCheckInRequest(req)}
@@ -153,17 +152,11 @@ const HubBoardingFloorPage: React.FC = () => {
               setCheckInRequest(null);
               refresh();
             }}
-            onReviewCare={(rid) => {
-              setCheckInRequest(null);
-              setStayTarget({ reservationId: rid, initialTab: 'care' });
-            }}
           />
           <BoardingCheckOutPanel
             open={!!checkOutId}
             clinicId={clinicId ?? ''}
             reservationId={checkOutId}
-            unitId={unitIdParam}
-            canManageFinance={canManageFinance}
             onClose={() => setCheckOutId(null)}
             onDone={refresh}
           />

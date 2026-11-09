@@ -72,7 +72,6 @@ const BoardingCarePublicView: React.FC<Props> = ({ data, onSubmit }) => {
       await onSubmit({
         feeding: draft.feeding,
         medications: draft.medications,
-        walks: draft.walks,
         handling: draft.handling,
         contact_name: contactName.trim() || null,
         notes: notes.trim() || null,

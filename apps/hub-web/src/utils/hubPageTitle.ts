@@ -43,6 +43,18 @@ const ROUTES: RouteTitle[] = [
     path: '/hub/configuracoes-sistema/recursos',
     crumbs: [{ label: 'Configurações', to: '/hub/configuracoes-sistema' }, { label: 'Recursos' }],
   },
+  {
+    path: '/hub/configuracoes-sistema/hotel-creche',
+    crumbs: [{ label: 'Configurações', to: '/hub/configuracoes-sistema' }, { label: 'Hotel & Creche' }],
+  },
+  {
+    path: '/hub/configuracoes-sistema/leva-e-traz',
+    crumbs: [{ label: 'Configurações', to: '/hub/configuracoes-sistema' }, { label: 'Leva e Traz' }],
+  },
+  {
+    path: '/hub/configuracoes-sistema/clinicas-parceiras',
+    crumbs: [{ label: 'Configurações', to: '/hub/configuracoes-sistema' }, { label: 'Clínicas parceiras' }],
+  },
   { path: '/hub/configuracoes-sistema', crumbs: [{ label: 'Configurações do Sistema' }] },
   { path: '/hub/assinatura', crumbs: [{ label: 'Plano' }] },
   { path: '/hub/clinica/atendimentos', crumbs: [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Consultório' }] },

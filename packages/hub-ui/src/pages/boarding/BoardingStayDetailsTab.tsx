@@ -36,6 +36,8 @@ type Props = {
   clinicId: string;
   drawer: BoardingDrawerResponse;
   canManage: boolean;
+  /** Diária, totais e cobrança — só recepção/caixa, não recreação. */
+  canViewFinancial?: boolean;
   canWriteInventory?: boolean;
   onChanged: () => void | Promise<void>;
 };
@@ -61,12 +63,19 @@ function joinIso(date: string, time: string): string | null {
   return new Date(`${date}T${time || '12:00'}:00`).toISOString();
 }
 
-const BoardingStayDetailsTab: React.FC<Props> = ({ clinicId, drawer, canManage, canWriteInventory, onChanged }) => {
+const BoardingStayDetailsTab: React.FC<Props> = ({
+  clinicId,
+  drawer,
+  canManage,
+  canViewFinancial = false,
+  canWriteInventory,
+  onChanged,
+}) => {
   const { showError, showSuccess } = useAlert();
   const rsv = drawer.reservation;
   const stage = String(rsv.status);
   const active = stage === 'reserved' || stage === 'checked_in';
-  const editable = canManage && active;
+  const editable = canManage && canViewFinancial && active;
   const isHotel = rsv.mode === 'hotel';
   const settings = drawer.unit_settings;
   const pricing = drawer.pricing;
@@ -150,7 +159,8 @@ const BoardingStayDetailsTab: React.FC<Props> = ({ clinicId, drawer, canManage, 
   const [packageBusy, setPackageBusy] = useState(false);
   const petId = drawer.pet?.id ?? rsv.pet_id ?? null;
   const serviceTypeId = rsv.hub_service_type_id ?? null;
-  const canApplyPackage = canManage && stage === 'checked_out' && Boolean(petId) && Boolean(serviceTypeId);
+  const canApplyPackage =
+    canManage && canViewFinancial && stage === 'checked_out' && Boolean(petId) && Boolean(serviceTypeId);
 
   useEffect(() => {
     if (!canApplyPackage || !petId) {
@@ -404,203 +414,205 @@ const BoardingStayDetailsTab: React.FC<Props> = ({ clinicId, drawer, canManage, 
         ) : null}
       </section>
 
-      <section className="hub-grooming-drawer__section">
-        <div className="hub-grooming-drawer__heading-row">
-          <h4 className="hub-grooming-drawer__heading">Valor</h4>
-          {pricing ? <span className="hub-grooming-drawer__count">Estimativa: {formatBRL(pricing.total)}</span> : null}
-        </div>
-        <ul className="hub-grooming-drawer__lines">
-          <li className="hub-grooming-drawer__line">
-            <span className="hub-grooming-drawer__line-name">
-              {drawer.service_type?.name ?? (isHotel ? 'Hospedagem' : 'Creche')}
-              <span className="hub-grooming-drawer__line-state">
-                {' '}
-                · {qtyLabel} × {formatCents(rsv.daily_rate_cents)}
-              </span>
-            </span>
-            <span className="hub-grooming-drawer__line-price">{formatBRL(pricing?.base)}</span>
-          </li>
-          {extras.map((ex) => (
-            <li key={ex.id} className="hub-grooming-drawer__line">
+      {canViewFinancial ? (
+        <section className="hub-grooming-drawer__section">
+          <div className="hub-grooming-drawer__heading-row">
+            <h4 className="hub-grooming-drawer__heading">Valor</h4>
+            {pricing ? <span className="hub-grooming-drawer__count">Estimativa: {formatBRL(pricing.total)}</span> : null}
+          </div>
+          <ul className="hub-grooming-drawer__lines">
+            <li className="hub-grooming-drawer__line">
               <span className="hub-grooming-drawer__line-name">
-                {ex.description}
+                {drawer.service_type?.name ?? (isHotel ? 'Hospedagem' : 'Creche')}
                 <span className="hub-grooming-drawer__line-state">
                   {' '}
-                  · {Number(ex.quantity)} × {formatCents(ex.unit_amount_cents)}
+                  · {qtyLabel} × {formatCents(rsv.daily_rate_cents)}
                 </span>
               </span>
-              <span className="hub-grooming-drawer__line-price">
-                {formatCents(Math.round(Number(ex.quantity) * ex.unit_amount_cents))}
-              </span>
-              {editable || stage === 'checked_out' ? (
+              <span className="hub-grooming-drawer__line-price">{formatBRL(pricing?.base)}</span>
+            </li>
+            {extras.map((ex) => (
+              <li key={ex.id} className="hub-grooming-drawer__line">
+                <span className="hub-grooming-drawer__line-name">
+                  {ex.description}
+                  <span className="hub-grooming-drawer__line-state">
+                    {' '}
+                    · {Number(ex.quantity)} × {formatCents(ex.unit_amount_cents)}
+                  </span>
+                </span>
+                <span className="hub-grooming-drawer__line-price">
+                  {formatCents(Math.round(Number(ex.quantity) * ex.unit_amount_cents))}
+                </span>
+                {editable || (canViewFinancial && stage === 'checked_out') ? (
+                  <button
+                    type="button"
+                    className="hub-clientes__icon-btn"
+                    disabled={busy || !canManage}
+                    aria-label={`Remover ${ex.description}`}
+                    onClick={() => void removeExtra(ex.id)}
+                  >
+                    <X size={14} aria-hidden />
+                  </button>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+          <p className="hub-grooming-drawer__subtotal">
+            {rsv.rate_source ? `Diária ${RATE_SOURCE_LABELS[rsv.rate_source] ?? ''}. ` : ''}
+            {isHotel && pricing?.cutoff_time
+              ? `Saída depois das ${pricing.cutoff_time.slice(0, 5)} conta mais uma diária.`
+              : ''}
+          </p>
+
+          {editable ? (
+            <div className="hub-boarding-stay__form">
+              <div className="hub-boarding-care__grid">
+                <div className="hub-clientes__field">
+                  <span className="hub-clientes__label">{isHotel ? 'Serviço de hospedagem' : 'Serviço de creche'}</span>
+                  <HubSearchableCombobox
+                    id="stay-rate-service"
+                    className="hub-combobox--clientes"
+                    options={rateServiceOptions}
+                    value={rsv.hub_service_type_id ?? ''}
+                    onChange={(v) =>
+                      void patch({ clinic_id: clinicId, hub_service_type_id: v || null }, 'Serviço atualizado')
+                    }
+                    placeholder="Selecionar serviço"
+                    allowCreate={false}
+                  />
+                </div>
+                <div className="hub-clientes__field">
+                  <label className="hub-clientes__label" htmlFor="stay-rate">
+                    {isHotel ? 'Valor da diária (R$)' : 'Valor do dia (R$)'}
+                  </label>
+                  <input
+                    id="stay-rate"
+                    className="hub-clientes__input"
+                    inputMode="decimal"
+                    value={rateInput}
+                    onChange={(e) => setRateInput(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="hub-clientes__btn-row">
                 <button
                   type="button"
-                  className="hub-clientes__icon-btn"
-                  disabled={busy || !canManage}
-                  aria-label={`Remover ${ex.description}`}
-                  onClick={() => void removeExtra(ex.id)}
-                >
-                  <X size={14} aria-hidden />
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-        <p className="hub-grooming-drawer__subtotal">
-          {rsv.rate_source ? `Diária ${RATE_SOURCE_LABELS[rsv.rate_source] ?? ''}. ` : ''}
-          {isHotel && pricing?.cutoff_time
-            ? `Saída depois das ${pricing.cutoff_time.slice(0, 5)} conta mais uma diária.`
-            : ''}
-        </p>
-
-        {editable ? (
-          <div className="hub-boarding-stay__form">
-            <div className="hub-boarding-care__grid">
-              <div className="hub-clientes__field">
-                <span className="hub-clientes__label">{isHotel ? 'Serviço de hospedagem' : 'Serviço de creche'}</span>
-                <HubSearchableCombobox
-                  id="stay-rate-service"
-                  className="hub-combobox--clientes"
-                  options={rateServiceOptions}
-                  value={rsv.hub_service_type_id ?? ''}
-                  onChange={(v) =>
-                    void patch({ clinic_id: clinicId, hub_service_type_id: v || null }, 'Serviço atualizado')
+                  className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                  disabled={busy || parseBRLToCents(rateInput) === (rsv.daily_rate_cents ?? null)}
+                  onClick={() =>
+                    void patch({ clinic_id: clinicId, daily_rate_cents: parseBRLToCents(rateInput) }, 'Valor atualizado')
                   }
-                  placeholder="Selecionar serviço"
-                  allowCreate={false}
-                />
-              </div>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="stay-rate">
-                  {isHotel ? 'Valor da diária (R$)' : 'Valor do dia (R$)'}
-                </label>
-                <input
-                  id="stay-rate"
-                  className="hub-clientes__input"
-                  inputMode="decimal"
-                  value={rateInput}
-                  onChange={(e) => setRateInput(e.target.value)}
-                />
+                >
+                  Salvar valor
+                </button>
+                <button
+                  type="button"
+                  className="hub-clientes__link-btn"
+                  disabled={busy}
+                  onClick={() => void patch({ clinic_id: clinicId, reprice: true }, 'Valor recalculado pela tabela')}
+                >
+                  Recalcular pela tabela
+                </button>
               </div>
             </div>
-            <div className="hub-clientes__btn-row">
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                disabled={busy || parseBRLToCents(rateInput) === (rsv.daily_rate_cents ?? null)}
-                onClick={() =>
-                  void patch({ clinic_id: clinicId, daily_rate_cents: parseBRLToCents(rateInput) }, 'Valor atualizado')
-                }
-              >
-                Salvar valor
-              </button>
-              <button
-                type="button"
-                className="hub-clientes__link-btn"
-                disabled={busy}
-                onClick={() => void patch({ clinic_id: clinicId, reprice: true }, 'Valor recalculado pela tabela')}
-              >
-                Recalcular pela tabela
-              </button>
-            </div>
-          </div>
-        ) : null}
+          ) : null}
 
-        {canApplyPackage ? (
-          <div className="hub-boarding-stay__form">
-            <span className="hub-clientes__label">Pacote</span>
-            {packageBalances.length ? (
-              <>
-                <HubSearchableCombobox
-                  id="stay-package-balance"
-                  className="hub-combobox--clientes"
-                  options={packageBalances.map((b) => ({ value: b.id, label: packageBalanceLabel(b) }))}
-                  value={packageBalanceId}
-                  onChange={setPackageBalanceId}
-                  placeholder="Saldo de pacote do pet"
-                  allowCreate={false}
-                />
-                <div className="hub-clientes__btn-row">
-                  <button
-                    type="button"
-                    className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-                    disabled={packageBusy || !packageBalanceId}
-                    onClick={() => void applyPackage(packageBalanceId || null)}
-                  >
-                    {packageBusy ? 'Aplicando…' : 'Aplicar pacote'}
-                  </button>
-                  <button
-                    type="button"
-                    className="hub-clientes__link-btn"
-                    disabled={packageBusy}
-                    onClick={() => void applyPackage(null)}
-                  >
-                    Remover pacote
-                  </button>
-                </div>
+          {canApplyPackage ? (
+            <div className="hub-boarding-stay__form">
+              <span className="hub-clientes__label">Pacote</span>
+              {packageBalances.length ? (
+                <>
+                  <HubSearchableCombobox
+                    id="stay-package-balance"
+                    className="hub-combobox--clientes"
+                    options={packageBalances.map((b) => ({ value: b.id, label: packageBalanceLabel(b) }))}
+                    value={packageBalanceId}
+                    onChange={setPackageBalanceId}
+                    placeholder="Saldo de pacote do pet"
+                    allowCreate={false}
+                  />
+                  <div className="hub-clientes__btn-row">
+                    <button
+                      type="button"
+                      className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                      disabled={packageBusy || !packageBalanceId}
+                      onClick={() => void applyPackage(packageBalanceId || null)}
+                    >
+                      {packageBusy ? 'Aplicando…' : 'Aplicar pacote'}
+                    </button>
+                    <button
+                      type="button"
+                      className="hub-clientes__link-btn"
+                      disabled={packageBusy}
+                      onClick={() => void applyPackage(null)}
+                    >
+                      Remover pacote
+                    </button>
+                  </div>
+                  <p className="hub-grooming-drawer__hint">
+                    Abre a comanda da estadia e zera a linha de hospedagem com o saldo do pacote (mesmo fluxo do Caixa).
+                  </p>
+                </>
+              ) : (
                 <p className="hub-grooming-drawer__hint">
-                  Abre a comanda da estadia e zera a linha de hospedagem com o saldo do pacote (mesmo fluxo do Caixa).
+                  Nenhum saldo de pacote elegível para este serviço. Venda o pacote no Caixa ou confira o serviço da
+                  hospedagem.
                 </p>
-              </>
-            ) : (
-              <p className="hub-grooming-drawer__hint">
-                Nenhum saldo de pacote elegível para este serviço. Venda o pacote no Caixa ou confira o serviço da
-                hospedagem.
-              </p>
-            )}
-          </div>
-        ) : canManage && stage !== 'checked_out' && serviceTypeId ? (
-          <p className="hub-grooming-drawer__hint">Aplicar pacote na hospedagem fica disponível após o check-out.</p>
-        ) : null}
-
-        {canManage && (active || stage === 'checked_out') ? (
-          <div className="hub-boarding-stay__form">
-            <span className="hub-clientes__label">Adicional</span>
-            <HubSearchableCombobox
-              id="stay-extra-service"
-              className="hub-combobox--clientes"
-              options={extraServiceOptions}
-              value={extraServiceId}
-              onChange={setExtraServiceId}
-              placeholder="Serviço do catálogo (banho, transporte…)"
-              allowCreate={false}
-            />
-            <div className="hub-boarding-care__add-row">
-              <input
-                className="hub-clientes__input hub-boarding-care__inline-input"
-                value={extraDesc}
-                placeholder={extraServiceId ? 'Descrição (opcional)' : 'Ou descreva o adicional'}
-                aria-label="Descrição do adicional"
-                onChange={(e) => setExtraDesc(e.target.value)}
-              />
-              <input
-                className="hub-clientes__input hub-boarding-belongings__qty"
-                inputMode="decimal"
-                value={extraValue}
-                placeholder={extraServiceId ? 'Valor da tabela' : 'Valor'}
-                aria-label="Valor unitário"
-                onChange={(e) => setExtraValue(e.target.value)}
-              />
-              <input
-                className="hub-clientes__input hub-boarding-belongings__qty"
-                inputMode="decimal"
-                value={extraQty}
-                aria-label="Quantidade"
-                onChange={(e) => setExtraQty(e.target.value)}
-              />
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                disabled={busy || (!extraServiceId && (!extraDesc.trim() || parseBRLToCents(extraValue) == null))}
-                onClick={() => void addExtra()}
-              >
-                <Plus size={14} aria-hidden />
-                Adicionar
-              </button>
+              )}
             </div>
-          </div>
-        ) : null}
-      </section>
+          ) : canManage && canViewFinancial && stage !== 'checked_out' && serviceTypeId ? (
+            <p className="hub-grooming-drawer__hint">Aplicar pacote na hospedagem fica disponível após o check-out.</p>
+          ) : null}
+
+          {canManage && canViewFinancial && (active || stage === 'checked_out') ? (
+            <div className="hub-boarding-stay__form">
+              <span className="hub-clientes__label">Adicional</span>
+              <HubSearchableCombobox
+                id="stay-extra-service"
+                className="hub-combobox--clientes"
+                options={extraServiceOptions}
+                value={extraServiceId}
+                onChange={setExtraServiceId}
+                placeholder="Serviço do catálogo (banho, transporte…)"
+                allowCreate={false}
+              />
+              <div className="hub-boarding-care__add-row">
+                <input
+                  className="hub-clientes__input hub-boarding-care__inline-input"
+                  value={extraDesc}
+                  placeholder={extraServiceId ? 'Descrição (opcional)' : 'Ou descreva o adicional'}
+                  aria-label="Descrição do adicional"
+                  onChange={(e) => setExtraDesc(e.target.value)}
+                />
+                <input
+                  className="hub-clientes__input hub-boarding-belongings__qty"
+                  inputMode="decimal"
+                  value={extraValue}
+                  placeholder={extraServiceId ? 'Valor da tabela' : 'Valor'}
+                  aria-label="Valor unitário"
+                  onChange={(e) => setExtraValue(e.target.value)}
+                />
+                <input
+                  className="hub-clientes__input hub-boarding-belongings__qty"
+                  inputMode="decimal"
+                  value={extraQty}
+                  aria-label="Quantidade"
+                  onChange={(e) => setExtraQty(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                  disabled={busy || (!extraServiceId && (!extraDesc.trim() || parseBRLToCents(extraValue) == null))}
+                  onClick={() => void addExtra()}
+                >
+                  <Plus size={14} aria-hidden />
+                  Adicionar
+                </button>
+              </div>
+            </div>
+          ) : null}
+        </section>
+      ) : null}
 
       <BoardingBelongingsSection
         clinicId={clinicId}

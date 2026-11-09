@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, AlertCircle, CalendarDays, Calendar, RefreshCw, ChevronDown, ChevronUp, User, Dog, Loader2, Stethoscope, Siren, FolderPlus, Folder, Info, CheckCircle2, CalendarPlus, Clock, Zap } from 'lucide-react';
+import { Plus, AlertCircle, CalendarDays, Calendar, RefreshCw, ChevronDown, User, Dog, Loader2, Stethoscope, Siren, FolderPlus, Folder, Info, CheckCircle2, CalendarPlus, Clock, Zap } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
 import { HubSidePanel } from '../../components/HubSidePanel';
@@ -47,6 +47,8 @@ import {
   buildServiceDescriptionBullets,
   computePetVisitTimings,
   createEmptyExtraBlock,
+  defaultBlockPickup,
+  defaultBlockRecurrence,
   hmToMinutes,
   maxHm,
   minHm,
@@ -102,7 +104,14 @@ import {
   pickupModeLegCount,
   resolvePickupLegAmounts,
 } from '../../utils/hubPickupPricing';
-import { isOperationalClinicalGroup, normalizeServiceGroupSlug, serviceGroupLabel } from '../../utils/serviceTypeSlug';
+import {
+  isBoardingServiceGroup,
+  isCrecheServiceGroup,
+  isHotelServiceGroup,
+  isOperationalClinicalGroup,
+  normalizeServiceGroupSlug,
+  serviceGroupLabel,
+} from '../../utils/serviceTypeSlug';
 import { STATUS_META, type AgendaAppointment, type AgendaStatus } from './agendaModel';
 import { ReceptionQuickRegisterPanel, type QuickRegisterSaveResult } from './ReceptionQuickRegisterPanel';
 import { resolveWalkInAppointmentKind } from './walkInUtils';
@@ -116,11 +125,34 @@ import {
   isScheduleConflictMessage,
   type LocalScheduleWindow,
 } from './scheduleConflict';
+import {
+  blockAnchorGroup,
+  blockPickupCoveredByVisitHint,
+  blockPickupRecurrenceHint,
+  boardingStayHintMessage,
+  canAddServiceToBlock,
+  recurrenceRhythmSignature,
+  shouldHideExtraPickup,
+  shouldHideMainBlockPickup,
+  shouldHideVisitPickup,
+  validateBoardingBlockIsolation,
+  validateHomogeneousServiceGroup,
+  validateHotelNoRecurrence,
+  validateHotelStayRange,
+  validatePickupMutex,
+  validateVisitPickupAgainstBoardingStay,
+  validateVisitPickupSameRhythm,
+  visitPickupHintWithExtras,
+  visitPickupRecurrenceSyncHint,
+} from './appointmentBlockRules';
+import type { BlockRecurrenceState } from './appointmentSchedulingUtils';
 import './new-appointment-modal.css';
 import { AppointmentResourceField } from './AppointmentResourceField';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 
 export type CreateHubAppointmentResult = Awaited<ReturnType<typeof hubAgendaApi.create>>;
+
+type AppointmentPickupScope = 'none' | 'block' | 'visit';
 
 export type NewAppointmentInitial = {
   date?: string;
@@ -317,9 +349,24 @@ function mapInitialExtraBlocks(
       }),
     starts_hm: eb.starts_at ? tsToHm(eb.starts_at) : fallbackEndsHm,
     ends_hm: eb.ends_at ? tsToHm(eb.ends_at) : addMinutes(fallbackEndsHm, 60),
+    starts_date_ymd: eb.starts_at ? eb.starts_at.slice(0, 10) : null,
     hub_staff_member_id: eb.hub_staff_member_id ?? '',
     resource_label: eb.resource_label ?? '',
     hub_resource_id: eb.hub_resource_id ?? null,
+    recurrence: defaultBlockRecurrence(),
+    pickup: defaultBlockPickup(
+      eb.starts_at ? tsToHm(eb.starts_at) : fallbackEndsHm,
+      eb.ends_at ? tsToHm(eb.ends_at) : addMinutes(fallbackEndsHm, 60),
+    ),
+    checkout_date_ymd:
+      eb.starts_at && eb.ends_at && eb.ends_at.slice(0, 10) !== eb.starts_at.slice(0, 10)
+        ? eb.ends_at.slice(0, 10)
+        : null,
+    checkout_hm:
+      eb.starts_at && eb.ends_at && eb.ends_at.slice(0, 10) !== eb.starts_at.slice(0, 10)
+        ? tsToHm(eb.ends_at)
+        : null,
+    daycare_period: null,
   }));
 }
 
@@ -394,6 +441,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [addonsByParent, setAddonsByParent] = useState<Map<string, HubServiceType[]>>(new Map());
   const [addonsLoading, setAddonsLoading] = useState(false);
   const [serviceSearchId, setServiceSearchId] = useState('');
+  /** Hotel: data/hora de saída (entrada = dateYmd + startsHm). */
+  const [hotelCheckoutDateYmd, setHotelCheckoutDateYmd] = useState('');
+  const [hotelCheckoutHm, setHotelCheckoutHm] = useState('12:00');
+  /** Creche: período do turno. */
+  const [daycarePeriod, setDaycarePeriod] = useState<'full_day' | 'half_day'>('full_day');
 
   // ── Pet / Guardian ────────────────────────────────────────────────────────
   const [guardianId, setGuardianId] = useState('');
@@ -430,15 +482,16 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [mainBlockNotes, setMainBlockNotes] = useState('');
   const [mainBlockNotesUserEdited, setMainBlockNotesUserEdited] = useState(false);
   const [mainBlockExpanded, setMainBlockExpanded] = useState(true);
-  const [mainBlockDetailsOpen, setMainBlockDetailsOpen] = useState(false);
   const [financialNotes, setFinancialNotes] = useState('');
 
   // ── Recurrence ────────────────────────────────────────────────────────────
   const [withRecurrence, setWithRecurrence] = useState(false);
   const [recurrence, setRecurrence] = useState<RecurrenceForm>({ ...DEFAULT_RECURRENCE });
 
-  // ── L&T ───────────────────────────────────────────────────────────────────
-  const [withPickup, setWithPickup] = useState(false);
+  // ── L&T: none | block (só o principal) | visit (todos os blocos) ───────────
+  const [pickupScope, setPickupScope] = useState<AppointmentPickupScope>('none');
+  const withPickup = pickupScope !== 'none';
+  const visitPickupActive = pickupScope === 'visit';
   const [pickupMode, setPickupMode] = useState<'round_trip' | 'pickup_only' | 'delivery_only'>('round_trip');
   const [pickupBefore, setPickupBefore] = useState<PickupSubBlock>({
     starts_hm: '08:00',
@@ -646,13 +699,25 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       setStatus('checked_in');
       setWalkInEmergency(initial?.walk_in_emergency === true);
       setWithRecurrence(false);
-      setWithPickup(false);
+      setPickupScope('none');
       setExtraBlocks([]);
     }
     if (initial) {
       if (initial.date) setDateYmd(initial.date);
       if (initial.starts_at) setStartsHm(tsToHm(initial.starts_at));
-      if (initial.ends_at) setEndsHm(tsToHm(initial.ends_at));
+      if (initial.ends_at) {
+        setEndsHm(tsToHm(initial.ends_at));
+        // Hotel multi-dia: saída pode ser em outro dia que a entrada.
+        const outYmd = initial.ends_at.slice(0, 10);
+        const inYmd = initial.starts_at?.slice(0, 10) || initial.date || '';
+        if (outYmd && inYmd && outYmd !== inYmd) {
+          setHotelCheckoutDateYmd(outYmd);
+          setHotelCheckoutHm(tsToHm(initial.ends_at));
+        } else if (outYmd) {
+          setHotelCheckoutDateYmd(outYmd);
+          setHotelCheckoutHm(tsToHm(initial.ends_at));
+        }
+      }
       if (initial.hub_staff_member_id) setStaffId(initial.hub_staff_member_id);
       else if (isEditMode) setStaffId('');
       if (initial.resource_label) setResourceLabel(initial.resource_label);
@@ -955,6 +1020,78 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setIntakeNewCaseTitle((t) => (t.trim() ? t : suggested));
   }, [open, isClinicalRoutine, intakeCaseMode, dateYmd]);
 
+  const mainBlockServiceIds = useMemo(
+    () => services.map((s) => s.hub_service_type_id),
+    [services],
+  );
+  const mainBlockGroup = useMemo(
+    () => blockAnchorGroup(mainBlockServiceIds, serviceTypes),
+    [mainBlockServiceIds, serviceTypes],
+  );
+  const mainIsBoardingGroup = isBoardingServiceGroup(mainBlockGroup);
+  const mainIsHotelGroup = isHotelServiceGroup(mainBlockGroup);
+  /** Blocos de 1ª classe: extras não compartilham série do pai. */
+  const useIndependentExtraBlocks = true;
+
+  const allExtraBlocksForPickup = useMemo(() => {
+    if (isMultiPetSelection) return petVisitConfigs.flatMap((c) => c.extraBlocks);
+    return extraBlocks;
+  }, [isMultiPetSelection, petVisitConfigs, extraBlocks]);
+
+  const anyExtraRecurrence = useMemo(
+    () => allExtraBlocksForPickup.some((b) => b.recurrence?.enabled),
+    [allExtraBlocksForPickup],
+  );
+  const anyExtraPickup = useMemo(
+    () => allExtraBlocksForPickup.some((b) => b.pickup?.enabled),
+    [allExtraBlocksForPickup],
+  );
+  const totalBlockCount = 1 + allExtraBlocksForPickup.length;
+  const visitRhythmList = useMemo(() => {
+    const mainRhythm = recurrenceRhythmSignature({
+      enabled: withRecurrence,
+      kind: recurrence.kind,
+      interval_value: recurrence.interval_value,
+      days_of_week: recurrence.days_of_week,
+      end_kind: recurrence.end_kind,
+      occurrences: recurrence.occurrences,
+      until_date: recurrence.until_date,
+    });
+    const extraRhythms = allExtraBlocksForPickup
+      .filter((b) => b.services.length > 0)
+      .map((b) => recurrenceRhythmSignature(b.recurrence));
+    return [mainRhythm, ...extraRhythms];
+  }, [
+    withRecurrence,
+    recurrence.kind,
+    recurrence.interval_value,
+    recurrence.days_of_week,
+    recurrence.end_kind,
+    recurrence.occurrences,
+    recurrence.until_date,
+    allExtraBlocksForPickup,
+  ]);
+  const hideVisitPickupUi = shouldHideVisitPickup({
+    blockCount: totalBlockCount,
+    anyBlockPickup: anyExtraPickup || pickupScope === 'block',
+    rhythms: visitRhythmList,
+  });
+  const hideMainBlockPickupUi = shouldHideMainBlockPickup({ visitPickup: visitPickupActive });
+
+  const clearExtraPickups = useCallback(() => {
+    setExtraBlocks((prev) =>
+      prev.map((b) => (b.pickup?.enabled ? { ...b, pickup: { ...b.pickup, enabled: false } } : b)),
+    );
+    setPetVisitConfigs((prev) =>
+      prev.map((cfg) => ({
+        ...cfg,
+        extraBlocks: cfg.extraBlocks.map((b) =>
+          b.pickup?.enabled ? { ...b, pickup: { ...b.pickup, enabled: false } } : b,
+        ),
+      })),
+    );
+  }, []);
+
   // ── Service groups for filter ─────────────────────────────────────────────
   const groups = useMemo(() => {
     const seen = new Set<string>();
@@ -971,13 +1108,16 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   const filteredServiceTypes = useMemo(
     () =>
-      serviceTypes.filter(
-        (st) =>
-          !st.is_addon &&
-          st.allow_scheduling !== false &&
-          (groupFilter === 'all' || normalizeServiceGroupSlug(st.service_group) === groupFilter),
-      ),
-    [serviceTypes, groupFilter],
+      serviceTypes.filter((st) => {
+        if (st.is_addon) return false;
+        if (st.allow_scheduling === false) return false;
+        if (mainBlockGroup) {
+          return normalizeServiceGroupSlug(st.service_group) === mainBlockGroup;
+        }
+        if (groupFilter === 'all') return true;
+        return normalizeServiceGroupSlug(st.service_group) === groupFilter;
+      }),
+    [serviceTypes, groupFilter, mainBlockGroup],
   );
 
   const serviceComboOptions = useMemo<HubComboboxOption[]>(
@@ -1104,8 +1244,93 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   useEffect(() => {
     if (!isPrimaryLevaTraz) return;
-    if (withPickup) setWithPickup(false);
-  }, [isPrimaryLevaTraz, withPickup]);
+    if (pickupScope !== 'none') setPickupScope('none');
+  }, [isPrimaryLevaTraz, pickupScope]);
+
+  // L&T da visita só faz sentido com 2+ blocos — ao remover extras, vira L&T do bloco.
+  useEffect(() => {
+    if (pickupScope === 'visit' && totalBlockCount < 2) {
+      setPickupScope('block');
+    }
+  }, [pickupScope, totalBlockCount]);
+
+  // L&T da visita × L&T de bloco: exclusão mútua.
+  useEffect(() => {
+    if (visitPickupActive && anyExtraPickup) clearExtraPickups();
+  }, [visitPickupActive, anyExtraPickup, clearExtraPickups]);
+
+  useEffect(() => {
+    if (anyExtraPickup && visitPickupActive) setPickupScope('none');
+  }, [anyExtraPickup, visitPickupActive]);
+
+  const mainRecurrenceAsBlockState = useCallback((): BlockRecurrenceState => {
+    return {
+      enabled: withRecurrence,
+      kind: recurrence.kind,
+      interval_value: recurrence.interval_value,
+      days_of_week: [...recurrence.days_of_week],
+      day_of_month: null,
+      end_mode: recurrence.end_kind === 'until' ? 'until_date' : 'occurrences',
+      occurrences: recurrence.occurrences,
+      until_date: recurrence.until_date,
+      billing_mode: recurrence.billing_mode,
+    };
+  }, [withRecurrence, recurrence]);
+
+  /** Com L&T da visita, espelha a repetição do principal em todos os extras. */
+  const syncExtraRecurrenceFromMain = useCallback(() => {
+    if (!visitPickupActive) return;
+    const nextRec = mainRecurrenceAsBlockState();
+    const apply = (blocks: ExtraBlock[]) =>
+      blocks.map((b) => ({
+        ...b,
+        recurrence: { ...nextRec, days_of_week: [...nextRec.days_of_week] },
+        pickup: b.pickup ? { ...b.pickup, enabled: false } : b.pickup,
+      }));
+    setExtraBlocks((prev) => apply(prev));
+    setPetVisitConfigs((prev) => prev.map((cfg) => ({ ...cfg, extraBlocks: apply(cfg.extraBlocks) })));
+  }, [visitPickupActive, mainRecurrenceAsBlockState]);
+
+  useEffect(() => {
+    if (!visitPickupActive) return;
+    syncExtraRecurrenceFromMain();
+  }, [visitPickupActive, withRecurrence, recurrence.kind, recurrence.interval_value, recurrence.days_of_week.join(','), recurrence.end_kind, recurrence.occurrences, recurrence.until_date, recurrence.billing_mode, syncExtraRecurrenceFromMain]);
+
+  const applyMainBlockPickupDefaults = useCallback(() => {
+    const buscaEndMin = hmToMinutes(startsHm);
+    const buscaStartMin = Math.max(0, buscaEndMin - PICKUP_ROUTE_LEG_DURATION_MIN);
+    const voltaStartMin = hmToMinutes(endsHm);
+    const voltaEndMin = Math.min(24 * 60 - 1, voltaStartMin + PICKUP_ROUTE_LEG_DURATION_MIN);
+    setPickupBefore((pb) => ({
+      ...pb,
+      starts_hm: minutesToHm(buscaStartMin),
+      ends_hm: minutesToHm(buscaEndMin),
+    }));
+    setPickupAfter((pa) => ({
+      ...pa,
+      starts_hm: minutesToHm(voltaStartMin),
+      ends_hm: minutesToHm(voltaEndMin),
+    }));
+  }, [startsHm, endsHm]);
+
+  const applyVisitPickupDefaults = useCallback(() => {
+    const firstStart = pickupDayFirstStartHm;
+    const lastEnd = pickupDayLastEndHm;
+    const buscaEndMin = hmToMinutes(firstStart);
+    const buscaStartMin = Math.max(0, buscaEndMin - PICKUP_ROUTE_LEG_DURATION_MIN);
+    const voltaStartMin = hmToMinutes(lastEnd);
+    const voltaEndMin = Math.min(24 * 60 - 1, voltaStartMin + PICKUP_ROUTE_LEG_DURATION_MIN);
+    setPickupBefore((pb) => ({
+      ...pb,
+      starts_hm: minutesToHm(buscaStartMin),
+      ends_hm: minutesToHm(buscaEndMin),
+    }));
+    setPickupAfter((pa) => ({
+      ...pa,
+      starts_hm: minutesToHm(voltaStartMin),
+      ends_hm: minutesToHm(voltaEndMin),
+    }));
+  }, [pickupDayFirstStartHm, pickupDayLastEndHm]);
 
   useEffect(() => {
     if (!isPrimaryLevaTraz || pickupMode !== 'round_trip') return;
@@ -1508,7 +1733,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       if (!id) return;
       const st = serviceTypes.find((s) => s.id === id);
       if (!st) return;
-      if (services.some((s) => s.hub_service_type_id === id)) {
+      const gate = canAddServiceToBlock({
+        existingServiceTypeIds: services.map((s) => s.hub_service_type_id),
+        newServiceTypeId: id,
+        serviceTypes,
+      });
+      if (!gate.ok) {
+        setSaveError(gate.error);
         setServiceSearchId('');
         return;
       }
@@ -1524,6 +1755,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           pricing_variant,
         },
       ]);
+      setSaveError(null);
       setServiceSearchId('');
     },
     [serviceTypes, services],
@@ -1677,20 +1909,42 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     );
 
   // ── Extra blocks ──────────────────────────────────────────────────────────
-  const addExtraBlock = () =>
+  const addExtraBlock = () => {
+    setSaveError(null);
+    const defaultBlockDate =
+      mainIsHotelGroup && hotelCheckoutDateYmd ? hotelCheckoutDateYmd : dateYmd;
+    const defaultStartsHm = mainIsHotelGroup ? '09:00' : endsHm;
     setExtraBlocks((prev) => {
       const collapsed = prev.map((b) => ({ ...b, expanded: false }));
       return [
         ...collapsed,
         createEmptyExtraBlock({
-          groupFilter: groupFilter,
-          startsHm: endsHm,
+          groupFilter: groupFilter === 'all' ? 'all' : groupFilter,
+          startsHm: defaultStartsHm,
           staffId: staffId,
           resourceLabel: resourceLabel,
+          startsDateYmd: defaultBlockDate || null,
         }),
       ];
     });
+  };
   const removeExtraBlock = (key: string) => setExtraBlocks((prev) => prev.filter((b) => b.key !== key));
+
+  useEffect(() => {
+    if (mainIsHotelGroup && withRecurrence) setWithRecurrence(false);
+  }, [mainIsHotelGroup, withRecurrence]);
+
+  useEffect(() => {
+    if (!mainIsHotelGroup || !dateYmd) return;
+    if (!hotelCheckoutDateYmd || hotelCheckoutDateYmd < dateYmd) {
+      setHotelCheckoutDateYmd(dateYmd);
+    }
+  }, [mainIsHotelGroup, dateYmd, hotelCheckoutDateYmd]);
+
+  const legacyMixedGroupsWarning = useMemo(() => {
+    if (!isEditMode) return null;
+    return validateHomogeneousServiceGroup(mainBlockServiceIds, serviceTypes);
+  }, [isEditMode, mainBlockServiceIds, serviceTypes]);
 
   const askOverlapConfirm = (detail: string | undefined, reason: string | undefined, onConfirm: () => void) => {
     setSaving(false);
@@ -1786,6 +2040,77 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         setSaveError('Cada bloco adicional precisa ter pelo menos um serviço.');
         return;
       }
+      const mainHomogeneous = validateHomogeneousServiceGroup(mainBlockServiceIds, serviceTypes);
+      if (mainHomogeneous) {
+        setSaveError(mainHomogeneous);
+        return;
+      }
+      for (const eb of extraBlocks) {
+        const err = validateHomogeneousServiceGroup(
+          eb.services.map((s) => s.hub_service_type_id),
+          serviceTypes,
+        );
+        if (err) {
+          setSaveError(err);
+          return;
+        }
+      }
+      const boardingIso = validateBoardingBlockIsolation({
+        mainServiceTypeIds: mainBlockServiceIds,
+        extraBlocksServiceTypeIds: extraBlocks.map((b) => b.services.map((s) => s.hub_service_type_id)),
+        serviceTypes,
+        allowBoardingWithSiblingBlocks: useIndependentExtraBlocks,
+      });
+      if (boardingIso) {
+        setSaveError(boardingIso);
+        return;
+      }
+      const hotelRec = validateHotelNoRecurrence({
+        mainServiceTypeIds: mainBlockServiceIds,
+        serviceTypes,
+        withRecurrence,
+      });
+      if (hotelRec) {
+        setSaveError(hotelRec);
+        return;
+      }
+      for (const eb of extraBlocks) {
+        const ebGroup = blockAnchorGroup(
+          eb.services.map((s) => s.hub_service_type_id),
+          serviceTypes,
+        );
+        if (eb.recurrence?.enabled && isHotelServiceGroup(ebGroup)) {
+          setSaveError('Bloco de hotel não usa recorrência. Informe entrada e saída.');
+          return;
+        }
+      }
+      if (mainIsHotelGroup && hotelCheckoutDateYmd && hotelCheckoutHm) {
+        const stayErr = validateHotelStayRange({
+          checkInIso: toIsoTs(dateYmd, startsHm),
+          checkOutIso: toIsoTs(hotelCheckoutDateYmd, hotelCheckoutHm),
+        });
+        if (stayErr) {
+          setSaveError(stayErr);
+          return;
+        }
+      }
+      for (const eb of extraBlocks) {
+        if (!eb.checkout_date_ymd || !eb.checkout_hm) continue;
+        const ebGroup = blockAnchorGroup(
+          eb.services.map((s) => s.hub_service_type_id),
+          serviceTypes,
+        );
+        if (!isHotelServiceGroup(ebGroup)) continue;
+        const checkInYmd = eb.starts_date_ymd || dateYmd;
+        const stayErr = validateHotelStayRange({
+          checkInIso: toIsoTs(checkInYmd, eb.starts_hm),
+          checkOutIso: toIsoTs(eb.checkout_date_ymd, eb.checkout_hm),
+        });
+        if (stayErr) {
+          setSaveError(stayErr);
+          return;
+        }
+      }
     }
     if (isClinicalRoutine) {
       if (mainBlockNotes.length > 1000) {
@@ -1877,6 +2202,41 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         return;
       }
     }
+    if (!isClinicalRoutine && !isWalkIn && !isPrimaryLevaTraz) {
+      const pickupMutex = validatePickupMutex({
+        visitPickup: visitPickupActive,
+        extrasWithPickup: anyExtraPickup,
+      });
+      if (pickupMutex) {
+        setSaveError(pickupMutex);
+        return;
+      }
+      if (visitPickupActive) {
+        const rhythmErr = validateVisitPickupSameRhythm({
+          visitPickup: true,
+          rhythms: visitRhythmList,
+        });
+        if (rhythmErr) {
+          setSaveError(rhythmErr);
+          return;
+        }
+        const boardingVisitErr = validateVisitPickupAgainstBoardingStay({
+          visitPickup: true,
+          parentIsBoarding: mainIsBoardingGroup,
+          rhythms: visitRhythmList,
+        });
+        if (boardingVisitErr) {
+          setSaveError(boardingVisitErr);
+          return;
+        }
+      }
+      for (const eb of allExtraBlocksForPickup) {
+        if (eb.pickup?.enabled && !eb.pickup.lt_service_type_id.trim()) {
+          setSaveError('Leva e Traz no bloco: selecione o tipo de serviço de transporte.');
+          return;
+        }
+      }
+    }
 
     if (!isWalkIn && !confirmedOverlapRef.current && existingAppointments.length > 0) {
       const windows: LocalScheduleWindow[] = [];
@@ -1889,7 +2249,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           for (const block of cfg.extraBlocks) {
             windows.push(
               windowFromHm(
-                dateYmd,
+                block.starts_date_ymd || dateYmd,
                 block.starts_hm,
                 block.ends_hm,
                 block.hub_staff_member_id || sid,
@@ -1904,7 +2264,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         for (const block of extraBlocks) {
           windows.push(
             windowFromHm(
-              dateYmd,
+              block.starts_date_ymd || dateYmd,
               block.starts_hm,
               block.ends_hm,
               block.hub_staff_member_id || staffId,
@@ -1974,6 +2334,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     try {
       let startsAt = toIsoTs(dateYmd, startsHm);
       let endsAt = toEndIsoTs(dateYmd, startsHm, isMultiPetSelection ? multiPetVisitEndHm : endsHm);
+      if (mainIsHotelGroup && hotelCheckoutDateYmd && hotelCheckoutHm) {
+        endsAt = toIsoTs(hotelCheckoutDateYmd, hotelCheckoutHm);
+      }
 
       if (isWalkIn) {
         const now = new Date();
@@ -2021,6 +2384,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       const resolvedExtraBlocksPayload = isWalkIn
         ? undefined
         : buildExtraBlocksApiPayload(extraBlocks, dateYmd, lastServiceEndAt);
+      if (visitPickupActive && resolvedExtraBlocksPayload && resolvedExtraBlocksPayload.length > 0) {
+        lastServiceEndAt =
+          resolvedExtraBlocksPayload[resolvedExtraBlocksPayload.length - 1]!.ends_at;
+      } else {
+        lastServiceEndAt = endsAt;
+      }
+      const pickupReturnAnchorAt = visitPickupActive ? lastServiceEndAt : endsAt;
 
       const primaryCfg = isMultiPetSelection ? petVisitConfigs[0] : null;
       const primaryServices = primaryCfg?.services ?? services;
@@ -2043,15 +2413,23 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         financial_notes: financialNotes.trim() || null,
         pricing_porte_tier: (primaryCfg?.pricingApptPorteTier ?? pricingApptPorteTier).trim() || null,
         pricing_coat_type: (primaryCfg?.pricingApptCoatType ?? pricingApptCoatType).trim() || null,
-        services: [...primaryServices, ...(isWalkIn ? [] : primaryAddons)].map((s) => ({
-          hub_service_type_id: s.hub_service_type_id,
-          duration_minutes: s.duration_minutes,
-          pricing_variant: s.pricing_variant ?? undefined,
-          sale_amount_override: s.sale_amount_override ?? undefined,
-          persist_special_price: s.persist_special_price === true ? true : undefined,
-          persist_special_scope: s.persist_special_price ? s.persist_special_scope ?? 'pet' : undefined,
-        })),
+        services: [...primaryServices, ...(isWalkIn ? [] : primaryAddons)].map((s) => {
+          let pricing_variant = s.pricing_variant ?? undefined;
+          if (mainIsBoardingGroup && daycarePeriod && isCrecheServiceGroup(mainBlockGroup)) {
+            pricing_variant = { ...(pricing_variant ?? {}), period: daycarePeriod };
+          }
+          return {
+            hub_service_type_id: s.hub_service_type_id,
+            duration_minutes: s.duration_minutes,
+            pricing_variant,
+            sale_amount_override: s.sale_amount_override ?? undefined,
+            persist_special_price: s.persist_special_price === true ? true : undefined,
+            persist_special_scope: s.persist_special_price ? s.persist_special_scope ?? 'pet' : undefined,
+          };
+        }),
         allow_schedule_overlap: confirmedOverlapRef.current || undefined,
+        independent_extra_blocks: useIndependentExtraBlocks,
+        create_boarding_reservation: mainIsBoardingGroup,
       };
 
       if (isWalkIn) {
@@ -2060,6 +2438,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           services.map((s) => s.hub_service_type_id),
           walkInEmergency,
         );
+      } else if (mainIsHotelGroup) {
+        payload.appointment_kind = 'hotel_stay';
+      } else if (isCrecheServiceGroup(mainBlockGroup)) {
+        payload.appointment_kind = 'daycare_block';
       } else if (isPrimaryLevaTraz) {
         // Parada operacional — o backend também infere, mas deixamos explícito no payload.
         payload.appointment_kind = 'pickup_route';
@@ -2112,7 +2494,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         if (pickupMode !== 'pickup_only') {
           // Usar toIsoTsForPickupReturn para garantir mesmo dia.
           // Se o horário escolhido for anterior ao fim do serviço, o início real será o fim do serviço.
-          const pickupAfterStart = toIsoTsForPickupReturn(dateYmd, pickupAfter.starts_hm, lastServiceEndAt);
+          const pickupAfterStart = toIsoTsForPickupReturn(
+            dateYmd,
+            pickupAfter.starts_hm,
+            pickupReturnAnchorAt,
+          );
           // Preservar a duração da perna (diferença ends_hm - starts_hm) relativa ao início real.
           const returnLegDurationMin =
             hmToMinutes(pickupAfter.ends_hm) - hmToMinutes(pickupAfter.starts_hm);
@@ -2247,12 +2633,11 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setMainBlockNotes('');
     setMainBlockNotesUserEdited(false);
     setMainBlockExpanded(true);
-    setMainBlockDetailsOpen(false);
     setFinancialNotes('');
     setTitleOverridden(false);
     setWithRecurrence(false);
     setRecurrence({ ...DEFAULT_RECURRENCE });
-    setWithPickup(false);
+    setPickupScope('none');
     setPickupLtServiceTypeId('');
     setPickupKmTierIndex(0);
     ltReturnDriverUnlinkedRef.current = false;
@@ -2581,7 +2966,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       {!isEditMode && withPickup && !isPrimaryLevaTraz && (
         <div className="nam-aside__section">
           <p className="nam-aside__section-title">Leva e Traz</p>
-            {pickupPricingPreview ? (
+            {pickupPricingPreview && typeof pickupPricingPreview.bandLabel === 'string' ? (
             <p className="nam-aside__muted">{pickupPricingPreview.bandLabel}</p>
           ) : null}
           <p className="nam-aside__item">Busca {pickupBefore.starts_hm} – {pickupBefore.ends_hm}</p>
@@ -2628,11 +3013,16 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   // ── Footer ────────────────────────────────────────────────────────────────
   const footer = (
     <>
-      {saveError && (
+      {typeof legacyMixedGroupsWarning === 'string' && legacyMixedGroupsWarning ? (
+        <span className="nam-footer-error" role="status">
+          <AlertCircle size={14} /> {legacyMixedGroupsWarning}
+        </span>
+      ) : null}
+      {typeof saveError === 'string' && saveError ? (
         <span className="nam-footer-error">
           <AlertCircle size={14} /> {saveError}
         </span>
-      )}
+      ) : null}
       <HubCancelButton onClick={handleClose} disabled={saving} />
       <button
         className="hub-btn hub-btn--primary"
@@ -2701,7 +3091,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         subtitle="Consulta planejada e não urgente."
         footer={
           <>
-            {saveError ? (
+            {typeof saveError === 'string' && saveError ? (
               <span className="nam-footer-error">
                 <AlertCircle size={14} /> {saveError}
               </span>
@@ -3015,7 +3405,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       size="xl"
       title={isEditMode ? 'Editar agendamento' : isWalkIn ? 'Encaixe / walk-in' : 'Novo agendamento'}
       titleIcon={isWalkIn ? <Zap size={22} strokeWidth={2} aria-hidden /> : <Calendar size={22} strokeWidth={2} aria-hidden />}
-      subtitle={isWalkIn ? 'Check-in imediato com horário atual.' : title || autoTitle || undefined}
+      subtitle={
+        isWalkIn
+          ? 'Check-in imediato com horário atual.'
+          : (typeof title === 'string' && title) ||
+            (typeof autoTitle === 'string' && autoTitle) ||
+            undefined
+      }
       footer={footer}
       aside={asideContent}
     >
@@ -3039,7 +3435,12 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             ) : (
             <div className="nam-row nam-row--cols2">
               <div className="nam-field">
-                <HubDateField id="nam-date" label="Data" valueIso={dateYmd} onChangeIso={setDateYmd} />
+                <HubDateField
+                  id="nam-date"
+                  label={mainIsHotelGroup ? 'Data de entrada' : 'Data'}
+                  valueIso={dateYmd}
+                  onChangeIso={setDateYmd}
+                />
               </div>
               <div className="nam-field">
                 <label className="nam-label" htmlFor="nam-status">
@@ -3284,7 +3685,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   petCoatType={pet?.coat_type ?? null}
                   petBirthDate={pet?.birth_date ?? null}
                   config={cfg}
-                  onChange={(next) => updatePetVisitConfig(cfg.petId, next)}
+                  onChange={(next) => {
+                    const enabledPickup = next.extraBlocks.some(
+                      (b, i) => b.pickup?.enabled && !cfg.extraBlocks[i]?.pickup?.enabled,
+                    );
+                    if (enabledPickup && visitPickupActive) setPickupScope('none');
+                    updatePetVisitConfig(cfg.petId, next);
+                  }}
                   groups={groups}
                   groupFilter={groupFilter}
                   onGroupFilterChange={setGroupFilter}
@@ -3301,6 +3708,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   defaultResourceLabel={resourceLabel}
                   clinicId={clinicId}
                   unitId={selectedUnitId}
+                  visitPickup={visitPickupActive}
+                  anyExtraRecurrence={anyExtraRecurrence}
+                  parentIsBoarding={mainIsBoardingGroup}
                 />
               );
             })}
@@ -3347,11 +3757,25 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               <HubSearchableCombobox
                 id="nam-group"
                 options={groups}
-                value={groupFilter}
-                onChange={setGroupFilter}
+                value={mainBlockGroup ?? groupFilter}
+                onChange={(v) => {
+                  if (mainBlockGroup && v !== mainBlockGroup && v !== 'all') {
+                    setSaveError(
+                      'Este bloco já tem serviços. Para outro grupo, remova os serviços ou use «Adicionar outro bloco».',
+                    );
+                    return;
+                  }
+                  setSaveError(null);
+                  setGroupFilter(v);
+                }}
                 clearable={false}
                 placeholder="Todos os grupos"
               />
+              {mainBlockGroup ? (
+                <p className="nam-aside__muted" style={{ marginTop: 6, fontSize: 12 }}>
+                  Grupo fixo deste bloco: {serviceGroupLabel(mainBlockGroup)}.
+                </p>
+              ) : null}
             </div>
             <div className="nam-field">
               <label className="nam-label">Serviços</label>
@@ -3416,24 +3840,78 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         {/* ── Horário do bloco principal ─────────────────────────────────── */}
         {!isWalkIn ? (
         <div className="nam-section">
-          <div className="nam-row nam-row--cols2">
-            <div className="nam-field">
-              <HubTimeField
-                id="nam-starts"
-                label="Início"
-                valueHm={startsHm}
-                onChangeHm={setStartsHm}
-              />
+          {mainIsHotelGroup ? (
+            <>
+              <p className="nam-aside__muted" style={{ marginBottom: 8, fontSize: 13 }}>
+                {boardingStayHintMessage()}
+              </p>
+              <div className="nam-row nam-row--cols3">
+                <div className="nam-field">
+                  <HubTimeField
+                    id="nam-starts"
+                    label="Horário de entrada"
+                    valueHm={startsHm}
+                    onChangeHm={setStartsHm}
+                  />
+                </div>
+                <div className="nam-field">
+                  <HubDateField
+                    id="nam-hotel-checkout-date"
+                    label="Data de saída"
+                    valueIso={hotelCheckoutDateYmd || dateYmd}
+                    onChangeIso={(iso) => setHotelCheckoutDateYmd(iso || dateYmd)}
+                    showTodayButton={false}
+                  />
+                </div>
+                <div className="nam-field">
+                  <HubTimeField
+                    id="nam-hotel-checkout-hm"
+                    label="Horário de saída"
+                    valueHm={hotelCheckoutHm}
+                    onChangeHm={(hm) => {
+                      setHotelCheckoutHm(hm);
+                      setEndsHm(hm);
+                    }}
+                  />
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="nam-row nam-row--cols2">
+              <div className="nam-field">
+                <HubTimeField
+                  id="nam-starts"
+                  label="Início"
+                  valueHm={startsHm}
+                  onChangeHm={setStartsHm}
+                />
+              </div>
+              <div className="nam-field">
+                <HubTimeField
+                  id="nam-ends"
+                  label="Fim previsto"
+                  valueHm={endsHm}
+                  onChangeHm={setEndsHm}
+                />
+              </div>
             </div>
-            <div className="nam-field">
-              <HubTimeField
-                id="nam-ends"
-                label="Fim previsto"
-                valueHm={endsHm}
-                onChangeHm={setEndsHm}
-              />
+          )}
+          {isCrecheServiceGroup(mainBlockGroup) ? (
+            <div className="nam-field" style={{ marginTop: 8 }}>
+              <label className="nam-label" htmlFor="nam-daycare-period">
+                Período da creche
+              </label>
+              <select
+                id="nam-daycare-period"
+                className="nam-select"
+                value={daycarePeriod}
+                onChange={(e) => setDaycarePeriod(e.target.value as 'full_day' | 'half_day')}
+              >
+                <option value="full_day">Integral</option>
+                <option value="half_day">Meio período</option>
+              </select>
             </div>
-          </div>
+          ) : null}
         </div>
         ) : null}
 
@@ -3487,387 +3965,80 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         </div>
         ) : null}
 
-        <div className="nam-section nam-block-details">
-          <button
-            type="button"
-            className="nam-block-details__toggle"
-            onClick={() => setMainBlockDetailsOpen((o) => !o)}
-            aria-expanded={mainBlockDetailsOpen}
-          >
-            <span>Detalhes do bloco</span>
-            {mainBlockDetailsOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-          </button>
-          {mainBlockDetailsOpen ? (
-            <div className="nam-block-details__body">
-              <div className="nam-section" style={{ borderBottom: 'none', paddingTop: 10 }}>
-                <label className="nam-label">Título do bloco</label>
-                <div className="nam-title-row">
-                  <input
-                    className="nam-input"
-                    type="text"
-                    maxLength={200}
-                    placeholder={autoTitle || 'Título do agendamento…'}
-                    value={title}
-                    onChange={(e) => {
-                      setTitle(e.target.value);
-                      setTitleOverridden(true);
-                    }}
-                  />
-                  {titleOverridden && (
-                    <button
-                      className="nam-btn-icon"
-                      type="button"
-                      title="Restaurar sugestão automática"
-                      onClick={() => {
-                        setTitleOverridden(false);
-                        setTitle(autoTitle);
-                      }}
-                    >
-                      <RefreshCw size={14} />
-                    </button>
-                  )}
-                </div>
-              </div>
-              <div className="nam-section" style={{ borderBottom: 'none', paddingTop: 0 }}>
-                <label className="nam-label">Descrição do bloco</label>
-                <div className="nam-title-row" style={{ alignItems: 'flex-start' }}>
-                  <textarea
-                    className="nam-textarea"
-                    rows={3}
-                    maxLength={8000}
-                    placeholder="Preenchida automaticamente com as descrições dos serviços deste bloco; pode editar."
-                    value={mainBlockNotes}
-                    onChange={(e) => {
-                      setMainBlockNotes(e.target.value);
-                      setMainBlockNotesUserEdited(true);
-                    }}
-                    style={{ flex: 1 }}
-                  />
-                  {mainBlockNotesUserEdited ? (
-                    <button
-                      className="nam-btn-icon"
-                      type="button"
-                      title="Restaurar descrição automática"
-                      onClick={() => {
-                        setMainBlockNotesUserEdited(false);
-                        setMainBlockNotes(
-                          buildServiceDescriptionBullets(
-                            serviceTypes,
-                            (isMultiPetSelection
-                              ? petVisitConfigs.flatMap((c) => c.services)
-                              : services
-                            ).map((s) => s.hub_service_type_id),
-                          ),
-                        );
-                      }}
-                    >
-                      <RefreshCw size={14} />
-                    </button>
-                  ) : null}
-                </div>
-                <p className="nam-char-count">{mainBlockNotes.length}/8000</p>
-              </div>
-            </div>
-          ) : null}
-        </div>
-            </div>
-          )}
-        </div>
-
-        {!isWalkIn && !isMultiPetSelection ? (
-          <>
-        {extraBlocks.length > 0 ? (
-          <div className="nam-section nam-extra-blocks">
-            {extraBlocks.map((block, bIdx) => (
-              <ExtraBlockCard
-                key={block.key}
-                block={block}
-                index={bIdx}
-                petName={petName || selectedPetNamesLabel || null}
-                groups={groups}
-                staffComboOptions={staffComboOptions}
-                serviceTypes={serviceTypes}
-                clinicId={clinicId}
-                unitId={selectedUnitId}
-                dateYmd={dateYmd}
-                onRemove={() => removeExtraBlock(block.key)}
-                onChange={(updated) =>
-                  setExtraBlocks((prev) => prev.map((b) => (b.key === block.key ? updated : b)))
-                }
-                onToggleExpand={() =>
-                  setExtraBlocks((prev) =>
-                    prev.map((b) => (b.key === block.key ? { ...b, expanded: !b.expanded } : b)),
-                  )
-                }
-              />
-            ))}
-          </div>
-        ) : null}
-
-        <div className="nam-section">
-          <button className="nam-btn-add-block" type="button" onClick={addExtraBlock}>
-            <Plus size={14} /> Adicionar outro bloco no dia
-          </button>
-        </div>
-          </>
-        ) : null}
-
+        {/* Título, repetir, L&T do bloco (hierarquia: após profissional) */}
         {!isWalkIn ? (
           <>
-        {/* ── 9. L&T ───────────────────────────────────────────────────── */}
-        <div className="nam-section">
-          {isPrimaryLevaTraz ? (
-            <div className="nam-pickup">
-              <div className="nam-lt-standalone" role="status">
-                <p className="nam-lt-standalone__title">Parada de Leva e Traz</p>
-                <p className="nam-lt-standalone__text">
-                  Entra no <strong>Leva e Traz operacional</strong>. Ida e volta cria duas paradas
-                  (busca + retorno). O preço segue o cadastro do serviço (ida e volta ou por perna).
-                </p>
-              </div>
-              <div
-                className="nam-pickup__mode-selector"
-                style={{ display: 'flex', gap: '0.5rem', margin: '0.75rem 0', flexWrap: 'wrap' }}
+        <div className="nam-section" style={{ borderBottom: 'none', paddingTop: 10 }}>
+          <label className="nam-label">Título do bloco</label>
+          <div className="nam-title-row">
+            <input
+              className="nam-input"
+              type="text"
+              maxLength={200}
+              placeholder={autoTitle || 'Título do agendamento…'}
+              value={title}
+              onChange={(e) => {
+                setTitle(e.target.value);
+                setTitleOverridden(true);
+              }}
+            />
+            {titleOverridden && (
+              <button
+                className="nam-btn-icon"
+                type="button"
+                title="Restaurar sugestão automática"
+                onClick={() => {
+                  setTitleOverridden(false);
+                  setTitle(autoTitle);
+                }}
               >
-                {(
-                  [
-                    { value: 'round_trip', label: 'Ida e volta' },
-                    { value: 'pickup_only', label: 'Só busca' },
-                    { value: 'delivery_only', label: 'Só retorno' },
-                  ] as const
-                ).map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    className={`hub-clientes__btn hub-clientes__btn--sm${pickupMode === opt.value ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
-                    onClick={() => setPickupMode(opt.value)}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              {pickupMode === 'round_trip' ? (
-                <>
-                  <p className="nam-pickup__title">Retorno (segunda parada)</p>
-                  <p className="nam-aside__muted" style={{ marginBottom: 8, fontSize: 13 }}>
-                    A busca usa o horário principal do agendamento ({startsHm} – {endsHm}).
-                  </p>
-                  <div className="nam-row nam-row--cols2">
-                    <div className="nam-field">
-                      <HubTimeField
-                        id="nam-standalone-pickup-after-start"
-                        label="Início do retorno"
-                        valueHm={pickupAfter.starts_hm}
-                        onChangeHm={(starts_hm) => {
-                          setPickupAfter((b) => ({
-                            ...b,
-                            starts_hm,
-                            ends_hm: addMinutes(starts_hm, PICKUP_ROUTE_LEG_DURATION_MIN),
-                          }));
-                        }}
-                      />
-                    </div>
-                    <div className="nam-field">
-                      <label className="nam-label">Motorista (retorno)</label>
-                      <HubSearchableCombobox
-                        id="nam-standalone-pickup-after-staff"
-                        options={staffComboOptions}
-                        value={pickupAfter.hub_staff_member_id || staffId}
-                        onChange={(v) => setPickupAfter((b) => ({ ...b, hub_staff_member_id: v }))}
-                        placeholder="Não atribuído"
-                        clearable={false}
-                      />
-                    </div>
-                  </div>
-                </>
-              ) : null}
-            </div>
-          ) : (
-            <>
-          <HubCheckbox
-            className="nam-checkbox-label"
-            checked={withPickup}
-            onChange={(v) => {
-              setWithPickup(v);
-              if (v) {
-                const firstStart = pickupDayFirstStartHm;
-                const lastEnd = pickupDayLastEndHm;
-                const buscaEndMin = hmToMinutes(firstStart);
-                const buscaStartMin = Math.max(0, buscaEndMin - PICKUP_ROUTE_LEG_DURATION_MIN);
-                const voltaStartMin = hmToMinutes(lastEnd);
-                const voltaEndMin = Math.min(24 * 60 - 1, voltaStartMin + PICKUP_ROUTE_LEG_DURATION_MIN);
-                setPickupBefore((pb) => ({
-                  ...pb,
-                  starts_hm: minutesToHm(buscaStartMin),
-                  ends_hm: minutesToHm(buscaEndMin),
-                }));
-                setPickupAfter((pa) => ({
-                  ...pa,
-                  starts_hm: minutesToHm(voltaStartMin),
-                  ends_hm: minutesToHm(voltaEndMin),
-                }));
-              }
-            }}
-          >
-            Incluir Leva e Traz
-          </HubCheckbox>
-
-          {withPickup && (
-            <div className="nam-pickup">
-              <p className="nam-aside__muted" style={{ marginBottom: 10, fontSize: 13 }}>
-                    A busca termina no início do primeiro bloco do dia; o retorno dura 1 h a partir do início
-                    indicado. Os horários sugeridos ao ativar L&T seguem estes critérios.
-              </p>
-              <div className="nam-row nam-row--cols2" style={{ marginBottom: 12 }}>
-                <div className="nam-field">
-                  <label className="nam-label">Serviço de transporte</label>
-                  <HubSearchableCombobox
-                    id="nam-pickup-lt-svc"
-                    options={ltServiceComboOptions}
-                    value={pickupLtServiceTypeId}
-                    onChange={(v) => {
-                      setPickupLtServiceTypeId(v);
-                      setPickupKmTierIndex(0);
-                    }}
-                    placeholder={levaTrazServiceTypes.length ? 'Selecionar…' : 'Sem serviços L&T'}
-                    clearable={false}
-                  />
-                </div>
-                {pickupUsesPriceTiers ? (
-                  <div className="nam-field">
-                    <label className="nam-label">
-                      {pickupLtPricingKind === 'km_banda' ? 'Faixa de quilometragem' : 'Opção de preço'}
-                    </label>
-                    <HubSearchableCombobox
-                      id="nam-pickup-km-tier"
-                      options={kmTierComboOptions}
-                      value={String(pickupKmTierIndex)}
-                      onChange={(v) => setPickupKmTierIndex(Number(v) || 0)}
-                      placeholder={pickupLtPricingKind === 'km_banda' ? 'Faixa' : 'Opção'}
-                      clearable={false}
-                    />
-                  </div>
-                ) : null}
-              </div>
-              <div className="nam-pickup__mode-selector" style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
-                {(
-                  [
-                    { value: 'round_trip',    label: 'Ida e volta' },
-                    { value: 'pickup_only',   label: 'Só busca' },
-                    { value: 'delivery_only', label: 'Só retorno' },
-                  ] as const
-                ).map((opt) => (
-                  <button
-                    key={opt.value}
-                    type="button"
-                    className={`hub-clientes__btn hub-clientes__btn--sm${pickupMode === opt.value ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
-                    onClick={() => setPickupMode(opt.value)}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-
-              {pickupMode !== 'delivery_only' ? (
-              <>
-              <p className="nam-pickup__title">Busca (antes do atendimento)</p>
-              <div className="nam-row nam-row--cols2">
-                <div className="nam-field">
-                  <HubTimeField
-                    id="nam-pickup-before-start"
-                    label="Início"
-                    valueHm={pickupBefore.starts_hm}
-                    onChangeHm={(starts_hm) => setPickupBefore((b) => ({ ...b, starts_hm }))}
-                  />
-                </div>
-                <div className="nam-field">
-                  <label className="nam-label">Motorista</label>
-                  <HubSearchableCombobox
-                    id="nam-pickup-before-staff"
-                    options={staffComboOptions}
-                    value={pickupBefore.hub_staff_member_id}
-                    onChange={(v) => {
-                      setPickupBefore((b) => ({ ...b, hub_staff_member_id: v }));
-                      if (!ltReturnDriverUnlinkedRef.current) {
-                        setPickupAfter((pa) => ({ ...pa, hub_staff_member_id: v }));
-                      } else if (
-                        window.confirm('Atualizar o motorista do retorno para o mesmo da busca?')
-                      ) {
-                        ltReturnDriverUnlinkedRef.current = false;
-                        setPickupAfter((pa) => ({ ...pa, hub_staff_member_id: v }));
-                      }
-                    }}
-                    placeholder="Não atribuído"
-                    clearable={false}
-                  />
-                </div>
-              </div>
-              </>
-              ) : null}
-
-              {pickupMode !== 'pickup_only' ? (
-              <>
-              <p className="nam-pickup__title" style={{ marginTop: 12 }}>Retorno (após atendimento)</p>
-              {hmToMinutes(pickupAfter.starts_hm) < hmToMinutes(pickupDayLastEndHm) ? (
-                <p className="nam-pickup__return-warn">
-                  ⚠ Horário anterior ao fim do atendimento ({pickupDayLastEndHm}). O retorno começará ao fim do serviço.
-                  <button
-                    type="button"
-                    className="nam-pickup__return-warn-fix"
-                    onClick={() => {
-                      const fixed = addMinutes(pickupDayLastEndHm, 0);
-                      setPickupAfter((b) => ({
-                        ...b,
-                        starts_hm: fixed,
-                        ends_hm: addMinutes(fixed, PICKUP_ROUTE_LEG_DURATION_MIN),
-                      }));
-                    }}
-                  >
-                    Corrigir
-                  </button>
-                </p>
-              ) : null}
-              <div className="nam-row nam-row--cols2">
-                <div className="nam-field">
-                  <HubTimeField
-                    id="nam-pickup-after-start"
-                    label="Início"
-                    valueHm={pickupAfter.starts_hm}
-                    onChangeHm={(starts_hm) => {
-                      setPickupAfter((b) => ({
-                        ...b,
-                        starts_hm,
-                        ends_hm: addMinutes(starts_hm, PICKUP_ROUTE_LEG_DURATION_MIN),
-                      }));
-                    }}
-                  />
-                </div>
-                <div className="nam-field">
-                  <label className="nam-label">Motorista</label>
-                  <HubSearchableCombobox
-                    id="nam-pickup-after-staff"
-                    options={staffComboOptions}
-                    value={pickupAfter.hub_staff_member_id}
-                    onChange={(v) => {
-                      ltReturnDriverUnlinkedRef.current = v !== pickupBefore.hub_staff_member_id;
-                      setPickupAfter((b) => ({ ...b, hub_staff_member_id: v }));
-                    }}
-                    placeholder="Não atribuído"
-                    clearable={false}
-                  />
-                </div>
-              </div>
-              </>
-              ) : null}
-            </div>
-          )}
-            </>
-          )}
+                <RefreshCw size={14} />
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="nam-section" style={{ borderBottom: 'none', paddingTop: 0 }}>
+          <label className="nam-label">Descrição do bloco</label>
+          <div className="nam-title-row" style={{ alignItems: 'flex-start' }}>
+            <textarea
+              className="nam-textarea"
+              rows={3}
+              maxLength={8000}
+              placeholder="Preenchida automaticamente com as descrições dos serviços deste bloco; pode editar."
+              value={mainBlockNotes}
+              onChange={(e) => {
+                setMainBlockNotes(e.target.value);
+                setMainBlockNotesUserEdited(true);
+              }}
+              style={{ flex: 1 }}
+            />
+            {mainBlockNotesUserEdited ? (
+              <button
+                className="nam-btn-icon"
+                type="button"
+                title="Restaurar descrição automática"
+                onClick={() => {
+                  setMainBlockNotesUserEdited(false);
+                  setMainBlockNotes(
+                    buildServiceDescriptionBullets(
+                      serviceTypes,
+                      (isMultiPetSelection
+                        ? petVisitConfigs.flatMap((c) => c.services)
+                        : services
+                      ).map((s) => s.hub_service_type_id),
+                    ),
+                  );
+                }}
+              >
+                <RefreshCw size={14} />
+              </button>
+            ) : null}
+          </div>
+          <p className="nam-char-count">{mainBlockNotes.length}/8000</p>
         </div>
 
-        {/* ── 10. Repetição ────────────────────────────────────────────── */}
         <div className="nam-section">
-          {initial?.package_balance_hint ? (
+          {typeof initial?.package_balance_hint === 'string' && initial.package_balance_hint ? (
             <p className="nam-aside__muted" style={{ marginBottom: 8 }}>
               {initial.package_balance_hint}
             </p>
@@ -3876,12 +4047,22 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             className="nam-checkbox-label"
             checked={withRecurrence}
             onChange={setWithRecurrence}
+            disabled={mainIsHotelGroup}
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
               <CalendarDays size={15} aria-hidden />
-              Repetir agendamento
+              {visitPickupActive
+                ? 'Repetir a visita (todos os blocos)'
+                : 'Repetir este bloco'}
+              {mainIsHotelGroup ? ' (indisponível para hotel)' : ''}
             </span>
           </HubCheckbox>
+          {mainIsHotelGroup ? (
+            <p className="nam-aside__muted" style={{ marginTop: 6, fontSize: 13 }}>
+              Hotel usa entrada e saída neste bloco. Para repetir banho ou outro serviço, use um bloco
+              adicional com a própria repetição (sem L&T da visita).
+            </p>
+          ) : null}
 
           {withRecurrence && (
             <div className="nam-recurrence">
@@ -3941,14 +4122,12 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                         key={dow}
                         type="button"
                         className={`nam-dow-chip${active ? ' nam-dow-chip--active' : ''}`}
-                        onClick={() =>
-                          setRecurrence((r) => ({
-                            ...r,
-                            days_of_week: active
-                              ? r.days_of_week.filter((d) => d !== dow)
-                              : [...r.days_of_week, dow],
-                          }))
-                        }
+                        onClick={() => {
+                          const days = active
+                            ? recurrence.days_of_week.filter((d) => d !== dow)
+                            : [...recurrence.days_of_week, dow].sort((a, b) => a - b);
+                          setRecurrence((r) => ({ ...r, days_of_week: days }));
+                        }}
                       >
                         {label}
                       </button>
@@ -3957,18 +4136,21 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 </div>
               )}
 
-              <div className="nam-row nam-row--cols2">
+              <div className="nam-row nam-row--cols2" style={{ marginTop: 8 }}>
                 <div className="nam-field">
                   <label className="nam-label">Termina</label>
                   <select
                     className="nam-select"
                     value={recurrence.end_kind}
                     onChange={(e) =>
-                      setRecurrence((r) => ({ ...r, end_kind: e.target.value as 'until' | 'occurrences' }))
+                      setRecurrence((r) => ({
+                        ...r,
+                        end_kind: e.target.value as RecurrenceForm['end_kind'],
+                      }))
                     }
                   >
                     <option value="occurrences">Após N ocorrências</option>
-                    <option value="until">Até data</option>
+                    <option value="until">Em uma data</option>
                   </select>
                 </div>
                 <div className="nam-field">
@@ -4135,8 +4317,500 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           )}
         </div>
 
+        <div className="nam-section">
+          {isPrimaryLevaTraz ? (
+            <div className="nam-pickup">
+              <div className="nam-lt-standalone" role="status">
+                <p className="nam-lt-standalone__title">Parada de Leva e Traz</p>
+                <p className="nam-lt-standalone__text">
+                  Entra no <strong>Leva e Traz operacional</strong>. Ida e volta cria duas paradas
+                  (busca + retorno). O preço segue o cadastro do serviço (ida e volta ou por perna).
+                </p>
+              </div>
+              <div
+                className="nam-pickup__mode-selector"
+                style={{ display: 'flex', gap: '0.5rem', margin: '0.75rem 0', flexWrap: 'wrap' }}
+              >
+                {(
+                  [
+                    { value: 'round_trip', label: 'Ida e volta' },
+                    { value: 'pickup_only', label: 'Só busca' },
+                    { value: 'delivery_only', label: 'Só retorno' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`hub-clientes__btn hub-clientes__btn--sm${pickupMode === opt.value ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
+                    onClick={() => setPickupMode(opt.value)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+              {pickupMode === 'round_trip' ? (
+                <>
+                  <p className="nam-pickup__title">Retorno (segunda parada)</p>
+                  <p className="nam-aside__muted" style={{ marginBottom: 8, fontSize: 13 }}>
+                    A busca usa o horário deste bloco ({startsHm} – {endsHm}).
+                  </p>
+                  <div className="nam-row nam-row--cols2">
+                    <div className="nam-field">
+                      <HubTimeField
+                        id="nam-standalone-pickup-after-start"
+                        label="Início do retorno"
+                        valueHm={pickupAfter.starts_hm}
+                        onChangeHm={(starts_hm) => {
+                          setPickupAfter((b) => ({
+                            ...b,
+                            starts_hm,
+                            ends_hm: addMinutes(starts_hm, PICKUP_ROUTE_LEG_DURATION_MIN),
+                          }));
+                        }}
+                      />
+                    </div>
+                    <div className="nam-field">
+                      <label className="nam-label">Motorista (retorno)</label>
+                      <HubSearchableCombobox
+                        id="nam-standalone-pickup-after-staff"
+                        options={staffComboOptions}
+                        value={pickupAfter.hub_staff_member_id || staffId}
+                        onChange={(v) => setPickupAfter((b) => ({ ...b, hub_staff_member_id: v }))}
+                        placeholder="Não atribuído"
+                        clearable={false}
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : null}
+            </div>
+          ) : !hideMainBlockPickupUi ? (
+            <>
+          <HubCheckbox
+            className="nam-checkbox-label"
+            checked={pickupScope === 'block'}
+            onChange={(v) => {
+              if (v) {
+                setPickupScope('block');
+                applyMainBlockPickupDefaults();
+              } else if (pickupScope === 'block') {
+                setPickupScope('none');
+              }
+            }}
+          >
+            Incluir Leva e Traz neste bloco
+          </HubCheckbox>
+          <p className="nam-aside__muted" style={{ marginTop: 6, fontSize: 13 }}>
+            Busca e retorno só deste bloco (não cobre os outros).
+          </p>
+          {pickupScope === 'block' && (
+            <div className="nam-pickup">
+              <p className="nam-aside__muted" style={{ marginBottom: 10, fontSize: 13 }}>
+                A busca termina no início deste bloco; o retorno a partir do fim deste bloco.
+              </p>
+
+              <div className="nam-row nam-row--cols2" style={{ marginBottom: 12 }}>
+                <div className="nam-field">
+                  <label className="nam-label">Serviço de transporte</label>
+                  <HubSearchableCombobox
+                    id="nam-pickup-lt-svc"
+                    options={ltServiceComboOptions}
+                    value={pickupLtServiceTypeId}
+                    onChange={(v) => {
+                      setPickupLtServiceTypeId(v);
+                      setPickupKmTierIndex(0);
+                    }}
+                    placeholder={levaTrazServiceTypes.length ? 'Selecionar…' : 'Sem serviços L&T'}
+                    clearable={false}
+                  />
+                </div>
+                {pickupUsesPriceTiers ? (
+                  <div className="nam-field">
+                    <label className="nam-label">
+                      {pickupLtPricingKind === 'km_banda' ? 'Faixa de quilometragem' : 'Opção de preço'}
+                    </label>
+                    <HubSearchableCombobox
+                      id="nam-pickup-km-tier"
+                      options={kmTierComboOptions}
+                      value={String(pickupKmTierIndex)}
+                      onChange={(v) => setPickupKmTierIndex(Number(v) || 0)}
+                      placeholder={pickupLtPricingKind === 'km_banda' ? 'Faixa' : 'Opção'}
+                      clearable={false}
+                    />
+                  </div>
+                ) : null}
+              </div>
+              <div className="nam-pickup__mode-selector" style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                {(
+                  [
+                    { value: 'round_trip',    label: 'Ida e volta' },
+                    { value: 'pickup_only',   label: 'Só busca' },
+                    { value: 'delivery_only', label: 'Só retorno' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`hub-clientes__btn hub-clientes__btn--sm${pickupMode === opt.value ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
+                    onClick={() => setPickupMode(opt.value)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              {pickupMode !== 'delivery_only' ? (
+              <>
+              <p className="nam-pickup__title">Busca (antes deste bloco)</p>
+              <div className="nam-row nam-row--cols2">
+                <div className="nam-field">
+                  <HubTimeField
+                    id="nam-pickup-before-start"
+                    label="Início"
+                    valueHm={pickupBefore.starts_hm}
+                    onChangeHm={(starts_hm) => setPickupBefore((b) => ({ ...b, starts_hm }))}
+                  />
+                </div>
+                <div className="nam-field">
+                  <label className="nam-label">Motorista</label>
+                  <HubSearchableCombobox
+                    id="nam-pickup-before-staff"
+                    options={staffComboOptions}
+                    value={pickupBefore.hub_staff_member_id}
+                    onChange={(v) => {
+                      setPickupBefore((b) => ({ ...b, hub_staff_member_id: v }));
+                      if (!ltReturnDriverUnlinkedRef.current) {
+                        setPickupAfter((pa) => ({ ...pa, hub_staff_member_id: v }));
+                      } else if (
+                        window.confirm('Atualizar o motorista do retorno para o mesmo da busca?')
+                      ) {
+                        ltReturnDriverUnlinkedRef.current = false;
+                        setPickupAfter((pa) => ({ ...pa, hub_staff_member_id: v }));
+                      }
+                    }}
+                    placeholder="Não atribuído"
+                    clearable={false}
+                  />
+                </div>
+              </div>
+              </>
+              ) : null}
+
+              {pickupMode !== 'pickup_only' ? (
+              <>
+              <p className="nam-pickup__title" style={{ marginTop: 12 }}>Retorno (após este bloco)</p>
+              {hmToMinutes(pickupAfter.starts_hm) < hmToMinutes(endsHm) ? (
+                <p className="nam-pickup__return-warn">
+                  ⚠ Horário anterior ao fim deste bloco ({endsHm}). O retorno começará ao fim do serviço.
+                  <button
+                    type="button"
+                    className="nam-pickup__return-warn-fix"
+                    onClick={() => {
+                      const fixed = addMinutes(endsHm, 0);
+                      setPickupAfter((b) => ({
+                        ...b,
+                        starts_hm: fixed,
+                        ends_hm: addMinutes(fixed, PICKUP_ROUTE_LEG_DURATION_MIN),
+                      }));
+                    }}
+                  >
+                    Corrigir
+                  </button>
+                </p>
+              ) : null}
+              <div className="nam-row nam-row--cols2">
+                <div className="nam-field">
+                  <HubTimeField
+                    id="nam-pickup-after-start"
+                    label="Início"
+                    valueHm={pickupAfter.starts_hm}
+                    onChangeHm={(starts_hm) => {
+                      setPickupAfter((b) => ({
+                        ...b,
+                        starts_hm,
+                        ends_hm: addMinutes(starts_hm, PICKUP_ROUTE_LEG_DURATION_MIN),
+                      }));
+                    }}
+                  />
+                </div>
+                <div className="nam-field">
+                  <label className="nam-label">Motorista</label>
+                  <HubSearchableCombobox
+                    id="nam-pickup-after-staff"
+                    options={staffComboOptions}
+                    value={pickupAfter.hub_staff_member_id}
+                    onChange={(v) => {
+                      ltReturnDriverUnlinkedRef.current = v !== pickupBefore.hub_staff_member_id;
+                      setPickupAfter((b) => ({ ...b, hub_staff_member_id: v }));
+                    }}
+                    placeholder="Não atribuído"
+                    clearable={false}
+                  />
+                </div>
+              </div>
+              </>
+              ) : null}
+
+            </div>
+          )}
+            </>
+          ) : visitPickupActive ? (
+            <p className="nam-aside__muted" style={{ fontSize: 13 }}>
+              {blockPickupCoveredByVisitHint()}
+            </p>
+          ) : null}
+        </div>
           </>
         ) : null}
+            </div>
+          )}
+        </div>
+
+        {!isWalkIn && !hideVisitPickupUi && !isPrimaryLevaTraz ? (
+          <div className="nam-section" style={{ marginTop: 8 }}>
+            <HubCheckbox
+              className="nam-checkbox-label"
+              checked={visitPickupActive}
+              onChange={(v) => {
+                if (v) {
+                  clearExtraPickups();
+                  setPickupScope('visit');
+                  applyVisitPickupDefaults();
+                } else if (pickupScope === 'visit') {
+                  setPickupScope('none');
+                }
+              }}
+            >
+              Incluir Leva e Traz da visita
+            </HubCheckbox>
+            <p className="nam-aside__muted" style={{ marginTop: 6, fontSize: 13 }}>
+              {visitPickupHintWithExtras()}
+            </p>
+            {visitPickupActive ? (
+              <p className="nam-aside__muted" style={{ marginTop: 6, fontSize: 13 }}>
+                {visitPickupRecurrenceSyncHint()}
+              </p>
+            ) : null}
+            {pickupScope === 'visit' ? (
+              <div className="nam-pickup">
+                <p className="nam-aside__muted" style={{ marginBottom: 10, fontSize: 13 }}>
+                  A busca termina no início do primeiro bloco; o retorno a partir do fim do último.
+                </p>
+
+              <div className="nam-row nam-row--cols2" style={{ marginBottom: 12 }}>
+                <div className="nam-field">
+                  <label className="nam-label">Serviço de transporte</label>
+                  <HubSearchableCombobox
+                    id="nam-visit-pickup-lt-svc"
+                    options={ltServiceComboOptions}
+                    value={pickupLtServiceTypeId}
+                    onChange={(v) => {
+                      setPickupLtServiceTypeId(v);
+                      setPickupKmTierIndex(0);
+                    }}
+                    placeholder={levaTrazServiceTypes.length ? 'Selecionar…' : 'Sem serviços L&T'}
+                    clearable={false}
+                  />
+                </div>
+                {pickupUsesPriceTiers ? (
+                  <div className="nam-field">
+                    <label className="nam-label">
+                      {pickupLtPricingKind === 'km_banda' ? 'Faixa de quilometragem' : 'Opção de preço'}
+                    </label>
+                    <HubSearchableCombobox
+                      id="nam-visit-pickup-km-tier"
+                      options={kmTierComboOptions}
+                      value={String(pickupKmTierIndex)}
+                      onChange={(v) => setPickupKmTierIndex(Number(v) || 0)}
+                      placeholder={pickupLtPricingKind === 'km_banda' ? 'Faixa' : 'Opção'}
+                      clearable={false}
+                    />
+                  </div>
+                ) : null}
+              </div>
+              <div className="nam-pickup__mode-selector" style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                {(
+                  [
+                    { value: 'round_trip',    label: 'Ida e volta' },
+                    { value: 'pickup_only',   label: 'Só busca' },
+                    { value: 'delivery_only', label: 'Só retorno' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    className={`hub-clientes__btn hub-clientes__btn--sm${pickupMode === opt.value ? ' hub-clientes__btn--primary' : ' hub-clientes__btn--ghost'}`}
+                    onClick={() => setPickupMode(opt.value)}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+
+              {pickupMode !== 'delivery_only' ? (
+              <>
+              <p className="nam-pickup__title">Busca (antes deste bloco)</p>
+              <div className="nam-row nam-row--cols2">
+                <div className="nam-field">
+                  <HubTimeField
+                    id="nam-visit-pickup-before-start"
+                    label="Início"
+                    valueHm={pickupBefore.starts_hm}
+                    onChangeHm={(starts_hm) => setPickupBefore((b) => ({ ...b, starts_hm }))}
+                  />
+                </div>
+                <div className="nam-field">
+                  <label className="nam-label">Motorista</label>
+                  <HubSearchableCombobox
+                    id="nam-visit-pickup-before-staff"
+                    options={staffComboOptions}
+                    value={pickupBefore.hub_staff_member_id}
+                    onChange={(v) => {
+                      setPickupBefore((b) => ({ ...b, hub_staff_member_id: v }));
+                      if (!ltReturnDriverUnlinkedRef.current) {
+                        setPickupAfter((pa) => ({ ...pa, hub_staff_member_id: v }));
+                      } else if (
+                        window.confirm('Atualizar o motorista do retorno para o mesmo da busca?')
+                      ) {
+                        ltReturnDriverUnlinkedRef.current = false;
+                        setPickupAfter((pa) => ({ ...pa, hub_staff_member_id: v }));
+                      }
+                    }}
+                    placeholder="Não atribuído"
+                    clearable={false}
+                  />
+                </div>
+              </div>
+              </>
+              ) : null}
+
+              {pickupMode !== 'pickup_only' ? (
+              <>
+              <p className="nam-pickup__title" style={{ marginTop: 12 }}>Retorno (após este bloco)</p>
+              {hmToMinutes(pickupAfter.starts_hm) < hmToMinutes(endsHm) ? (
+                <p className="nam-pickup__return-warn">
+                  ⚠ Horário anterior ao fim deste bloco ({endsHm}). O retorno começará ao fim do serviço.
+                  <button
+                    type="button"
+                    className="nam-pickup__return-warn-fix"
+                    onClick={() => {
+                      const fixed = addMinutes(endsHm, 0);
+                      setPickupAfter((b) => ({
+                        ...b,
+                        starts_hm: fixed,
+                        ends_hm: addMinutes(fixed, PICKUP_ROUTE_LEG_DURATION_MIN),
+                      }));
+                    }}
+                  >
+                    Corrigir
+                  </button>
+                </p>
+              ) : null}
+              <div className="nam-row nam-row--cols2">
+                <div className="nam-field">
+                  <HubTimeField
+                    id="nam-visit-pickup-after-start"
+                    label="Início"
+                    valueHm={pickupAfter.starts_hm}
+                    onChangeHm={(starts_hm) => {
+                      setPickupAfter((b) => ({
+                        ...b,
+                        starts_hm,
+                        ends_hm: addMinutes(starts_hm, PICKUP_ROUTE_LEG_DURATION_MIN),
+                      }));
+                    }}
+                  />
+                </div>
+                <div className="nam-field">
+                  <label className="nam-label">Motorista</label>
+                  <HubSearchableCombobox
+                    id="nam-visit-pickup-after-staff"
+                    options={staffComboOptions}
+                    value={pickupAfter.hub_staff_member_id}
+                    onChange={(v) => {
+                      ltReturnDriverUnlinkedRef.current = v !== pickupBefore.hub_staff_member_id;
+                      setPickupAfter((b) => ({ ...b, hub_staff_member_id: v }));
+                    }}
+                    placeholder="Não atribuído"
+                    clearable={false}
+                  />
+                </div>
+              </div>
+              </>
+              ) : null}
+
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {!isWalkIn && !isMultiPetSelection ? (
+          <>
+        {extraBlocks.length > 0 ? (
+          <div className="nam-section nam-extra-blocks">
+            {extraBlocks.map((block, bIdx) => {
+              const blockDay = block.starts_date_ymd || dateYmd;
+              const sameDayAsParent = !dateYmd || blockDay === dateYmd;
+              const hidePickup = shouldHideExtraPickup({
+                visitPickup: visitPickupActive,
+                parentIsBoarding: mainIsBoardingGroup,
+                blockStartsSameDayAsParent: sameDayAsParent,
+              });
+              return (
+              <ExtraBlockCard
+                key={block.key}
+                block={block}
+                index={bIdx}
+                petName={petName || selectedPetNamesLabel || null}
+                groups={groups}
+                staffComboOptions={staffComboOptions}
+                serviceTypes={serviceTypes}
+                clinicId={clinicId}
+                unitId={selectedUnitId}
+                dateYmd={dateYmd}
+                minDateYmd={mainIsHotelGroup ? dateYmd : null}
+                maxDateYmd={mainIsHotelGroup ? hotelCheckoutDateYmd || dateYmd : null}
+                hideRecurrence={visitPickupActive}
+                hidePickup={hidePickup}
+                pickupHint={
+                  visitPickupActive
+                    ? blockPickupCoveredByVisitHint()
+                    : block.recurrence?.enabled && block.pickup?.enabled
+                      ? blockPickupRecurrenceHint()
+                      : null
+                }
+                onRemove={() => removeExtraBlock(block.key)}
+                onChange={(updated) => {
+                  if (updated.pickup?.enabled && !block.pickup?.enabled && visitPickupActive) {
+                    setPickupScope('none');
+                  }
+                  setExtraBlocks((prev) => prev.map((b) => (b.key === block.key ? updated : b)));
+                }}
+                onToggleExpand={() =>
+                  setExtraBlocks((prev) =>
+                    prev.map((b) => (b.key === block.key ? { ...b, expanded: !b.expanded } : b)),
+                  )
+                }
+              />
+              );
+            })}
+          </div>
+        ) : null}
+
+        <div className="nam-section">
+          <button className="nam-btn-add-block" type="button" onClick={addExtraBlock}>
+            <Plus size={14} />{' '}
+            {mainIsHotelGroup ? 'Adicionar serviço na estadia' : 'Adicionar outro bloco no dia'}
+          </button>
+          <p className="nam-aside__muted" style={{ marginTop: 8, fontSize: 13 }}>
+            {mainIsHotelGroup
+              ? 'Ex.: banho no dia da saída. Cada bloco tem a própria data dentro da estadia.'
+              : 'Novo bloco = outro grupo ou outro ritmo. Configure L&T e repetição dentro de cada card.'}
+          </p>
+        </div>
+          </>
+        ) : null}
+
 
         {/* ── Conflict feedback ─────────────────────────────────────────── */}
         {conflicts.length > 0 && (

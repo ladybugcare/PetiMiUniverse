@@ -36,6 +36,10 @@ import {
   type ExtraBlock,
   type SchedulingServiceChip,
 } from './appointmentSchedulingUtils';
+import {
+  blockPickupRecurrenceHint,
+  shouldHideExtraPickup,
+} from './appointmentBlockRules';
 import { ExtraBlockCard } from './ExtraBlockCard';
 
 export type PetVisitServiceChip = SchedulingServiceChip;
@@ -99,6 +103,12 @@ type PetVisitBlockProps = {
   defaultResourceLabel: string;
   clinicId?: string | null;
   unitId?: string | null;
+  /** L&T da visita ligado (esconde L&T nos extras avulsos). */
+  visitPickup?: boolean;
+  /** Algum extra (desta visita ou do create) tem «Repetir». */
+  anyExtraRecurrence?: boolean;
+  /** Pai é hotel/creche (estadia). */
+  parentIsBoarding?: boolean;
 };
 
 export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
@@ -125,6 +135,9 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
   defaultResourceLabel,
   clinicId = null,
   unitId = null,
+  visitPickup = false,
+  anyExtraRecurrence = false,
+  parentIsBoarding = false,
 }) => {
   const [serviceSearchId, setServiceSearchId] = useState('');
 
@@ -315,6 +328,7 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
           startsHm: computedEndHm,
           staffId: config.hubStaffMemberId,
           resourceLabel: defaultResourceLabel,
+          startsDateYmd: dateYmd || null,
         }),
       ],
     });
@@ -467,7 +481,15 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
 
           {config.extraBlocks.length > 0 ? (
             <div className="nam-section nam-pet-extra-blocks">
-              {config.extraBlocks.map((block, ebIdx) => (
+              {config.extraBlocks.map((block, ebIdx) => {
+                const blockDay = block.starts_date_ymd || dateYmd;
+                const hidePickup = shouldHideExtraPickup({
+                  visitPickup,
+                  parentIsBoarding,
+                  blockStartsSameDayAsParent: !dateYmd || blockDay === dateYmd,
+                });
+                void anyExtraRecurrence;
+                return (
                 <ExtraBlockCard
                   key={block.key}
                   block={block}
@@ -480,11 +502,19 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
                   clinicId={clinicId}
                   unitId={unitId}
                   dateYmd={dateYmd}
+                  hideRecurrence={visitPickup}
+                  hidePickup={hidePickup}
+                  pickupHint={
+                    block.recurrence?.enabled && block.pickup?.enabled
+                      ? blockPickupRecurrenceHint()
+                      : null
+                  }
                   onRemove={() => removeExtraBlock(block.key)}
                   onChange={(updated) => updateExtraBlock(block.key, updated)}
                   onToggleExpand={() => toggleExtraBlockExpand(block.key)}
                 />
-              ))}
+                );
+              })}
             </div>
           ) : null}
 

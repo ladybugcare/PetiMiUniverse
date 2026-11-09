@@ -100,8 +100,10 @@ export const HubSidePanel: React.FC<HubSidePanelProps> = ({
                 </span>
               ) : null}
               <div className="hub-side-panel__title-stack">
-                <h2 className="hub-side-panel__title">{title}</h2>
-                {subtitle ? <p className="hub-side-panel__subtitle">{subtitle}</p> : null}
+                <h2 className="hub-side-panel__title">{typeof title === 'string' ? title : ''}</h2>
+                {typeof subtitle === 'string' && subtitle ? (
+                  <p className="hub-side-panel__subtitle">{subtitle}</p>
+                ) : null}
               </div>
             </div>
           </div>

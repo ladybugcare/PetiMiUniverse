@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { BedDouble, Calendar, ClipboardList, Home, Loader, Moon } from 'lucide-react';
+import { BedDouble, Calendar, ClipboardList, Home, Moon } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubTabs } from '../../components/HubTabs';
@@ -12,11 +11,9 @@ import {
   type BoardingDrawerResponse,
   type BoardingOpsStay,
 } from '../../api/hubBoardingApi';
-import { hubComandaApi } from '../../api/hubComandaApi';
 import { PORTE_LABELS, type PetBodyPorteValue } from '../../utils/hubServiceTypesPricingMatrix';
 import { digitsOnlyBrPhone, formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 import { PetOperationalAddAlert } from '../pets/PetOperationalAddAlert';
-import { shouldShowBoardingBillingButton } from './boardingBillingUi';
 import BoardingStayRoutineTab from './BoardingStayRoutineTab';
 import BoardingStayCareTab from './BoardingStayCareTab';
 import BoardingStayDetailsTab from './BoardingStayDetailsTab';
@@ -48,9 +45,9 @@ type Props = {
   target: BoardingStayTarget | null;
   canManage: boolean;
   canDailyReport: boolean;
-  canManageFinance?: boolean;
+  /** Ver diária/total (recepção/caixa). Recreação/chão operacional não precisa. */
+  canViewFinancial?: boolean;
   canWriteInventory?: boolean;
-  unitId?: string | null;
   onClose: () => void;
   onUpdated?: () => void;
   onRequestCheckIn?: (stay: { reservationId: string | null; appointmentId?: string | null; stay?: BoardingOpsStay | null }) => void;
@@ -62,16 +59,14 @@ const BoardingStayPanel: React.FC<Props> = ({
   target,
   canManage,
   canDailyReport,
-  canManageFinance,
+  canViewFinancial = false,
   canWriteInventory,
-  unitId,
   onClose,
   onUpdated,
   onRequestCheckIn,
   onRequestCheckOut,
 }) => {
   const clinicId = getStoredClinicId();
-  const navigate = useNavigate();
   const { hasPermission } = usePermissions();
   const canAddPetAlert = hasPermission('boarding.reservations.manage');
   const { showError, showSuccess, showConfirm } = useAlert();
@@ -155,27 +150,6 @@ const BoardingStayPanel: React.FC<Props> = ({
   const isLate = Boolean(stay?.is_late) || attention.some((a) => a.key === 'late_checkout');
   const subtitle = `${formatDayMonth(startIso)} → ${formatDayMonth(endIso)}`;
 
-  const handleBilling = async () => {
-    if (!clinicId || !reservationId) return;
-    setBusy(true);
-    try {
-      const detail = await hubComandaApi.openComanda({
-        clinic_id: clinicId,
-        origin_type: 'boarding_reservation',
-        origin_id: reservationId,
-        unit_id: unitId ?? undefined,
-      });
-      const comandaId = (detail.comanda as Record<string, unknown>)?.id as string | undefined;
-      showSuccess('Comanda aberta.');
-      if (comandaId) navigate(`/hub/caixa/comanda/${comandaId}`);
-      onUpdated?.();
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao gerar cobrança');
-    } finally {
-      setBusy(false);
-    }
-  };
-
   const setStatus = (status: 'cancelled' | 'no_show', label: string) => {
     if (!clinicId || !reservationId) return;
     showConfirm(
@@ -196,7 +170,6 @@ const BoardingStayPanel: React.FC<Props> = ({
     );
   };
 
-  const showBilling = shouldShowBoardingBillingButton({ stage, canManageFinance, reservationId });
   const primary =
     canManage && stage === 'reserved' && onRequestCheckIn ? (
       <button
@@ -215,11 +188,6 @@ const BoardingStayPanel: React.FC<Props> = ({
         onClick={() => onRequestCheckOut(reservationId)}
       >
         Fazer check-out
-      </button>
-    ) : showBilling ? (
-      <button type="button" className="hub-grooming-drawer__advance-btn" disabled={busy} onClick={() => void handleBilling()}>
-        {busy ? <Loader size={16} className="spin" aria-hidden /> : null}
-        Gerar cobrança
       </button>
     ) : null;
 
@@ -446,6 +414,7 @@ const BoardingStayPanel: React.FC<Props> = ({
                 clinicId={clinicId}
                 drawer={drawer}
                 canManage={canManage}
+                canViewFinancial={canViewFinancial}
                 canWriteInventory={canWriteInventory}
                 onChanged={refresh}
               />

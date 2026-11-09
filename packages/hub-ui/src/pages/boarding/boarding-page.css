@@ -484,10 +484,57 @@ span.hub-boarding-task__pet {
   gap: 4px;
 }
 
+/* Side panel / drawer: seções compactas (sem card pesado) */
+.hub-boarding-care__block {
+  margin: 0;
+  padding: 0.85rem 0 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.hub-boarding-care__block + .hub-boarding-care__block {
+  margin-top: 0.35rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--hc-border, #e5dcd6);
+}
+
+.hub-boarding-care__block-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.5rem;
+  padding: 0;
+  border: 0;
+}
+
+.hub-boarding-care__block-title {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+}
+
+.hub-boarding-care__block-icon {
+  display: none;
+}
+
+.hub-boarding-care__block-heading {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
 .hub-boarding-care__block-actions {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .hub-boarding-care__body {
@@ -548,6 +595,32 @@ span.hub-boarding-task__pet {
   margin: 0;
   padding: 0;
   list-style: none;
+}
+
+.hub-boarding-care__meal-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 4px;
+}
+
+.hub-boarding-care__meal-slot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.hub-boarding-public .hub-boarding-care__meal-slot {
+  padding: 10px 12px;
+  border: 1px solid var(--pub-border, #e5dcd6);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.hub-boarding-care__meal-slot .hub-boarding-care__inline-input {
+  flex: 1 1 160px;
+  min-width: 140px;
 }
 
 .hub-boarding-care__list .hub-grooming-drawer__line {
@@ -703,7 +776,28 @@ span.hub-boarding-task__pet {
 /* Pertences */
 .hub-boarding-belongings__add {
   align-items: center;
+  margin-top: 0.75rem;
 }
+
+.hub-boarding-checkin__care {
+  scroll-margin-top: 0.5rem;
+}
+
+.hub-boarding-checkin__care-toggle {
+  margin: 0 0 0.75rem;
+}
+
+/* Sem sticky: no check-in o rodapé do painel já fixa as ações e o sticky cobria os blocos. */
+.hub-boarding-checkin__care-savebar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 10px 0 0;
+  border-top: 1px solid var(--hc-border, #e8ddd8);
+}
+
 
 .hub-boarding-belongings__cat {
   width: auto;
@@ -894,15 +988,64 @@ span.hub-boarding-task__pet {
   margin-top: 16px;
 }
 
-.hub-boarding-public .hub-boarding-care .hub-grooming-drawer__section {
-  padding-left: 0;
-  padding-right: 0;
+.hub-boarding-public .hub-boarding-care {
+  margin-top: 16px;
+  gap: 16px;
+}
+
+/* Página compartilhada: blocos em painéis definidos */
+.hub-boarding-public .hub-boarding-care__block,
+.hub-boarding-public .hub-boarding-care__block + .hub-boarding-care__block {
+  margin: 0;
+  padding: 16px 16px 18px;
+  border: 1px solid var(--pub-border, #e5dcd6);
+  border-radius: 12px;
+  background: var(--pub-beige, #faf3ee);
+  box-shadow: none;
+}
+
+.hub-boarding-public .hub-boarding-care__block-header {
+  align-items: center;
+  margin: 0 0 14px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--pub-border, #e5dcd6);
+}
+
+.hub-boarding-public .hub-boarding-care__block-title {
+  gap: 10px;
+}
+
+.hub-boarding-public .hub-boarding-care__block-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  background: #fff;
+  border: 1px solid var(--pub-border, #e5dcd6);
+  color: var(--hc-brand, #c86a4d);
+}
+
+.hub-boarding-public .hub-boarding-care__block-heading {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--hc-text, #4a3b3a);
+  text-transform: none;
+}
+
+.hub-boarding-public .hub-public-quote__card .hub-clientes__field + .hub-clientes__field {
+  margin-top: 12px;
 }
 
 .hub-boarding-public__actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 12px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--pub-border, #e5dcd6);
 }
 
 /* ─── Calendário semanal ─────────────────────────────────────────────────── */

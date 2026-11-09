@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardingTask } from '../../api/hubBoardingApi';
-import { pickFeaturedTask, resolveBoardingFloorAction } from './BoardingFloorView';
+import { pickFeaturedTask, pickFloorSpotlight, resolveBoardingFloorAction, type FloorMoveStay } from './BoardingFloorView';
 
 const NOW = new Date('2026-09-08T12:00:00').getTime();
 
@@ -49,6 +49,69 @@ describe('pickFeaturedTask', () => {
     expect(
       pickFeaturedTask([task({ id: 'done', status: 'done', scheduled_for: '2026-09-08T08:00:00' })], NOW),
     ).toBeNull();
+  });
+});
+
+function stay(partial: Partial<FloorMoveStay> & { key: string }): FloorMoveStay {
+  return {
+    stage: 'checked_in',
+    is_late: false,
+    is_departure: false,
+    starts_at: '2026-09-08T11:00:00.000Z',
+    ends_at: '2026-09-08T21:00:00.000Z',
+    plan_pendencies: [],
+    open_incidents: [],
+    attention: [],
+    ...partial,
+  };
+}
+
+describe('pickFloorSpotlight', () => {
+  it('tarefa atrasada ganha de uma saída prevista', () => {
+    const spotlight = pickFloorSpotlight(
+      [task({ id: 'late', scheduled_for: '2026-09-08T09:00:00' })],
+      [stay({ key: 'out', is_departure: true, ends_at: '2026-09-08T13:00:00.000Z' })],
+      NOW,
+    );
+    expect(spotlight?.kind).toBe('task');
+  });
+
+  it('sem tarefa da hora, mostra a saída mais cedo', () => {
+    const spotlight = pickFloorSpotlight(
+      [task({ id: 'evening', scheduled_for: '2026-09-08T19:00:00' })],
+      [
+        stay({ key: 'later', is_departure: true, ends_at: '2026-09-08T22:00:00.000Z' }),
+        stay({ key: 'soon', is_departure: true, ends_at: '2026-09-08T15:00:00.000Z' }),
+      ],
+      NOW,
+    );
+    expect(spotlight?.kind).toBe('departure');
+    if (spotlight?.kind === 'departure') expect(spotlight.stay.key).toBe('soon');
+  });
+
+  it('saída atrasada vem antes de chegada', () => {
+    const spotlight = pickFloorSpotlight(
+      [],
+      [
+        stay({ key: 'in', stage: 'reserved', starts_at: '2026-09-08T12:10:00.000Z' }),
+        stay({ key: 'late', is_late: true, is_departure: true, ends_at: '2026-09-08T10:00:00.000Z' }),
+      ],
+      NOW,
+    );
+    expect(spotlight?.kind).toBe('late_checkout');
+  });
+
+  it('sem movimento, mostra o plano incompleto do pet presente', () => {
+    const spotlight = pickFloorSpotlight(
+      [],
+      [stay({ key: 'p', plan_pendencies: [{ label: 'Alimentação não informada' }] })],
+      NOW,
+    );
+    expect(spotlight).toMatchObject({ kind: 'plan', label: 'Alimentação não informada' });
+  });
+
+  it('dia quieto continua em branco para a mensagem de rotina em dia', () => {
+    expect(pickFloorSpotlight([], [stay({ key: 'ok' })], NOW)).toBeNull();
   });
 });
 

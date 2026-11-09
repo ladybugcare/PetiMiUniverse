@@ -32,8 +32,10 @@ export const BlockCardHeader: React.FC<BlockCardHeaderProps> = ({
           {blockNumber}
         </span>
         <span className="nam-block-card__title-stack">
-          <span className="nam-block-card__title">{title}</span>
-          {subtitle ? <span className="nam-block-card__subtitle">{subtitle}</span> : null}
+          <span className="nam-block-card__title">{typeof title === 'string' ? title : ''}</span>
+          {typeof subtitle === 'string' && subtitle ? (
+            <span className="nam-block-card__subtitle">{subtitle}</span>
+          ) : null}
         </span>
       </span>
       <span className="nam-block-card__toggle">

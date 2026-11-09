@@ -1,17 +1,19 @@
 import React from 'react';
-import { Route, Routes } from 'react-router-dom';
+import { Navigate, Route, Routes } from 'react-router-dom';
 import HubBoardingShell from './HubBoardingShell';
 import HubBoardingPage from './HubBoardingPage';
 import HubBoardingFloorPage from './HubBoardingFloorPage';
-import HubBoardingSettingsPage from './HubBoardingSettingsPage';
 
 const HubBoardingRoutes: React.FC = () => {
   return (
     <Routes>
+      <Route
+        path="configuracoes"
+        element={<Navigate to="/hub/configuracoes-sistema/hotel-creche" replace />}
+      />
       <Route element={<HubBoardingShell />}>
         <Route index element={<HubBoardingPage />} />
         <Route path="minha-fila" element={<HubBoardingFloorPage />} />
-        <Route path="configuracoes" element={<HubBoardingSettingsPage />} />
       </Route>
     </Routes>
   );

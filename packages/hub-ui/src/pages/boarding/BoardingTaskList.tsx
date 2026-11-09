@@ -6,6 +6,7 @@ import {
   OUTCOMES_BY_KIND,
   OUTCOME_BUTTON_LABELS,
   TASK_KIND_LABELS,
+  formatBoardingTaskDetails,
   formatHm,
   groupTasksByTime,
   isBatchEligible,
@@ -53,6 +54,8 @@ export const BoardingTaskRow: React.FC<RowProps> = ({
   const result = taskResultLabel(task);
   const concerning = task.status === 'done' && isConcerningOutcome(task.kind, task.outcome);
   const outcomes = OUTCOMES_BY_KIND[task.kind] ?? ['done', 'not_done'];
+  const detailsText = formatBoardingTaskDetails(task.details);
+  const titleText = typeof task.title === 'string' ? task.title : '';
 
   const send = (action: BoardingTaskAction) => {
     const notes = note.trim() || null;
@@ -122,8 +125,8 @@ export const BoardingTaskRow: React.FC<RowProps> = ({
               <span className="hub-boarding-task__pet">{task.pet_name}</span>
             )
           ) : null}
-          <span className="hub-boarding-task__title">{task.title}</span>
-          {task.details ? <span className="hub-boarding-task__details">{task.details}</span> : null}
+          <span className="hub-boarding-task__title">{titleText}</span>
+          {detailsText ? <span className="hub-boarding-task__details">{detailsText}</span> : null}
           {!pending && task.last_notes ? <span className="hub-boarding-task__details">{task.last_notes}</span> : null}
           {showPet && task.space_name ? <span className="hub-boarding-task__details">{task.space_name}</span> : null}
         </div>

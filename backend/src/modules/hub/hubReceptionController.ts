@@ -136,6 +136,7 @@ export const getHubReceptionBoard = async (req: Request, res: Response) => {
       handoffInDay(
         {
           status: String(row.status),
+          kind: String(row.kind),
           opened_at: String(row.opened_at),
           resolved_at: (row.resolved_at as string | null) ?? null,
         },

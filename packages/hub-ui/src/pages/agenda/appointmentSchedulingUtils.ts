@@ -1,5 +1,10 @@
 import type { HubQuotePricingVariant } from '../../api/hubQuotesApi';
-import type { CreateHubAppointmentPayload } from '../../api/hubAgendaApi';
+import type {
+  CreateHubAppointmentPayload,
+  HubAppointmentRecurrenceRule,
+  HubAppointmentPickupRoutePricing,
+  CreatePickupRouteBlock,
+} from '../../api/hubAgendaApi';
 
 export type SchedulingServiceChip = {
   hub_service_type_id: string;
@@ -7,6 +12,32 @@ export type SchedulingServiceChip = {
   duration_minutes: number;
   pricing_variant?: HubQuotePricingVariant | null;
   sale_amount_override?: number | null;
+};
+
+/** Recorrência / L&T por bloco (Fase 1 — blocos de 1ª classe). */
+export type BlockRecurrenceState = {
+  enabled: boolean;
+  kind: HubAppointmentRecurrenceRule['kind'];
+  interval_value: number;
+  days_of_week: number[];
+  day_of_month: number | null;
+  end_mode: 'occurrences' | 'until_date';
+  occurrences: number;
+  until_date: string;
+  billing_mode: NonNullable<HubAppointmentRecurrenceRule['billing_mode']>;
+};
+
+export type BlockPickupState = {
+  enabled: boolean;
+  mode: 'round_trip' | 'pickup_only' | 'delivery_only';
+  lt_service_type_id: string;
+  km_tier_index: number;
+  before_starts_hm: string;
+  before_ends_hm: string;
+  after_starts_hm: string;
+  after_ends_hm: string;
+  before_staff_id: string;
+  after_staff_id: string;
 };
 
 export type ExtraBlock = {
@@ -24,9 +55,24 @@ export type ExtraBlock = {
   services: SchedulingServiceChip[];
   starts_hm: string;
   ends_hm: string;
+  /**
+   * Data de início do bloco (YYYY-MM-DD).
+   * Quando definida, o payload usa esta data em vez de empurrar dias pelo cursor do pai
+   * (ex.: banho no dia da saída de uma estadia de hotel).
+   */
+  starts_date_ymd?: string | null;
   hub_staff_member_id: string;
   resource_label: string;
   hub_resource_id?: string | null;
+  /** Recorrência deste bloco (independente do bloco principal). */
+  recurrence?: BlockRecurrenceState | null;
+  /** Leva e traz anexado a este bloco. */
+  pickup?: BlockPickupState | null;
+  /** Hotel: data de saída (YMD) quando multi-dia; entrada usa starts_date_ymd ou a data do agendamento. */
+  checkout_date_ymd?: string | null;
+  checkout_hm?: string | null;
+  /** Creche: período do turno. */
+  daycare_period?: 'full_day' | 'half_day' | null;
 };
 
 /** Título automático: "Serviço A + Serviço B — Pet" (paridade com o bloco principal). */
@@ -203,23 +249,65 @@ export function buildExtraBlocksApiPayload(
   return extraBlocks
     .filter((b) => b.services.length > 0)
     .map((b) => {
-      const blockStart = toIsoTsOnOrAfter(dateYmd, b.starts_hm, cursor);
-      const blockEnd = toEndIsoTs(blockStart.slice(0, 10), b.starts_hm, b.ends_hm);
+      const explicitYmd = (b.starts_date_ymd ?? '').trim() || null;
+      let blockStart: string;
+      let blockYmd: string;
+      if (explicitYmd) {
+        // Data explícita: usa o dia escolhido (ex. banho na saída), sem empurrar pelo fim da estadia.
+        // Encadeia horário só se o bloco anterior for no mesmo dia e o start escolhido for antes do cursor.
+        blockYmd = explicitYmd;
+        const candidate = toIsoTs(explicitYmd, b.starts_hm);
+        if (
+          cursor.slice(0, 10) === explicitYmd &&
+          new Date(candidate).getTime() < new Date(cursor).getTime()
+        ) {
+          const after = toIsoTsOnOrAfter(explicitYmd, b.starts_hm, cursor);
+          blockStart = after.slice(0, 10) === explicitYmd ? after : candidate;
+        } else {
+          blockStart = candidate;
+        }
+      } else {
+        blockStart = toIsoTsOnOrAfter(dateYmd, b.starts_hm, cursor);
+        blockYmd = blockStart.slice(0, 10);
+      }
+      let blockEnd = toEndIsoTs(blockYmd, b.starts_hm, b.ends_hm);
+      if (b.checkout_date_ymd && b.checkout_hm) {
+        blockEnd = toIsoTs(b.checkout_date_ymd, b.checkout_hm);
+      }
       cursor = blockEnd;
+      const pickupPayload = b.pickup?.enabled
+        ? buildBlockPickupApiPayload({
+            pickup: b.pickup,
+            dateYmd: blockYmd,
+            blockStartsAt: blockStart,
+            blockEndsAt: blockEnd,
+            toIso: toIsoTs,
+            toReturnIso: toIsoTsForPickupReturn,
+          })
+        : {};
+      const services = b.services.map((s) => {
+        let pricing_variant = s.pricing_variant ?? undefined;
+        if (b.daycare_period) {
+          pricing_variant = { ...(pricing_variant ?? {}), period: b.daycare_period };
+        }
+        return {
+          hub_service_type_id: s.hub_service_type_id,
+          duration_minutes: s.duration_minutes,
+          pricing_variant,
+        };
+      });
       return {
         ...(b.appointment_id ? { id: b.appointment_id } : {}),
         starts_at: blockStart,
         ends_at: blockEnd,
-        services: b.services.map((s) => ({
-          hub_service_type_id: s.hub_service_type_id,
-          duration_minutes: s.duration_minutes,
-          pricing_variant: s.pricing_variant ?? undefined,
-        })),
+        services,
         hub_staff_member_id: b.hub_staff_member_id || null,
         resource_label: b.resource_label || null,
         hub_resource_id: b.hub_resource_id ?? null,
         title: b.block_title.trim() || null,
         notes: b.block_description.trim() || null,
+        recurrence: blockRecurrenceToApi(b.recurrence),
+        ...pickupPayload,
       };
     });
 }
@@ -228,6 +316,8 @@ export function cloneExtraBlock(block: ExtraBlock): ExtraBlock {
   return {
     ...block,
     services: block.services.map((s) => ({ ...s })),
+    recurrence: block.recurrence ? { ...block.recurrence, days_of_week: [...block.recurrence.days_of_week] } : block.recurrence,
+    pickup: block.pickup ? { ...block.pickup } : block.pickup,
   };
 }
 
@@ -331,12 +421,44 @@ export function visitTotalDurationMin(
   }, 0);
 }
 
+export function defaultBlockRecurrence(): BlockRecurrenceState {
+  return {
+    enabled: false,
+    kind: 'weekly',
+    interval_value: 1,
+    days_of_week: [],
+    day_of_month: null,
+    end_mode: 'occurrences',
+    occurrences: 4,
+    until_date: '',
+    billing_mode: 'per_occurrence',
+  };
+}
+
+export function defaultBlockPickup(startsHm: string, endsHm: string): BlockPickupState {
+  return {
+    enabled: false,
+    mode: 'round_trip',
+    lt_service_type_id: '',
+    km_tier_index: 0,
+    before_starts_hm: addMinutes(startsHm, -30),
+    before_ends_hm: startsHm,
+    after_starts_hm: endsHm,
+    after_ends_hm: addMinutes(endsHm, 30),
+    before_staff_id: '',
+    after_staff_id: '',
+  };
+}
+
 export function createEmptyExtraBlock(opts: {
   groupFilter: string;
   startsHm: string;
   staffId: string;
   resourceLabel: string;
+  /** Data de início do bloco (YYYY-MM-DD). Default: null (usa a data do agendamento + cursor). */
+  startsDateYmd?: string | null;
 }): ExtraBlock {
+  const ends = addMinutes(opts.startsHm, 60);
   return {
     key: String(Date.now()),
     expanded: true,
@@ -347,8 +469,70 @@ export function createEmptyExtraBlock(opts: {
     group_filter: opts.groupFilter,
     services: [],
     starts_hm: opts.startsHm,
-    ends_hm: addMinutes(opts.startsHm, 60),
+    ends_hm: ends,
+    starts_date_ymd: opts.startsDateYmd ?? null,
     hub_staff_member_id: opts.staffId,
     resource_label: opts.resourceLabel,
+    recurrence: defaultBlockRecurrence(),
+    pickup: defaultBlockPickup(opts.startsHm, ends),
+    checkout_date_ymd: null,
+    checkout_hm: null,
+    daycare_period: null,
   };
+}
+
+export function blockRecurrenceToApi(
+  r: BlockRecurrenceState | null | undefined,
+): HubAppointmentRecurrenceRule | null {
+  if (!r?.enabled) return null;
+  const kind = r.kind === 'biweekly' ? 'weekly' : r.kind;
+  const interval_value = r.kind === 'biweekly' ? 2 : Math.max(1, r.interval_value || 1);
+  return {
+    kind,
+    interval_value,
+    days_of_week: r.days_of_week.length ? r.days_of_week : undefined,
+    day_of_month: r.kind === 'monthly' ? r.day_of_month : undefined,
+    until_date: r.end_mode === 'until_date' && r.until_date ? r.until_date : null,
+    occurrences: r.end_mode === 'occurrences' ? Math.min(52, Math.max(2, r.occurrences || 2)) : null,
+    billing_mode: r.billing_mode,
+  };
+}
+
+export type BuildBlockPickupApiArgs = {
+  pickup: BlockPickupState;
+  dateYmd: string;
+  blockStartsAt: string;
+  blockEndsAt: string;
+  toIso: (ymd: string, hm: string) => string;
+  toReturnIso: (ymd: string, hm: string, anchor: string) => string;
+};
+
+export function buildBlockPickupApiPayload(args: BuildBlockPickupApiArgs): {
+  with_pickup_route_before?: CreatePickupRouteBlock;
+  with_pickup_route_after?: CreatePickupRouteBlock;
+  pickup_route_pricing?: HubAppointmentPickupRoutePricing;
+} {
+  const { pickup, dateYmd, blockStartsAt, blockEndsAt, toIso, toReturnIso } = args;
+  if (!pickup.enabled || !pickup.lt_service_type_id.trim()) return {};
+  const pricing: HubAppointmentPickupRoutePricing = {
+    hub_service_type_id: pickup.lt_service_type_id.trim(),
+    pricing_variant: { km_tier_index: pickup.km_tier_index },
+  };
+  const out: ReturnType<typeof buildBlockPickupApiPayload> = { pickup_route_pricing: pricing };
+  if (pickup.mode !== 'delivery_only') {
+    out.with_pickup_route_before = {
+      starts_at: toIso(dateYmd, pickup.before_starts_hm),
+      ends_at: toIso(dateYmd, pickup.before_ends_hm),
+      hub_staff_member_id: pickup.before_staff_id || null,
+    };
+  }
+  if (pickup.mode !== 'pickup_only') {
+    out.with_pickup_route_after = {
+      starts_at: toReturnIso(dateYmd, pickup.after_starts_hm, blockEndsAt),
+      ends_at: toReturnIso(dateYmd, pickup.after_ends_hm, blockEndsAt),
+      hub_staff_member_id: pickup.after_staff_id || null,
+    };
+  }
+  void blockStartsAt;
+  return out;
 }

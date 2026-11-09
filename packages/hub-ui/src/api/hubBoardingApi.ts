@@ -265,6 +265,7 @@ export const hubBoardingApi = {
     recreation_windows?: BoardingRecreationWindow[];
     recreation_capacity?: number | null;
     overbooking_policy?: BoardingOverbookingPolicy;
+    meal_slot_times?: BoardingMealSlotTimes;
   }) {
     return apiRequest(`${boardingBase}/unit-settings`, {
       method: 'PATCH',
@@ -661,6 +662,7 @@ export type BoardingDaycarePeriod = 'full_day' | 'half_day';
 export type BoardingOverbookingPolicy = 'warn' | 'block';
 export type BoardingDaycareShift = { key: string; label: string; start: string; end: string };
 export type BoardingRecreationWindow = { start: string; end?: string | null; label?: string | null };
+export type BoardingMealSlotTimes = Partial<Record<BoardingCareMealSlot, string>>;
 
 export type BoardingUnitSettings = {
   unit_id: string | null;
@@ -672,17 +674,27 @@ export type BoardingUnitSettings = {
   recreation_windows?: BoardingRecreationWindow[] | null;
   recreation_capacity?: number | null;
   overbooking_policy?: BoardingOverbookingPolicy | null;
+  meal_slot_times?: BoardingMealSlotTimes | null;
   updated_at?: string;
 };
 
 // ─── Cuidados ────────────────────────────────────────────────────────────────
 
-export type BoardingCareMeal = { time: string; amount?: string | null; notes?: string | null };
+export type BoardingCareMealSlot = 'breakfast' | 'lunch' | 'snack' | 'dinner';
+export type BoardingCareMeal = {
+  slot: BoardingCareMealSlot;
+  amount?: string | null;
+  notes?: string | null;
+  /** @deprecated legado HH:mm — normalizado no backend para `slot`. */
+  time?: string;
+};
 export type BoardingCareFeeding = {
   food_source?: 'own' | 'house' | null;
   food_name?: string | null;
   meals?: BoardingCareMeal[];
   restrictions?: string | null;
+  /** false = não come no estabelecimento (já vem alimentado). */
+  feeds_on_site?: boolean | null;
 };
 export type BoardingCareMedication = {
   name: string;

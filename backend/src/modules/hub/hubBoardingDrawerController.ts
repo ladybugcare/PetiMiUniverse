@@ -10,6 +10,7 @@ import {
   computePlanPendencies,
   normalizePlanBlocks,
   normalizeProfileBlocks,
+  taskDetailsDisplayText,
 } from './boardingCare';
 import { estimateBoardingStayTotal, type BoardingExtraInput } from './boardingBilling';
 import {
@@ -293,7 +294,11 @@ export const getHubBoardingReservationDrawer = async (req: Request, res: Respons
       care_plan: carePlanPayload(planRow),
       plan_pendencies: pendencies,
       attention,
-      tasks,
+      tasks: tasks.map((t) => ({
+        ...t,
+        title: typeof t.title === 'string' ? t.title : String(t.title ?? ''),
+        details: taskDetailsDisplayText(t.details),
+      })),
       incidents,
       belongings,
       extras: bundle.extras.rows,

@@ -193,6 +193,11 @@ export type CreateExtraBlock = {
   status?: HubAppointmentStatus;
   notes?: string | null;
   title?: string | null;
+  /** Recorrência própria deste bloco (não herda a série do pai). */
+  recurrence?: HubAppointmentRecurrenceRule | null;
+  with_pickup_route_before?: CreatePickupRouteBlock | null;
+  with_pickup_route_after?: CreatePickupRouteBlock | null;
+  pickup_route_pricing?: HubAppointmentPickupRoutePricing | null;
 };
 
 export type CreateHubAppointmentPayload = {
@@ -232,6 +237,13 @@ export type CreateHubAppointmentPayload = {
   /** Retorno quando standalone_pickup_mode = round_trip. */
   standalone_pickup_return?: CreatePickupRouteBlock | null;
   extra_blocks?: CreateExtraBlock[];
+  /**
+   * Quando true, extras não entram na série do pai: cada um tem recorrência/L&T próprios
+   * (ou ocorrência única). Default no cliente após Fase 1.
+   */
+  independent_extra_blocks?: boolean;
+  /** Cria reserva boarding `reserved` ao salvar hotel/creche. */
+  create_boarding_reservation?: boolean;
   recurrence?: HubAppointmentRecurrenceRule | null;
   intake_hub_case_id?: string | null;
   intake_create_new_case?: boolean;

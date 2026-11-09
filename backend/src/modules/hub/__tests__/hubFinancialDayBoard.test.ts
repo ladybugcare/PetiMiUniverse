@@ -13,6 +13,10 @@ describe('hubFinancialDayBoard', () => {
       expect(isDayBoardOperationallyComplete('boarding_reservation', 'checked_out')).toBe(true);
     });
 
+    it('boarding_reservation checked_in não é completo', () => {
+      expect(isDayBoardOperationallyComplete('boarding_reservation', 'checked_in')).toBe(false);
+    });
+
     it('appointment done é completo', () => {
       expect(isDayBoardOperationallyComplete('appointment', 'done')).toBe(true);
     });

@@ -12,7 +12,9 @@ import { HubTimeField } from '../../components/HubTimeField';
 import { useAlert } from '../../components/AlertProvider';
 import {
   hubBoardingApi,
+  type BoardingCareMealSlot,
   type BoardingDaycareShift,
+  type BoardingMealSlotTimes,
   type BoardingOverbookingPolicy,
   type BoardingRecreationWindow,
   type BoardingSpace,
@@ -20,7 +22,16 @@ import {
   type BoardingSpaceMode,
 } from '../../api/hubBoardingApi';
 import { isUuid, loadAgendaPersistedFilters, saveAgendaPersistedUnit } from '../agenda/agendaFilters';
-import { SPACE_KIND_LABELS, SPACE_MODE_LABELS } from './boardingCareUi';
+import {
+  CARE_MEAL_SLOTS,
+  CARE_MEAL_SLOT_LABELS,
+  DEFAULT_MEAL_SLOT_TIMES,
+  SPACE_KIND_LABELS,
+  SPACE_MODE_LABELS,
+} from './boardingCareUi';
+import '../clientes/clientes.css';
+import '../grooming/grooming-page.css';
+import './boarding-page.css';
 
 type SettingsDraft = {
   hotel_slots: string;
@@ -30,6 +41,7 @@ type SettingsDraft = {
   daycare_shifts: BoardingDaycareShift[];
   recreation_windows: BoardingRecreationWindow[];
   recreation_capacity: string;
+  meal_slot_times: Record<BoardingCareMealSlot, string>;
 };
 
 type SpaceDraft = {
@@ -50,7 +62,18 @@ const EMPTY_SETTINGS: SettingsDraft = {
   daycare_shifts: [],
   recreation_windows: [],
   recreation_capacity: '',
+  meal_slot_times: { ...DEFAULT_MEAL_SLOT_TIMES },
 };
+
+function mealTimesFrom(raw: BoardingMealSlotTimes | null | undefined): Record<BoardingCareMealSlot, string> {
+  const out = { ...DEFAULT_MEAL_SLOT_TIMES };
+  if (!raw) return out;
+  for (const slot of CARE_MEAL_SLOTS) {
+    const value = raw[slot];
+    if (value && /^\d{2}:\d{2}/.test(value)) out[slot] = value.slice(0, 5);
+  }
+  return out;
+}
 
 function intOrNull(v: string): number | null {
   const n = Number.parseInt(v, 10);
@@ -116,6 +139,7 @@ const HubBoardingSettingsPage: React.FC = () => {
         daycare_shifts: row?.daycare_shifts ?? [],
         recreation_windows: row?.recreation_windows ?? [],
         recreation_capacity: row?.recreation_capacity != null ? String(row.recreation_capacity) : '',
+        meal_slot_times: mealTimesFrom(row?.meal_slot_times),
       });
       setSpaces(sp.spaces ?? []);
       setDirty(false);
@@ -150,6 +174,10 @@ const HubBoardingSettingsPage: React.FC = () => {
       showError('Em cada turno, o fim precisa ser depois do início.');
       return;
     }
+    if (CARE_MEAL_SLOTS.some((slot) => !/^\d{2}:\d{2}$/.test(draft.meal_slot_times[slot] ?? ''))) {
+      showError('Informe o horário de cada período de refeição.');
+      return;
+    }
     setSaving(true);
     try {
       await hubBoardingApi.patchUnitSettings({
@@ -164,6 +192,7 @@ const HubBoardingSettingsPage: React.FC = () => {
           .filter((w) => w.start)
           .map((w) => ({ start: w.start, end: w.end || null, label: w.label?.trim() || null })),
         recreation_capacity: intOrNull(draft.recreation_capacity),
+        meal_slot_times: draft.meal_slot_times,
       });
       showSuccess('Configurações salvas');
       await load();
@@ -221,7 +250,7 @@ const HubBoardingSettingsPage: React.FC = () => {
   };
 
   if (permLoading) return <HubLoading variant="block" />;
-  if (!canManage) return <Navigate to="/hub/hotel-creche" replace />;
+  if (!canManage) return <Navigate to="/hub/configuracoes-sistema" replace />;
   if (!clinicId) {
     return <p className="hub-clientes__muted hub-clinic-page__pad">Selecione uma clínica para configurar Hotel & Creche.</p>;
   }
@@ -389,9 +418,29 @@ const HubBoardingSettingsPage: React.FC = () => {
       </section>
 
       <section className="hub-boarding-settings__section">
-        <h3 className="hub-grooming-drawer__heading">Recreação</h3>
+        <h3 className="hub-grooming-drawer__heading">Horários das refeições</h3>
         <p className="hub-grooming-drawer__hint">
-          Horários em que a recreação entra na rotina dos pets liberados para grupo. É uma tarefa da estadia, não uma
+          No plano do pet a alimentação é um período (café da manhã, almoço, lanche, janta), sem horário próprio.
+          Defina aqui a que horas cada período entra na rotina desta unidade. Ao salvar, as tarefas ainda pendentes
+          são atualizadas.
+        </p>
+        <div className="hub-boarding-care__grid">
+          {CARE_MEAL_SLOTS.map((slot) => (
+            <HubTimeField
+              key={slot}
+              id={`bs-meal-${slot}`}
+              label={CARE_MEAL_SLOT_LABELS[slot]}
+              valueHm={draft.meal_slot_times[slot]}
+              onChangeHm={(v) => update({ meal_slot_times: { ...draft.meal_slot_times, [slot]: v } })}
+            />
+          ))}
+        </div>
+      </section>
+
+      <section className="hub-boarding-settings__section">
+        <h3 className="hub-grooming-drawer__heading">Atividades</h3>
+        <p className="hub-grooming-drawer__hint">
+          Horários em que as atividades entram na rotina dos pets liberados para grupo. É uma tarefa da estadia, não uma
           reserva a mais.
         </p>
         {draft.recreation_windows.length ? (
@@ -433,7 +482,7 @@ const HubBoardingSettingsPage: React.FC = () => {
                 <button
                   type="button"
                   className="hub-clientes__icon-btn hub-boarding-settings__remove"
-                  aria-label="Remover horário de recreação"
+                  aria-label="Remover horário de atividade"
                   onClick={() => update({ recreation_windows: draft.recreation_windows.filter((_, i) => i !== idx) })}
                 >
                   <X size={16} />
@@ -442,7 +491,7 @@ const HubBoardingSettingsPage: React.FC = () => {
             ))}
           </ul>
         ) : (
-          <p className="hub-grooming-drawer__muted">Sem horários: recreação só quando registrada pela equipe.</p>
+          <p className="hub-grooming-drawer__muted">Sem horários: atividades só quando registradas pela equipe.</p>
         )}
         <button
           type="button"

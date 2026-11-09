@@ -7,13 +7,73 @@ import { boardingLocalParts } from './boardingBilling';
 
 // ─── Tipos ────────────────────────────────────────────────────────────────
 
-export type CareMeal = { time: string; amount?: string | null; notes?: string | null };
+/** Períodos de refeição (sem horário digitado pela equipe). */
+export type CareMealSlot = 'breakfast' | 'lunch' | 'snack' | 'dinner';
+export type CareMeal = { slot: CareMealSlot; amount?: string | null; notes?: string | null };
 export type CareFeeding = {
   food_source?: 'own' | 'house' | null;
   food_name?: string | null;
   meals?: CareMeal[];
   restrictions?: string | null;
+  /**
+   * false = não come no estabelecimento (já vem alimentado).
+   * true/null = come no local (null = ainda não informado explicitamente).
+   */
+  feeds_on_site?: boolean | null;
 };
+
+export const CARE_MEAL_SLOTS: CareMealSlot[] = ['breakfast', 'lunch', 'snack', 'dinner'];
+
+export const CARE_MEAL_SLOT_LABELS: Record<CareMealSlot, string> = {
+  breakfast: 'Café da manhã',
+  lunch: 'Almoço',
+  snack: 'Lanche',
+  dinner: 'Janta',
+};
+
+/**
+ * Horário padrão de cada período (America/Sao_Paulo).
+ * A unidade substitui isso em hub_unit_boarding_settings.meal_slot_times.
+ */
+export const CARE_MEAL_SLOT_ANCHOR_HM: Record<CareMealSlot, string> = {
+  breakfast: '08:00',
+  lunch: '12:00',
+  snack: '16:00',
+  dinner: '19:00',
+};
+
+const SLOT_ORDER: Record<CareMealSlot, number> = {
+  breakfast: 0,
+  lunch: 1,
+  snack: 2,
+  dinner: 3,
+};
+
+function isCareMealSlot(v: unknown): v is CareMealSlot {
+  return v === 'breakfast' || v === 'lunch' || v === 'snack' || v === 'dinner';
+}
+
+/** Mapeia HH:mm legado para o período mais próximo. */
+export function mealSlotFromLegacyTime(hm: string): CareMealSlot {
+  const [hStr, mStr] = hm.split(':');
+  const minutes = Number(hStr) * 60 + Number(mStr);
+  const anchors: Array<{ slot: CareMealSlot; at: number }> = [
+    { slot: 'breakfast', at: 8 * 60 },
+    { slot: 'lunch', at: 12 * 60 },
+    { slot: 'snack', at: 16 * 60 },
+    { slot: 'dinner', at: 19 * 60 },
+  ];
+  let best = anchors[0];
+  let bestDist = Math.abs(minutes - best.at);
+  for (const a of anchors.slice(1)) {
+    const d = Math.abs(minutes - a.at);
+    if (d < bestDist) {
+      best = a;
+      bestDist = d;
+    }
+  }
+  return best.slot;
+}
 export type CareMedication = {
   name: string;
   dose?: string | null;
@@ -40,7 +100,8 @@ export type CarePlanBlocks = CareProfileBlocks & { recreation: CareRecreation | 
 
 export const CARE_BLOCK_KEYS = ['feeding', 'medications', 'walks', 'handling', 'recreation'] as const;
 export type CareBlockKey = (typeof CARE_BLOCK_KEYS)[number];
-export const PROFILE_BLOCK_KEYS = ['feeding', 'medications', 'walks', 'handling'] as const;
+/** Ficha permanente / tutor: sem passeios — atividades vêm da recreação da unidade. */
+export const PROFILE_BLOCK_KEYS = ['feeding', 'medications', 'handling'] as const;
 export type ProfileBlockKey = (typeof PROFILE_BLOCK_KEYS)[number];
 
 /** Blocos que precisam estar confirmados para a estadia ficar "pronta". */
@@ -54,7 +115,7 @@ export const BLOCK_LABELS: Record<CareBlockKey, string> = {
   medications: 'Medicação',
   walks: 'Passeios',
   handling: 'Manejo',
-  recreation: 'Recreação',
+  recreation: 'Atividades',
 };
 
 // ─── Normalização ─────────────────────────────────────────────────────────
@@ -65,6 +126,18 @@ export function normalizeTime(v: unknown): string | null {
   if (typeof v !== 'string') return null;
   const t = v.trim().slice(0, 5);
   return HM_RE.test(t) ? t : null;
+}
+
+/** Completa com o padrão o que a unidade não configurou. */
+export function resolveMealSlotTimes(raw: unknown): Record<CareMealSlot, string> {
+  const out = { ...CARE_MEAL_SLOT_ANCHOR_HM };
+  if (!raw || typeof raw !== 'object') return out;
+  const o = raw as Record<string, unknown>;
+  for (const slot of CARE_MEAL_SLOTS) {
+    const t = normalizeTime(o[slot]);
+    if (t) out[slot] = t;
+  }
+  return out;
 }
 
 function normalizeTimes(v: unknown): string[] {
@@ -82,19 +155,38 @@ function str(v: unknown): string | null {
 export function normalizeFeeding(v: unknown): CareFeeding | null {
   if (!v || typeof v !== 'object') return null;
   const o = v as Record<string, unknown>;
-  const meals = Array.isArray(o.meals)
-    ? (o.meals as unknown[])
-        .map((m) => {
-          const mm = (m ?? {}) as Record<string, unknown>;
-          const time = normalizeTime(mm.time);
-          if (!time) return null;
-          return { time, amount: str(mm.amount), notes: str(mm.notes) };
-        })
-        .filter((m): m is { time: string; amount: string | null; notes: string | null } => m != null)
-        .sort((a, b) => a.time.localeCompare(b.time))
-    : [];
+  const bySlot = new Map<CareMealSlot, CareMeal>();
+  if (Array.isArray(o.meals)) {
+    for (const raw of o.meals as unknown[]) {
+      const mm = (raw ?? {}) as Record<string, unknown>;
+      let slot: CareMealSlot | null = isCareMealSlot(mm.slot) ? mm.slot : null;
+      if (!slot) {
+        const legacyTime = normalizeTime(mm.time);
+        if (legacyTime) slot = mealSlotFromLegacyTime(legacyTime);
+      }
+      if (!slot) continue;
+      const next: CareMeal = { slot, amount: str(mm.amount), notes: str(mm.notes) };
+      const prev = bySlot.get(slot);
+      // Mantém a quantidade/notas do primeiro; se o novo tiver e o antigo não, preenche.
+      if (!prev) bySlot.set(slot, next);
+      else
+        bySlot.set(slot, {
+          slot,
+          amount: prev.amount ?? next.amount,
+          notes: prev.notes ?? next.notes,
+        });
+    }
+  }
+  const meals = [...bySlot.values()].sort((a, b) => SLOT_ORDER[a.slot] - SLOT_ORDER[b.slot]);
   const src = o.food_source === 'own' || o.food_source === 'house' ? o.food_source : null;
-  return { food_source: src, food_name: str(o.food_name), meals, restrictions: str(o.restrictions) };
+  const feedsOnSite = typeof o.feeds_on_site === 'boolean' ? o.feeds_on_site : null;
+  return {
+    food_source: src,
+    food_name: str(o.food_name),
+    meals: feedsOnSite === false ? [] : meals,
+    restrictions: str(o.restrictions),
+    feeds_on_site: feedsOnSite,
+  };
 }
 
 export function normalizeMedications(v: unknown): CareMedication[] | null {
@@ -179,6 +271,7 @@ export function isBlockEmpty(key: CareBlockKey, v: unknown): boolean {
   switch (key) {
     case 'feeding': {
       const f = v as CareFeeding;
+      if (f.feeds_on_site === false) return false;
       return !(f.meals?.length || f.food_name || f.restrictions || f.food_source);
     }
     case 'medications':
@@ -329,6 +422,38 @@ export type TaskSpec = {
   plan_key: string;
 };
 
+/**
+ * Converte jsonb de detalhes da tarefa em texto para a API/UI.
+ * Objeto vazio `{}` é truthy no JS e quebra React se renderizado cru.
+ */
+export function taskDetailsDisplayText(details: unknown): string | null {
+  if (details == null) return null;
+  if (typeof details === 'string') {
+    const t = details.trim();
+    return t || null;
+  }
+  if (typeof details !== 'object' || Array.isArray(details)) return null;
+  const d = details as Record<string, unknown>;
+  const parts: string[] = [];
+  const push = (v: unknown) => {
+    if (typeof v === 'string' && v.trim()) parts.push(v.trim());
+    else if (typeof v === 'number' && Number.isFinite(v)) parts.push(String(v));
+  };
+  push(d.food_name);
+  push(d.amount);
+  push(d.dose);
+  push(d.instructions);
+  push(d.notes);
+  push(d.restrictions);
+  if (parts.length === 0) {
+    for (const [k, v] of Object.entries(d)) {
+      if (k === 'slot' || k === 'food_source' || k === 'name') continue;
+      push(v);
+    }
+  }
+  return parts.length ? parts.join(' · ') : null;
+}
+
 export type RecreationWindow = { start: string; end?: string | null; label?: string | null };
 
 function addDaysYmd(ymd: string, days: number): string {
@@ -353,6 +478,8 @@ export function generatePlanTasks(args: {
   start: string;
   end: string | null;
   recreationWindows?: RecreationWindow[];
+  /** Horário de cada período nesta unidade. Ausente = padrão 08:00 / 12:00 / 16:00 / 19:00. */
+  mealSlotTimes?: unknown;
 }): TaskSpec[] {
   const startParts = boardingLocalParts(args.start);
   if (!startParts) return [];
@@ -362,6 +489,7 @@ export function generatePlanTasks(args: {
   const endParts = boardingLocalParts(endIso);
   if (!endParts || endMs < startMs) return [];
 
+  const mealTimes = resolveMealSlotTimes(args.mealSlotTimes);
   const specs: TaskSpec[] = [];
   const push = (ymd: string, hm: string, s: Omit<TaskSpec, 'scheduled_for' | 'task_date'>) => {
     const iso = localDateTimeToIso(ymd, hm);
@@ -370,23 +498,27 @@ export function generatePlanTasks(args: {
     specs.push({ ...s, scheduled_for: iso, task_date: ymd });
   };
 
-  const { feeding, medications, walks, recreation } = args.plan;
+  const { feeding, medications, recreation } = args.plan;
   let ymd = startParts.ymd;
   for (let i = 0; i <= MAX_TASK_DAYS && ymd <= endParts.ymd; i++, ymd = addDaysYmd(ymd, 1)) {
-    (feeding?.meals ?? []).forEach((meal, idx) => {
-      push(ymd, meal.time, {
-        kind: 'feeding',
-        title: `Refeição das ${meal.time}`,
-        plan_key: `feeding:${idx}:${meal.time}`,
-        details: {
-          amount: meal.amount ?? null,
-          notes: meal.notes ?? null,
-          food_name: feeding?.food_name ?? null,
-          food_source: feeding?.food_source ?? null,
-          restrictions: feeding?.restrictions ?? null,
-        },
+    if (feeding?.feeds_on_site !== false) {
+      (feeding?.meals ?? []).forEach((meal) => {
+        const anchor = mealTimes[meal.slot];
+        push(ymd, anchor, {
+          kind: 'feeding',
+          title: CARE_MEAL_SLOT_LABELS[meal.slot],
+          plan_key: `feeding:${meal.slot}`,
+          details: {
+            slot: meal.slot,
+            amount: meal.amount ?? null,
+            notes: meal.notes ?? null,
+            food_name: feeding?.food_name ?? null,
+            food_source: feeding?.food_source ?? null,
+            restrictions: feeding?.restrictions ?? null,
+          },
+        });
       });
-    });
+    }
     (medications ?? []).forEach((med, idx) => {
       for (const time of med.times ?? []) {
         push(ymd, time, {
@@ -397,14 +529,7 @@ export function generatePlanTasks(args: {
         });
       }
     });
-    for (const time of walks?.times ?? []) {
-      push(ymd, time, {
-        kind: 'walk',
-        title: `Passeio das ${time}`,
-        plan_key: `walk:${time}`,
-        details: { notes: walks?.notes ?? null },
-      });
-    }
+    // Atividades = recreação/janelas da unidade (sem passeios gerados do plano do tutor).
     if (recreation?.allowed) {
       const own = recreation.times ?? [];
       const times = own.length
@@ -415,7 +540,7 @@ export function generatePlanTasks(args: {
       for (const w of times) {
         push(ymd, w.start, {
           kind: 'recreation',
-          title: w.label ? `Recreação — ${w.label}` : `Recreação das ${w.start}`,
+          title: w.label ? `Atividade — ${w.label}` : `Atividade das ${w.start}`,
           plan_key: `recreation:${w.start}`,
           details: {},
         });
@@ -698,10 +823,12 @@ export function buildTutorReportText(args: {
     }
   }
 
-  const walks = tasks.filter((t) => t.kind === 'walk' && t.outcome === 'done').length;
-  if (walks) lines.push(`Passeios: ${walks}.`);
-  const rec = tasks.filter((t) => t.kind === 'recreation' && t.outcome === 'done').length;
-  if (rec) lines.push(`Recreação: participou de ${rec === 1 ? '1 atividade' : `${rec} atividades`}.`);
+  const activities = tasks.filter(
+    (t) => (t.kind === 'recreation' || t.kind === 'walk') && t.outcome === 'done',
+  ).length;
+  if (activities) {
+    lines.push(activities === 1 ? 'Atividades: participou de 1.' : `Atividades: participou de ${activities}.`);
+  }
 
   for (const inc of incidents) {
     const text = inc.description.replace(/[.\s]+$/, '');

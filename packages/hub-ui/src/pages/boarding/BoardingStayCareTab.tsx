@@ -17,6 +17,7 @@ import {
   CARE_BLOCK_LABELS,
   PROFILE_BLOCK_KEYS,
   formatDateTimeShort,
+  stayCarePlanBlocks,
   summarizeBlock,
   tutorLinkUrl,
 } from './boardingCareUi';
@@ -35,8 +36,6 @@ type Props = {
   canManage: boolean;
   onSaved: () => void | Promise<void>;
 };
-
-const PLAN_BLOCKS: BoardingCareBlockKey[] = ['feeding', 'medications', 'walks', 'handling', 'recreation'];
 
 function blocksFromPlan(plan: BoardingCarePlan | null): BoardingCarePlanBlocks {
   return {
@@ -115,9 +114,10 @@ const BoardingStayCareTab: React.FC<Props> = ({
   const hasChanges = dirty.size > 0 || confirm.size > 0 || markReviewed || instructions !== (plan?.instructions ?? '');
   const submission = plan?.tutor_submission ?? null;
   const submissionPending = Boolean(plan?.tutor_submitted_at && !plan?.tutor_submission_reviewed_at && !markReviewed);
+  const planBlocks = useMemo(() => stayCarePlanBlocks(mode), [mode]);
   const confirmable = useMemo(
-    () => PLAN_BLOCKS.filter((k) => localStatus[k] === 'inherited'),
-    [localStatus],
+    () => planBlocks.filter((k) => localStatus[k] === 'inherited'),
+    [localStatus, planBlocks],
   );
 
   const handleChange = (next: BoardingCarePlanBlocks, key: BoardingCareBlockKey) => {
@@ -307,7 +307,7 @@ const BoardingStayCareTab: React.FC<Props> = ({
           ) : (
             <>
               <p className="hub-grooming-drawer__hint">
-                Envie um link para o tutor conferir alimentação, medicação, passeios e manejo antes da entrada.
+                Envie um link para o tutor conferir alimentação, medicação e manejo antes da entrada.
               </p>
               <button
                 type="button"
@@ -324,7 +324,7 @@ const BoardingStayCareTab: React.FC<Props> = ({
 
       <BoardingCareEditor
         idPrefix={`stay-${reservationId}`}
-        blocks={PLAN_BLOCKS}
+        blocks={planBlocks}
         value={draft}
         onChange={handleChange}
         disabled={!editable}

@@ -5,6 +5,7 @@
 import { supabaseAdmin } from '../../config/supabase';
 import { resolvePickupArrivalModule } from './pickupArrival';
 import {
+  arrivalPendingAppointmentIds,
   planCustody,
   reconcileHandoffRows,
   todayYmdSaoPaulo,
@@ -143,7 +144,9 @@ export async function syncReceptionHandoffsForPet(clinicId: string, petId: strin
     }
   }
   const existing = await loadStored(clinicId, petId);
-  const { insert, cancelIds } = reconcileHandoffRows(existing, plan.handoffs, day);
+  const { insert, cancelIds } = reconcileHandoffRows(existing, plan.handoffs, day, {
+    preserveChegadaSourceIds: arrivalPendingAppointmentIds(snap),
+  });
   if (cancelIds.length > 0) {
     const now = new Date().toISOString();
     await supabaseAdmin
@@ -810,7 +813,9 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
       resolved_at: row.resolved_at,
       context: row.context ?? { label: '' },
     }));
-    const reconciled = reconcileHandoffRows(existing, plan.handoffs, dayYmd);
+    const reconciled = reconcileHandoffRows(existing, plan.handoffs, dayYmd, {
+      preserveChegadaSourceIds: arrivalPendingAppointmentIds(snap),
+    });
     inserts.push(...reconciled.insert);
     cancelIds.push(...reconciled.cancelIds);
   }
@@ -1029,8 +1034,15 @@ async function applyResolution(
   }
 }
 
-export function handoffInDay(row: { status: string; opened_at: string; resolved_at: string | null }, dayYmd: string): boolean {
-  if (row.status === 'open') return true;
+export function handoffInDay(
+  row: { status: string; kind?: string; opened_at: string; resolved_at: string | null },
+  dayYmd: string,
+): boolean {
+  // Chegada aberta só no dia do horário — evita card eterno de dias anteriores.
+  if (row.status === 'open') {
+    if (row.kind === 'chegada') return ymdInSaoPaulo(row.opened_at) === dayYmd;
+    return true;
+  }
   const stamp = row.resolved_at || row.opened_at;
   return ymdInSaoPaulo(stamp) === dayYmd;
 }

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BoardingOpsStay, BoardingTask } from '../../api/hubBoardingApi';
 import {
+  formatBoardingTaskDetails,
   groupTasksByTime,
   handlingNeedsAttention,
   isBatchEligible,
@@ -149,8 +150,15 @@ describe('parseBRLToCents', () => {
 describe('resumos da ficha', () => {
   it('resume alimentação', () => {
     expect(
-      summarizeFeeding({ food_source: 'own', meals: [{ time: '08:00', amount: '1 xícara' }, { time: '18:00' }] }),
-    ).toBe('Ração do tutor · 08:00 (1 xícara), 18:00');
+      summarizeFeeding({
+        food_source: 'own',
+        meals: [
+          { slot: 'breakfast', amount: '1 xícara' },
+          { slot: 'dinner' },
+        ],
+      }),
+    ).toBe('Ração do tutor · Café da manhã (1 xícara), Janta');
+    expect(summarizeFeeding({ feeds_on_site: false })).toBe('Não come no estabelecimento');
     expect(summarizeFeeding(null)).toBeNull();
   });
 
@@ -165,6 +173,24 @@ describe('resumos da ficha', () => {
     expect(summarizeHandling(h)).toContain('Sem recreação em grupo');
     expect(handlingNeedsAttention(h)).toBe(true);
     expect(handlingNeedsAttention({ sociability: 'sociable', group_play_allowed: true })).toBe(false);
+  });
+});
+
+describe('formatBoardingTaskDetails', () => {
+  it('não trata {} como texto (evita crash no React)', () => {
+    expect(formatBoardingTaskDetails({})).toBeNull();
+    expect(formatBoardingTaskDetails(null)).toBeNull();
+    expect(formatBoardingTaskDetails('')).toBeNull();
+  });
+
+  it('formata campos úteis de alimentação e medicação', () => {
+    expect(formatBoardingTaskDetails({ slot: 'lunch', amount: '1 scoop', food_name: 'Premier' })).toBe(
+      'Premier · 1 scoop',
+    );
+    expect(formatBoardingTaskDetails({ name: 'Dipirona', dose: '10 gotas', instructions: 'com comida' })).toBe(
+      '10 gotas · com comida',
+    );
+    expect(formatBoardingTaskDetails('  nota livre  ')).toBe('nota livre');
   });
 });
 

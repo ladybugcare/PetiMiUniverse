@@ -5,6 +5,7 @@ import { validateFile, sanitizeFilename } from '../../utils/fileValidation.js';
 import { BOARDING_MIGRATION_HINT, loadReservation, missingTable } from './boardingCareService';
 import { resolveServicePriceForPet, todayYmdSaoPaulo } from './boardingPricing';
 import { UUID_RE } from './hubBoardingDrawerController';
+import { syncOpenComandasAfterBoardingCheckedOut } from './hubComandasController';
 import {
   createBelongingSchema,
   createExtraSchema,
@@ -267,6 +268,7 @@ export const postHubBoardingExtra = async (req: Request, res: Response) => {
       .select('*')
       .single();
     if (error) return dbError(res, error);
+    void syncOpenComandasAfterBoardingCheckedOut(clinic_id, id);
     return res.status(201).json({ extra: data });
   } catch (e: unknown) {
     console.error('postHubBoardingExtra', e);
@@ -274,8 +276,30 @@ export const postHubBoardingExtra = async (req: Request, res: Response) => {
   }
 };
 
-export const deleteHubBoardingExtra = (req: Request, res: Response) =>
-  softDelete(req, res, 'hub_boarding_extras', 'Adicional');
+export const deleteHubBoardingExtra = async (req: Request, res: Response) => {
+  try {
+    const clinicId = clinicFrom(req);
+    const { id } = req.params;
+    if (!clinicId) return res.status(400).json({ error: 'clinic_id inválido' });
+    if (badId(id)) return res.status(400).json({ error: 'Adicional inválido' });
+    const { data, error } = await supabaseAdmin
+      .from('hub_boarding_extras')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', id)
+      .eq('clinic_id', clinicId)
+      .is('deleted_at', null)
+      .select('id, hub_boarding_reservation_id')
+      .maybeSingle();
+    if (error) return dbError(res, error);
+    if (!data) return res.status(404).json({ error: 'Adicional não encontrado' });
+    const reservationId = data.hub_boarding_reservation_id as string | null;
+    if (reservationId) void syncOpenComandasAfterBoardingCheckedOut(clinicId, reservationId);
+    return res.json({ ok: true });
+  } catch (e: unknown) {
+    console.error('deleteHubBoardingExtra', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro ao remover' });
+  }
+};
 
 // ─── Fotos ────────────────────────────────────────────────────────────────
 

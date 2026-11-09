@@ -8,6 +8,7 @@ import {
   SOCIABILITY_LABELS,
   TASK_NOW_WINDOW_MIN,
   boardingModeLabel,
+  formatBoardingTaskDetails,
   formatHm,
   handlingNeedsAttention,
   isTaskOverdue,
@@ -30,6 +31,77 @@ export function pickFeaturedTask(tasks: BoardingTask[], nowMs = Date.now()): Boa
   if (overdue) return overdue;
   const soon = pending.find((t) => taskTime(t) <= nowMs + TASK_NOW_WINDOW_MIN * 60_000);
   return soon ?? pending[0];
+}
+
+/** Só o que está atrasado ou dentro da janela de agora. Tarefa distante não ocupa o card. */
+export function pickUrgentTask(tasks: BoardingTask[], nowMs = Date.now()): BoardingTask | null {
+  const pending = tasks.filter((t) => t.status === 'pending').sort((a, b) => taskTime(a) - taskTime(b));
+  const overdue = pending.find((t) => isTaskOverdue(t, nowMs));
+  if (overdue) return overdue;
+  return pending.find((t) => taskTime(t) <= nowMs + TASK_NOW_WINDOW_MIN * 60_000) ?? null;
+}
+
+export type FloorMoveStay = {
+  key: string;
+  stage: string;
+  is_late: boolean;
+  is_departure: boolean;
+  starts_at: string;
+  ends_at: string;
+  plan_pendencies?: { label: string }[];
+  open_incidents?: unknown[];
+  attention?: { key: string; label: string }[];
+};
+
+export type FloorSpotlight<T extends FloorMoveStay = FloorMoveStay> =
+  | { kind: 'task'; task: BoardingTask }
+  | { kind: 'late_checkout'; stay: T }
+  | { kind: 'departure'; stay: T }
+  | { kind: 'arrival'; stay: T }
+  | { kind: 'plan'; stay: T; label: string }
+  | { kind: 'incident'; stay: T; label: string };
+
+function byIso<T>(get: (item: T) => string) {
+  return (a: T, b: T) => String(get(a)).localeCompare(String(get(b)));
+}
+
+/**
+ * O que o card do piso mostra: tarefa atrasada ou da hora, senão saída atrasada,
+ * próxima saída, próxima chegada, plano incompleto, intercorrência.
+ * Tarefa mais tarde no dia só entra se não houver movimento.
+ */
+export function pickFloorSpotlight<T extends FloorMoveStay>(
+  tasks: BoardingTask[],
+  stays: T[],
+  nowMs = Date.now(),
+): FloorSpotlight<T> | null {
+  const urgent = pickUrgentTask(tasks, nowMs);
+  if (urgent) return { kind: 'task', task: urgent };
+
+  const present = stays.filter((s) => s.stage === 'checked_in');
+  const late = [...present].filter((s) => s.is_late).sort(byIso((s) => s.ends_at));
+  if (late[0]) return { kind: 'late_checkout', stay: late[0] };
+
+  const departures = present.filter((s) => s.is_departure).sort(byIso((s) => s.ends_at));
+  if (departures[0]) return { kind: 'departure', stay: departures[0] };
+
+  const arrivals = stays.filter((s) => s.stage === 'reserved').sort(byIso((s) => s.starts_at));
+  if (arrivals[0]) return { kind: 'arrival', stay: arrivals[0] };
+
+  const plan = present.find((s) => (s.plan_pendencies?.length ?? 0) > 0);
+  if (plan?.plan_pendencies?.[0]) return { kind: 'plan', stay: plan, label: plan.plan_pendencies[0].label };
+
+  const incident = present.find(
+    (s) => (s.open_incidents?.length ?? 0) > 0 || Boolean(s.attention?.some((a) => a.key === 'incident')),
+  );
+  if (incident) {
+    const label = incident.attention?.find((a) => a.key === 'incident')?.label ?? 'Intercorrência aberta';
+    return { kind: 'incident', stay: incident, label };
+  }
+
+  const later = pickFeaturedTask(tasks, nowMs);
+  if (later) return { kind: 'task', task: later };
+  return null;
 }
 
 export function resolveBoardingFloorAction(
@@ -95,8 +167,13 @@ const BoardingFloorView: React.FC<BoardingFloorViewProps> = ({
         }),
     [stays],
   );
-  const featured = useMemo(() => (canDailyReport ? pickFeaturedTask(tasks, nowMs) : null), [tasks, nowMs, canDailyReport]);
+  const spotlight = useMemo(() => pickFloorSpotlight(tasks, stays, nowMs), [tasks, stays, nowMs]);
+  const featured = spotlight?.kind === 'task' ? spotlight.task : null;
   const featuredStay = featured ? stays.find((s) => s.reservation_id === featured.hub_boarding_reservation_id) ?? null : null;
+  const featuredDetailsText = featured ? formatBoardingTaskDetails(featured.details) : null;
+  const featuredTitleText = featured && typeof featured.title === 'string' ? featured.title : '';
+  const moveStay = spotlight && spotlight.kind !== 'task' ? spotlight.stay : null;
+  const moveAction = moveStay ? resolveBoardingFloorAction(moveStay, canWrite) : null;
 
   const pendingCount = tasks.filter((t) => t.status === 'pending').length;
   const overdueCount = tasks.filter((t) => isTaskOverdue(t, nowMs)).length;
@@ -167,32 +244,106 @@ const BoardingFloorView: React.FC<BoardingFloorViewProps> = ({
             )}
             <span className="hub-grooming-floor__pet-name">{featured.pet_name ?? 'Pet'}</span>
           </button>
-          <p className="hub-boarding-floor__task-title">{featured.title}</p>
-          {featured.details ? <p className="hub-grooming-floor__meta">{featured.details}</p> : null}
+          <p className="hub-boarding-floor__task-title">{featuredTitleText}</p>
+          {featuredDetailsText ? <p className="hub-grooming-floor__meta">{featuredDetailsText}</p> : null}
           {featuredStay && handlingNeedsAttention(featuredStay.handling) ? (
             <div className="hub-grooming-floor__badges">
               <span className="hub-grooming-drawer__flag hub-grooming-drawer__flag--priority">
                 {featuredStay.handling?.sociability ? SOCIABILITY_LABELS[featuredStay.handling.sociability] : 'Manejo'}
               </span>
-              {featuredStay.handling?.contact_restrictions ? (
+              {typeof featuredStay.handling?.contact_restrictions === 'string' &&
+              featuredStay.handling.contact_restrictions.trim() ? (
                 <span className="hub-grooming-floor__meta">{featuredStay.handling.contact_restrictions}</span>
               ) : null}
             </div>
           ) : null}
-          <div className="hub-grooming-floor__actions">
-            {OUTCOMES_BY_KIND[featured.kind].map((outcome, idx) => (
+          {canDailyReport ? (
+            <div className="hub-grooming-floor__actions">
+              {OUTCOMES_BY_KIND[featured.kind].map((outcome, idx) => (
+                <button
+                  key={outcome}
+                  type="button"
+                  className={`hub-grooming-floor__action-btn ${idx === 0 ? 'hub-grooming-floor__action-btn--advance' : 'hub-grooming-floor__action-btn--ghost'}`}
+                  disabled={busyTaskId === featured.id}
+                  onClick={() => onTaskAction(featured, { type: 'outcome', outcome })}
+                >
+                  {busyTaskId === featured.id && idx === 0 ? <Loader size={16} className="spin" aria-hidden /> : null}
+                  {OUTCOME_BUTTON_LABELS[outcome]}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : moveStay && spotlight && spotlight.kind !== 'task' ? (
+        <div
+          className={`hub-grooming-floor__card hub-boarding-floor__featured${spotlight.kind === 'late_checkout' ? ' hub-boarding-floor__featured--late' : ''}`}
+        >
+          <span className="hub-grooming-floor__card-label">
+            {spotlight.kind === 'late_checkout'
+              ? 'Saída atrasada'
+              : spotlight.kind === 'departure'
+                ? 'Saída prevista'
+                : spotlight.kind === 'arrival'
+                  ? 'Chegada prevista'
+                  : spotlight.kind === 'plan'
+                    ? 'Plano de cuidados'
+                    : 'Intercorrência'}
+          </span>
+          <button
+            type="button"
+            className="hub-grooming-floor__card-pet-row hub-boarding-floor__pet-link"
+            disabled={!moveStay.reservation_id}
+            onClick={() =>
+              onOpenStay(
+                moveStay,
+                moveStay.reservation_id ?? '',
+                spotlight.kind === 'plan' || spotlight.kind === 'arrival' ? 'care' : 'routine',
+              )
+            }
+          >
+            {moveStay.pet?.avatar_url ? (
+              <img src={moveStay.pet.avatar_url} alt="" className="hub-grooming-floor__avatar" />
+            ) : (
+              <span className="hub-boarding-card__avatar-placeholder hub-boarding-floor__avatar-fallback" aria-hidden>
+                {petInitials(moveStay.pet?.name || 'Pet')}
+              </span>
+            )}
+            <span className="hub-grooming-floor__pet-name">{moveStay.pet?.name || 'Pet'}</span>
+          </button>
+          <p className="hub-boarding-floor__task-title">
+            {spotlight.kind === 'plan' || spotlight.kind === 'incident'
+              ? spotlight.label
+              : spotlight.kind === 'arrival'
+                ? `Chega ${formatHm(moveStay.starts_at)}`
+                : `Sai ${formatHm(moveStay.ends_at)}`}
+          </p>
+          <p className="hub-grooming-floor__meta">
+            {[boardingModeLabel(moveStay.mode), moveStay.guardian?.full_name].filter(Boolean).join(' · ')}
+          </p>
+          {spotlight.kind === 'plan' || spotlight.kind === 'incident' ? (
+            <div className="hub-grooming-floor__actions">
               <button
-                key={outcome}
                 type="button"
-                className={`hub-grooming-floor__action-btn ${idx === 0 ? 'hub-grooming-floor__action-btn--advance' : 'hub-grooming-floor__action-btn--ghost'}`}
-                disabled={busyTaskId === featured.id}
-                onClick={() => onTaskAction(featured, { type: 'outcome', outcome })}
+                className="hub-grooming-floor__action-btn hub-grooming-floor__action-btn--advance"
+                disabled={!moveStay.reservation_id}
+                onClick={() =>
+                  onOpenStay(moveStay, moveStay.reservation_id ?? '', spotlight.kind === 'plan' ? 'care' : 'routine')
+                }
               >
-                {busyTaskId === featured.id && idx === 0 ? <Loader size={16} className="spin" aria-hidden /> : null}
-                {OUTCOME_BUTTON_LABELS[outcome]}
+                {spotlight.kind === 'plan' ? 'Abrir cuidados' : 'Ver rotina'}
               </button>
-            ))}
-          </div>
+            </div>
+          ) : moveAction ? (
+            <div className="hub-grooming-floor__actions">
+              <button
+                type="button"
+                className="hub-grooming-floor__action-btn hub-grooming-floor__action-btn--advance"
+                onClick={() => (moveAction === 'check_in' ? onCheckIn(moveStay) : onCheckOut(moveStay))}
+              >
+                {moveAction === 'check_in' ? 'Check-in' : 'Check-out'}
+              </button>
+            </div>
+          ) : null}
         </div>
       ) : present.length ? (
         <div className="hub-grooming-floor__card hub-grooming-floor__card--empty">

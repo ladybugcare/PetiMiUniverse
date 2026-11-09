@@ -808,6 +808,7 @@ export const openHubGroomingSessionFromAppointment = async (req: Request, res: R
       body: appt.notes,
     });
     await syncAppointmentStatusForStage(clinic_id, hub_appointment_id, targetStage);
+    scheduleReceptionSync(clinic_id, appt.pet_id as string);
 
     return res.status(201).json({ session: data, created: true });
   } catch (e: unknown) {

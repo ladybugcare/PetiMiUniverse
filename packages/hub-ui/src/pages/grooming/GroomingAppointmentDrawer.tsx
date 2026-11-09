@@ -207,6 +207,23 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
     }
   };
 
+  const persistChecklistAll = async (done: boolean) => {
+    if (!clinicId || !item?.session_id || checklistRows.length === 0) return;
+    setChecklistBusyKey('__all__');
+    try {
+      const cur = (drawer?.session?.checklist as Record<string, { done: boolean }> | undefined) ?? {};
+      const next = { ...cur };
+      for (const row of checklistRows) {
+        next[row.key] = { done };
+      }
+      await hubGroomingApi.patchSession(item.session_id, { clinic_id: clinicId, checklist: next });
+      await refreshDrawer();
+      onSessionUpdated?.();
+    } finally {
+      setChecklistBusyKey(null);
+    }
+  };
+
   const toggleLineExecuted = async (lineId: string, executed: boolean) => {
     if (!clinicId) return;
     setLineBusyId(lineId);
@@ -684,9 +701,25 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
           <section className="hub-grooming-drawer__section">
             <div className="hub-grooming-drawer__heading-row">
               <h4 className="hub-grooming-drawer__heading">Checklist</h4>
-              <span className="hub-grooming-drawer__count">
-                {checklistDone}/{checklistRows.length}
-              </span>
+              <div className="hub-grooming-drawer__heading-actions">
+                {canWrite ? (
+                  <button
+                    type="button"
+                    className="hub-clientes__link-btn"
+                    disabled={checklistBusyKey != null}
+                    onClick={() =>
+                      void persistChecklistAll(!(checklistDone === checklistRows.length && checklistRows.length > 0))
+                    }
+                  >
+                    {checklistDone === checklistRows.length && checklistRows.length > 0
+                      ? 'Limpar'
+                      : 'Selecionar todos'}
+                  </button>
+                ) : null}
+                <span className="hub-grooming-drawer__count">
+                  {checklistDone}/{checklistRows.length}
+                </span>
+              </div>
             </div>
             <ul className="hub-grooming-drawer__checklist">
               {checklistRows.map((row) => (
@@ -695,7 +728,7 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
                     <input
                       type="checkbox"
                       checked={row.done}
-                      disabled={!canWrite || checklistBusyKey === row.key}
+                      disabled={!canWrite || checklistBusyKey != null}
                       onChange={(e) => void persistChecklistKey(row.key, e.target.checked)}
                     />
                     <span>{row.label}</span>

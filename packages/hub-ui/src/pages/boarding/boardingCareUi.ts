@@ -5,6 +5,7 @@ import type {
   BoardingCareBlockKey,
   BoardingCareFeeding,
   BoardingCareHandling,
+  BoardingCareMealSlot,
   BoardingCareMedication,
   BoardingCarePlanBlocks,
   BoardingCareWalks,
@@ -26,11 +27,34 @@ export const CARE_BLOCK_LABELS: Record<BoardingCareBlockKey, string> = {
   medications: 'Medicação',
   walks: 'Passeios',
   handling: 'Manejo',
-  recreation: 'Recreação',
+  recreation: 'Atividades',
 };
 
-export const PROFILE_BLOCK_KEYS = ['feeding', 'medications', 'walks', 'handling'] as const;
+export const CARE_MEAL_SLOTS: BoardingCareMealSlot[] = ['breakfast', 'lunch', 'snack', 'dinner'];
+
+export const CARE_MEAL_SLOT_LABELS: Record<BoardingCareMealSlot, string> = {
+  breakfast: 'Café da manhã',
+  lunch: 'Almoço',
+  snack: 'Lanche',
+  dinner: 'Janta',
+};
+
+/** Horário padrão até a unidade configurar o dela. */
+export const DEFAULT_MEAL_SLOT_TIMES: Record<BoardingCareMealSlot, string> = {
+  breakfast: '08:00',
+  lunch: '12:00',
+  snack: '16:00',
+  dinner: '19:00',
+};
+
+/** Ficha permanente / formulário do tutor: sem passeios (atividades vêm da unidade). */
+export const PROFILE_BLOCK_KEYS = ['feeding', 'medications', 'handling'] as const;
 export type ProfileBlockKey = (typeof PROFILE_BLOCK_KEYS)[number];
+
+/** Blocos do plano na estadia (atividades = recreação da unidade; sem passeios do tutor). */
+export function stayCarePlanBlocks(_mode?: string): BoardingCareBlockKey[] {
+  return ['feeding', 'medications', 'handling', 'recreation'];
+}
 
 export const BLOCK_STATUS_LABELS: Record<BoardingBlockStatus, string> = {
   inherited: 'Herdado',
@@ -50,8 +74,8 @@ export function blockStatusVariant(status: BoardingBlockStatus | undefined): str
 export const TASK_KIND_LABELS: Record<BoardingTaskKind, string> = {
   feeding: 'Alimentação',
   medication: 'Medicação',
-  walk: 'Passeio',
-  recreation: 'Recreação',
+  walk: 'Atividade',
+  recreation: 'Atividade',
   custom: 'Tarefa',
 };
 
@@ -366,6 +390,7 @@ export function emptyPlanBlocks(): BoardingCarePlanBlocks {
 
 export function summarizeFeeding(f: BoardingCareFeeding | null | undefined): string | null {
   if (!f) return null;
+  if (f.feeds_on_site === false) return 'Não come no estabelecimento';
   const parts: string[] = [];
   if (f.food_name) parts.push(f.food_name);
   else if (f.food_source === 'own') parts.push('Ração do tutor');
@@ -373,7 +398,15 @@ export function summarizeFeeding(f: BoardingCareFeeding | null | undefined): str
   const meals = f.meals ?? [];
   if (meals.length) {
     parts.push(
-      meals.map((m) => (m.amount ? `${m.time} (${m.amount})` : m.time)).join(', '),
+      meals
+        .map((m) => {
+          const label =
+            m.slot && CARE_MEAL_SLOT_LABELS[m.slot]
+              ? CARE_MEAL_SLOT_LABELS[m.slot]
+              : m.time || 'Refeição';
+          return m.amount ? `${label} (${m.amount})` : label;
+        })
+        .join(', '),
     );
   }
   if (f.restrictions) parts.push(`Restrições: ${f.restrictions}`);
@@ -423,18 +456,54 @@ export function summarizeBlock(key: BoardingCareBlockKey, blocks: Partial<Boardi
     case 'recreation': {
       const r = blocks.recreation;
       if (!r) return null;
-      if (r.allowed === false) return 'Não participa';
-      return r.times?.length ? r.times.join(', ') : 'Participa nas janelas da unidade';
+      if (r.allowed === false) return 'Não participa das atividades';
+      return r.times?.length ? r.times.join(', ') : 'Segue as atividades da unidade';
     }
     default:
       return null;
   }
 }
 
+/**
+ * `hub_boarding_tasks.details` é jsonb (objeto). A UI tipa como string — nunca renderize o valor cru.
+ * `{}` é truthy e quebra o React com "Objects are not valid as a React child".
+ */
+export function formatBoardingTaskDetails(details: unknown): string | null {
+  if (details == null) return null;
+  if (typeof details === 'string') {
+    const t = details.trim();
+    return t || null;
+  }
+  if (typeof details !== 'object' || Array.isArray(details)) return null;
+  const d = details as Record<string, unknown>;
+  const parts: string[] = [];
+  const push = (v: unknown) => {
+    if (typeof v === 'string' && v.trim()) parts.push(v.trim());
+    else if (typeof v === 'number' && Number.isFinite(v)) parts.push(String(v));
+  };
+  push(d.food_name);
+  push(d.amount);
+  push(d.dose);
+  push(d.instructions);
+  push(d.notes);
+  push(d.restrictions);
+  if (parts.length === 0) {
+    for (const [k, v] of Object.entries(d)) {
+      if (k === 'slot' || k === 'food_source' || k === 'name') continue;
+      push(v);
+    }
+  }
+  return parts.length ? parts.join(' · ') : null;
+}
+
 /** Manejo que exige atenção visível no card (isolado, sem grupo, restrições). */
 export function handlingNeedsAttention(h: BoardingCareHandling | null | undefined): boolean {
   if (!h) return false;
-  return h.sociability === 'isolated' || h.group_play_allowed === false || Boolean(h.contact_restrictions);
+  return (
+    h.sociability === 'isolated' ||
+    h.group_play_allowed === false ||
+    (typeof h.contact_restrictions === 'string' && Boolean(h.contact_restrictions.trim()))
+  );
 }
 
 export function tutorLinkUrl(path: string): string {

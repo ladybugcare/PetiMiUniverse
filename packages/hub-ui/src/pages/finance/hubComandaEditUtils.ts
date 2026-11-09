@@ -103,9 +103,10 @@ export function isOriginOperationallyComplete(originType: string, operationalSta
       return operationalStatus === 'closed';
     case 'encounter':
       return operationalStatus === 'completed';
+    case 'boarding_reservation':
+      return operationalStatus === 'checked_out';
     case 'quote':
     case 'manual':
-    case 'boarding_reservation':
       return true;
     default:
       return true;

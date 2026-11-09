@@ -16,8 +16,10 @@ import {
 } from './hubPaymentMethods';
 import {
   buildBoardingComandaLine,
+  buildBoardingExtraLines,
   estimateBoardingUnbilledAmount,
   shouldIncludeInUnbilledBoarding,
+  type BoardingExtraInput,
   type DayBoardBilling,
 } from './boardingBilling';
 import {
@@ -376,7 +378,7 @@ async function buildPreviewForBoardingReservation(
   const guardianId = res.guardian_id as string | null;
   if (!guardianId) throw new Error('NO_GUARDIAN');
 
-  const { line, subtotal } = buildBoardingComandaLine({
+  const { line, subtotal: baseSubtotal } = buildBoardingComandaLine({
     id: res.id as string,
     mode: res.mode as string,
     pet_id: res.pet_id as string | null,
@@ -387,22 +389,48 @@ async function buildPreviewForBoardingReservation(
     daily_rate_cents: res.daily_rate_cents as number | null,
   });
 
+  const { data: extraRows } = await supabaseAdmin
+    .from('hub_boarding_extras')
+    .select('id, hub_service_type_id, description, quantity, unit_amount_cents, service_date, deleted_at')
+    .eq('clinic_id', clinicId)
+    .eq('hub_boarding_reservation_id', reservationId)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: true });
+  const extras = buildBoardingExtraLines(
+    (extraRows ?? []) as BoardingExtraInput[],
+    (res.pet_id as string | null) ?? null,
+  );
+
+  const lines: ReceivableLineInsert[] = [
+    {
+      clinic_id: '',
+      receivable_id: '',
+      line_kind: 'manual',
+      source_line_id: null,
+      hub_service_type_id: null,
+      description: line.description,
+      quantity: line.quantity,
+      unit_sale_amount: line.unit_amount,
+      line_total: line.line_total,
+      sort_order: 0,
+    },
+    ...extras.lines.map((ex, i) => ({
+      clinic_id: '',
+      receivable_id: '',
+      line_kind: 'manual' as const,
+      source_line_id: ex.origin_id,
+      hub_service_type_id: ex.hub_service_type_id,
+      description: ex.description,
+      quantity: ex.quantity,
+      unit_sale_amount: ex.unit_amount,
+      line_total: ex.line_total,
+      sort_order: i + 1,
+    })),
+  ];
+
   return {
-    lines: [
-      {
-        clinic_id: '',
-        receivable_id: '',
-        line_kind: 'manual',
-        source_line_id: null,
-        hub_service_type_id: null,
-        description: line.description,
-        quantity: line.quantity,
-        unit_sale_amount: line.unit_amount,
-        line_total: line.line_total,
-        sort_order: 0,
-      },
-    ],
-    subtotal,
+    lines,
+    subtotal: round2(baseSubtotal + extras.subtotal),
     unit_id: (res.unit_id as string) ?? null,
     guardian_id: guardianId,
   };
@@ -2687,6 +2715,32 @@ async function collectUnbilledItems(
   if (unitId) bq = bq.eq('unit_id', unitId);
   const { data: boardingRows, error: bErr } = await bq;
   if (bErr) throw new Error(bErr.message);
+  const boardingIds = (boardingRows ?? []).map((row) => row.id as string);
+  const extrasByReservation = new Map<string, BoardingExtraInput[]>();
+  if (boardingIds.length > 0) {
+    const { data: extraRows } = await supabaseAdmin
+      .from('hub_boarding_extras')
+      .select(
+        'id, hub_boarding_reservation_id, hub_service_type_id, description, quantity, unit_amount_cents, service_date, deleted_at'
+      )
+      .eq('clinic_id', clinicId)
+      .in('hub_boarding_reservation_id', boardingIds)
+      .is('deleted_at', null);
+    for (const ex of extraRows ?? []) {
+      const rid = ex.hub_boarding_reservation_id as string;
+      const list = extrasByReservation.get(rid) ?? [];
+      list.push({
+        id: ex.id as string,
+        hub_service_type_id: (ex.hub_service_type_id as string | null) ?? null,
+        description: String(ex.description ?? 'Adicional'),
+        quantity: Number(ex.quantity) || 0,
+        unit_amount_cents: Number(ex.unit_amount_cents) || 0,
+        service_date: (ex.service_date as string | null) ?? null,
+        deleted_at: (ex.deleted_at as string | null) ?? null,
+      });
+      extrasByReservation.set(rid, list);
+    }
+  }
   for (const row of boardingRows ?? []) {
     const reservation = {
       id: row.id as string,
@@ -2716,7 +2770,10 @@ async function collectUnbilledItems(
       guardian: g ? (Array.isArray(g) ? g[0] : g) : null,
       pet: pet ? (Array.isArray(pet) ? pet[0] : pet) : null,
       staff: null,
-      estimated_amount: estimateBoardingUnbilledAmount(reservation),
+      estimated_amount: estimateBoardingUnbilledAmount(
+        reservation,
+        extrasByReservation.get(row.id as string) ?? [],
+      ),
       operational_status: 'checked_out',
     });
   }

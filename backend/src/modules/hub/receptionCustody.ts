@@ -243,6 +243,31 @@ function strictestOutcome(outcomes: DeliveryOutcome[]): DeliveryOutcome {
   return 'none';
 }
 
+/** Ainda falta a recepção confirmar a chegada deste agendamento (qualquer dia). */
+function isArrivalCandidate(snap: CustodySnapshot, appt: CustodyAppointment): boolean {
+  if (appt.deleted_at) return false;
+  if (appt.appointment_kind === 'pickup_route') return false;
+  if (appt.status !== 'pending_confirm' && appt.status !== 'confirmed') return false;
+  if (!appt.service_group || !ARRIVAL_GROUPS.has(appt.service_group)) return false;
+  if (!tutorBrings(snap, appt.id)) return false;
+  const session = snap.groomingSessions.find(
+    (s) => !s.deleted_at && s.hub_appointment_id === appt.id,
+  );
+  // Banho já passou do agendado: pet já está no salão (ou pronto).
+  if (session && session.grooming_stage !== 'scheduled') return false;
+  return true;
+}
+
+/** IDs de agendamento que ainda devem manter handoff `chegada` aberto. */
+export function arrivalPendingAppointmentIds(snap: CustodySnapshot): Set<string> {
+  const ids = new Set<string>();
+  for (const appt of snap.appointments) {
+    if (!isArrivalCandidate(snap, appt)) continue;
+    ids.add(appt.id);
+  }
+  return ids;
+}
+
 function tutorBrings(snap: CustodySnapshot, appointmentId: string): boolean {
   const incoming = snap.legs.filter(
     (l) =>
@@ -289,12 +314,8 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
   const closeGroomingSessionIds: string[] = [];
 
   for (const appt of snap.appointments) {
-    if (appt.deleted_at) continue;
-    if (appt.appointment_kind === 'pickup_route') continue;
-    if (appt.status !== 'pending_confirm' && appt.status !== 'confirmed') continue;
-    if (!appt.service_group || !ARRIVAL_GROUPS.has(appt.service_group)) continue;
+    if (!isArrivalCandidate(snap, appt)) continue;
     if (!appt.starts_at || ymdInSaoPaulo(appt.starts_at) !== snap.dayYmd) continue;
-    if (!tutorBrings(snap, appt.id)) continue;
     handoffs.push({
       kind: 'chegada',
       source_type: 'appointment',
@@ -497,8 +518,10 @@ export function reconcileHandoffRows(
   existing: StoredHandoff[],
   desired: DesiredHandoff[],
   dayYmd: string,
+  opts?: { preserveChegadaSourceIds?: Set<string> },
 ): { insert: DesiredHandoff[]; cancelIds: string[] } {
   const desiredKeys = new Set(desired.map((d) => handoffKey(d.kind, d.source_type, d.source_id)));
+  const preserveChegada = opts?.preserveChegadaSourceIds;
   const insert: DesiredHandoff[] = [];
 
   for (const d of desired) {
@@ -544,9 +567,13 @@ export function reconcileHandoffRows(
   for (const e of existing) {
     if (e.status !== 'open') continue;
     if (desiredKeys.has(handoffKey(e.kind, e.source_type, e.source_id))) continue;
+    // Chegada de outro dia: só preserva se o agendamento ainda espera a recepção.
+    // Sem isso, handoff antigo fica eterno no quadro depois que o banho já iniciou/pronto.
     if (e.kind === 'chegada') {
       const starts = e.context?.starts_at;
-      if (starts && ymdInSaoPaulo(starts) !== dayYmd) continue;
+      if (starts && ymdInSaoPaulo(starts) !== dayYmd) {
+        if (preserveChegada?.has(e.source_id)) continue;
+      }
     }
     cancelIds.push(e.id);
   }

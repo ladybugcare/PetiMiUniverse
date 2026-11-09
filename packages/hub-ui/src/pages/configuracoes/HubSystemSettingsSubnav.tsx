@@ -11,6 +11,7 @@ const links = [
   { to: `${BASE}/formas-pagamento`, label: 'Formas de pagamento' },
   { to: `${BASE}/clinicas-parceiras`, label: 'Clínicas parceiras' },
   { to: `${BASE}/leva-e-traz`, label: 'Leva e Traz' },
+  { to: `${BASE}/hotel-creche`, label: 'Hotel & Creche' },
 ];
 
 const HubSystemSettingsSubnav: React.FC = () => {

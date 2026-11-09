@@ -46,7 +46,7 @@ Herdar nunca significa considerar válido: medicação, alergias e restrições 
 |---|---|---|
 | Painel operacional | Quem está aqui, quem chega, quem sai, o que precisa de atenção agora? | `/hub/hotel-creche` (aba Painel) |
 | Rotina do pet | O que fazer, o que foi feito, o que aconteceu? | Painel lateral da estadia, aba Rotina; `/hub/hotel-creche/minha-fila` |
-| Gestão da hospedagem | Até quando, onde, quanto custa, em que condições? | Painel lateral da estadia, aba Hospedagem; `/hub/hotel-creche/configuracoes` |
+| Gestão da hospedagem | Até quando, onde, quanto custa, em que condições? | Painel lateral da estadia, aba Hospedagem; `/hub/configuracoes-sistema/hotel-creche` |
 
 | | Recepção | Cuidador | Gestor |
 |---|---|---|---|
@@ -88,7 +88,7 @@ flowchart LR
 | Check-in | Recepção | Confere pertences, aloca acomodação, revê pendências |
 | Durante | Cuidador | Executa tarefas (por pet ou por horário), registra intercorrências e fotos |
 | Troca de turno | Cuidador | Encerra o turno; o próximo recebe as pendências |
-| Check-out | Recepção | Confere a saída dos pertences, adicionais, cobrança e resumo ao tutor |
+| Check-out | Recepção | Confere a saída dos pertences e o resumo ao tutor (pet liberado para ir embora). Cobrança no Caixa, não neste passo. |
 
 ## 5. Hotel × Creche
 
@@ -146,7 +146,7 @@ Lote: atividade coletiva (recreação) pode ser registrada para vários pets de 
 - **Creche:** 1 período por reserva, valor conforme `daycare_period` (integral ou meio período).
 - **Adicionais** (`hub_boarding_extras`) entram como linhas próprias na comanda.
 - Quando a reserva vem de um agendamento, a linha do serviço de hospedagem do agendamento **não** é somada de novo: as diárias substituem a linha.
-- Cobrança nunca automática: check-out sincroniza comanda aberta; sem comanda, a estadia aparece em **Atendimentos sem cobrança**. Desconto e dispensa seguem o fluxo do Caixa.
+- Cobrança nunca automática: o check-out operacional **não** abre cobrança nem mostra checkout com valor (paridade Banho & Tosa). Após `checked_out`, sincroniza comanda já aberta se houver; sem comanda, a estadia aparece em **Atendimentos sem cobrança** no Caixa. Desconto e dispensa seguem o fluxo do Caixa. Preço/adicionais/pacote na aba Hospedagem (gestão), não no painel de saída.
 - Lotação: padrão é **alertar**; a unidade pode configurar **bloquear** o check-in quando exceder a capacidade (`overbooking_policy`).
 
 ## 8. Contrato de UI/UX
@@ -241,6 +241,6 @@ Depois de `npm run seed:hotel-creche` (ou com dados reais):
 2. **Plano** — na aba Rotina/Hospedagem, confirmar alimentação, medicação e manejo; salvar e conferir que as tarefas do dia aparecem.
 3. **Check-in** — marcar check-in (se ainda reservada); acomodar em uma baia se houver; pet aparece em Presentes com atenção se o plano estiver incompleto.
 4. **Tarefa + foto** — executar uma refeição (resultado) e anexar foto na rotina; conferir na linha do tempo.
-5. **Checkout + comanda** — check-out; na aba Hospedagem aplicar pacote ou conferir diárias/adicionais; abrir a comanda da reserva no Caixa.
+5. **Checkout + comanda** — check-out operacional (pertences + liberação); na aba Hospedagem conferir diárias/adicionais/pacote; abrir a comanda da reserva no **Caixa** (Atendimentos sem cobrança).
 
 Se algum passo falhar com erro de tabela/coluna, rode as migrações 123–130 e recarregue.

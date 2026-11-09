@@ -1,21 +1,30 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X } from 'lucide-react';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubCancelButton } from '../../components/HubCancelButton';
+import { HubLoading } from '../../components/HubLoading';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import { useAlert } from '../../components/AlertProvider';
 import {
   hubBoardingApi,
+  type BoardingBlockStatus,
+  type BoardingCareBlockKey,
+  type BoardingCarePlan,
+  type BoardingCarePlanBlocks,
+  type BoardingCareProfile,
   type BoardingOpsStay,
   type BoardingPlanPendency,
   type BoardingSpace,
 } from '../../api/hubBoardingApi';
 import { BelongingAddRow, type BelongingDraft } from './BoardingBelongingsSection';
+import BoardingCareEditor from './BoardingCareEditor';
 import {
   BELONGING_CATEGORY_LABELS,
   boardingModeLabel,
+  emptyPlanBlocks,
   isCapacityBlockedError,
   isCapacityWarningError,
+  stayCarePlanBlocks,
 } from './boardingCareUi';
 
 export type CheckInRequest = {
@@ -31,48 +40,168 @@ type Props = {
   request: CheckInRequest | null;
   onClose: () => void;
   onDone: (reservationId: string | null) => void;
-  /** Abre o painel da estadia na aba Cuidados para revisar pendências. */
-  onReviewCare?: (reservationId: string) => void;
 };
 
-const BoardingCheckInPanel: React.FC<Props> = ({ open, clinicId, unitId, request, onClose, onDone, onReviewCare }) => {
+function blocksFromPlan(plan: BoardingCarePlan | null): BoardingCarePlanBlocks {
+  if (!plan) return emptyPlanBlocks();
+  return {
+    feeding: plan.feeding ?? null,
+    medications: plan.medications ?? null,
+    walks: plan.walks ?? null,
+    handling: plan.handling ?? null,
+    recreation: plan.recreation ?? null,
+  };
+}
+
+function blocksFromProfile(profile: BoardingCareProfile | null): BoardingCarePlanBlocks {
+  if (!profile) return emptyPlanBlocks();
+  return {
+    feeding: profile.feeding ?? null,
+    medications: profile.medications ?? null,
+    walks: profile.walks ?? null,
+    handling: profile.handling ?? null,
+    recreation: null,
+  };
+}
+
+const BoardingCheckInPanel: React.FC<Props> = ({ open, clinicId, unitId, request, onClose, onDone }) => {
   const { showError, showSuccess } = useAlert();
   const stay = request?.stay ?? null;
+  const reservationId = request?.reservationId ?? stay?.reservation_id ?? null;
+  const petId = stay?.pet_id ?? stay?.pet?.id ?? null;
   const mode = String(stay?.mode ?? 'hotel');
   const petName = stay?.pet?.name ?? 'Pet';
+  const careSectionRef = useRef<HTMLElement | null>(null);
   const [spaces, setSpaces] = useState<BoardingSpace[]>([]);
   const [spaceId, setSpaceId] = useState('');
   const [belongings, setBelongings] = useState<BelongingDraft[]>([]);
   const [pendencies, setPendencies] = useState<BoardingPlanPendency[]>([]);
   const [capacityMessage, setCapacityMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [careOpen, setCareOpen] = useState(true);
+  const [careLoading, setCareLoading] = useState(false);
+  const [plan, setPlan] = useState<BoardingCarePlan | null>(null);
+  const [draft, setDraft] = useState<BoardingCarePlanBlocks>(emptyPlanBlocks());
+  const [localStatus, setLocalStatus] = useState<Partial<Record<BoardingCareBlockKey, BoardingBlockStatus>>>({});
+  const [dirty, setDirty] = useState<Set<BoardingCareBlockKey>>(new Set());
+  const [confirmBlocks, setConfirmBlocks] = useState<Set<BoardingCareBlockKey>>(new Set());
+  const [saveToProfile, setSaveToProfile] = useState<Set<BoardingCareBlockKey>>(new Set());
+  const [savingCare, setSavingCare] = useState(false);
 
-  const requestKey = request ? `${request.reservationId ?? ''}:${request.appointmentId ?? ''}` : '';
+  const requestKey = request ? `${reservationId ?? ''}:${request.appointmentId ?? ''}` : '';
+  const planBlocks = useMemo(() => stayCarePlanBlocks(mode), [mode]);
+  const confirmable = useMemo(
+    () => planBlocks.filter((k) => localStatus[k] === 'inherited'),
+    [localStatus, planBlocks],
+  );
+  const careHasChanges = dirty.size > 0 || confirmBlocks.size > 0;
+
+  const resetCare = (
+    p: BoardingCarePlan | null,
+    pend: BoardingPlanPendency[],
+    blocks?: BoardingCarePlanBlocks,
+    status?: Partial<Record<BoardingCareBlockKey, BoardingBlockStatus>>,
+  ) => {
+    setPlan(p);
+    setPendencies(pend);
+    setDraft(blocks ?? blocksFromPlan(p));
+    setLocalStatus(status ?? p?.block_status ?? {});
+    setDirty(new Set());
+    setConfirmBlocks(new Set());
+    setSaveToProfile(new Set());
+  };
 
   // Reinicia o formulário só quando abre para outra estadia (o painel do dia atualiza a cada 30 s).
   useEffect(() => {
     if (!open || !requestKey) return;
+    const initialPendencies = stay?.plan_pendencies ?? [];
     setSpaceId(stay?.space?.id ?? '');
     setBelongings([]);
     setCapacityMessage(null);
-    setPendencies(stay?.plan_pendencies ?? []);
+    setCareOpen(true);
+    setPendencies(initialPendencies);
+    resetCare(null, initialPendencies);
     void hubBoardingApi
       .spaces(clinicId, { unitId: unitId ?? undefined })
       .then((r) => setSpaces((r.spaces ?? []).filter((s) => s.active && (s.mode === 'shared' || s.mode === mode))))
       .catch(() => setSpaces([]));
-    if (request?.reservationId) {
-      void hubBoardingApi
-        .getCarePlan(request.reservationId, clinicId)
-        .then((r) => setPendencies(r.plan_pendencies ?? []))
-        .catch(() => {});
+
+    let cancelled = false;
+    setCareLoading(true);
+    const load = async () => {
+      try {
+        if (reservationId) {
+          const r = await hubBoardingApi.getCarePlan(reservationId, clinicId);
+          if (cancelled) return;
+          resetCare(r.care_plan, r.plan_pendencies ?? []);
+          return;
+        }
+        if (petId) {
+          const r = await hubBoardingApi.getCareProfile(petId, clinicId);
+          if (cancelled) return;
+          resetCare(null, initialPendencies, blocksFromProfile(r.profile), {
+            feeding: 'pending',
+            medications: 'pending',
+            handling: 'pending',
+            recreation: 'pending',
+          });
+        }
+      } catch {
+        /* mantém pendências do painel */
+      } finally {
+        if (!cancelled) setCareLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [open, requestKey, clinicId, unitId, mode, reservationId, petId]);
+
+  const handleCareChange = (next: BoardingCarePlanBlocks, key: BoardingCareBlockKey) => {
+    setDraft(next);
+    setDirty((prev) => new Set(prev).add(key));
+    setLocalStatus((prev) => ({ ...prev, [key]: 'overridden' }));
+  };
+
+  const handleConfirmBlock = (key: BoardingCareBlockKey) => {
+    setConfirmBlocks((prev) => new Set(prev).add(key));
+    setLocalStatus((prev) => ({ ...prev, [key]: 'confirmed' }));
+  };
+
+  const saveCare = async (rid: string): Promise<boolean> => {
+    if (!careHasChanges) return true;
+    setSavingCare(true);
+    try {
+      const blocksPatch: Partial<BoardingCarePlanBlocks> = {};
+      for (const key of dirty) (blocksPatch as Record<string, unknown>)[key] = draft[key];
+      const r = await hubBoardingApi.putCarePlan(rid, {
+        clinic_id: clinicId,
+        ...blocksPatch,
+        confirm_blocks: [...confirmBlocks],
+        save_to_profile: [...saveToProfile].filter(
+          (k): k is Exclude<BoardingCareBlockKey, 'recreation'> => k !== 'recreation' && dirty.has(k),
+        ),
+      });
+      resetCare(r.care_plan, r.plan_pendencies ?? []);
+      return true;
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao salvar o plano de cuidados');
+      return false;
+    } finally {
+      setSavingCare(false);
     }
-  }, [open, requestKey, clinicId, unitId, mode]);
+  };
 
   const confirm = async (force: boolean) => {
     if (!request) return;
     setBusy(true);
     try {
-      let rid = request.reservationId;
+      let rid = reservationId;
+      if (rid && careHasChanges) {
+        const ok = await saveCare(rid);
+        if (!ok) return;
+      }
       const nowIso = new Date().toISOString();
       if (rid) {
         await hubBoardingApi.patchReservation(rid, {
@@ -85,6 +214,12 @@ const BoardingCheckInPanel: React.FC<Props> = ({ open, clinicId, unitId, request
       } else if (request.appointmentId) {
         const r = await hubBoardingApi.openFromAppointment(clinicId, request.appointmentId, { forceCapacity: force });
         rid = r.reservation.id;
+        if (careHasChanges) {
+          const ok = await saveCare(rid);
+          if (!ok) {
+            showError('Check-in feito, mas o plano de cuidados não foi salvo.');
+          }
+        }
         // Mesma regra do ramo com reserva: só força capacidade se o usuário confirmou o aviso.
         if (spaceId) {
           await hubBoardingApi.patchReservation(rid, {
@@ -133,7 +268,7 @@ const BoardingCheckInPanel: React.FC<Props> = ({ open, clinicId, unitId, request
           <button
             type="button"
             className="hub-clientes__btn hub-clientes__btn--primary"
-            disabled={busy}
+            disabled={busy || savingCare}
             onClick={() => void confirm(Boolean(capacityMessage))}
           >
             {busy ? 'Registrando…' : capacityMessage ? 'Confirmar acima da capacidade' : 'Confirmar check-in'}
@@ -160,23 +295,103 @@ const BoardingCheckInPanel: React.FC<Props> = ({ open, clinicId, unitId, request
               ))}
             </ul>
             <p className="hub-grooming-drawer__hint">
-              Dá para fazer o check-in assim mesmo. As pendências ficam visíveis para a equipe até alguém confirmar.
+              Dá para fazer o check-in assim mesmo. Preencha o plano abaixo ou deixe as pendências para a equipe.
             </p>
-            {request.reservationId && onReviewCare ? (
+            <div className="hub-clientes__btn-row">
               <button
                 type="button"
                 className="hub-clientes__btn hub-clientes__btn--outline hub-clientes__btn--sm"
-                onClick={() => onReviewCare(request.reservationId!)}
+                aria-expanded={careOpen}
+                onClick={() => setCareOpen((v) => !v)}
               >
-                Revisar cuidados agora
+                {careOpen ? 'Ocultar cuidados' : 'Revisar cuidados agora'}
               </button>
-            ) : null}
+              {careOpen && confirmable.length ? (
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                  onClick={() => confirmable.forEach(handleConfirmBlock)}
+                >
+                  Confirmar o que veio da ficha
+                </button>
+              ) : null}
+            </div>
           </section>
         ) : (
-          <div className="hub-grooming-drawer__ready-banner" role="status">
-            Cuidados confirmados. A rotina começa assim que o check-in for feito.
-          </div>
+          <>
+            <div className="hub-grooming-drawer__ready-banner" role="status">
+              Cuidados confirmados. A rotina começa assim que o check-in for feito.
+            </div>
+            <div className="hub-clientes__btn-row hub-boarding-checkin__care-toggle">
+              <button
+                type="button"
+                className="hub-clientes__link-btn"
+                aria-expanded={careOpen}
+                onClick={() => setCareOpen((v) => !v)}
+              >
+                {careOpen ? 'Ocultar plano de cuidados' : 'Ver ou editar plano de cuidados'}
+              </button>
+            </div>
+          </>
         )}
+
+        {careOpen ? (
+          <section ref={careSectionRef} className="hub-grooming-drawer__section hub-boarding-checkin__care">
+            <div className="hub-grooming-drawer__heading-row">
+              <h4 className="hub-grooming-drawer__heading">Plano de cuidados</h4>
+            </div>
+            {careLoading ? (
+              <HubLoading variant="block" label="Carregando plano…" className="hub-grooming-drawer__loading" />
+            ) : (
+              <>
+                <BoardingCareEditor
+                  idPrefix={`checkin-care-${reservationId ?? request.appointmentId ?? 'new'}`}
+                  blocks={planBlocks}
+                  value={draft}
+                  onChange={handleCareChange}
+                  statusByBlock={localStatus}
+                  onConfirmBlock={handleConfirmBlock}
+                  dirtyBlocks={dirty}
+                  saveToProfile={{
+                    selected: saveToProfile,
+                    onToggle: (k) =>
+                      setSaveToProfile((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(k)) next.delete(k);
+                        else next.add(k);
+                        return next;
+                      }),
+                  }}
+                />
+                {careHasChanges || (reservationId && plan) ? (
+                  <div className="hub-boarding-checkin__care-savebar">
+                    <span className="hub-grooming-drawer__muted">
+                      {careHasChanges
+                        ? reservationId
+                          ? 'Alterações serão salvas ao confirmar o check-in, ou agora.'
+                          : 'As alterações serão salvas ao confirmar o check-in.'
+                        : 'Sem alterações'}
+                    </span>
+                    {reservationId ? (
+                      <button
+                        type="button"
+                        className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                        disabled={savingCare || !careHasChanges}
+                        onClick={() =>
+                          void saveCare(reservationId).then((ok) => {
+                            if (ok) showSuccess('Plano de cuidados salvo');
+                          })
+                        }
+                      >
+                        {savingCare ? 'Salvando…' : 'Salvar cuidados'}
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </>
+            )}
+          </section>
+        ) : null}
 
         <section className="hub-grooming-drawer__section">
           <h4 className="hub-grooming-drawer__heading">Acomodação</h4>

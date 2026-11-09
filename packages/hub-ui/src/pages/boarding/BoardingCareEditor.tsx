@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Plus, X } from 'lucide-react';
+import { Bone, Footprints, HeartHandshake, Pill, Plus, Trees, X, type LucideIcon } from 'lucide-react';
 import { HubTimeField } from '../../components/HubTimeField';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import { HubSearchableCombobox, type HubComboboxOption } from '../../components/HubSearchableCombobox';
@@ -8,13 +8,30 @@ import type {
   BoardingCareBlockKey,
   BoardingCareFeeding,
   BoardingCareHandling,
+  BoardingCareMeal,
+  BoardingCareMealSlot,
   BoardingCareMedication,
   BoardingCarePlanBlocks,
   BoardingCareRecreation,
   BoardingCareWalks,
   BoardingSociability,
 } from '../../api/hubBoardingApi';
-import { BLOCK_STATUS_LABELS, CARE_BLOCK_LABELS, SOCIABILITY_LABELS, blockStatusVariant } from './boardingCareUi';
+import {
+  BLOCK_STATUS_LABELS,
+  CARE_BLOCK_LABELS,
+  CARE_MEAL_SLOTS,
+  CARE_MEAL_SLOT_LABELS,
+  SOCIABILITY_LABELS,
+  blockStatusVariant,
+} from './boardingCareUi';
+
+const CARE_BLOCK_ICONS: Record<BoardingCareBlockKey, LucideIcon> = {
+  feeding: Bone,
+  medications: Pill,
+  walks: Footprints,
+  handling: HeartHandshake,
+  recreation: Trees,
+};
 
 // ─── Horários ───────────────────────────────────────────────────────────────
 
@@ -35,21 +52,23 @@ const TimesEditor: React.FC<{
     <div className="hub-boarding-care__times">
       {times.length ? (
         <ul className="hub-grooming-drawer__chips hub-boarding-care__chips">
-          {times.map((t) => (
-            <li key={t} className="hub-grooming-drawer__chip hub-boarding-care__chip">
-              {t}
-              {!disabled ? (
-                <button
-                  type="button"
-                  className="hub-boarding-care__chip-remove"
-                  onClick={() => onChange(times.filter((x) => x !== t))}
-                  aria-label={`Remover ${t}`}
-                >
-                  <X size={12} aria-hidden />
-                </button>
-              ) : null}
-            </li>
-          ))}
+          {times
+            .filter((t): t is string => typeof t === 'string' && Boolean(t.trim()))
+            .map((t) => (
+              <li key={t} className="hub-grooming-drawer__chip hub-boarding-care__chip">
+                {t}
+                {!disabled ? (
+                  <button
+                    type="button"
+                    className="hub-boarding-care__chip-remove"
+                    onClick={() => onChange(times.filter((x) => x !== t))}
+                    aria-label={`Remover ${t}`}
+                  >
+                    <X size={12} aria-hidden />
+                  </button>
+                ) : null}
+              </li>
+            ))}
         </ul>
       ) : null}
       {!disabled ? (
@@ -80,8 +99,13 @@ const FeedingFields: React.FC<{
 }> = ({ idPrefix, value, disabled, onChange }) => {
   const v: BoardingCareFeeding = value ?? { food_source: null, food_name: null, meals: [], restrictions: null };
   const meals = v.meals ?? [];
-  const [newTime, setNewTime] = useState('');
-  const [newAmount, setNewAmount] = useState('');
+  const mealBySlot = useMemo(() => {
+    const map = new Map<BoardingCareMealSlot, BoardingCareMeal>();
+    for (const m of meals) {
+      if (m.slot) map.set(m.slot, m);
+    }
+    return map;
+  }, [meals]);
   const set = (patch: Partial<BoardingCareFeeding>) => onChange({ ...v, ...patch });
   const foodSourceOptions = useMemo<HubComboboxOption[]>(
     () => [
@@ -91,112 +115,129 @@ const FeedingFields: React.FC<{
     [],
   );
 
+  const toggleSlot = (slot: BoardingCareMealSlot, on: boolean) => {
+    if (on) {
+      if (mealBySlot.has(slot)) return;
+      const next = [...meals.filter((m) => m.slot !== slot), { slot, amount: null, notes: null }];
+      next.sort((a, b) => CARE_MEAL_SLOTS.indexOf(a.slot) - CARE_MEAL_SLOTS.indexOf(b.slot));
+      set({ meals: next });
+      return;
+    }
+    set({ meals: meals.filter((m) => m.slot !== slot) });
+  };
+
+  const setAmount = (slot: BoardingCareMealSlot, amount: string) => {
+    set({
+      meals: meals.map((m) => (m.slot === slot ? { ...m, amount: amount || null } : m)),
+    });
+  };
+
+  const feedsOnSite = v.feeds_on_site !== false;
+
   return (
     <>
-      <div className="hub-boarding-care__grid">
-        <div className="hub-clientes__field">
-          <label className="hub-clientes__label" htmlFor={`${idPrefix}-source`}>
-            Ração
-          </label>
-          <HubSearchableCombobox
-            id={`${idPrefix}-source`}
-            options={foodSourceOptions}
-            value={v.food_source ?? ''}
-            disabled={disabled}
-            placeholder="Não informado"
-            searchPlaceholder="Buscar…"
-            clearable
-            onChange={(val) => set({ food_source: (val || null) as BoardingCareFeeding['food_source'] })}
-          />
-        </div>
-        <div className="hub-clientes__field">
-          <label className="hub-clientes__label" htmlFor={`${idPrefix}-name`}>
-            Marca / tipo
-          </label>
-          <input
-            id={`${idPrefix}-name`}
-            className="hub-clientes__input"
-            value={v.food_name ?? ''}
-            disabled={disabled}
-            placeholder="Ex.: Premier filhote"
-            onChange={(e) => set({ food_name: e.target.value || null })}
-          />
-        </div>
-      </div>
+      <HubCheckbox
+        id={`${idPrefix}-feeds-on-site`}
+        checked={!feedsOnSite}
+        disabled={disabled}
+        onChange={(off) =>
+          off
+            ? set({
+                feeds_on_site: false,
+                meals: [],
+                food_source: null,
+                food_name: null,
+                restrictions: null,
+              })
+            : set({ feeds_on_site: true })
+        }
+      >
+        Não come no estabelecimento (já vem alimentado)
+      </HubCheckbox>
 
-      <span className="hub-clientes__label">Refeições</span>
-      {meals.length ? (
-        <ul className="hub-grooming-drawer__lines hub-boarding-care__list">
-          {meals.map((m, idx) => (
-            <li key={`${m.time}-${idx}`} className="hub-grooming-drawer__line">
-              <strong>{m.time}</strong>
-              <input
-                className="hub-clientes__input hub-boarding-care__inline-input"
-                value={m.amount ?? ''}
+      {feedsOnSite ? (
+        <>
+          <div className="hub-boarding-care__grid">
+            <div className="hub-clientes__field">
+              <label className="hub-clientes__label" htmlFor={`${idPrefix}-source`}>
+                Ração
+              </label>
+              <HubSearchableCombobox
+                id={`${idPrefix}-source`}
+                options={foodSourceOptions}
+                value={v.food_source ?? ''}
                 disabled={disabled}
-                placeholder="Quantidade (ex.: 1 xícara)"
-                aria-label={`Quantidade da refeição das ${m.time}`}
-                onChange={(e) =>
-                  set({ meals: meals.map((x, i) => (i === idx ? { ...x, amount: e.target.value || null } : x)) })
-                }
+                placeholder="Não informado"
+                searchPlaceholder="Buscar…"
+                clearable
+                onChange={(val) => set({ food_source: (val || null) as BoardingCareFeeding['food_source'] })}
               />
-              {!disabled ? (
-                <button
-                  type="button"
-                  className="hub-clientes__icon-btn"
-                  onClick={() => set({ meals: meals.filter((_, i) => i !== idx) })}
-                  aria-label={`Remover refeição das ${m.time}`}
-                >
-                  <X size={14} aria-hidden />
-                </button>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="hub-grooming-drawer__hint">Nenhuma refeição definida.</p>
-      )}
-      {!disabled ? (
-        <div className="hub-boarding-care__add-row">
-          <HubTimeField id={`${idPrefix}-meal-time`} valueHm={newTime} onChangeHm={setNewTime} minuteStep={5} />
-          <input
-            className="hub-clientes__input hub-boarding-care__inline-input"
-            value={newAmount}
-            placeholder="Quantidade"
-            aria-label="Quantidade da nova refeição"
-            onChange={(e) => setNewAmount(e.target.value)}
-          />
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-            disabled={!newTime}
-            onClick={() => {
-              const next = [...meals.filter((m) => m.time !== newTime), { time: newTime, amount: newAmount || null }];
-              next.sort((a, b) => a.time.localeCompare(b.time));
-              set({ meals: next });
-              setNewTime('');
-              setNewAmount('');
-            }}
-          >
-            <Plus size={14} aria-hidden />
-            Adicionar refeição
-          </button>
-        </div>
-      ) : null}
+            </div>
+            <div className="hub-clientes__field">
+              <label className="hub-clientes__label" htmlFor={`${idPrefix}-name`}>
+                Marca / tipo
+              </label>
+              <input
+                id={`${idPrefix}-name`}
+                className="hub-clientes__input"
+                value={v.food_name ?? ''}
+                disabled={disabled}
+                placeholder="Ex.: Premier filhote"
+                onChange={(e) => set({ food_name: e.target.value || null })}
+              />
+            </div>
+          </div>
 
-      <div className="hub-clientes__field">
-        <label className="hub-clientes__label" htmlFor={`${idPrefix}-restrictions`}>
-          Restrições alimentares
-        </label>
-        <input
-          id={`${idPrefix}-restrictions`}
-          className="hub-clientes__input"
-          value={v.restrictions ?? ''}
-          disabled={disabled}
-          placeholder="Ex.: não pode petisco com frango"
-          onChange={(e) => set({ restrictions: e.target.value || null })}
-        />
-      </div>
+          <span className="hub-clientes__label">Refeições do dia</span>
+          <p className="hub-grooming-drawer__hint">
+            Marque os períodos em que o pet come. O horário de cada período é o da rotina da unidade.
+          </p>
+          <ul className="hub-boarding-care__list hub-boarding-care__meal-slots">
+            {CARE_MEAL_SLOTS.map((slot) => {
+              const selected = mealBySlot.has(slot);
+              const amount = mealBySlot.get(slot)?.amount ?? '';
+              return (
+                <li key={slot} className="hub-boarding-care__meal-slot">
+                  <HubCheckbox
+                    checked={selected}
+                    disabled={disabled}
+                    onChange={(c) => toggleSlot(slot, c)}
+                    id={`${idPrefix}-meal-${slot}`}
+                  >
+                    {CARE_MEAL_SLOT_LABELS[slot]}
+                  </HubCheckbox>
+                  {selected ? (
+                    <input
+                      className="hub-clientes__input hub-boarding-care__inline-input"
+                      value={amount}
+                      disabled={disabled}
+                      placeholder="Quantidade (ex.: 1 xícara)"
+                      aria-label={`Quantidade — ${CARE_MEAL_SLOT_LABELS[slot]}`}
+                      onChange={(e) => setAmount(slot, e.target.value)}
+                    />
+                  ) : null}
+                </li>
+              );
+            })}
+          </ul>
+
+          <div className="hub-clientes__field">
+            <label className="hub-clientes__label" htmlFor={`${idPrefix}-restrictions`}>
+              Restrições alimentares
+            </label>
+            <input
+              id={`${idPrefix}-restrictions`}
+              className="hub-clientes__input"
+              value={v.restrictions ?? ''}
+              disabled={disabled}
+              placeholder="Ex.: não pode petisco com frango"
+              onChange={(e) => set({ restrictions: e.target.value || null })}
+            />
+          </div>
+        </>
+      ) : (
+        <p className="hub-grooming-drawer__hint">Sem refeições na rotina — o pet não come aqui.</p>
+      )}
     </>
   );
 };
@@ -231,6 +272,7 @@ const MedicationsFields: React.FC<{
                     className="hub-clientes__input"
                     value={m.name}
                     disabled={disabled}
+                    placeholder="Ex.: Prediderm, Dipirona gotas"
                     onChange={(e) => update(idx, { name: e.target.value })}
                   />
                 </div>
@@ -243,7 +285,7 @@ const MedicationsFields: React.FC<{
                     className="hub-clientes__input"
                     value={m.dose ?? ''}
                     disabled={disabled}
-                    placeholder="Ex.: 1 comprimido"
+                    placeholder="Ex.: 1 comprimido, 5 gotas"
                     onChange={(e) => update(idx, { dose: e.target.value || null })}
                   />
                 </div>
@@ -264,7 +306,7 @@ const MedicationsFields: React.FC<{
                   className="hub-clientes__input"
                   value={m.instructions ?? ''}
                   disabled={disabled}
-                  placeholder="Ex.: junto com a comida"
+                  placeholder="Ex.: com a ração da manhã, esconder no petisco"
                   onChange={(e) => update(idx, { instructions: e.target.value || null })}
                 />
               </div>
@@ -312,7 +354,7 @@ const WalksFields: React.FC<{
       />
       <div className="hub-clientes__field">
         <label className="hub-clientes__label" htmlFor={`${idPrefix}-notes`}>
-          Observações
+          Observações do passeio
         </label>
         <input
           id={`${idPrefix}-notes`}
@@ -362,7 +404,7 @@ const HandlingFields: React.FC<{
         disabled={disabled || v.sociability === 'isolated'}
         onChange={(c) => set({ group_play_allowed: c })}
       >
-        Pode participar de recreação em grupo
+        Pode participar de atividades em grupo
       </HubCheckbox>
       <div className="hub-clientes__field hub-boarding-care__spaced">
         <label className="hub-clientes__label" htmlFor={`${idPrefix}-contact`}>
@@ -409,18 +451,21 @@ const RecreationFields: React.FC<{
         disabled={disabled || !groupPlayAllowed}
         onChange={(c) => onChange({ ...v, allowed: c })}
       >
-        Participa da recreação
+        Participa das atividades da unidade
       </HubCheckbox>
       {!groupPlayAllowed ? (
-        <p className="hub-grooming-drawer__hint">O manejo não permite recreação em grupo.</p>
+        <p className="hub-grooming-drawer__hint">O manejo não permite atividades em grupo.</p>
       ) : v.allowed !== false ? (
         <>
-          <p className="hub-grooming-drawer__hint">Sem horários próprios, segue as janelas de recreação da unidade.</p>
+          <p className="hub-grooming-drawer__hint">
+            As atividades são as definidas pelo estabelecimento. Horários extras só se forem diferentes do padrão.
+          </p>
           <TimesEditor
             id={`${idPrefix}-time`}
             times={v.times ?? []}
             disabled={disabled}
             onChange={(times) => onChange({ ...v, times })}
+            addLabel="Horário extra"
           />
         </>
       ) : null}
@@ -465,10 +510,18 @@ const BoardingCareEditor: React.FC<BoardingCareEditorProps> = ({
       {blocks.map((key) => {
         const status = statusByBlock?.[key];
         const canConfirm = Boolean(onConfirmBlock) && !disabled && (status === 'inherited' || status === 'pending');
+        const Icon = CARE_BLOCK_ICONS[key];
         return (
-          <section key={key} className="hub-grooming-drawer__section hub-boarding-care__block">
-            <div className="hub-grooming-drawer__heading-row">
-              <h4 className="hub-grooming-drawer__heading">{CARE_BLOCK_LABELS[key]}</h4>
+          <section key={key} className="hub-boarding-care__block" aria-labelledby={`${idPrefix}-block-${key}`}>
+            <header className="hub-boarding-care__block-header">
+              <div className="hub-boarding-care__block-title">
+                <span className="hub-boarding-care__block-icon" aria-hidden>
+                  <Icon size={18} strokeWidth={2} />
+                </span>
+                <h4 id={`${idPrefix}-block-${key}`} className="hub-boarding-care__block-heading">
+                  {CARE_BLOCK_LABELS[key]}
+                </h4>
+              </div>
               <div className="hub-boarding-care__block-actions">
                 {status ? (
                   <span className={`hub-grooming-drawer__stage hub-grooming-drawer__stage--${blockStatusVariant(status)}`}>
@@ -485,7 +538,7 @@ const BoardingCareEditor: React.FC<BoardingCareEditorProps> = ({
                   </button>
                 ) : null}
               </div>
-            </div>
+            </header>
             <div className="hub-boarding-care__body">
               {key === 'feeding' ? (
                 <FeedingFields idPrefix={`${idPrefix}-feeding`} value={value.feeding} disabled={disabled} onChange={(v) => set('feeding', v)} />
