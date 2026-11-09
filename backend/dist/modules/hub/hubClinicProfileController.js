@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.patchHubUnitProfile = exports.patchHubClinicProfile = void 0;
+exports.patchHubUnitProfile = exports.patchHubClinicProfile = exports.postHubUnit = void 0;
 const zod_1 = require("zod");
 const supabase_js_1 = require("../../config/supabase.js");
 const authMiddleware_js_1 = require("../../middleware/authMiddleware.js");
@@ -20,6 +20,11 @@ async function userCanEditClinicProfile(userId, clinicId) {
         .maybeSingle();
     return !!data?.role && CLINIC_EDIT_ROLES.has(String(data.role).toUpperCase());
 }
+async function userCanCreateClinicUnit(userId, clinicId) {
+    if (userId === clinicId)
+        return true;
+    return (0, authMiddleware_js_1.checkPermission)(userId, clinicId, 'unit.create');
+}
 const patchClinicBodySchema = zod_1.z.object({
     name: zod_1.z.string().trim().min(2).max(300).optional(),
     phone: zod_1.z.string().trim().max(30).optional().nullable(),
@@ -37,6 +42,76 @@ const patchUnitBodySchema = zod_1.z.object({
     phone: zod_1.z.string().trim().max(30).optional().nullable(),
     technical_manager: zod_1.z.string().trim().min(2).max(200).optional(),
     is_main: zod_1.z.boolean().optional(),
+});
+const createUnitBodySchema = zod_1.z.object({
+    name: zod_1.z.string().trim().min(2).max(300),
+    nickname: zod_1.z.string().trim().min(1).max(100),
+    address: zod_1.z.string().trim().min(3).max(500),
+    city: zod_1.z.string().trim().min(2).max(120),
+    state: zod_1.z.string().trim().min(2).max(2),
+    phone: zod_1.z.string().trim().max(30).optional().nullable(),
+    technical_manager: zod_1.z.string().trim().min(2).max(200),
+    is_main: zod_1.z.boolean().optional(),
+});
+/** POST /api/hub/units?clinic_id=... */
+exports.postHubUnit = (0, errorHandler_js_1.asyncHandler)(async (req, res) => {
+    const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
+    if (!clinicParsed.success) {
+        throw new errors_js_1.ValidationError('clinic_id inválido na query');
+    }
+    const bodyParsed = createUnitBodySchema.safeParse(req.body);
+    if (!bodyParsed.success) {
+        throw new errors_js_1.ValidationError(bodyParsed.error.issues.map((i) => i.message).join('; '));
+    }
+    const clinicId = clinicParsed.data;
+    const userId = req.user.id;
+    const hasAccess = await (0, authMiddleware_js_1.checkClinicAccess)(userId, clinicId);
+    if (!hasAccess) {
+        return res.status(403).json({ error: 'Acesso negado' });
+    }
+    const canCreate = await userCanCreateClinicUnit(userId, clinicId);
+    if (!canCreate) {
+        return res.status(403).json({ error: 'Sem permissão para criar unidades.' });
+    }
+    const payload = bodyParsed.data;
+    const nickname = payload.nickname.trim();
+    const state = payload.state.toUpperCase();
+    const { data: nickConflict } = await supabase_js_1.supabaseAdmin
+        .from('units')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .eq('nickname', nickname)
+        .maybeSingle();
+    if (nickConflict) {
+        return res.status(400).json({ error: 'Já existe uma unidade com este apelido.' });
+    }
+    const isMain = payload.is_main === true;
+    if (isMain) {
+        await supabase_js_1.supabaseAdmin
+            .from('units')
+            .update({ is_main: false, updated_at: new Date().toISOString() })
+            .eq('clinic_id', clinicId);
+    }
+    const { data: unit, error } = await supabase_js_1.supabaseAdmin
+        .from('units')
+        .insert({
+        clinic_id: clinicId,
+        name: payload.name,
+        nickname,
+        address: payload.address,
+        city: payload.city,
+        state,
+        phone: payload.phone?.trim() || null,
+        technical_manager: payload.technical_manager.trim(),
+        is_main: isMain,
+        status: 'active',
+    })
+        .select()
+        .single();
+    if (error || !unit) {
+        return res.status(500).json({ error: 'Erro ao criar unidade.' });
+    }
+    res.status(201).json({ unit });
 });
 /** PATCH /api/hub/clinic/profile?clinic_id=... */
 exports.patchHubClinicProfile = (0, errorHandler_js_1.asyncHandler)(async (req, res) => {

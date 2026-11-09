@@ -73,6 +73,178 @@ describe('planCustody', () => {
     expect(plan.handoffs.some((h) => h.kind === 'retirada_balcao')).toBe(false);
   });
 
+  it('estadia com saída hoje gera saida_prevista sem entrega', () => {
+    const plan = planCustody(
+      snap({
+        boarding: [
+          {
+            id: 'b1',
+            unit_id: 'u1',
+            status: 'checked_in',
+            guardian_id: 'g1',
+            mode: 'hotel',
+            expected_check_out: '2026-11-06T20:00:00.000Z',
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs.map((h) => h.kind)).toEqual(['saida_prevista']);
+    expect(plan.handoffs[0].context.preparing).toBe(false);
+    expect(plan.handoffs.some((h) => h.kind === 'retirada_balcao')).toBe(false);
+  });
+
+  it('checkout_preparing marca saida_prevista como preparing', () => {
+    const plan = planCustody(
+      snap({
+        boarding: [
+          {
+            id: 'b1',
+            unit_id: 'u1',
+            status: 'checkout_preparing',
+            guardian_id: 'g1',
+            mode: 'daycare',
+            expected_check_out: '2026-11-06T18:00:00.000Z',
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs).toHaveLength(1);
+    expect(plan.handoffs[0].kind).toBe('saida_prevista');
+    expect(plan.handoffs[0].context.label).toBe('Creche');
+    expect(plan.handoffs[0].context.preparing).toBe(true);
+  });
+
+  it('ready_for_handoff sem L&T vira retirada_balcao e não mantém prevista', () => {
+    const plan = planCustody(
+      snap({
+        boarding: [
+          {
+            id: 'b1',
+            unit_id: 'u1',
+            status: 'ready_for_handoff',
+            guardian_id: 'g1',
+            mode: 'hotel',
+            expected_check_out: '2026-11-06T20:00:00.000Z',
+            handoff_ready_at: '2026-11-06T16:00:00.000Z',
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs.map((h) => h.kind)).toEqual(['retirada_balcao']);
+    expect(plan.handoffs[0].source_type).toBe('boarding_reservation');
+    expect(plan.handoffs[0].source_id).toBe('b1');
+  });
+
+  it('ready_for_handoff com delivery sem motorista vira embarque', () => {
+    const plan = planCustody(
+      snap({
+        boarding: [
+          {
+            id: 'b1',
+            unit_id: 'u1',
+            status: 'ready_for_handoff',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-hotel',
+            mode: 'hotel',
+            handoff_ready_at: '2026-11-06T16:00:00.000Z',
+          },
+        ],
+        legs: [
+          {
+            parent_appointment_id: 'a-hotel',
+            appointment_status: 'confirmed',
+            direction: 'delivery',
+            stop_status: 'pending',
+            route_id: null,
+            driver_id: null,
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs.map((h) => h.kind)).toEqual(['embarque']);
+  });
+
+  it('ready_for_handoff com motorista na rota não cria handoff de saída', () => {
+    const plan = planCustody(
+      snap({
+        boarding: [
+          {
+            id: 'b1',
+            unit_id: 'u1',
+            status: 'ready_for_handoff',
+            hub_appointment_id: 'a-hotel',
+            mode: 'hotel',
+            handoff_ready_at: '2026-11-06T16:00:00.000Z',
+          },
+        ],
+        legs: [
+          {
+            parent_appointment_id: 'a-hotel',
+            appointment_status: 'confirmed',
+            direction: 'delivery',
+            stop_status: 'pending',
+            route_id: 'r1',
+            driver_id: 'd1',
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs.filter((h) => h.kind === 'retirada_balcao' || h.kind === 'embarque')).toEqual([]);
+  });
+
+  it('ready_for_handoff com entrega já concluída completa a estadia', () => {
+    const plan = planCustody(
+      snap({
+        boarding: [
+          {
+            id: 'b1',
+            unit_id: 'u1',
+            status: 'ready_for_handoff',
+            hub_appointment_id: 'a-hotel',
+            mode: 'hotel',
+            handoff_ready_at: '2026-11-06T16:00:00.000Z',
+          },
+        ],
+        legs: [
+          {
+            parent_appointment_id: 'a-hotel',
+            appointment_status: 'done',
+            direction: 'delivery',
+            stop_status: 'completed',
+            route_id: 'r1',
+            driver_id: 'd1',
+          },
+        ],
+      }),
+    );
+    expect(plan.completeBoardingReservationIds).toEqual(['b1']);
+    expect(plan.handoffs).toEqual([]);
+  });
+
+  it('preparing e ready também fecham banho sem retirada ao tutor', () => {
+    for (const status of ['checkout_preparing', 'ready_for_handoff'] as const) {
+      const plan = planCustody(
+        snap({
+          boarding: [{ id: 'b1', unit_id: 'u1', status, mode: 'hotel' }],
+          groomingSessions: [
+            {
+              id: 's1',
+              unit_id: 'u1',
+              guardian_id: 'g1',
+              hub_appointment_id: 'a1',
+              grooming_stage: 'ready',
+              ready_at: '2026-11-06T14:00:00.000Z',
+            },
+          ],
+        }),
+      );
+      expect(plan.closeGroomingSessionIds).toEqual(['s1']);
+      expect(plan.handoffs.some((h) => h.kind === 'retirada_balcao' && h.source_type === 'grooming_session')).toBe(
+        false,
+      );
+    }
+  });
+
   it('entrega com motorista não cria tarefa; concluída fecha o banho', () => {
     const ready = {
       id: 's1',
@@ -542,6 +714,61 @@ describe('reconcileHandoffRows', () => {
       preserveChegadaSourceIds: new Set(['a-future']),
     });
     expect(out.cancelIds).toEqual([]);
+  });
+
+  it('atualiza preparing da saida_prevista aberta sem duplicar', () => {
+    const desired = {
+      kind: 'saida_prevista' as const,
+      source_type: 'boarding_reservation',
+      source_id: 'b1',
+      pet_id: 'pet-1',
+      guardian_id: 'g1',
+      unit_id: 'u1',
+      opened_at: '2026-11-06T20:00:00.000Z',
+      context: { label: 'Hotel', preparing: true, starts_at: '2026-11-06T20:00:00.000Z' },
+    };
+    const existing = [
+      {
+        id: 'h1',
+        kind: 'saida_prevista' as const,
+        source_type: 'boarding_reservation',
+        source_id: 'b1',
+        status: 'open' as const,
+        resolved_at: null,
+        context: { label: 'Hotel', preparing: false, starts_at: '2026-11-06T20:00:00.000Z' },
+      },
+    ];
+    const out = reconcileHandoffRows(existing, [desired], '2026-11-06');
+    expect(out.insert).toEqual([]);
+    expect(out.cancelIds).toEqual([]);
+    expect(out.refresh).toEqual([{ id: 'h1', context: desired.context }]);
+  });
+
+  it('cancela saida_prevista quando a estadia é liberada para entrega', () => {
+    const existing = [
+      {
+        id: 'h-prev',
+        kind: 'saida_prevista' as const,
+        source_type: 'boarding_reservation',
+        source_id: 'b1',
+        status: 'open' as const,
+        resolved_at: null,
+        context: { label: 'Hotel', preparing: true },
+      },
+    ];
+    const desired = {
+      kind: 'retirada_balcao' as const,
+      source_type: 'boarding_reservation',
+      source_id: 'b1',
+      pet_id: 'pet-1',
+      guardian_id: 'g1',
+      unit_id: 'u1',
+      opened_at: '2026-11-06T16:00:00.000Z',
+      context: { label: 'Hotel', ready_at: '2026-11-06T16:00:00.000Z' },
+    };
+    const out = reconcileHandoffRows(existing, [desired], '2026-11-06');
+    expect(out.cancelIds).toEqual(['h-prev']);
+    expect(out.insert.map((h) => h.kind)).toEqual(['retirada_balcao']);
   });
 });
 

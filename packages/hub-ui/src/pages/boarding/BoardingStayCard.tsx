@@ -92,7 +92,10 @@ const BoardingStayCard: React.FC<Props> = ({ stay, canWrite, busy, onOpen, onChe
           </ul>
         ) : null}
 
-        {stay.stage === 'checked_in' && stay.next_task ? (
+        {(stay.stage === 'checked_in' ||
+          stay.stage === 'checkout_preparing' ||
+          stay.stage === 'ready_for_handoff') &&
+        stay.next_task ? (
           <p className="hub-boarding-card__next">
             <span className="hub-boarding-card__next-label">Próxima</span>
             {stay.next_task.scheduled_for ? `${formatHm(stay.next_task.scheduled_for)} · ` : ''}
@@ -101,7 +104,19 @@ const BoardingStayCard: React.FC<Props> = ({ stay, canWrite, busy, onOpen, onChe
         ) : null}
 
         <div className="hub-boarding-card__chips">
-          {stay.stage === 'checked_in' && ts.total ? (
+          {stay.stage === 'checkout_preparing' ? (
+            <span className="hub-grooming-drawer__flag hub-grooming-drawer__flag--priority">Preparando saída</span>
+          ) : null}
+          {stay.stage === 'ready_for_handoff' ? (
+            <span className="hub-grooming-drawer__flag hub-grooming-drawer__flag--priority">Aguardando recepção</span>
+          ) : null}
+          {stay.is_departure && stay.stage === 'checked_in' ? (
+            <span className="hub-grooming-drawer__chip">Sai hoje</span>
+          ) : null}
+          {(stay.stage === 'checked_in' ||
+            stay.stage === 'checkout_preparing' ||
+            stay.stage === 'ready_for_handoff') &&
+          ts.total ? (
             <span className="hub-grooming-drawer__chip">
               {ts.done}/{ts.total} tarefas
             </span>
@@ -125,7 +140,11 @@ const BoardingStayCard: React.FC<Props> = ({ stay, canWrite, busy, onOpen, onChe
         </div>
       </button>
 
-      {canWrite && (stay.stage === 'reserved' || stay.stage === 'checked_in') ? (
+      {canWrite &&
+      (stay.stage === 'reserved' ||
+        stay.stage === 'checked_in' ||
+        stay.stage === 'checkout_preparing' ||
+        stay.stage === 'ready_for_handoff') ? (
         <div className="hub-clinic-queue__actions">
           {stay.stage === 'reserved' ? (
             <button
@@ -139,11 +158,19 @@ const BoardingStayCard: React.FC<Props> = ({ stay, canWrite, busy, onOpen, onChe
           ) : (
             <button
               type="button"
-              className={`hub-clientes__btn hub-clientes__btn--sm ${stay.is_departure ? 'hub-clientes__btn--primary' : 'hub-clientes__btn--ghost'}`}
+              className={`hub-clientes__btn hub-clientes__btn--sm ${
+                stay.is_departure || stay.stage === 'checkout_preparing' || stay.stage === 'ready_for_handoff'
+                  ? 'hub-clientes__btn--primary'
+                  : 'hub-clientes__btn--ghost'
+              }`}
               disabled={busy || !stay.reservation_id}
               onClick={() => onCheckOut(stay)}
             >
-              Check-out
+              {stay.stage === 'ready_for_handoff'
+                ? 'Ver saída'
+                : stay.stage === 'checkout_preparing'
+                  ? 'Continuar saída'
+                  : 'Saída'}
             </button>
           )}
         </div>

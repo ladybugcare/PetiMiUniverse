@@ -21,7 +21,7 @@ import { boardingLocalParts } from './boardingBilling';
 import { boardingStayWindow, reservationOverlapsRange } from './boardingOperational';
 
 export const BOARDING_MIGRATION_HINT =
-  'Execute as migrações 123 a 131 de backend/database_migrations/petimi_hub (Hotel & Creche) no Supabase.';
+  'Execute as migrações 123 a 132 de backend/database_migrations/petimi_hub (Hotel & Creche) no Supabase.';
 
 export class BoardingHttpError extends Error {
   constructor(
@@ -50,6 +50,8 @@ export type BoardingUnitSettings = {
   overbooking_policy: 'warn' | 'block';
   /** HH:MM de cada período de refeição na rotina desta unidade. */
   meal_slot_times: Record<'breakfast' | 'lunch' | 'snack' | 'dinner', string>;
+  /** Bloqueia liberar/entregar se houver comanda em aberto. */
+  block_exit_if_charge_pending: boolean;
 };
 
 export const EMPTY_UNIT_SETTINGS: BoardingUnitSettings = {
@@ -62,6 +64,7 @@ export const EMPTY_UNIT_SETTINGS: BoardingUnitSettings = {
   recreation_capacity: null,
   overbooking_policy: 'warn',
   meal_slot_times: resolveMealSlotTimes(null),
+  block_exit_if_charge_pending: false,
 };
 
 export function normalizeUnitSettings(row: Record<string, unknown> | null | undefined): BoardingUnitSettings {
@@ -76,6 +79,7 @@ export function normalizeUnitSettings(row: Record<string, unknown> | null | unde
     recreation_capacity: (row.recreation_capacity as number | null) ?? null,
     overbooking_policy: row.overbooking_policy === 'block' ? 'block' : 'warn',
     meal_slot_times: resolveMealSlotTimes(row.meal_slot_times),
+    block_exit_if_charge_pending: row.block_exit_if_charge_pending === true,
   };
 }
 
@@ -288,7 +292,7 @@ export async function resyncOpenStayTasks(clinicId: string, unitId: string): Pro
     .select('*')
     .eq('clinic_id', clinicId)
     .eq('unit_id', unitId)
-    .in('status', ['reserved', 'checked_in'])
+    .in('status', ['reserved', 'checked_in', 'checkout_preparing', 'ready_for_handoff'])
     .is('deleted_at', null);
   if (error) {
     if (missingTable(error)) return;
@@ -314,6 +318,79 @@ export async function dropPendingTasksAfter(clinicId: string, reservationId: str
   if (afterIso) q = q.gt('scheduled_for', afterIso);
   const { error } = await q;
   if (error && !missingTable(error)) throw new Error(error.message);
+}
+
+/**
+ * Fecha a estadia após entrega/embarque na recepção (ou L&T já concluído).
+ * Idempotente se já estiver `checked_out`.
+ */
+export async function completeBoardingReservationCheckout(opts: {
+  clinicId: string;
+  reservationId: string;
+  checkedOutAt?: string;
+}): Promise<{ ok: true; alreadyDone: boolean; reservation: ReservationRow | null }> {
+  const current = await loadReservation(opts.clinicId, opts.reservationId);
+  if (!current) return { ok: true, alreadyDone: true, reservation: null };
+  if (current.status === 'checked_out') {
+    return { ok: true, alreadyDone: true, reservation: current };
+  }
+  if (current.status === 'cancelled' || current.status === 'no_show') {
+    return { ok: true, alreadyDone: true, reservation: current };
+  }
+
+  const nowIso = opts.checkedOutAt ?? new Date().toISOString();
+  const { data, error } = await supabaseAdmin
+    .from('hub_boarding_reservations')
+    .update({ status: 'checked_out', checked_out_at: nowIso })
+    .eq('id', opts.reservationId)
+    .eq('clinic_id', opts.clinicId)
+    .is('deleted_at', null)
+    .select('*')
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+
+  const updated = (data as ReservationRow | null) ?? current;
+  if (current.hub_appointment_id) {
+    await supabaseAdmin
+      .from('hub_appointments')
+      .update({ status: 'done' })
+      .eq('id', current.hub_appointment_id)
+      .eq('clinic_id', opts.clinicId);
+  }
+  await dropPendingTasksAfter(opts.clinicId, opts.reservationId, updated.checked_out_at ?? nowIso);
+
+  try {
+    const { syncOpenComandasAfterBoardingCheckedOut } = await import('./hubComandasController');
+    void syncOpenComandasAfterBoardingCheckedOut(opts.clinicId, opts.reservationId);
+  } catch {
+    /* comanda é best-effort */
+  }
+  try {
+    const { notifyHubBoardingCheckout } = await import('./hubNotifyEvents');
+    void notifyHubBoardingCheckout({
+      clinicId: opts.clinicId,
+      unitId: current.unit_id,
+      petId: current.pet_id,
+      reservationId: opts.reservationId,
+    });
+  } catch {
+    /* notificação é best-effort */
+  }
+
+  return { ok: true, alreadyDone: false, reservation: updated };
+}
+
+export async function petHasOpenBoardingCharge(clinicId: string, petId: string | null): Promise<boolean> {
+  if (!petId) return false;
+  const { count, error } = await supabaseAdmin
+    .from('hub_comandas')
+    .select('id', { count: 'exact', head: true })
+    .eq('clinic_id', clinicId)
+    .eq('pet_id', petId)
+    .is('deleted_at', null)
+    .in('financial_status', ['open', 'awaiting_balance']);
+  if (error) throw new Error(error.message);
+  return (count ?? 0) > 0;
 }
 
 /** Plano + tarefas da estadia; falhas não interrompem o fluxo principal (check-in, reserva). */

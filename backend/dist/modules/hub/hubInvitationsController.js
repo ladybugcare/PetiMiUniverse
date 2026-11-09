@@ -17,6 +17,7 @@ Object.defineProperty(exports, "buildInvitationShareMessage", { enumerable: true
 Object.defineProperty(exports, "buildInvitationUrl", { enumerable: true, get: function () { return hubInvitationUtils_js_1.buildInvitationUrl; } });
 Object.defineProperty(exports, "resolveHubWebUrl", { enumerable: true, get: function () { return hubInvitationUtils_js_1.resolveHubWebUrl; } });
 const operationalAreas_js_1 = require("../../utils/operationalAreas.js");
+const sendHubSignupConfirmation_js_1 = require("./sendHubSignupConfirmation.js");
 const uuidStr = zod_1.z.string().uuid();
 function resolveHubWebUrlForSignup() {
     const raw = process.env.HUB_WEB_URL?.trim() ||
@@ -146,6 +147,7 @@ exports.signupFromHubInvitation = (0, errorHandler_js_1.asyncHandler)(async (req
         });
     }
     const hubWebUrl = resolveHubWebUrlForSignup();
+    const emailRedirectTo = `${hubWebUrl}/email-confirmed`;
     const isLocalEnv = hubWebUrl.includes('localhost') || hubWebUrl.includes('127.0.0.1');
     const { data: authData, error: authError } = await supabase_js_1.supabaseAdmin.auth.admin.createUser({
         email,
@@ -179,6 +181,9 @@ exports.signupFromHubInvitation = (0, errorHandler_js_1.asyncHandler)(async (req
         operationalAreas = (0, operationalAreas_js_1.sanitizeOperationalAreas)(staffRow?.operational_areas);
     }
     try {
+        if (!isLocalEnv) {
+            await (0, sendHubSignupConfirmation_js_1.sendHubSignupConfirmationEmail)(email, emailRedirectTo);
+        }
         const { data: clinicUser, error: cuError } = await supabase_js_1.supabaseAdmin
             .from('clinic_users')
             .insert({

@@ -59,6 +59,8 @@ exports.PERMISSIONS = {
         'hub.receivables.create',
         'hub.cash.session',
         'hub.cash.receive',
+        'reception.ops.read',
+        'reception.ops.manage',
     ],
     CMANAGER: [
         'unit.edit',
@@ -107,6 +109,8 @@ exports.PERMISSIONS = {
         'hub.receivables.create',
         'hub.cash.session',
         'hub.cash.receive',
+        'reception.ops.read',
+        'reception.ops.manage',
     ],
     CASSISTANT: [
         'unit.view',
@@ -136,6 +140,8 @@ exports.PERMISSIONS = {
         'hub.cash.session',
         'hub.cash.receive',
         'hub.receivables.create',
+        'reception.ops.read',
+        'reception.ops.manage',
     ],
     CVET_INTERNAL: [
         'unit.view',
@@ -147,7 +153,7 @@ exports.PERMISSIONS = {
         'hub.appointments.read',
         'hub.clinic.read',
         'hub.clinic.write',
-        'hub.financial.read',
+        'hub.service_types.read',
         'hub.reports.read',
     ],
     CGROOMER: [

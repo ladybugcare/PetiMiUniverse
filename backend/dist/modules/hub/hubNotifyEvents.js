@@ -1,10 +1,14 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.notifyHubPetReady = notifyHubPetReady;
+exports.notifyHubGroomingExtraRequest = notifyHubGroomingExtraRequest;
 exports.notifyHubPetOnTheWay = notifyHubPetOnTheWay;
+exports.notifyHubPetArrived = notifyHubPetArrived;
 exports.notifyHubCancellationPending = notifyHubCancellationPending;
 exports.notifyHubPaymentDue = notifyHubPaymentDue;
 exports.notifyHubStockAlert = notifyHubStockAlert;
+exports.notifyHubNearlyEmptyLot = notifyHubNearlyEmptyLot;
+exports.notifyHubStockExpiryAlert = notifyHubStockExpiryAlert;
 exports.notifyHubBoardingCheckin = notifyHubBoardingCheckin;
 exports.notifyHubBoardingCheckout = notifyHubBoardingCheckout;
 /**
@@ -68,7 +72,24 @@ async function notifyHubPetReady(opts) {
         type: 'hub_pet_ready',
         title: 'Pet pronto para retirada',
         message: `${pet} já está pronto(a) para retirada.`,
-        link: '/hub/banho-tosa',
+        link: '/hub/recepcao',
+        entityType: 'grooming_session',
+        entityId: opts.sessionId,
+    });
+}
+/** Salão pediu outro serviço (ex.: desembolo) — recepção pede autorização ao tutor. */
+async function notifyHubGroomingExtraRequest(opts) {
+    const pet = await resolvePetName(opts.petId);
+    const service = opts.extraName.trim() || 'outro serviço';
+    await (0, hubNotifyStaff_1.hubNotifyStaff)({
+        clinicId: opts.clinicId,
+        unitId: opts.unitId,
+        areas: ['recepcao'],
+        excludeUserIds: opts.excludeUserIds,
+        type: 'hub_grooming_extra_request',
+        title: 'Serviço precisa de autorização',
+        message: `${pet}: a equipe pediu ${service}. Peça autorização ao tutor e inclua o serviço.`,
+        link: '/hub/recepcao',
         entityType: 'grooming_session',
         entityId: opts.sessionId,
     });
@@ -89,6 +110,43 @@ async function notifyHubPetOnTheWay(opts) {
         entityId: opts.stopId,
     });
 }
+/** Pet desembarcou do leva e traz na unidade — recepção + módulo operacional. */
+async function notifyHubPetArrived(opts) {
+    const pet = await resolvePetName(opts.petId);
+    const areas = opts.module === 'grooming'
+        ? ['recepcao', 'banho_tosa']
+        : opts.module === 'clinical'
+            ? ['recepcao', 'clinica']
+            : opts.module === 'boarding'
+                ? ['recepcao', 'hotel_creche']
+                : ['recepcao'];
+    const link = opts.module === 'grooming'
+        ? '/hub/banho-tosa'
+        : opts.module === 'clinical'
+            ? '/hub/clinica/atendimentos'
+            : opts.module === 'boarding'
+                ? '/hub/hotel-creche'
+                : '/hub/leva-e-traz';
+    const where = opts.module === 'grooming'
+        ? 'e entrou na fila de banho e tosa'
+        : opts.module === 'clinical'
+            ? 'e aguarda no consultório'
+            : opts.module === 'boarding'
+                ? 'e deu entrada no hotel/creche'
+                : 'via leva e traz';
+    await (0, hubNotifyStaff_1.hubNotifyStaff)({
+        clinicId: opts.clinicId,
+        unitId: opts.unitId,
+        areas: [...areas],
+        excludeUserIds: opts.excludeUserIds,
+        type: 'hub_pet_arrived',
+        title: 'Pet chegou na clínica',
+        message: `${pet} chegou ${where}.`,
+        link,
+        entityType: 'appointment',
+        entityId: opts.appointmentId,
+    });
+}
 /** Cancelamento operacional com valor já pago — caixa e financeiro resolvem. */
 async function notifyHubCancellationPending(opts) {
     const guardian = await resolveGuardianName(opts.guardianId);
@@ -102,7 +160,7 @@ async function notifyHubCancellationPending(opts) {
         message: guardian
             ? `Atendimento de ${guardian} foi cancelado${valor}. Defina estorno, crédito ou cobrança.`
             : `Um atendimento foi cancelado${valor}. Defina estorno, crédito ou cobrança.`,
-        link: '/hub/financeiro',
+        link: '/hub/financeiro?tab=adjustments',
         entityType: 'comanda',
         entityId: opts.comandaId,
     });
@@ -135,9 +193,41 @@ async function notifyHubStockAlert(opts) {
         type: 'hub_stock_alert',
         title: 'Estoque abaixo do mínimo',
         message: `${opts.itemName}: ${opts.qtyOnHand} em estoque (mínimo ${opts.minQty}).`,
-        link: '/hub/estoque',
+        link: '/hub/estoque/alertas',
         entityType: 'inventory_item',
         entityId: opts.itemId,
+    });
+}
+/** Embalagem quase vazia após uso fracionado — quem pode zerar o resto. */
+async function notifyHubNearlyEmptyLot(opts) {
+    const lotLabel = opts.lotCode?.trim() ? `lote ${opts.lotCode}` : 'lote sem código';
+    const stockPart = `${opts.remainingStock} ${opts.unitLabel}`;
+    const contentPart = opts.remainingContent != null && opts.contentUnit
+        ? ` (${opts.remainingContent} ${opts.contentUnit})`
+        : '';
+    await (0, hubNotifyStaff_1.hubNotifyStaff)({
+        clinicId: opts.clinicId,
+        areas: ['estoque'],
+        type: 'hub_stock_alert',
+        title: 'Embalagem quase vazia',
+        message: `${opts.itemName} (${lotLabel}): restam ${stockPart}${contentPart}. Quem tem estoque pode dar a baixa completa do resto.`,
+        link: '/hub/estoque/alertas',
+        entityType: 'inventory_lot',
+        entityId: opts.lotId,
+    });
+}
+/** Lote dentro da janela de alerta de validade do item. */
+async function notifyHubStockExpiryAlert(opts) {
+    const lotLabel = opts.lotCode?.trim() ? `lote ${opts.lotCode}` : 'lote sem código';
+    await (0, hubNotifyStaff_1.hubNotifyStaff)({
+        clinicId: opts.clinicId,
+        areas: ['estoque'],
+        type: 'hub_stock_alert',
+        title: 'Validade próxima',
+        message: `${opts.itemName} (${lotLabel}): vence em ${opts.daysUntil} dia(s) (${opts.expiryDate}).`,
+        link: '/hub/estoque/alertas',
+        entityType: 'inventory_lot',
+        entityId: opts.lotId,
     });
 }
 /** Check-in de hotel/creche — hotel e recepção. */

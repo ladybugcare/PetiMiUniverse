@@ -4,6 +4,7 @@ const express_1 = require("express");
 const authMiddleware_1 = require("../../../middleware/authMiddleware");
 const rateLimiter_js_1 = require("../../../middleware/rateLimiter.js");
 const hubSignupController_js_1 = require("../hubSignupController.js");
+const hubDayOpsSummaryController_1 = require("../hubDayOpsSummaryController");
 const hubInvitationsController_js_1 = require("../hubInvitationsController.js");
 const hubMessageLogsController_1 = require("../hubMessageLogsController");
 const guardiansController_1 = require("../guardiansController");
@@ -28,8 +29,10 @@ const hubSpecialPricesController_1 = require("../hubSpecialPricesController");
 const hubProspectsController_1 = require("../hubProspectsController");
 const hubEncountersController_1 = require("../hubEncountersController");
 const hubGroomingController_1 = require("../hubGroomingController");
+const hubReceptionController_1 = require("../hubReceptionController");
 const hubPickupController_1 = require("../hubPickupController");
 const hubPickupVehiclesController_1 = require("../hubPickupVehiclesController");
+const hubResourcesController_1 = require("../hubResourcesController");
 const hubPartnerClinicsController_1 = require("../hubPartnerClinicsController");
 const hubGroomingDrawerController_1 = require("../hubGroomingDrawerController");
 const hubClinicalCasesController_1 = require("../hubClinicalCasesController");
@@ -38,6 +41,8 @@ const hubClinicalExamsController_1 = require("../hubClinicalExamsController");
 const hubExamOrderDocumentsController_1 = require("../hubExamOrderDocumentsController");
 const hubSpecialistReferralsController_1 = require("../hubSpecialistReferralsController");
 const hubClinicalModulesController_1 = require("../hubClinicalModulesController");
+const hubClinicalBillableServicesController_1 = require("../hubClinicalBillableServicesController");
+const hubPrescriptionLookupsController_1 = require("../hubPrescriptionLookupsController");
 const hubVetCockpitController_js_1 = require("../hubVetCockpitController.js");
 const hubQuotesController_1 = require("../hubQuotesController");
 const hubFinancialController_1 = require("../hubFinancialController");
@@ -49,6 +54,10 @@ const hubSeriesBillingController_1 = require("../hubSeriesBillingController");
 const hubCommissionRulesController_1 = require("../hubCommissionRulesController");
 const hubBoardingController_1 = require("../hubBoardingController");
 const hubBoardingDrawerController_1 = require("../hubBoardingDrawerController");
+const hubBoardingCareController_1 = require("../hubBoardingCareController");
+const hubBoardingTasksController_1 = require("../hubBoardingTasksController");
+const hubBoardingRecordsController_1 = require("../hubBoardingRecordsController");
+const hubBoardingOpsController_1 = require("../hubBoardingOpsController");
 /**
  * PetMi Hub API — rotas do sistema operacional do negócio pet.
  * Prefixo montado em app.ts: `/api/hub`.
@@ -73,9 +82,22 @@ router.post('/invitations/accept', authMiddleware_1.authenticateUser, hubInvitat
 router.post('/onboarding/clinic', authMiddleware_1.authenticateUser, hubSignupController_js_1.postHubOnboardingClinic);
 router.get('/session/context', authMiddleware_1.authenticateUser, hubSessionController_js_1.getHubSessionContext);
 router.get('/subscription/plans', authMiddleware_1.authenticateUser, hubSubscriptionController_js_1.getHubSubscriptionPlans);
+router.get('/subscription', authMiddleware_1.authenticateUser, hubSubscriptionController_js_1.getHubSubscriptionMe);
+router.post('/subscription/checkout', authMiddleware_1.authenticateUser, hubSubscriptionController_js_1.postHubSubscriptionCheckout);
+router.post('/subscription/sync', authMiddleware_1.authenticateUser, hubSubscriptionController_js_1.postHubSubscriptionSync);
+router.get('/day-ops-summary', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)([
+    'hub.appointments.read',
+    'hub.clinic.read',
+    'grooming.queue.read',
+    'boarding.reservations.read',
+    'pickup.routes.read',
+    'hub.financial.read',
+    'hub.inventory.read',
+]), hubDayOpsSummaryController_1.getHubDayOpsSummary);
 router.post('/profile/me/photo', authMiddleware_1.authenticateUser, hubProfilePhotoController_js_1.postHubUserProfilePhoto);
 router.post('/clinic/profile/photo', authMiddleware_1.authenticateUser, hubProfilePhotoController_js_1.postHubClinicProfilePhoto);
 router.patch('/clinic/profile', authMiddleware_1.authenticateUser, hubClinicProfileController_js_1.patchHubClinicProfile);
+router.post('/units', authMiddleware_1.authenticateUser, hubClinicProfileController_js_1.postHubUnit);
 router.patch('/units/:unitId', authMiddleware_1.authenticateUser, hubClinicProfileController_js_1.patchHubUnitProfile);
 router.get('/guardians/stats', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.guardians.read'), guardiansController_1.getHubGuardianStats);
 router.get('/guardians/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.guardians.read'), guardiansController_1.getHubGuardianById);
@@ -108,6 +130,19 @@ router.get('/service-types/:id/addon-availability', authMiddleware_1.authenticat
 router.put('/service-types/:id/addon-availability', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubServiceAddonsController_1.putHubServiceTypeAddonAvailability);
 router.get('/service-types/:id/addon-deployments', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.read'), hubServiceAddonsController_1.getHubAddonDeployments);
 router.put('/service-types/:id/addon-deployments', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubServiceAddonsController_1.putHubAddonDeployments);
+const resourceRead = ['hub.appointments.read', 'grooming.queue.read', 'hub.service_types.read'];
+router.get('/resource-kinds', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)([...resourceRead]), hubResourcesController_1.listHubResourceKinds);
+router.post('/resource-kinds', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubResourcesController_1.createHubResourceKind);
+router.patch('/resource-kinds/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubResourcesController_1.patchHubResourceKind);
+router.delete('/resource-kinds/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubResourcesController_1.deleteHubResourceKind);
+router.put('/resource-group-settings', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubResourcesController_1.putHubResourceGroupSetting);
+router.get('/resources', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)([...resourceRead]), hubResourcesController_1.listHubResources);
+router.post('/resources', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubResourcesController_1.createHubResource);
+router.patch('/resources/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubResourcesController_1.patchHubResource);
+router.delete('/resources/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubResourcesController_1.deleteHubResource);
+router.get('/resources/availability', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)([...resourceRead]), hubResourcesController_1.getHubResourceAvailability);
+router.get('/service-types/:id/resource-kinds', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)([...resourceRead]), hubResourcesController_1.getHubServiceTypeResourceKinds);
+router.put('/service-types/:id/resource-kinds', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubResourcesController_1.putHubServiceTypeResourceKinds);
 router.get('/service-groups/checklists', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.read'), hubServiceGroupChecklistController_1.listHubServiceGroupChecklists);
 router.get('/service-groups/checklists/:slug', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.read'), hubServiceGroupChecklistController_1.getHubServiceGroupChecklist);
 router.put('/service-groups/checklists/:slug', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubServiceGroupChecklistController_1.putHubServiceGroupChecklist);
@@ -121,8 +156,8 @@ router.patch('/service-groups/:id', authMiddleware_1.authenticateUser, (0, authM
 router.patch('/service-groups/:id/job-functions', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubServiceGroupsController_1.patchHubServiceGroupJobFunctions);
 router.delete('/service-groups/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.service_types.write'), hubServiceGroupsController_1.deleteHubServiceGroup);
 /* --- Inventário / Estoque --- */
-router.get('/inventory/suppliers', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.inventory.read'), hubInventoryController_1.listHubSuppliers);
-router.post('/inventory/suppliers', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.inventory.write'), hubInventoryController_1.createHubSupplier);
+router.get('/inventory/suppliers', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)(['hub.inventory.read', 'hub.financial.read']), hubInventoryController_1.listHubSuppliers);
+router.post('/inventory/suppliers', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)(['hub.inventory.write', 'hub.financial.write']), hubInventoryController_1.createHubSupplier);
 router.patch('/inventory/suppliers/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.inventory.write'), hubInventoryController_1.patchHubSupplier);
 router.get('/inventory/manufacturers', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.inventory.read'), hubInventoryController_1.listHubManufacturers);
 router.post('/inventory/manufacturers', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.inventory.write'), hubInventoryController_1.createHubManufacturer);
@@ -135,6 +170,7 @@ router.post('/inventory/movements', authMiddleware_1.authenticateUser, (0, authM
 router.get('/inventory/lots', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.inventory.read'), hubInventoryController_1.listHubInventoryLots);
 router.get('/inventory/lots/expiring', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.inventory.read'), hubInventoryController_1.listHubExpiringLots);
 router.get('/inventory/reports/low-stock', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.inventory.read'), hubInventoryController_1.listHubLowStock);
+router.get('/inventory/reports/nearly-empty-lots', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.inventory.read'), hubInventoryController_1.listHubNearlyEmptyLots);
 router.get('/inventory/reports/movements', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.inventory.read'), hubInventoryController_1.getHubInventoryMovementsReport);
 router.get('/inventory/reports/abc', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.inventory.read'), hubInventoryController_1.getHubInventoryAbcReport);
 router.get('/inventory/reports/turnover', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.inventory.read'), hubInventoryController_1.getHubInventoryTurnoverReport);
@@ -217,6 +253,7 @@ router.patch('/pickup/stops/:id', authMiddleware_1.authenticateUser, (0, authMid
 router.post('/pickup/stops', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.stops.update'), hubPickupController_1.createOrUpdateLooseStop);
 router.get('/pickup/my-route', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.read'), hubPickupController_1.getMyPickupRoute);
 router.get('/pickup/my-routes', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.read'), hubPickupController_1.getMyPickupRoutes);
+router.post('/pickup/routes/:id/claim', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.read'), hubPickupController_1.claimHubPickupRoute);
 /* --- Leva e Traz — Veículos e caixas de transporte --- */
 router.get('/pickup/vehicles', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.read'), hubPickupVehiclesController_1.listPickupVehicles);
 router.post('/pickup/vehicles', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('pickup.routes.manage'), hubPickupVehiclesController_1.createPickupVehicle);
@@ -235,6 +272,10 @@ router.post('/grooming/sessions/:id/events', authMiddleware_1.authenticateUser, 
 router.get('/grooming/sessions/:id/drawer', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('grooming.queue.read'), hubGroomingDrawerController_1.getHubGroomingSessionDrawer);
 router.post('/grooming/sessions/:id/extras', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('grooming.queue.manage'), hubGroomingDrawerController_1.postHubGroomingSessionExtra);
 router.patch('/grooming/appointment-service-lines/:lineId', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('grooming.queue.manage'), hubGroomingDrawerController_1.patchHubGroomingAppointmentServiceLine);
+/* --- Operação da Recepção (custódia) --- */
+router.get('/reception/board', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('reception.ops.read'), hubReceptionController_1.getHubReceptionBoard);
+router.get('/reception/handoffs/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('reception.ops.read'), hubReceptionController_1.getHubReceptionHandoffDetail);
+router.post('/reception/handoffs/:id/resolve', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('reception.ops.manage'), hubReceptionController_1.postHubReceptionResolve);
 /* --- Casos clínicos --- */
 router.get('/clinical/timeline', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalTimelineController_1.listHubClinicalTimeline);
 router.post('/clinical/timeline/notes', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalTimelineController_1.createHubClinicalTimelineNote);
@@ -276,6 +317,8 @@ router.get('/clinical/encounter-events', authMiddleware_1.authenticateUser, (0, 
 router.post('/clinical/encounter-events', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.createHubEncounterEvent);
 router.get('/clinical/alerts', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.getHubClinicalAlerts);
 router.get('/clinical/prescriptions', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubPrescriptions);
+router.get('/clinical/prescription-lookups', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubPrescriptionLookupsController_1.listHubPrescriptionLookups);
+router.post('/clinical/prescription-lookups', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubPrescriptionLookupsController_1.createHubPrescriptionLookup);
 router.get('/clinical/prescriptions/:id/pdf', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.getHubPrescriptionPdf);
 router.get('/clinical/prescriptions/:id/documents', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listPrescriptionDocuments);
 router.post('/clinical/prescriptions/:id/documents', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.issuePrescriptionDocument);
@@ -284,6 +327,8 @@ router.post('/clinical/prescriptions', authMiddleware_1.authenticateUser, (0, au
 router.patch('/clinical/prescriptions/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.patchHubPrescription);
 router.get('/clinical/vaccinations', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubVaccinations);
 router.post('/clinical/vaccinations', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.createHubVaccination);
+router.get('/clinical/medication-administrations', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubMedicationAdministrations);
+router.post('/clinical/medication-administrations', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.createHubMedicationAdministration);
 router.get('/clinical/attachments', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubClinicalAttachments);
 router.post('/clinical/attachments', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.createHubClinicalAttachment);
 router.post('/clinical/attachments/upload', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.uploadHubClinicalAttachment);
@@ -291,13 +336,25 @@ router.get('/clinical/hospital-beds', authMiddleware_1.authenticateUser, (0, aut
 router.post('/clinical/hospital-beds', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.createHubHospitalBed);
 router.get('/clinical/hospitalizations', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubHospitalizations);
 router.post('/clinical/hospitalizations', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.createHubHospitalization);
+router.get('/clinical/hospitalizations/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.getHubHospitalization);
 router.patch('/clinical/hospitalizations/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.patchHubHospitalization);
 router.post('/clinical/hospitalizations/:id/daily-notes', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.addHubHospitalizationDailyNote);
 router.get('/clinical/hospitalizations/:id/events', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubHospitalizationEvents);
 router.post('/clinical/hospitalizations/:id/events', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.createHubHospitalizationEvent);
+router.get('/clinical/hospitalizations/:id/charges', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalBillableServicesController_1.listHubHospitalizationCharges);
+router.post('/clinical/hospitalizations/:id/charges', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalBillableServicesController_1.createHubHospitalizationCharge);
+router.patch('/clinical/hospitalizations/:id/charges/:chargeId', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalBillableServicesController_1.patchHubHospitalizationCharge);
+router.delete('/clinical/hospitalizations/:id/charges/:chargeId', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalBillableServicesController_1.deleteHubHospitalizationCharge);
+router.post('/clinical/hospitalizations/:id/charges/:chargeId/approve-price', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubClinicalBillableServicesController_1.approveHubHospitalizationChargePrice);
 router.get('/clinical/surgeries', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.listHubSurgeries);
 router.post('/clinical/surgeries', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.createHubSurgery);
+router.get('/clinical/surgeries/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalModulesController_1.getHubSurgery);
 router.patch('/clinical/surgeries/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalModulesController_1.patchHubSurgery);
+router.get('/clinical/surgeries/:id/services', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.read'), hubClinicalBillableServicesController_1.listHubSurgeryServices);
+router.post('/clinical/surgeries/:id/services', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalBillableServicesController_1.createHubSurgeryService);
+router.patch('/clinical/surgeries/:id/services/:serviceId', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalBillableServicesController_1.patchHubSurgeryService);
+router.delete('/clinical/surgeries/:id/services/:serviceId', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.clinic.write'), hubClinicalBillableServicesController_1.deleteHubSurgeryService);
+router.post('/clinical/surgeries/:id/services/:serviceId/approve-price', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubClinicalBillableServicesController_1.approveHubSurgeryServicePrice);
 /** Comandas / checkout operacional */
 router.get('/comandas', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubComandasController_1.listHubComandas);
 router.get('/comandas/cancellation-pending-count', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubComandasController_1.getHubComandaCancellationPendingCount);
@@ -337,6 +394,7 @@ router.get('/finance/charge-bundles', authMiddleware_1.authenticateUser, (0, aut
 router.get('/finance/charge-bundles/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubChargeBundlesController_1.getHubChargeBundle);
 router.patch('/finance/charge-bundles/:id/mark-sent', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.receivables.create'), hubChargeBundlesController_1.patchHubChargeBundleMarkSent);
 router.get('/finance/charge-bundles/:id/pdf', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubChargeBundlesController_1.getHubChargeBundlePdf);
+router.get('/finance/payments', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.listHubFinancePayments);
 router.post('/finance/payments/:id/reverse', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.cash.receive'), hubFinancialController_1.postHubFinancePaymentReverse);
 router.get('/finance/payments/:id/receipt', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.getHubFinancePaymentReceipt);
 router.get('/finance/cash-sessions/closed', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.listHubFinanceCashSessionsClosed);
@@ -358,6 +416,17 @@ router.get('/finance/reports/top-clients', authMiddleware_1.authenticateUser, (0
 router.get('/finance/reports/packages', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.getHubFinancePackagesReport);
 router.get('/finance/expenses', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.listHubFinanceExpenses);
 router.post('/finance/expenses', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubFinancialController_1.postHubFinanceExpense);
+router.patch('/finance/expenses/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubFinancialController_1.patchHubFinanceExpense);
+router.delete('/finance/expenses/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubFinancialController_1.deleteHubFinanceExpense);
+router.get('/finance/payables', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.listHubFinancePayables);
+router.post('/finance/payables', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubFinancialController_1.postHubFinancePayable);
+router.patch('/finance/payables/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubFinancialController_1.patchHubFinancePayable);
+router.post('/finance/payables/:id/pay', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubFinancialController_1.postHubFinancePayablePay);
+router.post('/finance/payables/:id/cancel', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubFinancialController_1.postHubFinancePayableCancel);
+router.get('/finance/payable-schedules', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubFinancialController_1.listHubFinancePayableSchedules);
+router.post('/finance/payable-schedules', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubFinancialController_1.postHubFinancePayableSchedule);
+router.patch('/finance/payable-schedules/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubFinancialController_1.patchHubFinancePayableSchedule);
+router.post('/finance/payable-schedules/:id/end', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubFinancialController_1.postHubFinancePayableScheduleEnd);
 router.post('/finance/cash-sessions/:id/movements', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.cash.session'), hubFinancialController_1.postHubFinanceCashMovement);
 router.post('/finance/credit-movements', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.write'), hubCustomerCreditController_1.postHubCustomerCreditMovement);
 router.get('/finance/credit-balance', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('hub.financial.read'), hubCustomerCreditController_1.getHubCustomerCreditBalance);
@@ -380,12 +449,48 @@ router.get('/boarding/day-board', authMiddleware_1.authenticateUser, (0, authMid
 router.post('/boarding/reservations/open-from-appointment', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingController_1.openHubBoardingReservationFromAppointment);
 router.post('/boarding/reservations', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingController_1.createHubBoardingReservation);
 router.patch('/boarding/reservations/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingController_1.patchHubBoardingReservation);
+router.post('/boarding/reservations/:id/start-checkout-prep', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingController_1.postHubBoardingStartCheckoutPrep);
+router.post('/boarding/reservations/:id/release-for-handoff', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingController_1.postHubBoardingReleaseForHandoff);
+router.post('/boarding/reservations/:id/revert-handoff-ready', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingController_1.postHubBoardingRevertHandoffReady);
 router.get('/boarding/reservations/:id/drawer', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingDrawerController_1.getHubBoardingReservationDrawer);
 router.post('/boarding/reservations/:id/daily-logs', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.daily_report.write'), hubBoardingDrawerController_1.postHubBoardingDailyLog);
 router.get('/boarding/unit-settings', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingController_1.getHubBoardingUnitSettings);
 router.patch('/boarding/unit-settings', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingController_1.patchHubBoardingUnitSettings);
 router.get('/boarding/occupancy', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingController_1.getHubBoardingOccupancy);
 router.get('/boarding/calendar', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingController_1.getHubBoardingCalendar);
+router.get('/boarding/ops-board', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingOpsController_1.getHubBoardingOpsBoard);
+router.get('/boarding/reservations/:id/timeline', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingDrawerController_1.getHubBoardingReservationTimeline);
+router.get('/boarding/pets/:petId/care-profile', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingCareController_1.getHubPetCareProfile);
+router.put('/boarding/pets/:petId/care-profile', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingCareController_1.putHubPetCareProfile);
+router.get('/boarding/reservations/:id/care-plan', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingCareController_1.getHubBoardingCarePlan);
+router.put('/boarding/reservations/:id/care-plan', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingCareController_1.putHubBoardingCarePlan);
+router.post('/boarding/reservations/:id/care-plan/tutor-link', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingCareController_1.postHubBoardingCareTutorLink);
+router.get('/boarding/tasks', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingTasksController_1.getHubBoardingTasks);
+router.post('/boarding/tasks/batch-activity', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.daily_report.write'), hubBoardingTasksController_1.postHubBoardingBatchActivity);
+router.post('/boarding/tasks/:id/execute', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.daily_report.write'), hubBoardingTasksController_1.postHubBoardingTaskExecute);
+router.post('/boarding/reservations/:id/tasks', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.daily_report.write'), hubBoardingTasksController_1.postHubBoardingTask);
+router.get('/boarding/reservations/:id/incidents', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingRecordsController_1.getHubBoardingIncidents);
+router.post('/boarding/reservations/:id/incidents', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.daily_report.write'), hubBoardingRecordsController_1.postHubBoardingIncident);
+router.patch('/boarding/incidents/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.daily_report.write'), hubBoardingRecordsController_1.patchHubBoardingIncident);
+router.get('/boarding/reservations/:id/belongings', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingRecordsController_1.getHubBoardingBelongings);
+router.post('/boarding/reservations/:id/belongings', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingRecordsController_1.postHubBoardingBelonging);
+router.patch('/boarding/belongings/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingRecordsController_1.patchHubBoardingBelonging);
+router.delete('/boarding/belongings/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingRecordsController_1.deleteHubBoardingBelonging);
+router.get('/boarding/reservations/:id/extras', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingRecordsController_1.getHubBoardingExtras);
+router.post('/boarding/reservations/:id/extras', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingRecordsController_1.postHubBoardingExtra);
+router.delete('/boarding/extras/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingRecordsController_1.deleteHubBoardingExtra);
+router.get('/boarding/reservations/:id/media', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingRecordsController_1.getHubBoardingMedia);
+router.post('/boarding/reservations/:id/media', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.daily_report.write'), hubBoardingRecordsController_1.uploadHubBoardingMedia);
+router.delete('/boarding/media/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.daily_report.write'), hubBoardingRecordsController_1.deleteHubBoardingMedia);
+router.get('/boarding/spaces', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingOpsController_1.getHubBoardingSpaces);
+router.post('/boarding/spaces', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingOpsController_1.postHubBoardingSpace);
+router.patch('/boarding/spaces/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingOpsController_1.patchHubBoardingSpace);
+router.delete('/boarding/spaces/:id', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.manage'), hubBoardingOpsController_1.deleteHubBoardingSpace);
+router.get('/boarding/handoffs', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingOpsController_1.getHubBoardingHandoffs);
+router.post('/boarding/handoffs', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.daily_report.write'), hubBoardingOpsController_1.postHubBoardingHandoff);
+router.post('/boarding/handoffs/:id/acknowledge', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.daily_report.write'), hubBoardingOpsController_1.postHubBoardingHandoffAcknowledge);
+router.get('/boarding/reservations/:id/tutor-report', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingOpsController_1.getHubBoardingTutorReport);
+router.post('/boarding/reservations/:id/tutor-reports', authMiddleware_1.authenticateUser, (0, authMiddleware_1.requirePermission)('boarding.reservations.read'), hubBoardingOpsController_1.postHubBoardingTutorReport);
 // ─── Comunicação — log de tentativas (click-to-chat / in-app) ──────────────
 router.post('/message-logs', authMiddleware_1.authenticateUser, hubMessageLogsController_1.postHubMessageLog);
 exports.default = router;

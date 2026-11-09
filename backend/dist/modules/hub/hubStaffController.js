@@ -13,7 +13,7 @@ const hubInvitationUtils_1 = require("./hubInvitationUtils");
 const hubStaffLinkUtils_1 = require("./hubStaffLinkUtils");
 const hubStaffSpecialties_1 = require("./hubStaffSpecialties");
 const uuidStr = zod_1.z.string().uuid();
-const STAFF_SELECT = 'id, clinic_id, full_name, display_name, photo_url, phone, whatsapp_phone, email, birth_date, job_title, professional_kind, specialties, crmv, crmv_uf, internal_notes, active, has_hub_access, hub_access_email, hub_access_role, operational_areas, accepts_appointments, available_days, work_hours, break_minutes, default_unit_id, agenda_color, clinic_user_id, created_at, updated_at, deleted_at';
+const STAFF_SELECT = 'id, clinic_id, full_name, display_name, photo_url, phone, whatsapp_phone, email, birth_date, job_title, professional_kind, specialties, crmv, crmv_uf, internal_notes, active, affiliation, has_hub_access, hub_access_email, hub_access_role, operational_areas, accepts_appointments, available_days, work_hours, break_minutes, default_unit_id, agenda_color, clinic_user_id, created_at, updated_at, deleted_at';
 const professionalKindSchema = zod_1.z.enum([
     'vet',
     'groomer',
@@ -24,6 +24,7 @@ const professionalKindSchema = zod_1.z.enum([
     'assistant',
     'other',
 ]);
+const affiliationSchema = zod_1.z.enum(['internal', 'guest']);
 const hubAccessRoleSchema = zod_1.z.enum([
     'CADMIN',
     'CMANAGER',
@@ -85,6 +86,7 @@ const createStaffSchema = zod_1.z
     crmv_uf: optionalTrim(4).optional(),
     internal_notes: optionalTrim(8000).optional(),
     active: zod_1.z.boolean().optional(),
+    affiliation: affiliationSchema.optional(),
     has_hub_access: zod_1.z.boolean().optional(),
     hub_access_email: zod_1.z.union([zod_1.z.string().email().max(254), zod_1.z.literal(''), zod_1.z.null()]).optional().nullable(),
     hub_access_role: hubAccessRoleSchema.optional().nullable(),
@@ -306,6 +308,7 @@ const createHubStaff = async (req, res) => {
             crmv_uf: d.crmv_uf ?? null,
             internal_notes: d.internal_notes ?? null,
             active: d.active ?? true,
+            affiliation: d.affiliation ?? 'internal',
             has_hub_access: d.has_hub_access ?? false,
             hub_access_email: hubEmailNorm,
             hub_access_role: d.hub_access_role ?? null,
@@ -409,6 +412,8 @@ const patchHubStaff = async (req, res) => {
             patch.internal_notes = d.internal_notes;
         if (d.active !== undefined)
             patch.active = d.active;
+        if (d.affiliation !== undefined)
+            patch.affiliation = d.affiliation;
         if (d.has_hub_access !== undefined)
             patch.has_hub_access = d.has_hub_access;
         if (d.hub_access_email !== undefined)

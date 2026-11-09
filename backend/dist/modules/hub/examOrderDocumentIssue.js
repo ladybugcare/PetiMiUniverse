@@ -49,7 +49,18 @@ async function nextVersionNo(encounterId, scope, examId) {
     return data ? data.version_no + 1 : 1;
 }
 async function issueExamOrderDocument(opts) {
-    const partiesLoaded = await (0, clinicalDocumentValidation_1.loadEncounterIssueParties)(opts.clinicId, opts.hubEncounterId);
+    let partiesLoaded = await (0, clinicalDocumentValidation_1.loadEncounterIssueParties)(opts.clinicId, opts.hubEncounterId);
+    if (!partiesLoaded.ok &&
+        partiesLoaded.error === 'Atendimento sem veterinário responsável' &&
+        opts.issuedBy) {
+        await supabase_1.supabaseAdmin
+            .from('hub_encounters')
+            .update({ hub_staff_member_id: opts.issuedBy })
+            .eq('id', opts.hubEncounterId)
+            .eq('clinic_id', opts.clinicId)
+            .is('hub_staff_member_id', null);
+        partiesLoaded = await (0, clinicalDocumentValidation_1.loadEncounterIssueParties)(opts.clinicId, opts.hubEncounterId);
+    }
     if (!partiesLoaded.ok)
         return partiesLoaded;
     const { parties } = partiesLoaded;

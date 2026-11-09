@@ -25,6 +25,9 @@ import {
   occupancyQuerySchema,
   openFromApptSchema,
   patchReservationSchema,
+  releaseForHandoffSchema,
+  revertHandoffReadySchema,
+  startCheckoutPrepSchema,
   unitSettingsPatchSchema,
   unitSettingsQuerySchema,
 } from './hubBoardingSchemas';
@@ -37,6 +40,7 @@ import {
   loadReservationsOverlapping,
   loadUnitSettings,
   missingTable,
+  petHasOpenBoardingCharge,
   prepareStayCare,
   resyncOpenStayTasks,
   syncReservationTasks,
@@ -330,7 +334,12 @@ export async function loadBoardingDayItems(args: {
     if (mode && mode !== 'all' && rMode !== mode) continue;
     const endsAt = r.expected_check_out ?? null;
     const isLate =
-      r.status === 'checked_in' && !r.checked_out_at && endsAt != null && new Date(endsAt).getTime() < nowMs;
+      (r.status === 'checked_in' ||
+        r.status === 'checkout_preparing' ||
+        r.status === 'ready_for_handoff') &&
+      !r.checked_out_at &&
+      endsAt != null &&
+      new Date(endsAt).getTime() < nowMs;
 
     items.push({
       kind: 'reservation',
@@ -579,6 +588,17 @@ export const patchHubBoardingReservation = async (req: Request, res: Response) =
     if (newStatus && newStatus !== previousStatus && !isValidStatusTransition(previousStatus, newStatus)) {
       return res.status(422).json({ error: `Transição inválida: ${previousStatus} → ${newStatus}` });
     }
+    if (newStatus === 'checked_out') {
+      return res.status(422).json({
+        error:
+          'O check-out fecha na Operação da Recepção após liberar o pet. Use Liberar para recepção e depois Entreguei/Embarquei.',
+      });
+    }
+    if (newStatus === 'checkout_preparing' || newStatus === 'ready_for_handoff') {
+      return res.status(422).json({
+        error: 'Use os endpoints de preparação/liberação da estadia para este status.',
+      });
+    }
 
     const updatePayload: Record<string, unknown> = { ...rest };
     if (newStatus) updatePayload.status = newStatus;
@@ -586,7 +606,6 @@ export const patchHubBoardingReservation = async (req: Request, res: Response) =
     if (newStatus === 'checked_in' && !rest.checked_in_at && previousStatus !== 'checked_in') {
       updatePayload.checked_in_at = nowIso;
     }
-    if (newStatus === 'checked_out' && !rest.checked_out_at) updatePayload.checked_out_at = nowIso;
 
     const enteringNow = newStatus === 'checked_in' && previousStatus !== 'checked_in';
     const spaceChanged = rest.space_id !== undefined && rest.space_id !== current.space_id && rest.space_id != null;
@@ -633,23 +652,15 @@ export const patchHubBoardingReservation = async (req: Request, res: Response) =
     const apptId = current.hub_appointment_id;
     if (apptId && newStatus && newStatus !== previousStatus) {
       const apptStatus =
-        newStatus === 'checked_in'
-          ? 'in_progress'
-          : newStatus === 'checked_out'
-            ? 'done'
-            : newStatus === 'cancelled'
-              ? 'cancelled'
-              : undefined;
+        newStatus === 'checked_in' ? 'in_progress' : newStatus === 'cancelled' ? 'cancelled' : undefined;
       if (apptStatus) {
         await supabaseAdmin.from('hub_appointments').update({ status: apptStatus }).eq('id', apptId).eq('clinic_id', clinic_id);
       }
     }
 
-    // Tarefas acompanham a estadia: datas mudaram → refaz pendentes; saiu → remove o que ficou para depois.
+    // Tarefas acompanham a estadia: datas mudaram → refaz pendentes; cancelou → remove o que ficou.
     try {
-      if (newStatus === 'checked_out') {
-        await dropPendingTasksAfter(clinic_id, id, updated.checked_out_at ?? nowIso);
-      } else if (newStatus === 'cancelled' || newStatus === 'no_show') {
+      if (newStatus === 'cancelled' || newStatus === 'no_show') {
         await dropPendingTasksAfter(clinic_id, id, null);
       } else if (
         enteringNow ||
@@ -663,8 +674,7 @@ export const patchHubBoardingReservation = async (req: Request, res: Response) =
       console.error('patchHubBoardingReservation tasks', taskErr);
     }
 
-    if (newStatus === 'checked_out') void syncOpenComandasAfterBoardingCheckedOut(clinic_id, id);
-    else if (
+    if (
       (rest.daily_rate_cents !== undefined || pricingChanged) &&
       (newStatus ?? previousStatus) === 'checked_out'
     ) {
@@ -680,12 +690,188 @@ export const patchHubBoardingReservation = async (req: Request, res: Response) =
         excludeUserIds: req.user?.id ? [req.user.id] : undefined,
       };
       if (newStatus === 'checked_in') void notifyHubBoardingCheckin(notifyArgs);
-      if (newStatus === 'checked_out') void notifyHubBoardingCheckout(notifyArgs);
+    }
+
+    if (newStatus && newStatus !== previousStatus && current.pet_id) {
+      try {
+        const { syncReceptionHandoffsForPet } = await import('./receptionHandoffService');
+        await syncReceptionHandoffsForPet(clinic_id, current.pet_id);
+      } catch (syncErr) {
+        console.error('patchHubBoardingReservation reception sync', syncErr);
+      }
     }
 
     return res.json({ reservation: updated, capacity });
   } catch (e: unknown) {
     return sendBoardingError(res, e, 'Erro ao atualizar reserva', 'patchHubBoardingReservation');
+  }
+};
+
+async function staffIdForUser(clinicId: string, userId: string | undefined): Promise<string | null> {
+  if (!userId) return null;
+  const { data } = await supabaseAdmin
+    .from('hub_staff_members')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('user_id', userId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  return (data?.id as string | undefined) ?? null;
+}
+
+async function assertExitChargeAllowed(clinicId: string, unitId: string | null, petId: string): Promise<void> {
+  const settings = await loadUnitSettings(clinicId, unitId);
+  if (!settings.block_exit_if_charge_pending) return;
+  const pending = await petHasOpenBoardingCharge(clinicId, petId);
+  if (pending) {
+    throw new BoardingHttpError(
+      409,
+      'Há cobrança em aberto no Caixa. Quite a comanda antes de liberar a saída.',
+    );
+  }
+}
+
+/** POST /boarding/reservations/:id/start-checkout-prep */
+export const postHubBoardingStartCheckoutPrep = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id || !/^[0-9a-f-]{36}$/.test(id)) {
+      return res.status(400).json({ error: 'ID de reserva inválido' });
+    }
+    const parsed = startCheckoutPrepSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const { clinic_id } = parsed.data;
+
+    const current = await loadReservation(clinic_id, id);
+    if (!current) return res.status(404).json({ error: 'Reserva não encontrada' });
+    if (current.status !== 'checked_in' && current.status !== 'checkout_preparing') {
+      return res.status(422).json({ error: `Não é possível preparar saída a partir de ${current.status}` });
+    }
+    if (current.status === 'checkout_preparing') {
+      return res.json({ reservation: current });
+    }
+
+    const updated = (await writeReservation(
+      'update',
+      { status: 'checkout_preparing' },
+      { id, clinicId: clinic_id },
+    )) as ReservationRow;
+
+    try {
+      const { syncReceptionHandoffsForPet } = await import('./receptionHandoffService');
+      await syncReceptionHandoffsForPet(clinic_id, current.pet_id);
+    } catch (syncErr) {
+      console.error('postHubBoardingStartCheckoutPrep sync', syncErr);
+    }
+
+    return res.json({ reservation: updated });
+  } catch (e: unknown) {
+    return sendBoardingError(res, e, 'Erro ao iniciar preparação de saída', 'postHubBoardingStartCheckoutPrep');
+  }
+};
+
+/** POST /boarding/reservations/:id/release-for-handoff */
+export const postHubBoardingReleaseForHandoff = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id || !/^[0-9a-f-]{36}$/.test(id)) {
+      return res.status(400).json({ error: 'ID de reserva inválido' });
+    }
+    const parsed = releaseForHandoffSchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const { clinic_id, force_belongings, force_belongings_reason } = parsed.data;
+
+    const current = await loadReservation(clinic_id, id);
+    if (!current) return res.status(404).json({ error: 'Reserva não encontrada' });
+    if (current.status !== 'checked_in' && current.status !== 'checkout_preparing' && current.status !== 'ready_for_handoff') {
+      return res.status(422).json({ error: `Não é possível liberar a saída a partir de ${current.status}` });
+    }
+    if (current.status === 'ready_for_handoff') {
+      return res.json({ reservation: current });
+    }
+
+    await assertExitChargeAllowed(clinic_id, current.unit_id, current.pet_id);
+
+    const { data: belongings, error: bErr } = await supabaseAdmin
+      .from('hub_boarding_belongings')
+      .select('id, checkout_status')
+      .eq('clinic_id', clinic_id)
+      .eq('hub_boarding_reservation_id', id)
+      .is('deleted_at', null);
+    if (bErr && !missingTable(bErr)) throw new Error(bErr.message);
+    const pendingBelongings = (belongings ?? []).filter((b) => b.checkout_status === 'pending');
+    if (pendingBelongings.length > 0 && !force_belongings) {
+      return res.status(422).json({
+        error: `Há ${pendingBelongings.length} pertence(s) sem conferir. Confira ou force a liberação.`,
+        pending_belongings: pendingBelongings.length,
+      });
+    }
+    if (pendingBelongings.length > 0 && force_belongings && !force_belongings_reason?.trim()) {
+      return res.status(400).json({ error: 'Informe o motivo para liberar com pertences pendentes.' });
+    }
+
+    const nowIso = new Date().toISOString();
+    const staffId = await staffIdForUser(clinic_id, req.user?.id);
+    const releasePayload: Record<string, unknown> = {
+      status: 'ready_for_handoff',
+      handoff_ready_at: nowIso,
+      handoff_ready_by_staff_id: staffId,
+    };
+    if (pendingBelongings.length > 0 && force_belongings_reason?.trim()) {
+      releasePayload.notes = `${current.notes ? `${current.notes}\n` : ''}[Liberação com pertences pendentes] ${force_belongings_reason.trim()}`;
+    }
+    const updated = (await writeReservation('update', releasePayload, { id, clinicId: clinic_id })) as ReservationRow;
+
+    try {
+      const { syncReceptionHandoffsForPet } = await import('./receptionHandoffService');
+      await syncReceptionHandoffsForPet(clinic_id, current.pet_id);
+    } catch (syncErr) {
+      console.error('postHubBoardingReleaseForHandoff sync', syncErr);
+    }
+
+    return res.json({ reservation: updated });
+  } catch (e: unknown) {
+    return sendBoardingError(res, e, 'Erro ao liberar para a recepção', 'postHubBoardingReleaseForHandoff');
+  }
+};
+
+/** POST /boarding/reservations/:id/revert-handoff-ready */
+export const postHubBoardingRevertHandoffReady = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    if (!id || !/^[0-9a-f-]{36}$/.test(id)) {
+      return res.status(400).json({ error: 'ID de reserva inválido' });
+    }
+    const parsed = revertHandoffReadySchema.safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
+    const { clinic_id } = parsed.data;
+
+    const current = await loadReservation(clinic_id, id);
+    if (!current) return res.status(404).json({ error: 'Reserva não encontrada' });
+    if (current.status !== 'ready_for_handoff') {
+      return res.status(422).json({ error: 'Só é possível voltar a preparação a partir de pronto para recepção.' });
+    }
+
+    const updated = (await writeReservation(
+      'update',
+      {
+        status: 'checkout_preparing',
+        handoff_ready_at: null,
+        handoff_ready_by_staff_id: null,
+      },
+      { id, clinicId: clinic_id },
+    )) as ReservationRow;
+
+    try {
+      const { syncReceptionHandoffsForPet } = await import('./receptionHandoffService');
+      await syncReceptionHandoffsForPet(clinic_id, current.pet_id);
+    } catch (syncErr) {
+      console.error('postHubBoardingRevertHandoffReady sync', syncErr);
+    }
+
+    return res.json({ reservation: updated });
+  } catch (e: unknown) {
+    return sendBoardingError(res, e, 'Erro ao voltar preparação de saída', 'postHubBoardingRevertHandoffReady');
   }
 };
 
@@ -755,7 +941,12 @@ export const getHubBoardingOccupancy = async (req: Request, res: Response) => {
 
     const { rows } = await loadReservationsOverlapping({ clinicId: clinic_id, unitId: unit_id, from, to });
     const active = rows.filter(
-      (r) => (r.status === 'reserved' || r.status === 'checked_in') && (!mode || mode === 'all' || r.mode === mode),
+      (r) =>
+        (r.status === 'reserved' ||
+          r.status === 'checked_in' ||
+          r.status === 'checkout_preparing' ||
+          r.status === 'ready_for_handoff') &&
+        (!mode || mode === 'all' || r.mode === mode),
     );
     const settings = await loadUnitSettings(clinic_id, unit_id);
 

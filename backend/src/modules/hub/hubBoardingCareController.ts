@@ -349,7 +349,11 @@ export const getPublicBoardingCare = async (req: Request, res: Response) => {
       },
       submission: (plan.tutor_submission as Record<string, unknown> | null) ?? null,
       submitted_at: (plan.tutor_submitted_at as string | null) ?? null,
-      can_submit: rsv.status === 'reserved' || rsv.status === 'checked_in',
+      can_submit:
+        rsv.status === 'reserved' ||
+        rsv.status === 'checked_in' ||
+        rsv.status === 'checkout_preparing' ||
+        rsv.status === 'ready_for_handoff',
     });
   } catch (e: unknown) {
     console.error('getPublicBoardingCare', e);

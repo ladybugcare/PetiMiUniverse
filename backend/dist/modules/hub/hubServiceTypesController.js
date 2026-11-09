@@ -27,6 +27,13 @@ const moneyAmountSchema = zod_1.z.coerce.number().finite().min(0, { message: 'O 
 function roundMoney2(n) {
     return Math.round(n * 100) / 100;
 }
+const checklistItemSchema = zod_1.z
+    .object({
+    key: zod_1.z.string().trim().regex(/^[a-z0-9_]{1,64}$/).optional(),
+    label: zod_1.z.string().trim().min(1).max(200),
+    default_checked: zod_1.z.boolean().optional(),
+})
+    .strict();
 const createServiceTypeBodySchema = zod_1.z
     .object({
     clinic_id: uuidStr,
@@ -41,8 +48,19 @@ const createServiceTypeBodySchema = zod_1.z
     /** Matriz opcional (porte, período, consulta, km); alinhada a `service_group`. */
     pricing_matrix: zod_1.z.unknown().optional().nullable(),
     is_addon: zod_1.z.boolean().optional(),
+    /** Aplicação na consulta (grupo clínica); aparece no dropdown da Medicação. */
+    is_encounter_application: zod_1.z.boolean().optional(),
     /** Leva e Traz: valor cadastrado é ida+volta ou por perna. */
     pickup_price_scope: zod_1.z.enum(['round_trip', 'per_leg']).optional(),
+    /** fixed = valor travado; variable = permite informar na cobrança (com faixa opcional). */
+    price_mode: zod_1.z.enum(['fixed', 'variable']).optional(),
+    price_min: moneyAmountSchema.optional().nullable(),
+    price_max: moneyAmountSchema.optional().nullable(),
+    /**
+     * Override de checklist operacional (Banho & Tosa).
+     * `null` = herda o template do grupo; array = personalizado deste tipo.
+     */
+    checklist_items: zod_1.z.array(checklistItemSchema).max(30).nullable().optional(),
     /** Legado / migração: se enviado, deve coincidir com o slug gerado ou ser único. Preferir omitir. */
     code: zod_1.z
         .string()
@@ -52,7 +70,12 @@ const createServiceTypeBodySchema = zod_1.z
         .regex(/^[a-z0-9_]+$/)
         .optional(),
 })
-    .strict();
+    .strict()
+    .superRefine((data, ctx) => {
+    if (data.price_min != null && data.price_max != null && data.price_max < data.price_min) {
+        ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, message: 'price_max deve ser ≥ price_min', path: ['price_max'] });
+    }
+});
 const updateServiceTypeBodySchema = zod_1.z
     .object({
     clinic_id: uuidStr,
@@ -66,18 +89,83 @@ const updateServiceTypeBodySchema = zod_1.z
     internal_notes: zod_1.z.string().max(4000).optional().nullable(),
     pricing_matrix: zod_1.z.unknown().optional().nullable(),
     is_addon: zod_1.z.boolean().optional(),
+    is_encounter_application: zod_1.z.boolean().optional(),
     pickup_price_scope: zod_1.z.enum(['round_trip', 'per_leg']).optional(),
+    price_mode: zod_1.z.enum(['fixed', 'variable']).optional(),
+    price_min: moneyAmountSchema.optional().nullable(),
+    price_max: moneyAmountSchema.optional().nullable(),
+    checklist_items: zod_1.z.array(checklistItemSchema).max(30).nullable().optional(),
     code_locked: zod_1.z.boolean().optional(),
     active: zod_1.z.boolean().optional(),
     archived: zod_1.z.boolean().optional(),
 })
-    .strict();
-const SELECT_FIELDS = 'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, default_duration_minutes, active, allow_scheduling, is_addon, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
+    .strict()
+    .superRefine((data, ctx) => {
+    if (data.price_min != null && data.price_max != null && data.price_max < data.price_min) {
+        ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, message: 'price_max deve ser ≥ price_min', path: ['price_max'] });
+    }
+});
+const SELECT_FIELDS = 'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, price_mode, price_min, price_max, checklist_items, default_duration_minutes, active, allow_scheduling, is_addon, is_encounter_application, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
 /** Sem `pickup_price_scope` — fallback se a migração 087 ainda não foi aplicada. */
 const SELECT_FIELDS_LEGACY = 'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, default_duration_minutes, active, allow_scheduling, is_addon, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
+/** Sem `is_encounter_application` — fallback se a migração 106 ainda não foi aplicada. */
+const SELECT_FIELDS_NO_APPLICATION = 'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, default_duration_minutes, active, allow_scheduling, is_addon, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
+/** Sem price_mode — fallback se a migração 108 ainda não foi aplicada. */
+const SELECT_FIELDS_NO_PRICE_MODE = 'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, default_duration_minutes, active, allow_scheduling, is_addon, is_encounter_application, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
 function isMissingPickupPriceScopeColumn(error) {
     const msg = String(error?.message ?? '');
     return msg.includes('pickup_price_scope') && (msg.includes('does not exist') || error?.code === '42703');
+}
+function isMissingEncounterApplicationColumn(error) {
+    const msg = String(error?.message ?? '');
+    return msg.includes('is_encounter_application') && (msg.includes('does not exist') || error?.code === '42703');
+}
+function isMissingPriceModeColumn(error) {
+    const msg = String(error?.message ?? '');
+    return ((msg.includes('price_mode') || msg.includes('price_min') || msg.includes('price_max')) &&
+        (msg.includes('does not exist') || error?.code === '42703'));
+}
+function isMissingChecklistItemsColumn(error) {
+    const msg = String(error?.message ?? '');
+    return msg.includes('checklist_items') && (msg.includes('does not exist') || error?.code === '42703');
+}
+/** SELECT sem `checklist_items` — fallback se a migração 116 ainda não foi aplicada. */
+const SELECT_FIELDS_NO_CHECKLIST = 'id, clinic_id, code, name, service_group, cost_amount, sale_amount, pricing_matrix, pickup_price_scope, price_mode, price_min, price_max, default_duration_minutes, active, allow_scheduling, is_addon, is_encounter_application, agenda_color, description, internal_notes, code_locked, created_at, updated_at, deleted_at';
+function normalizeServiceTypeChecklistItems(items) {
+    if (items === undefined)
+        return undefined;
+    if (items === null)
+        return null;
+    const usedKeys = new Set();
+    const result = [];
+    for (const item of items) {
+        let key = item.key?.trim() ?? '';
+        if (!key) {
+            const base = (0, serviceTypeCode_1.slugifyServiceNameToCode)(item.label);
+            key = base;
+            let n = 2;
+            while (usedKeys.has(key)) {
+                key = `${base}_${n}`;
+                n += 1;
+            }
+        }
+        if (usedKeys.has(key)) {
+            throw new Error(`Chave de checklist duplicada: ${key}`);
+        }
+        usedKeys.add(key);
+        result.push({
+            key,
+            label: item.label.trim(),
+            default_checked: Boolean(item.default_checked),
+        });
+    }
+    return result;
+}
+function withDefaultEncounterApplication(rows) {
+    return rows.map((r) => ({
+        ...r,
+        is_encounter_application: Boolean(r.is_encounter_application),
+    }));
 }
 function withDefaultPickupPriceScope(rows) {
     return rows.map((r) => ({
@@ -85,6 +173,14 @@ function withDefaultPickupPriceScope(rows) {
         pickup_price_scope: r.pickup_price_scope === 'per_leg' || r.pickup_price_scope === 'round_trip'
             ? String(r.pickup_price_scope)
             : 'round_trip',
+    }));
+}
+function withDefaultPriceMode(rows) {
+    return rows.map((r) => ({
+        ...r,
+        price_mode: r.price_mode === 'variable' ? 'variable' : 'fixed',
+        price_min: r.price_min == null ? null : Number(r.price_min),
+        price_max: r.price_max == null ? null : Number(r.price_max),
     }));
 }
 async function fetchGroupColorMap(clinicId) {
@@ -179,6 +275,21 @@ const listHubServiceTypes = async (req, res) => {
             data = first.data ?? null;
             error = first.error;
         }
+        if (error && isMissingChecklistItemsColumn(error)) {
+            console.warn('[hub_service_types] list: coluna checklist_items ausente — aplique a migração 116. Usando SELECT sem o campo.');
+            let qNoCl = supabase_1.supabaseAdmin
+                .from('hub_service_types')
+                .select(SELECT_FIELDS_NO_CHECKLIST)
+                .eq('clinic_id', clinic_id)
+                .eq('is_addon', addonsOnly)
+                .order('name', { ascending: true });
+            if (!includeArchived) {
+                qNoCl = qNoCl.is('deleted_at', null);
+            }
+            const noCl = await qNoCl;
+            data = noCl.data ?? null;
+            error = noCl.error;
+        }
         if (error && isMissingPickupPriceScopeColumn(error)) {
             console.warn('[hub_service_types] list: coluna pickup_price_scope ausente — aplique a migração 087. Usando SELECT legado.');
             let qLegacy = supabase_1.supabaseAdmin
@@ -194,12 +305,42 @@ const listHubServiceTypes = async (req, res) => {
             data = legacy.data ?? null;
             error = legacy.error;
         }
+        if (error && isMissingEncounterApplicationColumn(error)) {
+            console.warn('[hub_service_types] list: coluna is_encounter_application ausente — aplique a migração 106. Usando SELECT sem o campo.');
+            let qNoApp = supabase_1.supabaseAdmin
+                .from('hub_service_types')
+                .select(SELECT_FIELDS_NO_APPLICATION)
+                .eq('clinic_id', clinic_id)
+                .eq('is_addon', addonsOnly)
+                .order('name', { ascending: true });
+            if (!includeArchived) {
+                qNoApp = qNoApp.is('deleted_at', null);
+            }
+            const noApp = await qNoApp;
+            data = noApp.data ?? null;
+            error = noApp.error;
+        }
+        if (error && isMissingPriceModeColumn(error)) {
+            console.warn('[hub_service_types] list: colunas price_mode ausentes — aplique a migração 108. Usando SELECT sem o campo.');
+            let qNoPrice = supabase_1.supabaseAdmin
+                .from('hub_service_types')
+                .select(SELECT_FIELDS_NO_PRICE_MODE)
+                .eq('clinic_id', clinic_id)
+                .eq('is_addon', addonsOnly)
+                .order('name', { ascending: true });
+            if (!includeArchived) {
+                qNoPrice = qNoPrice.is('deleted_at', null);
+            }
+            const noPrice = await qNoPrice;
+            data = noPrice.data ?? null;
+            error = noPrice.error;
+        }
         if (error) {
             console.error('[hub_service_types] list', error);
             return res.status(500).json({ error: 'Erro ao listar tipos de serviço' });
         }
         const colorMap = await fetchGroupColorMap(clinic_id);
-        const service_types = enrichRowsWithGroupColor(withDefaultPickupPriceScope((data ?? [])), colorMap);
+        const service_types = enrichRowsWithGroupColor(withDefaultPriceMode(withDefaultEncounterApplication(withDefaultPickupPriceScope((data ?? [])))), colorMap);
         return res.json({ service_types });
     }
     catch (e) {
@@ -214,12 +355,28 @@ const createHubServiceType = async (req, res) => {
         if (!body.success) {
             return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
         }
-        const { clinic_id, name, service_group, cost_amount, sale_amount, default_duration_minutes, description, allow_scheduling, internal_notes, code: codeOverride, pricing_matrix: pricing_matrix_raw, is_addon: is_addon_raw, pickup_price_scope: pickup_price_scope_raw, } = body.data;
+        const { clinic_id, name, service_group, cost_amount, sale_amount, default_duration_minutes, description, allow_scheduling, internal_notes, code: codeOverride, pricing_matrix: pricing_matrix_raw, is_addon: is_addon_raw, is_encounter_application: is_encounter_application_raw, pickup_price_scope: pickup_price_scope_raw, price_mode: price_mode_raw, price_min: price_min_raw, price_max: price_max_raw, checklist_items: checklist_items_raw, } = body.data;
+        let checklist_items = undefined;
+        try {
+            checklist_items = normalizeServiceTypeChecklistItems(checklist_items_raw);
+        }
+        catch (e) {
+            return res.status(400).json({ error: e.message });
+        }
         const is_addon = is_addon_raw === true;
         const group = service_group;
+        const is_encounter_application = !is_addon && group === 'clinica' && is_encounter_application_raw === true;
         const pickup_price_scope = group === 'leva_traz' && pickup_price_scope_raw === 'per_leg' ? 'per_leg' : 'round_trip';
+        const price_mode = price_mode_raw === 'variable' ? 'variable' : 'fixed';
+        const price_min = price_mode === 'variable' && price_min_raw != null ? roundMoney2(price_min_raw) : null;
+        const price_max = price_mode === 'variable' && price_max_raw != null ? roundMoney2(price_max_raw) : null;
         if (is_addon && (default_duration_minutes == null || default_duration_minutes < 1)) {
             return res.status(400).json({ error: 'Adicionais exigem duração padrão em minutos (≥ 1)' });
+        }
+        if (is_encounter_application_raw === true && (is_addon || group !== 'clinica')) {
+            return res.status(400).json({
+                error: 'Aplicação na consulta só pode ser marcada em serviços do grupo Clínica (não em adicionais).',
+            });
         }
         const archivedGroupErr = await assertHubServiceGroupNotArchived(clinic_id, group);
         if (archivedGroupErr) {
@@ -277,14 +434,19 @@ const createHubServiceType = async (req, res) => {
             default_duration_minutes: default_duration_minutes ?? null,
             pricing_matrix,
             pickup_price_scope,
+            price_mode,
+            price_min,
+            price_max,
             description: description ?? null,
-            allow_scheduling: is_addon ? false : (allow_scheduling ?? true),
+            allow_scheduling: is_addon ? false : is_encounter_application ? false : (allow_scheduling ?? true),
             is_addon,
+            is_encounter_application,
             agenda_color: null,
             internal_notes: internal_notes ?? null,
             code_locked: false,
             active: true,
             deleted_at: null,
+            ...(checklist_items !== undefined ? { checklist_items } : {}),
         };
         let data = null;
         let error = null;
@@ -297,9 +459,42 @@ const createHubServiceType = async (req, res) => {
             data = first.data ?? null;
             error = first.error;
         }
+        if (error && isMissingChecklistItemsColumn(error)) {
+            console.warn('[hub_service_types] create: coluna checklist_items ausente — aplique a migração 116. Inserindo sem o campo.');
+            const { checklist_items: _omitCl, ...rowNoCl } = row;
+            const noCl = await supabase_1.supabaseAdmin
+                .from('hub_service_types')
+                .insert([rowNoCl])
+                .select(SELECT_FIELDS_NO_CHECKLIST)
+                .single();
+            data = noCl.data ?? null;
+            error = noCl.error;
+        }
+        if (error && isMissingPriceModeColumn(error)) {
+            console.warn('[hub_service_types] create: colunas price_mode ausentes — aplique a migração 108. Inserindo sem o campo.');
+            const { price_mode: _pm, price_min: _pmin, price_max: _pmax, ...rowNoPrice } = row;
+            const noPrice = await supabase_1.supabaseAdmin
+                .from('hub_service_types')
+                .insert([rowNoPrice])
+                .select(SELECT_FIELDS_NO_PRICE_MODE)
+                .single();
+            data = noPrice.data ?? null;
+            error = noPrice.error;
+        }
+        if (error && isMissingEncounterApplicationColumn(error)) {
+            console.warn('[hub_service_types] create: coluna is_encounter_application ausente — aplique a migração 106. Inserindo sem o campo.');
+            const { is_encounter_application: _omitApp, price_mode: _pm2, price_min: _pmin2, price_max: _pmax2, ...rowNoApp } = row;
+            const noApp = await supabase_1.supabaseAdmin
+                .from('hub_service_types')
+                .insert([rowNoApp])
+                .select(SELECT_FIELDS_NO_APPLICATION)
+                .single();
+            data = noApp.data ?? null;
+            error = noApp.error;
+        }
         if (error && isMissingPickupPriceScopeColumn(error)) {
             console.warn('[hub_service_types] create: coluna pickup_price_scope ausente — aplique a migração 087. Inserindo sem o campo.');
-            const { pickup_price_scope: _omit, ...rowLegacy } = row;
+            const { pickup_price_scope: _omit, is_encounter_application: _omitApp2, ...rowLegacy } = row;
             const legacy = await supabase_1.supabaseAdmin
                 .from('hub_service_types')
                 .insert([rowLegacy])
@@ -316,7 +511,7 @@ const createHubServiceType = async (req, res) => {
             return res.status(500).json({ error: 'Erro ao criar tipo de serviço' });
         }
         const colorMap = await fetchGroupColorMap(clinic_id);
-        const service_type = enrichRowsWithGroupColor(withDefaultPickupPriceScope([data]), colorMap)[0];
+        const service_type = enrichRowsWithGroupColor(withDefaultPriceMode(withDefaultEncounterApplication(withDefaultPickupPriceScope([data]))), colorMap)[0];
         if (!is_addon && data?.id) {
             await (0, hubServiceAddonsController_1.seedAddonAvailabilityForNewService)(clinic_id, data.id, group);
         }
@@ -339,7 +534,14 @@ const updateHubServiceType = async (req, res) => {
         if (!body.success) {
             return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
         }
-        const { clinic_id, name, service_group, cost_amount, sale_amount, default_duration_minutes, description, allow_scheduling, internal_notes, code_locked, active, archived, pricing_matrix: pricing_matrix_raw, is_addon: is_addon_patch, pickup_price_scope: pickup_price_scope_raw, } = body.data;
+        const { clinic_id, name, service_group, cost_amount, sale_amount, default_duration_minutes, description, allow_scheduling, internal_notes, code_locked, active, archived, pricing_matrix: pricing_matrix_raw, is_addon: is_addon_patch, is_encounter_application: is_encounter_application_patch, pickup_price_scope: pickup_price_scope_raw, price_mode: price_mode_raw, price_min: price_min_raw, price_max: price_max_raw, checklist_items: checklist_items_raw, } = body.data;
+        let checklist_items_patch = undefined;
+        try {
+            checklist_items_patch = normalizeServiceTypeChecklistItems(checklist_items_raw);
+        }
+        catch (e) {
+            return res.status(400).json({ error: e.message });
+        }
         if (name === undefined &&
             service_group === undefined &&
             cost_amount === undefined &&
@@ -353,12 +555,17 @@ const updateHubServiceType = async (req, res) => {
             archived === undefined &&
             pricing_matrix_raw === undefined &&
             is_addon_patch === undefined &&
-            pickup_price_scope_raw === undefined) {
+            is_encounter_application_patch === undefined &&
+            pickup_price_scope_raw === undefined &&
+            price_mode_raw === undefined &&
+            price_min_raw === undefined &&
+            price_max_raw === undefined &&
+            checklist_items_patch === undefined) {
             return res.status(400).json({ error: 'Nenhum campo para atualizar' });
         }
         const { data: existing, error: fetchErr } = await supabase_1.supabaseAdmin
             .from('hub_service_types')
-            .select('id, clinic_id, code, name, code_locked, deleted_at, service_group, is_addon, sale_amount')
+            .select('id, clinic_id, code, name, code_locked, deleted_at, service_group, is_addon, is_encounter_application, sale_amount')
             .eq('id', id)
             .maybeSingle();
         if (fetchErr || !existing) {
@@ -394,10 +601,25 @@ const updateHubServiceType = async (req, res) => {
         if (is_addon_patch !== undefined)
             patch.is_addon = is_addon_patch;
         const nextIsAddon = is_addon_patch !== undefined ? is_addon_patch : existingIsAddon;
-        if (allow_scheduling !== undefined) {
-            patch.allow_scheduling = nextIsAddon ? false : allow_scheduling;
+        const nextGroup = (service_group !== undefined ? service_group : existing.service_group);
+        const existingIsApp = Boolean(existing.is_encounter_application);
+        let nextIsApp = is_encounter_application_patch !== undefined ? is_encounter_application_patch : existingIsApp;
+        if (nextIsAddon || nextGroup !== 'clinica') {
+            nextIsApp = false;
         }
-        else if (nextIsAddon) {
+        if (is_encounter_application_patch === true &&
+            (nextIsAddon || nextGroup !== 'clinica')) {
+            return res.status(400).json({
+                error: 'Aplicação na consulta só pode ser marcada em serviços do grupo Clínica (não em adicionais).',
+            });
+        }
+        if (is_encounter_application_patch !== undefined || nextIsApp !== existingIsApp) {
+            patch.is_encounter_application = nextIsApp;
+        }
+        if (allow_scheduling !== undefined) {
+            patch.allow_scheduling = nextIsAddon || nextIsApp ? false : allow_scheduling;
+        }
+        else if (nextIsAddon || (nextIsApp && is_encounter_application_patch === true)) {
             patch.allow_scheduling = false;
         }
         if (internal_notes !== undefined)
@@ -406,7 +628,26 @@ const updateHubServiceType = async (req, res) => {
             patch.code_locked = code_locked;
         if (active !== undefined)
             patch.active = active;
-        const nextGroup = service_group !== undefined ? service_group : existing.service_group;
+        if (price_mode_raw !== undefined) {
+            patch.price_mode = price_mode_raw === 'variable' ? 'variable' : 'fixed';
+            if (price_mode_raw !== 'variable') {
+                patch.price_min = null;
+                patch.price_max = null;
+            }
+        }
+        if (price_min_raw !== undefined) {
+            patch.price_min = price_min_raw == null ? null : roundMoney2(price_min_raw);
+        }
+        if (price_max_raw !== undefined) {
+            patch.price_max = price_max_raw == null ? null : roundMoney2(price_max_raw);
+        }
+        if (patch.price_mode === 'fixed') {
+            patch.price_min = null;
+            patch.price_max = null;
+        }
+        if (checklist_items_patch !== undefined) {
+            patch.checklist_items = checklist_items_patch;
+        }
         if (pricing_matrix_raw !== undefined) {
             if (pricing_matrix_raw === null) {
                 patch.pricing_matrix = null;
@@ -478,10 +719,25 @@ const updateHubServiceType = async (req, res) => {
             data = first.data ?? null;
             error = first.error;
         }
+        if (error && isMissingChecklistItemsColumn(error)) {
+            console.warn('[hub_service_types] update: coluna checklist_items ausente — aplique a migração 116. Atualizando sem o campo.');
+            const patchNoCl = { ...patch };
+            delete patchNoCl.checklist_items;
+            const noCl = await supabase_1.supabaseAdmin
+                .from('hub_service_types')
+                .update(patchNoCl)
+                .eq('id', id)
+                .eq('clinic_id', clinic_id)
+                .select(SELECT_FIELDS_NO_CHECKLIST)
+                .single();
+            data = noCl.data ?? null;
+            error = noCl.error;
+        }
         if (error && isMissingPickupPriceScopeColumn(error)) {
             console.warn('[hub_service_types] update: coluna pickup_price_scope ausente — aplique a migração 087. Atualizando sem o campo.');
             const patchLegacy = { ...patch };
             delete patchLegacy.pickup_price_scope;
+            delete patchLegacy.is_encounter_application;
             const legacy = await supabase_1.supabaseAdmin
                 .from('hub_service_types')
                 .update(patchLegacy)
@@ -491,6 +747,20 @@ const updateHubServiceType = async (req, res) => {
                 .single();
             data = legacy.data ?? null;
             error = legacy.error;
+        }
+        if (error && isMissingEncounterApplicationColumn(error)) {
+            console.warn('[hub_service_types] update: coluna is_encounter_application ausente — aplique a migração 106. Atualizando sem o campo.');
+            const patchNoApp = { ...patch };
+            delete patchNoApp.is_encounter_application;
+            const noApp = await supabase_1.supabaseAdmin
+                .from('hub_service_types')
+                .update(patchNoApp)
+                .eq('id', id)
+                .eq('clinic_id', clinic_id)
+                .select(SELECT_FIELDS_NO_APPLICATION)
+                .single();
+            data = noApp.data ?? null;
+            error = noApp.error;
         }
         if (error) {
             if (error.code === '23505') {
@@ -518,7 +788,7 @@ const updateHubServiceType = async (req, res) => {
             special_prices_sync = { reviewed: sync.reviewed, auto_adjusted: sync.autoAdjusted };
         }
         const colorMap = await fetchGroupColorMap(clinic_id);
-        const service_type = enrichRowsWithGroupColor(withDefaultPickupPriceScope([data]), colorMap)[0];
+        const service_type = enrichRowsWithGroupColor(withDefaultEncounterApplication(withDefaultPickupPriceScope([data])), colorMap)[0];
         return res.json({ service_type, special_prices_sync });
     }
     catch (e) {
@@ -598,11 +868,24 @@ const bootstrapHubServiceTypes = async (req, res) => {
             all = legacy.data ?? null;
             finalErr = legacy.error;
         }
+        if (finalErr && isMissingEncounterApplicationColumn(finalErr)) {
+            let qNoApp = supabase_1.supabaseAdmin
+                .from('hub_service_types')
+                .select(SELECT_FIELDS_NO_APPLICATION)
+                .eq('clinic_id', clinic_id)
+                .order('name', { ascending: true });
+            if (!includeArchived) {
+                qNoApp = qNoApp.is('deleted_at', null);
+            }
+            const noApp = await qNoApp;
+            all = noApp.data ?? null;
+            finalErr = noApp.error;
+        }
         if (finalErr) {
             return res.status(500).json({ error: 'Erro ao listar tipos após bootstrap' });
         }
         const colorMap = await fetchGroupColorMap(clinic_id);
-        const service_types = enrichRowsWithGroupColor(withDefaultPickupPriceScope((all ?? [])), colorMap);
+        const service_types = enrichRowsWithGroupColor(withDefaultEncounterApplication(withDefaultPickupPriceScope((all ?? []))), colorMap);
         return res.json({
             inserted: toInsert.length,
             service_types,

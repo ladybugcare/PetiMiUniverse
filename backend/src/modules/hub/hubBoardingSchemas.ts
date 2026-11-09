@@ -105,7 +105,29 @@ export const unitSettingsPatchSchema = z.object({
       dinner: hm.optional(),
     })
     .optional(),
+  block_exit_if_charge_pending: z.boolean().optional(),
 });
+
+export const startCheckoutPrepSchema = z
+  .object({
+    clinic_id: uuidStr,
+  })
+  .strict();
+
+export const releaseForHandoffSchema = z
+  .object({
+    clinic_id: uuidStr,
+    /** Confirma liberação mesmo com pertences ainda pendentes. */
+    force_belongings: z.boolean().optional(),
+    force_belongings_reason: z.string().max(500).optional().nullable(),
+  })
+  .strict();
+
+export const revertHandoffReadySchema = z
+  .object({
+    clinic_id: uuidStr,
+  })
+  .strict();
 
 export const occupancyQuerySchema = z.object({
   clinic_id: uuidStr,

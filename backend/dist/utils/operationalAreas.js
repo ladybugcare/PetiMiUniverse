@@ -42,6 +42,8 @@ exports.OPERATIONAL_AREA_PERMISSIONS = {
         'hub.pets.write',
         'hub.prospects.read',
         'hub.quotes.read',
+        'reception.ops.read',
+        'reception.ops.manage',
     ],
     caixa: [
         'hub.financial.read',
@@ -59,6 +61,7 @@ exports.OPERATIONAL_AREA_PERMISSIONS = {
         'hub.staff.read',
         'hub.guardians.read',
         'hub.pets.read',
+        'hub.service_types.read',
     ],
     banho_tosa: [
         'hub.guardians.read',

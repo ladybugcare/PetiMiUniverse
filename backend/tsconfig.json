@@ -26,17 +26,12 @@
     "preferTsExts": true
   },
   "include": [
-    "src/server.ts",
-    "src/**/*",
-    "routes/**/*",
-    "controllers/**/*",
-    "../frontend/hooks",
-    "../frontend/context",
-    "**/*.ts"
+    "src/**/*"
   ],
   "exclude": [
     "node_modules",
     "dist",
+    "scripts",
     "src/__tests__",
     "**/__tests__/**",
     "**/*.test.ts",

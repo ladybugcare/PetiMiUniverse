@@ -1,12 +1,48 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.suggestHubPickupBatches = exports.getHubPickupDriverDay = exports.addClinicReturnStop = exports.splitHubPickupRoute = exports.getMyPickupRoutes = exports.getMyPickupRoute = exports.createOrUpdateLooseStop = exports.patchHubPickupStop = exports.getHubPickupRoute = exports.patchHubPickupRoute = exports.addHubPickupStops = exports.listHubPickupRoutes = exports.createHubPickupRoute = exports.getHubPickupDayBoard = void 0;
+exports.suggestHubPickupBatches = exports.getHubPickupDriverDay = exports.addClinicReturnStop = exports.splitHubPickupRoute = exports.claimHubPickupRoute = exports.getMyPickupRoutes = exports.getMyPickupRoute = exports.createOrUpdateLooseStop = exports.patchHubPickupStop = exports.getHubPickupRoute = exports.patchHubPickupRoute = exports.addHubPickupStops = exports.listHubPickupRoutes = exports.createHubPickupRoute = exports.getHubPickupDayBoard = void 0;
+exports.failureReturnsToClinic = failureReturnsToClinic;
+exports.resolveFailedPickupStop = resolveFailedPickupStop;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const hubDayBoardPets_1 = require("./hubDayBoardPets");
 const hubComandasController_1 = require("./hubComandasController");
 const hubNotifyEvents_1 = require("./hubNotifyEvents");
 const hubPickupSuggestBatches_1 = require("./hubPickupSuggestBatches");
+const pickupArrival_1 = require("./pickupArrival");
 const uuidStr = zod_1.z.string().uuid();
 const UUID_RE = /^[0-9a-f-]{36}$/;
 // ─── Schemas compartilhados ────────────────────────────────────────────────
@@ -327,6 +363,41 @@ function formatAddress(gu) {
     ];
     return parts.filter(Boolean).join(', ') || null;
 }
+function readSnapshotCoord(raw) {
+    if (typeof raw === 'number' && Number.isFinite(raw))
+        return raw;
+    if (typeof raw === 'string' && raw.trim() !== '' && Number.isFinite(Number(raw))) {
+        return Number(raw);
+    }
+    return null;
+}
+function snapshotHasCoords(snap) {
+    if (!snap)
+        return false;
+    const lat = readSnapshotCoord(snap.lat) ?? readSnapshotCoord(snap.latitude);
+    const lng = readSnapshotCoord(snap.lng) ?? readSnapshotCoord(snap.lon) ?? readSnapshotCoord(snap.longitude);
+    return lat != null && lng != null;
+}
+/** Monta query de geocode a partir do tutor (inclui número e Brasil). */
+function geocodeQueryFromGuardian(gu) {
+    if (!gu)
+        return null;
+    const formatted = formatAddress(gu);
+    if (!formatted || formatted.length < 5)
+        return null;
+    return `${formatted}, Brasil`;
+}
+async function enrichSnapshotCoords(snap, gu) {
+    if (snapshotHasCoords(snap))
+        return snap;
+    const query = geocodeQueryFromGuardian(gu) ?? geocodeQueryFromGuardian(snap ?? undefined);
+    if (!query || query.length < 10)
+        return snap;
+    const coords = await geocodeAddress(query);
+    if (!coords)
+        return snap;
+    return { ...(snap ?? gu ?? {}), lat: coords.lat, lng: coords.lng };
+}
 // ─── GET /api/hub/pickup/day-board ────────────────────────────────────────
 /**
  * Retorna todas as pernas L&T do dia, enriquecidas com:
@@ -364,7 +435,7 @@ const getHubPickupDayBoard = async (req, res) => {
         // 2. Paradas já registradas (inclui soltas com hub_pickup_route_id null — ex.: avanço no kanban)
         const { data: stopsRaw } = await supabase_1.supabaseAdmin
             .from('hub_pickup_stops')
-            .select('id, hub_appointment_id, hub_pickup_route_id, direction, sequence, cage_id, status, planned_at, completed_at, failure_reason, notes')
+            .select('id, hub_appointment_id, hub_pickup_route_id, direction, sequence, cage_id, status, planned_at, completed_at, failure_reason, failure_outcome, failure_resolution, notes')
             .in('hub_appointment_id', apptIds);
         const stopByApptId = new Map();
         for (const s of (stopsRaw ?? [])) {
@@ -457,6 +528,8 @@ const getHubPickupDayBoard = async (req, res) => {
                 planned_at: stop?.planned_at ?? null,
                 completed_at: stop?.completed_at ?? null,
                 failure_reason: stop?.failure_reason ?? null,
+                failure_outcome: stop?.failure_outcome ?? null,
+                failure_resolution: stop?.failure_resolution ?? null,
                 service_type: serviceType ? { id: serviceType.id, name: serviceType.name, service_group: serviceType.service_group } : null,
                 pet: pet ?? null,
                 guardian: gu ? { id: gu.id, full_name: gu.full_name, phone: gu.phone ?? null } : null,
@@ -726,31 +799,49 @@ const addHubPickupStops = async (req, res) => {
         const onThisRouteMap = new Map(alreadyInRoute
             .filter((s) => s.hub_pickup_route_id === id)
             .map((s) => [s.hub_appointment_id, s]));
-        // Buscar snapshot de endereço dos tutores (só para pernas novas / soltas)
-        const needsGeocodeIds = apptIds.filter((aid) => !onThisRouteMap.has(aid));
-        const guardianIds = [
-            ...new Set(needsGeocodeIds
+        // Tutores: novas pernas + paradas da rota ainda sem lat/lng (backfill)
+        const needsGuardianIds = [
+            ...new Set(apptIds
+                .filter((aid) => {
+                const onRoute = onThisRouteMap.get(aid);
+                if (!onRoute)
+                    return true;
+                return !snapshotHasCoords(onRoute.address_snapshot);
+            })
                 .map((aid) => apptMap.get(aid)?.guardian_id)
                 .filter(Boolean)),
         ];
         const guardianMap = new Map();
-        if (guardianIds.length > 0) {
+        if (needsGuardianIds.length > 0) {
             const { data: guardians } = await supabase_1.supabaseAdmin
                 .from('hub_guardians')
                 .select('id, street, street_number, district, city, state, postal_code')
-                .in('id', guardianIds);
+                .in('id', needsGuardianIds);
             for (const g of (guardians ?? [])) {
                 guardianMap.set(g.id, g);
             }
         }
         const toUpdateOnRoute = [];
         const toLinkOrInsert = [];
+        let geocodeCalls = 0;
+        const pauseIfNeeded = async () => {
+            if (geocodeCalls > 0) {
+                await new Promise((r) => setTimeout(r, 1100));
+            }
+            geocodeCalls += 1;
+        };
         for (let idx = 0; idx < stops.length; idx++) {
             const s = stops[idx];
             const appt = apptMap.get(s.hub_appointment_id);
             const onRoute = onThisRouteMap.get(s.hub_appointment_id);
+            const gu = (appt.guardian_id ? guardianMap.get(appt.guardian_id) : null);
             if (onRoute) {
-                // Já está nesta rota: só atualiza ordem / direção / caixa (não reseta status).
+                // Já está nesta rota: atualiza ordem / direção / caixa; backfill de coords se faltar.
+                let addressSnapshot = onRoute.address_snapshot;
+                if (!snapshotHasCoords(addressSnapshot) && (gu || addressSnapshot)) {
+                    await pauseIfNeeded();
+                    addressSnapshot = await enrichSnapshotCoords(addressSnapshot, gu);
+                }
                 toUpdateOnRoute.push({
                     stop_id: onRoute.id,
                     clinic_id,
@@ -759,7 +850,7 @@ const addHubPickupStops = async (req, res) => {
                     pet_id: appt.pet_id ?? null,
                     guardian_id: appt.guardian_id ?? null,
                     direction: s.direction,
-                    address_snapshot: onRoute.address_snapshot,
+                    address_snapshot: addressSnapshot,
                     sequence: s.sequence ?? idx,
                     planned_at: s.planned_at ?? null,
                     cage_id: s.cage_id ?? null,
@@ -767,21 +858,10 @@ const addHubPickupStops = async (req, res) => {
                 });
                 continue;
             }
-            const gu = (appt.guardian_id ? guardianMap.get(appt.guardian_id) : null);
             let addressSnapshot = gu ?? null;
-            if (gu) {
-                const addrStr = [gu.street, gu.district, gu.city, gu.state, 'Brasil']
-                    .filter(Boolean)
-                    .join(', ');
-                if (addrStr.length > 10) {
-                    const coords = await geocodeAddress(addrStr);
-                    if (coords) {
-                        addressSnapshot = { ...gu, lat: coords.lat, lng: coords.lng };
-                    }
-                    if (idx < stops.length - 1) {
-                        await new Promise((r) => setTimeout(r, 1100));
-                    }
-                }
+            if (gu || addressSnapshot) {
+                await pauseIfNeeded();
+                addressSnapshot = await enrichSnapshotCoords(addressSnapshot, gu);
             }
             toLinkOrInsert.push({
                 clinic_id,
@@ -1021,7 +1101,7 @@ const getHubPickupRoute = async (req, res) => {
             return res.status(404).json({ error: 'Rota não encontrada' });
         const { data: stopsRaw, error: stopsErr } = await supabase_1.supabaseAdmin
             .from('hub_pickup_stops')
-            .select('id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, status, planned_at, completed_at, failure_reason, notes, updated_at')
+            .select('id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, status, planned_at, completed_at, failure_reason, failure_outcome, failure_resolution, return_stop_id, notes, updated_at')
             .eq('hub_pickup_route_id', id)
             .order('sequence', { ascending: true });
         if (stopsErr)
@@ -1114,7 +1194,7 @@ const patchHubPickupStop = async (req, res) => {
         const { clinic_id, status: newStatus, ...rest } = parsed.data;
         const { data: current, error: fetchErr } = await supabase_1.supabaseAdmin
             .from('hub_pickup_stops')
-            .select('id, status, direction, hub_appointment_id, hub_pickup_route_id')
+            .select('id, status, direction, sequence, hub_appointment_id, hub_pickup_route_id')
             .eq('id', id)
             .eq('clinic_id', clinic_id)
             .maybeSingle();
@@ -1147,12 +1227,21 @@ const patchHubPickupStop = async (req, res) => {
         if (newStatus === 'completed' && !rest.completed_at) {
             patch.completed_at = new Date().toISOString();
         }
+        if (newStatus === 'failed' && cur.status !== 'failed' && cur.direction !== 'clinic_return') {
+            Object.assign(patch, await buildFailurePatch({
+                clinic_id,
+                direction: cur.direction,
+                from_status: cur.status,
+                route_id: cur.hub_pickup_route_id,
+                sequence: cur.sequence,
+            }));
+        }
         const { data: updated, error: updateErr } = await supabase_1.supabaseAdmin
             .from('hub_pickup_stops')
             .update(patch)
             .eq('id', id)
             .eq('clinic_id', clinic_id)
-            .select('id, status, completed_at, failure_reason, notes, sequence, direction, planned_at, updated_at')
+            .select('id, status, completed_at, failure_reason, notes, sequence, direction, planned_at, updated_at, failure_outcome, failure_resolution, failed_at, return_stop_id')
             .single();
         if (updateErr)
             return res.status(500).json({ error: updateErr.message });
@@ -1207,7 +1296,22 @@ const patchHubPickupStop = async (req, res) => {
                 actorUserId: req.user?.id ?? null,
             });
         }
-        // Auto-concluir rota se todas as paradas estiverem concluídas ou com falha
+        if (newStatus && newStatus !== cur.status) {
+            void (0, pickupArrival_1.handlePickupStopArrival)({
+                clinicId: clinic_id,
+                direction: cur.direction,
+                newStatus,
+                previousStatus: cur.status,
+                pickupAppointmentId: cur.hub_appointment_id,
+                routeId: cur.hub_pickup_route_id,
+                excludeUserIds: req.user?.id ? [req.user.id] : undefined,
+            });
+        }
+        if (cur.direction === 'clinic_return' && newStatus === 'completed' && cur.status !== 'completed') {
+            void syncReceptionForReturnedFailures(clinic_id, id);
+        }
+        // Auto-concluir rota se todas as paradas estiverem concluídas ou com falha.
+        // Falha com pet a bordo já deixou um clinic_return pendente, então a rota segue aberta.
         if (newStatus && ['completed', 'failed'].includes(newStatus) && cur.hub_pickup_route_id) {
             const { data: remainingStops } = await supabase_1.supabaseAdmin
                 .from('hub_pickup_stops')
@@ -1220,6 +1324,13 @@ const patchHubPickupStop = async (req, res) => {
                     .update({ status: 'done' })
                     .eq('id', cur.hub_pickup_route_id)
                     .eq('clinic_id', clinic_id);
+            }
+        }
+        if (cur.hub_appointment_id) {
+            const petId = await petIdForLegAppointment(cur.hub_appointment_id);
+            if (petId) {
+                const { scheduleReceptionSync } = await Promise.resolve().then(() => __importStar(require('./receptionSync')));
+                scheduleReceptionSync(clinic_id, petId);
             }
         }
         return res.json({ stop: updated });
@@ -1237,6 +1348,7 @@ const createLooseStopSchema = zod_1.z
     hub_appointment_id: uuidStr,
     direction: zod_1.z.enum(['pickup', 'delivery']),
     status: zod_1.z.enum(STOP_STATUSES).default('pending'),
+    failure_reason: zod_1.z.string().max(1000).optional().nullable(),
 })
     .strict();
 /**
@@ -1248,7 +1360,19 @@ const createOrUpdateLooseStop = async (req, res) => {
         const parsed = createLooseStopSchema.safeParse(req.body);
         if (!parsed.success)
             return res.status(400).json({ error: parsed.error.flatten() });
-        const { clinic_id, hub_appointment_id, direction, status } = parsed.data;
+        const { clinic_id, hub_appointment_id, direction, status, failure_reason } = parsed.data;
+        const failureFields = async (fromStatus) => status === 'failed' && fromStatus !== 'failed'
+            ? {
+                failure_reason: failure_reason ?? null,
+                ...(await buildFailurePatch({
+                    clinic_id,
+                    direction,
+                    from_status: fromStatus,
+                    route_id: null,
+                    sequence: 0,
+                })),
+            }
+            : {};
         // Verificar que o agendamento pertence à clínica e é pickup_route
         const { data: appt, error: apptErr } = await supabase_1.supabaseAdmin
             .from('hub_appointments')
@@ -1263,7 +1387,7 @@ const createOrUpdateLooseStop = async (req, res) => {
         if (!appt)
             return res.status(404).json({ error: 'Agendamento não encontrado ou não é do tipo pickup_route.' });
         const a = appt;
-        // Buscar endereço do tutor para snapshot
+        // Buscar endereço do tutor para snapshot (+ geocode para o mapa)
         let addressSnapshot = null;
         if (a.guardian_id) {
             const { data: gu } = await supabase_1.supabaseAdmin
@@ -1271,8 +1395,9 @@ const createOrUpdateLooseStop = async (req, res) => {
                 .select('id, street, street_number, district, city, state, postal_code')
                 .eq('id', a.guardian_id)
                 .maybeSingle();
-            if (gu)
-                addressSnapshot = gu;
+            if (gu) {
+                addressSnapshot = await enrichSnapshotCoords(gu, gu);
+            }
         }
         // Verificar se já existe parada solta para este agendamento
         const { data: existing } = await supabase_1.supabaseAdmin
@@ -1297,6 +1422,7 @@ const createOrUpdateLooseStop = async (req, res) => {
             const patch = { status };
             if (status === 'completed')
                 patch.completed_at = new Date().toISOString();
+            Object.assign(patch, await failureFields(ex.status));
             const { data: updated, error: updErr } = await supabase_1.supabaseAdmin
                 .from('hub_pickup_stops')
                 .update(patch)
@@ -1322,6 +1448,7 @@ const createOrUpdateLooseStop = async (req, res) => {
                 status,
                 sequence: 0,
                 address_snapshot: addressSnapshot,
+                ...(await failureFields(null)),
             })
                 .select('id, status, direction, sequence, planned_at, completed_at, failure_reason, notes, updated_at')
                 .single();
@@ -1370,6 +1497,24 @@ const createOrUpdateLooseStop = async (req, res) => {
                 petId: a.pet_id,
             });
         }
+        if (statusChanged) {
+            void (0, pickupArrival_1.handlePickupStopArrival)({
+                clinicId: clinic_id,
+                direction,
+                newStatus: status,
+                previousStatus: fromStatus,
+                pickupAppointmentId: hub_appointment_id,
+                routeId: null,
+                excludeUserIds: req.user?.id ? [req.user.id] : undefined,
+            });
+        }
+        if (statusChanged) {
+            const petId = a.pet_id ?? (await petIdForLegAppointment(hub_appointment_id));
+            if (petId) {
+                const { scheduleReceptionSync } = await Promise.resolve().then(() => __importStar(require('./receptionSync')));
+                scheduleReceptionSync(clinic_id, petId);
+            }
+        }
         return res.status(existing ? 200 : 201).json({ stop });
     }
     catch (e) {
@@ -1382,7 +1527,7 @@ exports.createOrUpdateLooseStop = createOrUpdateLooseStop;
 async function loadEnrichedStopsForRoute(routeId) {
     const { data: stops, error: stopsErr } = await supabase_1.supabaseAdmin
         .from('hub_pickup_stops')
-        .select('id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, cage_id, status, planned_at, completed_at, failure_reason, notes, updated_at')
+        .select('id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, cage_id, status, planned_at, completed_at, failure_reason, failure_outcome, failure_resolution, return_stop_id, notes, updated_at')
         .eq('hub_pickup_route_id', routeId)
         .order('sequence', { ascending: true });
     if (stopsErr)
@@ -1428,7 +1573,9 @@ async function insertClinicReturnStop(opts) {
         addressSnapshot.lat = lat;
         addressSnapshot.lng = lng;
     }
-    await supabase_1.supabaseAdmin.from('hub_pickup_stops').insert({
+    const { data: created, error } = await supabase_1.supabaseAdmin
+        .from('hub_pickup_stops')
+        .insert({
         clinic_id: opts.clinic_id,
         hub_pickup_route_id: opts.route_id,
         hub_appointment_id: null,
@@ -1438,7 +1585,251 @@ async function insertClinicReturnStop(opts) {
         address_snapshot: addressSnapshot,
         sequence: opts.sequence,
         status: 'pending',
+    })
+        .select('id')
+        .single();
+    if (error) {
+        console.error('[hubPickupController] insertClinicReturnStop', error);
+        return null;
+    }
+    return created.id;
+}
+/** Pet a bordo na falha: entrega sempre; coleta só depois do embarque (`in_transit`). */
+function failureReturnsToClinic(direction, fromStatus) {
+    if (direction === 'delivery')
+        return true;
+    return direction === 'pickup' && fromStatus === 'in_transit';
+}
+/**
+ * Garante uma parada `clinic_return` pendente depois da parada que falhou.
+ * Reaproveita o retorno já planejado na rota; senão cria um no fim.
+ */
+async function ensureClinicReturnAfterFailure(opts) {
+    const { data: pendingReturns } = await supabase_1.supabaseAdmin
+        .from('hub_pickup_stops')
+        .select('id, sequence')
+        .eq('hub_pickup_route_id', opts.route_id)
+        .eq('clinic_id', opts.clinic_id)
+        .eq('direction', 'clinic_return')
+        .not('status', 'in', '("completed","failed")')
+        .gte('sequence', opts.failed_sequence)
+        .order('sequence', { ascending: true })
+        .limit(1);
+    const existing = (pendingReturns ?? [])[0];
+    if (existing)
+        return existing.id;
+    const { data: route } = await supabase_1.supabaseAdmin
+        .from('hub_pickup_routes')
+        .select('unit_id')
+        .eq('id', opts.route_id)
+        .eq('clinic_id', opts.clinic_id)
+        .maybeSingle();
+    const { data: maxRow } = await supabase_1.supabaseAdmin
+        .from('hub_pickup_stops')
+        .select('sequence')
+        .eq('hub_pickup_route_id', opts.route_id)
+        .order('sequence', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    const nextSeq = (maxRow?.sequence ?? -1) + 1;
+    return insertClinicReturnStop({
+        clinic_id: opts.clinic_id,
+        route_id: opts.route_id,
+        unit_id: route?.unit_id ?? null,
+        sequence: nextSeq,
     });
+}
+/** Campos de desfecho gravados junto com `status = failed`. */
+async function buildFailurePatch(opts) {
+    const returns = failureReturnsToClinic(opts.direction, opts.from_status);
+    const patch = {
+        failed_at: new Date().toISOString(),
+        failure_outcome: returns ? 'return_to_clinic' : 'no_pet',
+        failure_resolution: returns ? 'pending' : 'none',
+    };
+    if (returns && opts.route_id) {
+        patch.return_stop_id = await ensureClinicReturnAfterFailure({
+            clinic_id: opts.clinic_id,
+            route_id: opts.route_id,
+            failed_sequence: opts.sequence,
+        });
+    }
+    return patch;
+}
+async function petIdForLegAppointment(appointmentId) {
+    const { data: leg } = await supabase_1.supabaseAdmin
+        .from('hub_appointments')
+        .select('pet_id, parent_appointment_id')
+        .eq('id', appointmentId)
+        .maybeSingle();
+    let petId = leg?.pet_id ?? null;
+    if (!petId && leg?.parent_appointment_id) {
+        const { data: parent } = await supabase_1.supabaseAdmin
+            .from('hub_appointments')
+            .select('pet_id')
+            .eq('id', leg.parent_appointment_id)
+            .maybeSingle();
+        petId = parent?.pet_id ?? null;
+    }
+    return petId;
+}
+/** Retorno concluído: a recepção passa a ver as falhas que voltaram nesta parada. */
+async function syncReceptionForReturnedFailures(clinicId, returnStopId) {
+    const { data: failed } = await supabase_1.supabaseAdmin
+        .from('hub_pickup_stops')
+        .select('pet_id, hub_appointment_id')
+        .eq('clinic_id', clinicId)
+        .eq('return_stop_id', returnStopId)
+        .eq('status', 'failed');
+    const { scheduleReceptionSync } = await Promise.resolve().then(() => __importStar(require('./receptionSync')));
+    const seen = new Set();
+    for (const row of (failed ?? [])) {
+        const petId = row.pet_id ?? (row.hub_appointment_id ? await petIdForLegAppointment(row.hub_appointment_id) : null);
+        if (!petId || seen.has(petId))
+            continue;
+        seen.add(petId);
+        scheduleReceptionSync(clinicId, petId);
+    }
+}
+/**
+ * Decisão da recepção sobre uma falha com pet de volta à clínica.
+ * `novo_lt` cria nova perna de entrega (sem rota) copiando o preço da perna que falhou;
+ * sem cobrança, a venda fica zerada e o custo é mantido.
+ */
+async function resolveFailedPickupStop(opts) {
+    const { clinicId, stopId, resolution } = opts;
+    const { data: stopRow, error: stopErr } = await supabase_1.supabaseAdmin
+        .from('hub_pickup_stops')
+        .select('id, status, direction, hub_appointment_id, failure_resolution')
+        .eq('id', stopId)
+        .eq('clinic_id', clinicId)
+        .maybeSingle();
+    if (stopErr)
+        throw new Error(stopErr.message);
+    if (!stopRow)
+        throw new Error('Parada não encontrada.');
+    const stop = stopRow;
+    if (stop.status !== 'failed' || stop.failure_resolution !== 'pending') {
+        throw new Error('Esta falha já foi resolvida.');
+    }
+    if (resolution.action === 'tutor_busca') {
+        const { error } = await supabase_1.supabaseAdmin
+            .from('hub_pickup_stops')
+            .update({ failure_resolution: 'tutor_pickup' })
+            .eq('id', stopId)
+            .eq('clinic_id', clinicId)
+            .eq('failure_resolution', 'pending');
+        if (error)
+            throw new Error(error.message);
+        return { retryAppointmentId: null };
+    }
+    if (!stop.hub_appointment_id)
+        throw new Error('Parada sem agendamento de Leva e Traz.');
+    const { data: legRow, error: legErr } = await supabase_1.supabaseAdmin
+        .from('hub_appointments')
+        .select('id, unit_id, hub_service_type_id, pet_id, guardian_id, starts_at, ends_at, resource_label, parent_appointment_id, pricing_porte_tier, pricing_coat_type, title')
+        .eq('id', stop.hub_appointment_id)
+        .eq('clinic_id', clinicId)
+        .maybeSingle();
+    if (legErr)
+        throw new Error(legErr.message);
+    if (!legRow)
+        throw new Error('Perna de Leva e Traz não encontrada.');
+    const leg = legRow;
+    const durationMs = leg.starts_at && leg.ends_at
+        ? Math.max(15 * 60_000, new Date(leg.ends_at).getTime() - new Date(leg.starts_at).getTime())
+        : 30 * 60_000;
+    const startsAt = resolution.starts_at ? new Date(resolution.starts_at) : new Date(Date.now() + 30 * 60_000);
+    const endsAt = new Date(startsAt.getTime() + durationMs);
+    const { data: lines, error: linesErr } = await supabase_1.supabaseAdmin
+        .from('hub_appointment_services')
+        .select('hub_service_type_id, duration_minutes, order_index, pricing_porte_tier_applied, pricing_coat_type_applied, cost_amount_applied, sale_amount_applied, pricing_variant')
+        .eq('appointment_id', leg.id)
+        .order('order_index', { ascending: true });
+    if (linesErr)
+        throw new Error(linesErr.message);
+    const lineRows = (lines ?? []);
+    const { data: created, error: insErr } = await supabase_1.supabaseAdmin
+        .from('hub_appointments')
+        .insert({
+        clinic_id: clinicId,
+        unit_id: leg.unit_id,
+        hub_service_type_id: leg.hub_service_type_id,
+        hub_staff_member_id: null,
+        pet_id: leg.pet_id,
+        guardian_id: leg.guardian_id,
+        starts_at: startsAt.toISOString(),
+        ends_at: endsAt.toISOString(),
+        status: 'confirmed',
+        resource_label: leg.resource_label,
+        appointment_kind: 'pickup_route',
+        parent_appointment_id: leg.parent_appointment_id ?? leg.id,
+        pricing_porte_tier: leg.pricing_porte_tier,
+        pricing_coat_type: leg.pricing_coat_type,
+        title: leg.title,
+    })
+        .select('id')
+        .single();
+    if (insErr || !created)
+        throw new Error(insErr?.message || 'Erro ao criar novo Leva e Traz.');
+    const retryId = created.id;
+    const customSale = resolution.charge && typeof resolution.sale_amount === 'number' && Number.isFinite(resolution.sale_amount)
+        ? Math.max(0, Math.round(resolution.sale_amount * 100) / 100)
+        : null;
+    if (lineRows.length > 0) {
+        const svcInsert = lineRows.map((row, idx) => ({
+            appointment_id: retryId,
+            hub_service_type_id: row.hub_service_type_id,
+            duration_minutes: Math.round(durationMs / 60_000),
+            order_index: row.order_index,
+            pricing_porte_tier_applied: row.pricing_porte_tier_applied,
+            pricing_coat_type_applied: row.pricing_coat_type_applied,
+            cost_amount_applied: row.cost_amount_applied,
+            sale_amount_applied: !resolution.charge
+                ? 0
+                : customSale != null
+                    ? idx === 0
+                        ? customSale
+                        : 0
+                    : row.sale_amount_applied,
+            pricing_variant: row.pricing_variant,
+        }));
+        const { error: svcErr } = await supabase_1.supabaseAdmin.from('hub_appointment_services').insert(svcInsert);
+        if (svcErr) {
+            await supabase_1.supabaseAdmin.from('hub_appointments').delete().eq('id', retryId).eq('clinic_id', clinicId);
+            throw new Error(svcErr.message);
+        }
+    }
+    let addressSnapshot = null;
+    if (leg.guardian_id) {
+        const { data: gu } = await supabase_1.supabaseAdmin
+            .from('hub_guardians')
+            .select('id, street, street_number, district, city, state, postal_code')
+            .eq('id', leg.guardian_id)
+            .maybeSingle();
+        if (gu)
+            addressSnapshot = await enrichSnapshotCoords(gu, gu);
+    }
+    const { error: looseErr } = await supabase_1.supabaseAdmin.from('hub_pickup_stops').insert({
+        clinic_id: clinicId,
+        hub_appointment_id: retryId,
+        pet_id: leg.pet_id,
+        guardian_id: leg.guardian_id,
+        direction: 'delivery',
+        status: 'pending',
+        sequence: 0,
+        address_snapshot: addressSnapshot,
+    });
+    if (looseErr)
+        console.error('[hubPickupController] resolveFailedPickupStop loose stop', looseErr);
+    const { error: resErr } = await supabase_1.supabaseAdmin
+        .from('hub_pickup_stops')
+        .update({ failure_resolution: 'new_leg', retry_appointment_id: retryId })
+        .eq('id', stopId)
+        .eq('clinic_id', clinicId);
+    if (resErr)
+        throw new Error(resErr.message);
+    return { retryAppointmentId: retryId };
 }
 // ─── GET /api/hub/pickup/my-route ─────────────────────────────────────────
 const myRouteQuerySchema = zod_1.z.object({
@@ -1486,8 +1877,34 @@ const getMyPickupRoute = async (req, res) => {
     }
 };
 exports.getMyPickupRoute = getMyPickupRoute;
+async function withStopCounts(routeRows) {
+    return Promise.all(routeRows.map(async (r) => {
+        const { count } = await supabase_1.supabaseAdmin
+            .from('hub_pickup_stops')
+            .select('id', { count: 'exact', head: true })
+            .eq('hub_pickup_route_id', r.id);
+        return { ...r, stops_count: count ?? 0 };
+    }));
+}
+/** Rotas do dia ainda sem motorista (podem ser assumidas). */
+async function loadUnassignedRoutesForDate(clinicId, dateYmd) {
+    const { data: routes, error } = await supabase_1.supabaseAdmin
+        .from('hub_pickup_routes')
+        .select(ROUTE_SELECT)
+        .eq('clinic_id', clinicId)
+        .eq('route_date', dateYmd)
+        .is('driver_staff_id', null)
+        .in('status', ['planned', 'in_progress'])
+        .is('deleted_at', null)
+        .order('sort_order', { ascending: true })
+        .order('created_at', { ascending: true });
+    if (error)
+        throw new Error(error.message);
+    return withStopCounts((routes ?? []));
+}
 /**
- * Retorna todas as rotas do dia do motorista autenticado (fila do dia).
+ * Retorna todas as rotas do dia do motorista autenticado (fila do dia)
+ * e as rotas do dia ainda sem motorista (para autoatribuição).
  */
 const getMyPickupRoutes = async (req, res) => {
     try {
@@ -1500,8 +1917,11 @@ const getMyPickupRoutes = async (req, res) => {
         if (!userId)
             return res.status(401).json({ error: 'Não autenticado.' });
         const staffId = await resolveDriverStaffIdForUser(clinic_id, userId);
-        if (!staffId)
-            return res.json({ routes: [], active_route_id: null });
+        const availablePromise = loadUnassignedRoutesForDate(clinic_id, dateYmd);
+        if (!staffId) {
+            const available_routes = await availablePromise;
+            return res.json({ routes: [], active_route_id: null, available_routes });
+        }
         const { data: routes, error: routeErr } = await supabase_1.supabaseAdmin
             .from('hub_pickup_routes')
             .select(ROUTE_SELECT)
@@ -1516,16 +1936,14 @@ const getMyPickupRoutes = async (req, res) => {
             return res.status(500).json({ error: routeErr.message });
         const routeRows = (routes ?? []);
         const active = pickActiveRoute(routeRows);
-        const withCounts = await Promise.all(routeRows.map(async (r) => {
-            const { count } = await supabase_1.supabaseAdmin
-                .from('hub_pickup_stops')
-                .select('id', { count: 'exact', head: true })
-                .eq('hub_pickup_route_id', r.id);
-            return { ...r, stops_count: count ?? 0 };
-        }));
+        const [withCounts, available_routes] = await Promise.all([
+            withStopCounts(routeRows),
+            availablePromise,
+        ]);
         return res.json({
             routes: withCounts,
             active_route_id: active?.id ?? null,
+            available_routes,
         });
     }
     catch (e) {
@@ -1534,6 +1952,82 @@ const getMyPickupRoutes = async (req, res) => {
     }
 };
 exports.getMyPickupRoutes = getMyPickupRoutes;
+const claimRouteSchema = zod_1.z
+    .object({
+    clinic_id: uuidStr,
+})
+    .strict();
+/**
+ * Motorista autenticado assume uma rota do dia que ainda está sem motorista.
+ * Não exige pickup.routes.manage — só leitura + vínculo de staff.
+ */
+const claimHubPickupRoute = async (req, res) => {
+    try {
+        const { id } = req.params;
+        if (!id || !UUID_RE.test(id))
+            return res.status(400).json({ error: 'ID de rota inválido' });
+        const parsed = claimRouteSchema.safeParse(req.body);
+        if (!parsed.success)
+            return res.status(400).json({ error: parsed.error.flatten() });
+        const { clinic_id } = parsed.data;
+        const userId = req.user?.id;
+        if (!userId)
+            return res.status(401).json({ error: 'Não autenticado.' });
+        const staffId = await resolveDriverStaffIdForUser(clinic_id, userId);
+        if (!staffId) {
+            return res.status(403).json({
+                error: 'Seu usuário não está vinculado a um perfil de equipe. Peça à gestão para cadastrar o motorista.',
+            });
+        }
+        const { data: current, error: fetchErr } = await supabase_1.supabaseAdmin
+            .from('hub_pickup_routes')
+            .select('id, status, driver_staff_id, route_date')
+            .eq('id', id)
+            .eq('clinic_id', clinic_id)
+            .is('deleted_at', null)
+            .maybeSingle();
+        if (fetchErr)
+            return res.status(500).json({ error: fetchErr.message });
+        if (!current)
+            return res.status(404).json({ error: 'Rota não encontrada' });
+        const row = current;
+        if (row.driver_staff_id) {
+            if (row.driver_staff_id === staffId) {
+                const { data: already } = await supabase_1.supabaseAdmin
+                    .from('hub_pickup_routes')
+                    .select(ROUTE_SELECT)
+                    .eq('id', id)
+                    .maybeSingle();
+                return res.json({ route: already, already_claimed: true });
+            }
+            return res.status(409).json({ error: 'Esta rota já foi atribuída a outro motorista.' });
+        }
+        if (row.status !== 'planned' && row.status !== 'in_progress') {
+            return res.status(422).json({ error: 'Só é possível assumir rotas planejadas ou em andamento.' });
+        }
+        const { data: claimed, error: claimErr } = await supabase_1.supabaseAdmin
+            .from('hub_pickup_routes')
+            .update({ driver_staff_id: staffId })
+            .eq('id', id)
+            .eq('clinic_id', clinic_id)
+            .is('driver_staff_id', null)
+            .is('deleted_at', null)
+            .in('status', ['planned', 'in_progress'])
+            .select(ROUTE_SELECT)
+            .maybeSingle();
+        if (claimErr)
+            return res.status(500).json({ error: claimErr.message });
+        if (!claimed) {
+            return res.status(409).json({ error: 'Esta rota acabou de ser atribuída a outro motorista.' });
+        }
+        return res.json({ route: claimed, already_claimed: false });
+    }
+    catch (e) {
+        console.error('[hubPickupController] claimHubPickupRoute', e);
+        return res.status(500).json({ error: 'Erro ao assumir rota.' });
+    }
+};
+exports.claimHubPickupRoute = claimHubPickupRoute;
 // ─── POST /api/hub/pickup/routes/:id/split ────────────────────────────────
 const splitRouteSchema = zod_1.z
     .object({

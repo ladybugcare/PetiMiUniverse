@@ -5,6 +5,7 @@ const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const hubClinicalTimelineController_1 = require("./hubClinicalTimelineController");
 const hubCareLocation_1 = require("./hubCareLocation");
+const hubComandasController_1 = require("./hubComandasController");
 const uuidStr = zod_1.z.string().uuid();
 const examStatusSchema = zod_1.z.enum(['requested', 'collected', 'sent', 'result_received', 'completed', 'cancelled']);
 const labKindSchema = zod_1.z.enum(['internal', 'external']);
@@ -147,6 +148,12 @@ const listHubClinicalExams = async (req, res) => {
             const v = uuidStr.safeParse(req.query.hub_partner_clinic_id);
             if (v.success)
                 q = q.eq('hub_partner_clinic_id', v.data);
+        }
+        if (typeof req.query.from === 'string' && req.query.from) {
+            q = q.gte('requested_at', req.query.from);
+        }
+        if (typeof req.query.to === 'string' && req.query.to) {
+            q = q.lte('requested_at', req.query.to);
         }
         const { data, error } = await q;
         if (error)
@@ -354,6 +361,9 @@ const createHubClinicalExam = async (req, res) => {
             body: b.lab_kind === 'external' ? `Laboratório: ${b.external_lab_name ?? b.lab_name ?? '—'}` : null,
             created_by: b.requested_by ?? null,
         });
+        if (b.hub_encounter_id) {
+            void (0, hubComandasController_1.syncOpenComandasAfterEncounterChargeableChange)(b.clinic_id, b.hub_encounter_id);
+        }
         const enriched = await enrichExam(exam);
         return res.status(201).json({ exam: enriched });
     }

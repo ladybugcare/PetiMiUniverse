@@ -220,7 +220,14 @@ const BoardingStayPanel: React.FC<Props> = ({
 
   const taskCount = (drawer?.tasks ?? []).filter((t) => t.status === 'pending').length;
   const tabs = [
-    { id: 'routine', label: 'Rotina', badge: stage === 'checked_in' ? taskCount : null },
+    {
+      id: 'routine',
+      label: 'Rotina',
+      badge:
+        stage === 'checked_in' || stage === 'checkout_preparing' || stage === 'ready_for_handoff'
+          ? taskCount
+          : null,
+    },
     { id: 'care', label: 'Cuidados', badge: pendencies.length || null },
     { id: 'stay', label: 'Hospedagem' },
     { id: 'history', label: 'Histórico' },

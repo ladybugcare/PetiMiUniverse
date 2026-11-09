@@ -52,14 +52,26 @@ function kindLabel(item: ReceptionBoardItem): string {
   if (item.kind === 'encaminhar') return 'Encaminhar';
   if (item.kind === 'embarque') return 'Embarque';
   if (item.kind === 'lt_falha') return 'Falha L&T';
+  if (item.kind === 'saida_prevista') {
+    return item.context?.preparing ? 'Preparando' : 'Prevista';
+  }
   return 'Retirada';
+}
+
+function originHint(item: ReceptionBoardItem): string {
+  const label = item.context?.label?.trim();
+  if (label) return label;
+  if (item.source_type === 'boarding_reservation') {
+    return item.context?.boarding_mode === 'daycare' ? 'Creche' : 'Hotel';
+  }
+  return 'Operação';
 }
 
 function pillClass(item: ReceptionBoardItem): string {
   if (item.status === 'done') return 'hub-clientes__pill hub-clinic-queue__pill--done';
   if (item.status === 'cancelled') return 'hub-clientes__pill hub-clinic-queue__pill--waiting';
   if (item.kind === 'lt_falha') return 'hub-clientes__pill hub-reception__pill--failure';
-  if (item.kind === 'autorizar_extra' || item.kind === 'encaminhar') {
+  if (item.kind === 'autorizar_extra' || item.kind === 'encaminhar' || item.kind === 'saida_prevista') {
     return 'hub-clientes__pill hub-clinic-queue__pill--waiting';
   }
   if (item.kind === 'retirada_balcao' || item.kind === 'embarque') {
@@ -168,13 +180,18 @@ const HubReceptionPage: React.FC = () => {
     const atencao = open
       .filter((i) => i.kind === 'lt_falha' || i.kind === 'autorizar_extra' || i.kind === 'encaminhar')
       .sort((a, b) => Number(b.kind === 'lt_falha') - Number(a.kind === 'lt_falha'));
-    const saidas = open
+    const saidasAcao = open
       .filter((i) => i.kind === 'retirada_balcao' || i.kind === 'embarque')
       .sort((a, b) => String(a.opened_at).localeCompare(String(b.opened_at)));
+    const saidasPrevistas = open
+      .filter((i) => i.kind === 'saida_prevista')
+      .sort((a, b) =>
+        String(a.context?.starts_at || a.opened_at).localeCompare(String(b.context?.starts_at || b.opened_at)),
+      );
     const feitos = items
       .filter((i) => i.status === 'done' || i.status === 'cancelled')
       .sort((a, b) => String(b.resolved_at || b.opened_at).localeCompare(String(a.resolved_at || a.opened_at)));
-    return { chegadas, atencao, saidas, feitos };
+    return { chegadas, atencao, saidasAcao, saidasPrevistas, feitos };
   }, [items]);
 
   const run = async (
@@ -251,10 +268,127 @@ const HubReceptionPage: React.FC = () => {
     );
   }
 
+  const renderCard = (item: ReceptionBoardItem) => {
+    const action = primaryAction(item);
+    const late =
+      item.kind === 'chegada' &&
+      item.status === 'open' &&
+      Boolean(item.context?.starts_at) &&
+      new Date(item.context.starts_at as string).getTime() < Date.now();
+    const phone = item.guardian?.phone;
+    const wa =
+      phone && (item.kind === 'retirada_balcao' || item.kind === 'embarque')
+        ? buildWhatsappLink(
+            phone,
+            renderTemplate(
+              'pet_ready',
+              { tutor: item.guardian?.full_name || '', pet: item.pet.name },
+              templates,
+            ),
+          )
+        : null;
+    const wait = item.status === 'open' && item.kind !== 'saida_prevista' ? waitLabel(item.opened_at) : '';
+    const planned =
+      item.kind === 'saida_prevista' && item.context?.starts_at
+        ? new Date(item.context.starts_at).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+        : null;
+    return (
+      <article key={item.id} className="hub-clinic-queue__card">
+        <div className="hub-clinic-queue__card-top">
+          <p className="hub-clinic-queue__pet">{item.pet.name}</p>
+          <span className={pillClass(item)}>{kindLabel(item)}</span>
+        </div>
+        {late ? (
+          <p className="hub-clientes__pill hub-clinic-queue__pill--waiting" style={{ marginTop: 6, marginBottom: 0 }}>
+            Atrasado
+          </p>
+        ) : null}
+        <p className="hub-clientes__muted hub-clinic-queue__meta">{originHint(item)}</p>
+        {item.kind === 'saida_prevista' ? (
+          <p className="hub-clientes__muted hub-clinic-queue__meta">
+            {item.context?.preparing ? 'Preparando saída' : 'Ainda não liberado'}
+            {planned ? ` · ${planned}` : ''}
+          </p>
+        ) : null}
+        {item.kind === 'lt_falha' && item.context?.failure_reason ? (
+          <p className="hub-reception__failure-reason">{item.context.failure_reason}</p>
+        ) : null}
+        <p className="hub-clientes__muted hub-clinic-queue__meta">
+          {wait ? `${wait} · ` : ''}
+          {item.guardian?.full_name || 'Sem tutor'}
+        </p>
+        <div className="hub-clinic-queue__actions">
+          {item.status === 'open' && canManage && item.kind === 'encaminhar' ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+              onClick={() => {
+                const dest = scheduleDestinationPath(item, day);
+                navigate(`${dest.pathname}${dest.search}`, { state: dest.state });
+              }}
+            >
+              Agendar destino
+            </button>
+          ) : null}
+          {item.status === 'open' && canManage && item.kind === 'lt_falha' ? (
+            <>
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                onClick={() => setSelected(item)}
+              >
+                Resolver
+              </button>
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                disabled={busyId === item.id}
+                onClick={() => void run(item, 'tutor_busca')}
+              >
+                {busyId === item.id ? 'Salvando…' : 'Tutor busca'}
+              </button>
+            </>
+          ) : null}
+          {item.status === 'open' && canManage && action ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+              disabled={busyId === item.id}
+              onClick={() => void run(item, action.action)}
+            >
+              {busyId === item.id ? 'Salvando…' : action.label}
+            </button>
+          ) : null}
+          {item.status === 'open' && canManage && item.kind === 'autorizar_extra' ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+              disabled={busyId === item.id}
+              onClick={() => void run(item, 'dispensar')}
+            >
+              Dispensar
+            </button>
+          ) : null}
+          {item.status === 'open' && canManage && wa ? (
+            <a className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm" href={wa} target="_blank" rel="noreferrer">
+              <MessageCircle size={14} aria-hidden /> Avisar
+            </a>
+          ) : null}
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+            onClick={() => setSelected(item)}
+          >
+            Detalhes
+          </button>
+        </div>
+      </article>
+    );
+  };
+
   const columns: { id: string; title: string; empty: string; rows: ReceptionBoardItem[] }[] = [
     { id: 'chegadas', title: 'Chegadas', empty: 'Nenhuma chegada agora.', rows: groups.chegadas },
     { id: 'atencao', title: 'Atenção', empty: 'Nada pedindo a recepção.', rows: groups.atencao },
-    { id: 'saidas', title: 'Saídas', empty: 'Nenhum pet aguardando saída.', rows: groups.saidas },
     { id: 'feitos', title: 'Feitos', empty: 'Nada concluído neste dia.', rows: groups.feitos },
   ];
 
@@ -276,116 +410,53 @@ const HubReceptionPage: React.FC = () => {
         <HubLoading variant="block" label="Carregando recepção…" />
       ) : (
         <div className="hub-clinic-queue">
-          {columns.map((col) => (
+          {columns.slice(0, 2).map((col) => (
             <section key={col.id} className="hub-clinic-queue__col" aria-label={col.title}>
               <h3 className="hub-clinic-queue__col-title">
                 {col.title} <span className="hub-clinic-queue__count">{col.rows.length}</span>
               </h3>
               <div className="hub-clinic-queue__cards">
                 {col.rows.length === 0 ? <p className="hub-clientes__muted hub-clinic-queue__empty">{col.empty}</p> : null}
-                {col.rows.map((item) => {
-                  const action = primaryAction(item);
-                  const late =
-                    item.kind === 'chegada' &&
-                    item.status === 'open' &&
-                    Boolean(item.context?.starts_at) &&
-                    new Date(item.context.starts_at as string).getTime() < Date.now();
-                  const phone = item.guardian?.phone;
-                  const wa =
-                    phone && (item.kind === 'retirada_balcao' || item.kind === 'embarque')
-                      ? buildWhatsappLink(
-                          phone,
-                          renderTemplate(
-                            'pet_ready',
-                            { tutor: item.guardian?.full_name || '', pet: item.pet.name },
-                            templates,
-                          ),
-                        )
-                      : null;
-                  const wait = item.status === 'open' ? waitLabel(item.opened_at) : '';
-                  return (
-                    <article key={item.id} className="hub-clinic-queue__card">
-                      <div className="hub-clinic-queue__card-top">
-                        <p className="hub-clinic-queue__pet">{item.pet.name}</p>
-                        <span className={pillClass(item)}>{kindLabel(item)}</span>
-                      </div>
-                      {late ? <p className="hub-clientes__pill hub-clinic-queue__pill--waiting" style={{ marginTop: 6, marginBottom: 0 }}>Atrasado</p> : null}
-                      <p className="hub-clientes__muted hub-clinic-queue__meta">{item.context?.label || 'Operação'}</p>
-                      {item.kind === 'lt_falha' && item.context?.failure_reason ? (
-                        <p className="hub-reception__failure-reason">{item.context.failure_reason}</p>
-                      ) : null}
-                      <p className="hub-clientes__muted hub-clinic-queue__meta">
-                        {wait ? `${wait} · ` : ''}
-                        {item.guardian?.full_name || 'Sem tutor'}
-                      </p>
-                      <div className="hub-clinic-queue__actions">
-                        {item.status === 'open' && canManage && item.kind === 'encaminhar' ? (
-                          <button
-                            type="button"
-                            className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-                            onClick={() => {
-                              const dest = scheduleDestinationPath(item, day);
-                              navigate(`${dest.pathname}${dest.search}`, { state: dest.state });
-                            }}
-                          >
-                            Agendar destino
-                          </button>
-                        ) : null}
-                        {item.status === 'open' && canManage && item.kind === 'lt_falha' ? (
-                          <>
-                            <button
-                              type="button"
-                              className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-                              onClick={() => setSelected(item)}
-                            >
-                              Resolver
-                            </button>
-                            <button
-                              type="button"
-                              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                              disabled={busyId === item.id}
-                              onClick={() => void run(item, 'tutor_busca')}
-                            >
-                              {busyId === item.id ? 'Salvando…' : 'Tutor busca'}
-                            </button>
-                          </>
-                        ) : null}
-                        {item.status === 'open' && canManage && action ? (
-                          <button
-                            type="button"
-                            className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-                            disabled={busyId === item.id}
-                            onClick={() => void run(item, action.action)}
-                          >
-                            {busyId === item.id ? 'Salvando…' : action.label}
-                          </button>
-                        ) : null}
-                        {item.status === 'open' && canManage && item.kind === 'autorizar_extra' ? (
-                          <button
-                            type="button"
-                            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                            disabled={busyId === item.id}
-                            onClick={() => void run(item, 'dispensar')}
-                          >
-                            Dispensar
-                          </button>
-                        ) : null}
-                        {item.status === 'open' && canManage && wa ? (
-                          <a className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm" href={wa} target="_blank" rel="noreferrer">
-                            <MessageCircle size={14} aria-hidden /> Avisar
-                          </a>
-                        ) : null}
-                        <button
-                          type="button"
-                          className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                          onClick={() => setSelected(item)}
-                        >
-                          Detalhes
-                        </button>
-                      </div>
-                    </article>
-                  );
-                })}
+                {col.rows.map((item) => renderCard(item))}
+              </div>
+            </section>
+          ))}
+
+          <section className="hub-clinic-queue__col" aria-label="Saídas">
+            <h3 className="hub-clinic-queue__col-title">
+              Saídas{' '}
+              <span className="hub-clinic-queue__count">
+                {groups.saidasAcao.length + groups.saidasPrevistas.length}
+              </span>
+            </h3>
+            <div className="hub-clinic-queue__cards">
+              <p className="hub-reception__saidas-section">
+                Aguardando ação <span className="hub-clinic-queue__count">{groups.saidasAcao.length}</span>
+              </p>
+              {groups.saidasAcao.length === 0 ? (
+                <p className="hub-clientes__muted hub-clinic-queue__empty">Nenhum pet pronto para entregar.</p>
+              ) : (
+                groups.saidasAcao.map((item) => renderCard(item))
+              )}
+              <p className="hub-reception__saidas-section">
+                Previstas <span className="hub-clinic-queue__count">{groups.saidasPrevistas.length}</span>
+              </p>
+              {groups.saidasPrevistas.length === 0 ? (
+                <p className="hub-clientes__muted hub-clinic-queue__empty">Nenhuma saída prevista hoje.</p>
+              ) : (
+                groups.saidasPrevistas.map((item) => renderCard(item))
+              )}
+            </div>
+          </section>
+
+          {columns.slice(2).map((col) => (
+            <section key={col.id} className="hub-clinic-queue__col" aria-label={col.title}>
+              <h3 className="hub-clinic-queue__col-title">
+                {col.title} <span className="hub-clinic-queue__count">{col.rows.length}</span>
+              </h3>
+              <div className="hub-clinic-queue__cards">
+                {col.rows.length === 0 ? <p className="hub-clientes__muted hub-clinic-queue__empty">{col.empty}</p> : null}
+                {col.rows.map((item) => renderCard(item))}
               </div>
             </section>
           ))}

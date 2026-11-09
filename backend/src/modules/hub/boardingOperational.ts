@@ -3,15 +3,36 @@ import { computeBoardingNights } from './boardingBilling';
 export const BOARDING_SERVICE_GROUPS = ['hotel', 'creche'] as const;
 export const BOARDING_APPOINTMENT_KINDS = ['hotel_stay', 'daycare_block'];
 export const BOARDING_MODES = ['hotel', 'daycare', 'all'] as const;
-export const BOARDING_STATUSES = ['reserved', 'checked_in', 'checked_out', 'cancelled', 'no_show'] as const;
+export const BOARDING_STATUSES = [
+  'reserved',
+  'checked_in',
+  'checkout_preparing',
+  'ready_for_handoff',
+  'checked_out',
+  'cancelled',
+  'no_show',
+] as const;
+
+/** Pet ainda sob custódia do hotel/creche (banho não gera retirada ao tutor). */
+export const BOARDING_ACTIVE_CUSTODY_STATUSES = [
+  'checked_in',
+  'checkout_preparing',
+  'ready_for_handoff',
+] as const;
 
 export const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
   reserved: ['checked_in', 'cancelled', 'no_show'],
-  checked_in: ['checked_out', 'reserved'],
+  checked_in: ['checkout_preparing', 'ready_for_handoff', 'checked_out', 'reserved'],
+  checkout_preparing: ['ready_for_handoff', 'checked_in', 'checked_out'],
+  ready_for_handoff: ['checkout_preparing', 'checked_out', 'checked_in'],
   checked_out: ['checked_in'],
   cancelled: [],
   no_show: ['reserved'],
 };
+
+export function isBoardingActiveCustody(status: string): boolean {
+  return (BOARDING_ACTIVE_CUSTODY_STATUSES as readonly string[]).includes(status);
+}
 
 export function isValidStatusTransition(from: string, to: string): boolean {
   const allowed = VALID_STATUS_TRANSITIONS[from] ?? [];
@@ -94,7 +115,7 @@ export function boardingStayWindow(
   let end: string;
   if (r.checked_out_at) {
     end = r.checked_out_at;
-  } else if (r.status === 'checked_in') {
+  } else if (isBoardingActiveCustody(r.status)) {
     const expected = r.expected_check_out ?? null;
     end = expected && expected > nowIso ? expected : nowIso;
   } else {

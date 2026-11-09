@@ -24,23 +24,26 @@ exports.GROOMING_STAGE_LABELS = {
     delivered: 'Entregue',
     closed: 'Encerrado',
 };
-/** Próximo estágio na ação rápida «Avançar». */
+/**
+ * Próximo estágio na ação rápida «Avançar».
+ * Caminho do salão: fila → em serviço → pronto.
+ * `closed` é custódia (recepção, motorista ou estadia), não a fila do tosador.
+ * `finishing` / `delivered` ficam no enum só para sessões antigas.
+ */
 exports.GROOMING_NEXT_STAGE = {
-    scheduled: 'checked_in',
+    scheduled: 'queued',
     checked_in: 'queued',
     queued: 'in_service',
-    in_service: 'finishing',
+    in_service: 'ready',
     finishing: 'ready',
-    ready: 'delivered',
-    delivered: 'closed',
 };
 const ALLOWED_TRANSITIONS = {
-    scheduled: ['checked_in'],
+    scheduled: ['checked_in', 'queued'],
     checked_in: ['queued', 'scheduled'],
     queued: ['in_service', 'checked_in'],
-    in_service: ['finishing', 'queued'],
+    in_service: ['ready', 'finishing', 'queued'],
     finishing: ['ready', 'in_service'],
-    ready: ['delivered', 'finishing'],
+    ready: ['closed', 'delivered', 'finishing', 'in_service'],
     delivered: ['closed', 'ready'],
     closed: [],
 };
@@ -55,27 +58,34 @@ function appointmentStatusForGroomingStage(stage) {
             return 'confirmed';
         case 'checked_in':
         case 'queued':
+            // Pet na unidade / na fila — ainda não em serviço no salão.
+            return 'checked_in';
         case 'in_service':
         case 'finishing':
             return 'in_progress';
         case 'ready':
         case 'delivered':
-            return 'done';
         case 'closed':
-            return 'paid';
+            // Encerrado operacionalmente espelha agenda `done`; `paid` só após quitação no caixa.
+            return 'done';
         default:
             return null;
     }
 }
-function boardStageFromAppointmentStatus(status) {
+function boardStageFromAppointmentStatus(status, appointmentKind) {
+    // Encaixe já fez check-in na agenda; na fila entra em Aguardando até existir sessão.
+    if (appointmentKind === 'walk_in' && (status === 'checked_in' || status === 'in_progress')) {
+        return 'queued';
+    }
     if (status === 'pending_confirm' || status === 'confirmed')
         return 'scheduled';
     if (status === 'checked_in')
-        return 'checked_in';
+        return 'queued';
     if (status === 'in_progress')
-        return 'checked_in';
+        return 'in_service';
     if (status === 'done')
         return 'ready';
+    // `paid` = quitação financeira; sessão pode já ter sido encerrada operacionalmente.
     if (status === 'paid')
         return 'closed';
     return 'scheduled';
@@ -88,6 +98,7 @@ exports.GROOMING_EVENT_TITLES = {
     staff_change: 'Profissional alterado',
     stage_change: 'Estágio atualizado',
     note: 'Observação',
+    extra_request: 'Pedido de serviço',
     ready: 'Pet pronto',
     delivered: 'Pet entregue',
     closed: 'Atendimento encerrado',

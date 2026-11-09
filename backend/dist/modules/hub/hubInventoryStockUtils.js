@@ -1,5 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
+exports.stockQtyFromConsumption = void 0;
 exports.assertClinicInventoryItem = assertClinicInventoryItem;
 exports.assertClinicInventoryLot = assertClinicInventoryLot;
 exports.validateLotStockForOut = validateLotStockForOut;
@@ -8,10 +9,12 @@ exports.createSaleStockOut = createSaleStockOut;
 const supabase_js_1 = require("../../config/supabase.js");
 const hubInventoryController_js_1 = require("./hubInventoryController.js");
 const hubInventoryStockAlerts_js_1 = require("./hubInventoryStockAlerts.js");
+const hubInventoryContentUtils_js_1 = require("./hubInventoryContentUtils.js");
+Object.defineProperty(exports, "stockQtyFromConsumption", { enumerable: true, get: function () { return hubInventoryContentUtils_js_1.stockQtyFromConsumption; } });
 async function assertClinicInventoryItem(clinicId, itemId) {
     const { data, error } = await supabase_js_1.supabaseAdmin
         .from('hub_inventory_items')
-        .select('id, clinic_id, name, sale_amount, cost_amount, deleted_at, active')
+        .select('id, clinic_id, name, sale_amount, cost_amount, deleted_at, active, unit_label, content_qty, content_unit, allow_fractional')
         .eq('id', itemId)
         .maybeSingle();
     if (error || !data || data.clinic_id !== clinicId || data.deleted_at)
@@ -58,6 +61,7 @@ async function createStockOutMovement(movementType, params) {
     }
     const balances = await (0, hubInventoryController_js_1.computeBalances)(params.clinicId);
     const qtyBefore = balances.byItem.get(params.itemId) ?? 0;
+    const lotQtyBefore = balances.byLot.get(params.lotId) ?? 0;
     const stockErr = await validateLotStockForOut(params.clinicId, params.itemId, params.lotId, qty, balances);
     if (stockErr)
         return { error: stockErr };
@@ -85,6 +89,19 @@ async function createStockOutMovement(movementType, params) {
         qtyBefore,
         qtyAfter: qtyBefore - qty,
     });
+    if (movementType === 'encounter_out') {
+        void (0, hubInventoryStockAlerts_js_1.notifyNearlyEmptyLotIfCrossed)({
+            clinicId: params.clinicId,
+            itemId: params.itemId,
+            lotId: params.lotId,
+            lotQtyBefore,
+            lotQtyAfter: lotQtyBefore - qty,
+            contentQty: params.contentQty,
+            contentUnit: params.contentUnit,
+            itemName: params.itemName,
+            unitLabel: params.unitLabel,
+        });
+    }
     return { id: mov.id };
 }
 /** Registra saída de estoque vinculada a atendimento/vacinação. */

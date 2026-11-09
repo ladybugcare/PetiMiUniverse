@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.createHubAppointmentBatch = exports.deleteHubAgendaCalendarBlock = exports.upsertHubAgendaCalendarBlock = exports.listHubAgendaCalendarBlocks = exports.patchHubAppointment = exports.createHubAppointment = exports.listHubSeriesEndingSoon = exports.getHubAppointmentsStatsByServiceGroup = exports.listHubAppointments = void 0;
 const crypto_1 = require("crypto");
@@ -12,10 +45,15 @@ const hubPricingResolve_1 = require("./hubPricingResolve");
 const hubComandasController_1 = require("./hubComandasController");
 const hubPackagesService_1 = require("./hubPackagesService");
 const hubSeriesBillingService_1 = require("./hubSeriesBillingService");
+const hubRecurrenceService_1 = require("./hubRecurrenceService");
 const hubSeriesEndingSoonService_1 = require("./hubSeriesEndingSoonService");
 const hubCareLocation_1 = require("./hubCareLocation");
 const hubSpecialPrices_1 = require("./hubSpecialPrices");
 const hubSpecialPricesController_1 = require("./hubSpecialPricesController");
+const hubSurgeryFromAppointment_1 = require("./hubSurgeryFromAppointment");
+const hubResourceConflict_1 = require("./hubResourceConflict");
+const hubResourcesService_1 = require("./hubResourcesService");
+const appointmentBlockRules_1 = require("./appointmentBlockRules");
 function validateLevaTrazServiceType(st) {
     if (!st)
         return 'Tipo de serviço de Leva e Traz inválido.';
@@ -82,6 +120,9 @@ function isLevaTrazServiceGroup(st) {
 function resolveAppointmentKindForCreate(explicitKind, primaryService) {
     if (explicitKind && explicitKind !== 'standard')
         return explicitKind;
+    const inferred = (0, appointmentBlockRules_1.inferAppointmentKindFromServiceGroup)(explicitKind, String(primaryService?.service_group ?? ''));
+    if (inferred)
+        return inferred;
     if (isLevaTrazServiceGroup(primaryService))
         return 'pickup_route';
     return explicitKind ?? 'standard';
@@ -102,26 +143,25 @@ function isStaffConflict(staffId, other) {
         return false;
     return staffId === other.hub_staff_member_id;
 }
-function isResourceConflict(resourceLabel, unitId, other) {
-    const r1 = resourceLabel?.trim();
-    const r2 = other.resource_label?.trim();
-    if (!r1 || !r2)
-        return false;
-    if (r1 !== r2)
-        return false;
-    return String(unitId ?? '') === String(other.unit_id ?? '');
+function isResourceConflict(resourceLabel, resourceId, unitId, other) {
+    return (0, hubResourceConflict_1.isResourceScheduleConflict)({ hubResourceId: resourceId, resourceLabel, unitId }, {
+        hubResourceId: other.hub_resource_id,
+        resourceLabel: other.resource_label,
+        unitId: other.unit_id,
+        releasedAt: other.resource_released_at,
+    });
 }
-function rowConflictsWith(row, staffId, resourceLabel, unitId, startsAt, endsAt) {
+function rowConflictsWith(row, staffId, resourceLabel, resourceId, unitId, startsAt, endsAt) {
     if (row.status === 'cancelled')
         return false;
     if (!intervalsOverlap(startsAt, endsAt, row.starts_at, row.ends_at))
         return false;
-    return isStaffConflict(staffId, row) || isResourceConflict(resourceLabel, unitId, row);
+    return isStaffConflict(staffId, row) || isResourceConflict(resourceLabel, resourceId, unitId, row);
 }
 async function loadOverlappingRows(clinicId, startsAt, endsAt, excludeIds) {
     let q = supabase_1.supabaseAdmin
         .from('hub_appointments')
-        .select('id, hub_staff_member_id, resource_label, unit_id, starts_at, ends_at, status')
+        .select('id, hub_staff_member_id, resource_label, hub_resource_id, resource_released_at, unit_id, starts_at, ends_at, status')
         .eq('clinic_id', clinicId)
         .is('deleted_at', null)
         .lt('starts_at', endsAt)
@@ -135,10 +175,10 @@ async function loadOverlappingRows(clinicId, startsAt, endsAt, excludeIds) {
         throw error;
     return (data ?? []);
 }
-async function assertNoScheduleConflict(clinicId, excludeIds, staffId, resourceLabel, unitId, startsAt, endsAt) {
+async function assertNoScheduleConflict(clinicId, excludeIds, staffId, resourceLabel, unitId, startsAt, endsAt, resourceId = null) {
     const rows = await loadOverlappingRows(clinicId, startsAt, endsAt, excludeIds);
     for (const row of rows) {
-        if (rowConflictsWith(row, staffId, resourceLabel, unitId, startsAt, endsAt)) {
+        if (rowConflictsWith(row, staffId, resourceLabel, resourceId, unitId, startsAt, endsAt)) {
             const reason = isStaffConflict(staffId, row) && staffId
                 ? 'Horário em conflito com outro atendimento do mesmo profissional.'
                 : 'Horário em conflito com outro atendimento no mesmo recurso/sala.';
@@ -146,6 +186,66 @@ async function assertNoScheduleConflict(clinicId, excludeIds, staffId, resourceL
         }
     }
     return { conflict: false, reason: '' };
+}
+function buildOccurrenceConflictWindows(b, occDate, useShift, standalonePickupMode) {
+    const shift = (ts) => (useShift ? shiftTimestampToDate(ts, occDate) : ts);
+    const windows = [];
+    if (b.with_pickup_route_before) {
+        const pb = b.with_pickup_route_before;
+        windows.push({
+            staff: pb.hub_staff_member_id ?? null,
+            resource: pb.resource_label ?? null,
+            starts: shift(pb.starts_at),
+            ends: shift(pb.ends_at),
+            label: 'Busca (Leva e Traz)',
+        });
+    }
+    windows.push({
+        staff: b.hub_staff_member_id ?? null,
+        resource: b.resource_label ?? null,
+        resourceId: b.hub_resource_id ?? null,
+        starts: shift(b.starts_at),
+        ends: shift(b.ends_at),
+        label: standalonePickupMode ? 'Leva e Traz (parada)' : 'Atendimento principal',
+    });
+    if (standalonePickupMode === 'round_trip' && b.standalone_pickup_return) {
+        const rb = b.standalone_pickup_return;
+        windows.push({
+            staff: rb.hub_staff_member_id ?? null,
+            resource: rb.resource_label ?? null,
+            starts: shift(rb.starts_at),
+            ends: shift(rb.ends_at),
+            label: 'Retorno (Leva e Traz)',
+        });
+    }
+    for (const block of b.extra_blocks ?? []) {
+        windows.push({
+            staff: block.hub_staff_member_id ?? null,
+            resource: block.resource_label ?? null,
+            resourceId: block.hub_resource_id ?? null,
+            starts: shift(block.starts_at),
+            ends: shift(block.ends_at),
+            label: 'Bloco extra',
+        });
+    }
+    if (b.with_pickup_route_after) {
+        const pa = b.with_pickup_route_after;
+        windows.push({
+            staff: pa.hub_staff_member_id ?? null,
+            resource: pa.resource_label ?? null,
+            starts: shift(pa.starts_at),
+            ends: shift(pa.ends_at),
+            label: 'Retorno (Leva e Traz)',
+        });
+    }
+    return windows;
+}
+function scheduleConflictJson(error, extra) {
+    return {
+        error,
+        code: 'SCHEDULE_CONFLICT',
+        ...extra,
+    };
 }
 async function assertServiceTypeInClinic(clinicId, serviceTypeId) {
     const { data, error } = await supabase_1.supabaseAdmin
@@ -514,56 +614,6 @@ async function refreshSnapshotsForAppointment(clinicId, appointmentId, startsAt,
     }
 }
 // ── Recurrence helpers ──────────────────────────────────────────────────────
-const MAX_OCCURRENCES = 52;
-function generateOccurrenceDates(startDate, rule) {
-    const dates = [];
-    let current = new Date(startDate + 'T00:00:00Z');
-    const cap = Math.min(rule.occurrences ?? MAX_OCCURRENCES, MAX_OCCURRENCES);
-    const until = rule.until_date ? new Date(rule.until_date + 'T23:59:59Z') : null;
-    while (dates.length < cap) {
-        if (until && current > until)
-            break;
-        if (rule.kind === 'daily') {
-            dates.push(current.toISOString().slice(0, 10));
-            current = new Date(current);
-            current.setUTCDate(current.getUTCDate() + rule.interval_value);
-        }
-        else if (rule.kind === 'weekly') {
-            const targetDays = rule.days_of_week && rule.days_of_week.length > 0 ? rule.days_of_week : [1];
-            // iso weekday: 1=mon..7=sun
-            const dow = ((current.getUTCDay() + 6) % 7) + 1;
-            if (targetDays.includes(dow)) {
-                dates.push(current.toISOString().slice(0, 10));
-            }
-            current = new Date(current);
-            current.setUTCDate(current.getUTCDate() + 1);
-            // skip to next week start if past all target days this week
-            if (dates.length > 0 && rule.interval_value > 1) {
-                const curDow = ((current.getUTCDay() + 6) % 7) + 1;
-                const maxTarget = Math.max(...targetDays);
-                if (curDow > maxTarget) {
-                    // jump to monday of next Nth week
-                    const daysUntilMon = (8 - current.getUTCDay()) % 7 || 7;
-                    current.setUTCDate(current.getUTCDate() + daysUntilMon + (rule.interval_value - 1) * 7);
-                }
-            }
-            if (dates.length >= cap)
-                break;
-            continue;
-        }
-        else {
-            // monthly
-            dates.push(current.toISOString().slice(0, 10));
-            current = new Date(current);
-            current.setUTCMonth(current.getUTCMonth() + rule.interval_value);
-            if (rule.day_of_month) {
-                const maxDay = new Date(current.getUTCFullYear(), current.getUTCMonth() + 1, 0).getUTCDate();
-                current.setUTCDate(Math.min(rule.day_of_month, maxDay));
-            }
-        }
-    }
-    return dates;
-}
 function shiftTimestampToDate(originalTs, newDate) {
     // keep time portion from originalTs, apply to newDate
     const orig = new Date(originalTs);
@@ -742,6 +792,7 @@ const listQuerySchema = zod_1.z.object({
     service_group: zod_1.z.string().trim().min(1).max(64).optional(),
     status: appointmentStatusSchema.optional(),
     resource_label: zod_1.z.string().trim().max(120).optional(),
+    hub_resource_id: uuidStr.optional(),
 });
 const seriesEndingSoonQuerySchema = zod_1.z.object({
     clinic_id: uuidStr,
@@ -786,18 +837,16 @@ const pickupBlockSchema = zod_1.z.object({
     resource_label: optionalTrim(120).optional(),
     hub_staff_member_id: uuidStr.optional().nullable(),
 });
-const extraBlockSchema = zod_1.z.object({
+const extraBlockBaseSchema = zod_1.z.object({
     starts_at: zod_1.z.string().datetime({ offset: true }),
     ends_at: zod_1.z.string().datetime({ offset: true }),
     services: zod_1.z.array(serviceLineSchema).min(1),
     hub_staff_member_id: uuidStr.optional().nullable(),
     resource_label: optionalTrim(120).optional(),
+    hub_resource_id: uuidStr.optional().nullable(),
     status: appointmentStatusSchema.optional(),
     notes: optionalTrim(8000).optional(),
     title: optionalTrim(200).optional(),
-});
-const patchExtraBlockSchema = extraBlockSchema.extend({
-    id: uuidStr.optional(),
 });
 const pickupRoutePricingSchema = zod_1.z
     .object({
@@ -811,18 +860,27 @@ const pickupRoutePricingSchema = zod_1.z
 })
     .strict();
 const recurrenceSchema = zod_1.z.object({
-    kind: zod_1.z.enum(['daily', 'weekly', 'monthly']),
+    kind: zod_1.z.enum(['daily', 'weekly', 'biweekly', 'monthly']),
     interval_value: zod_1.z.number().int().positive().default(1),
     days_of_week: zod_1.z.array(zod_1.z.number().int().min(1).max(7)).optional().nullable(),
     day_of_month: zod_1.z.number().int().min(1).max(31).optional().nullable(),
     until_date: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
-    occurrences: zod_1.z.number().int().positive().max(MAX_OCCURRENCES).optional().nullable(),
+    occurrences: zod_1.z.number().int().positive().max(hubRecurrenceService_1.MAX_OCCURRENCES).optional().nullable(),
     billing_mode: zod_1.z.enum(['per_occurrence', 'periodic_invoice']).optional().default('per_occurrence'),
     invoice_issue_rule: zod_1.z.enum(['fixed_day', 'first_business_day']).optional().nullable(),
     invoice_issue_day: zod_1.z.number().int().min(1).max(28).optional().nullable(),
     invoice_due_rule: zod_1.z.enum(['same_day', 'plus_days', 'fixed_day']).optional().nullable(),
     invoice_due_day: zod_1.z.number().int().min(1).max(28).optional().nullable(),
     invoice_due_plus_days: zod_1.z.number().int().min(0).max(90).optional().nullable(),
+});
+const extraBlockSchema = extraBlockBaseSchema.extend({
+    recurrence: recurrenceSchema.optional().nullable(),
+    with_pickup_route_before: pickupBlockSchema.optional().nullable(),
+    with_pickup_route_after: pickupBlockSchema.optional().nullable(),
+    pickup_route_pricing: pickupRoutePricingSchema.optional().nullable(),
+});
+const patchExtraBlockSchema = extraBlockSchema.extend({
+    id: uuidStr.optional(),
 });
 const createAppointmentSchema = zod_1.z
     .object({
@@ -836,6 +894,7 @@ const createAppointmentSchema = zod_1.z
     ends_at: zod_1.z.string().datetime({ offset: true }),
     status: appointmentStatusSchema.optional(),
     resource_label: optionalTrim(120).optional(),
+    hub_resource_id: uuidStr.optional().nullable(),
     notes: optionalTrim(8000).optional(),
     appointment_kind: appointmentKindSchema.optional(),
     title: optionalTrim(200).optional(),
@@ -855,12 +914,16 @@ const createAppointmentSchema = zod_1.z
     /** Segunda perna (retorno) quando standalone_pickup_mode = round_trip. */
     standalone_pickup_return: pickupBlockSchema.optional().nullable(),
     extra_blocks: zod_1.z.array(extraBlockSchema).optional(),
+    /** Extras com série/L&T próprios — não clonam com a série do pai. */
+    independent_extra_blocks: zod_1.z.boolean().optional(),
+    /** Cria hub_boarding_reservations (reserved) para hotel/creche. */
+    create_boarding_reservation: zod_1.z.boolean().optional(),
     recurrence: recurrenceSchema.optional().nullable(),
     /** Preferência de caso ao abrir atendimento (fluxo agenda consulta de rotina). */
     intake_hub_case_id: uuidStr.optional().nullable(),
     intake_create_new_case: zod_1.z.boolean().optional(),
     intake_new_case_title: optionalTrim(500).optional().nullable(),
-    /** Permite sobrepor outro slot (somente kinds walk-in). */
+    /** Permite sobrepor outro slot após confirmação explícita do usuário. */
     allow_schedule_overlap: zod_1.z.boolean().optional(),
     /** Agrupa vários agendamentos da mesma visita multi-pet. */
     visit_group_id: uuidStr.optional().nullable(),
@@ -877,6 +940,7 @@ const batchPetEntrySchema = zod_1.z
     ends_at: zod_1.z.string().datetime({ offset: true }).optional(),
     hub_staff_member_id: uuidStr.optional().nullable(),
     resource_label: optionalTrim(120).optional(),
+    hub_resource_id: uuidStr.optional().nullable(),
     extra_blocks: zod_1.z.array(extraBlockSchema).optional(),
 })
     .strict();
@@ -900,6 +964,7 @@ const patchAppointmentSchema = zod_1.z
     ends_at: zod_1.z.string().datetime({ offset: true }).optional(),
     status: appointmentStatusSchema.optional(),
     resource_label: optionalTrim(120).optional().nullable(),
+    hub_resource_id: uuidStr.optional().nullable(),
     notes: optionalTrim(8000).optional().nullable(),
     financial_notes: optionalTrim(8000).optional().nullable(),
     appointment_kind: appointmentKindSchema.optional(),
@@ -913,6 +978,8 @@ const patchAppointmentSchema = zod_1.z
     intake_create_new_case: zod_1.z.boolean().optional(),
     intake_new_case_title: optionalTrim(200).optional().nullable(),
     extra_blocks: zod_1.z.array(patchExtraBlockSchema).optional(),
+    /** Permite sobrepor outro slot após confirmação explícita do usuário. */
+    allow_schedule_overlap: zod_1.z.boolean().optional(),
     ...hubCareLocation_1.careLocationBodyFields,
 })
     .strict();
@@ -938,7 +1005,6 @@ function isStructuralAppointmentPatch(body) {
         body.guardian_id !== undefined ||
         body.starts_at !== undefined ||
         body.ends_at !== undefined ||
-        body.resource_label !== undefined ||
         body.notes !== undefined ||
         body.financial_notes !== undefined ||
         body.appointment_kind !== undefined ||
@@ -952,7 +1018,7 @@ function isStructuralAppointmentPatch(body) {
         (body.services !== undefined && body.services.length > 0) ||
         body.extra_blocks !== undefined);
 }
-async function syncExtraBlocksForParent(clinicId, parentId, parentRow, blocks, excludeConflictIds) {
+async function syncExtraBlocksForParent(clinicId, parentId, parentRow, blocks, excludeConflictIds, allowScheduleOverlap = false) {
     const { data: existingChildren, error: childErr } = await supabase_1.supabaseAdmin
         .from('hub_appointments')
         .select('id')
@@ -995,10 +1061,20 @@ async function syncExtraBlocksForParent(clinicId, parentId, parentRow, blocks, e
                 return { error: 'Profissional inválido no bloco adicional', status: 400 };
             }
         }
+        const blockSnap = await (0, hubResourcesService_1.resolveResourceSnapshot)({
+            clinicId,
+            unitId,
+            hubResourceId: block.hub_resource_id,
+            resourceLabel: block.resource_label ?? null,
+        });
+        if (!blockSnap.ok)
+            return { error: blockSnap.error, status: 400 };
         const conflictExclude = [...excludeConflictIds, ...existingChildIds, ...[...keepIds]];
-        const chk = await assertNoScheduleConflict(clinicId, conflictExclude, block.hub_staff_member_id ?? null, block.resource_label ?? null, unitId, block.starts_at, block.ends_at);
-        if (chk.conflict) {
-            return { error: `Bloco adicional: ${chk.reason}`, status: 409 };
+        if (!allowScheduleOverlap) {
+            const chk = await assertNoScheduleConflict(clinicId, conflictExclude, block.hub_staff_member_id ?? null, blockSnap.resource_label, unitId, block.starts_at, block.ends_at, blockSnap.hub_resource_id);
+            if (chk.conflict) {
+                return { error: `Bloco adicional: ${chk.reason}`, status: 409, code: 'SCHEDULE_CONFLICT' };
+            }
         }
         const firstSvcType = block.services[0].hub_service_type_id;
         const blockNormLines = block.services.map((s) => ({
@@ -1033,7 +1109,8 @@ async function syncExtraBlocksForParent(clinicId, parentId, parentRow, blocks, e
             starts_at: block.starts_at,
             ends_at: block.ends_at,
             status: block.status ?? parentStatus,
-            resource_label: block.resource_label ?? null,
+            resource_label: blockSnap.resource_label,
+            hub_resource_id: blockSnap.hub_resource_id,
             notes: block.notes ?? null,
             title: block.title ?? null,
             series_id: seriesId,
@@ -1096,6 +1173,7 @@ async function syncExtraBlocksForParent(clinicId, parentId, parentRow, blocks, e
         const { error: bSvcErr } = await supabase_1.supabaseAdmin.from('hub_appointment_services').insert(blockSvcInsert);
         if (bSvcErr)
             return { error: bSvcErr.message, status: 500 };
+        await (0, hubSurgeryFromAppointment_1.syncSurgeryForAppointmentSafe)({ clinicId, appointmentId: blockId });
     }
     const now = new Date().toISOString();
     for (const childId of existingChildIds) {
@@ -1106,6 +1184,7 @@ async function syncExtraBlocksForParent(clinicId, parentId, parentRow, blocks, e
             .update({ deleted_at: now })
             .eq('id', childId)
             .eq('clinic_id', clinicId);
+        await (0, hubSurgeryFromAppointment_1.syncSurgeryForAppointmentSafe)({ clinicId, appointmentId: childId });
     }
     return {};
 }
@@ -1116,7 +1195,7 @@ const listHubAppointments = async (req, res) => {
         if (!parsed.success) {
             return res.status(400).json({ error: parsed.error.flatten() });
         }
-        const { clinic_id, from, to, unit_id, care_location_kind, hub_partner_clinic_id, hub_staff_member_id, hub_service_type_id, service_group, status, resource_label } = parsed.data;
+        const { clinic_id, from, to, unit_id, care_location_kind, hub_partner_clinic_id, hub_staff_member_id, hub_service_type_id, service_group, status, resource_label, hub_resource_id } = parsed.data;
         let typeIdsFilter = null;
         if (service_group) {
             const { data: types, error: te } = await supabase_1.supabaseAdmin
@@ -1160,6 +1239,8 @@ const listHubAppointments = async (req, res) => {
             q = q.eq('status', status);
         if (resource_label)
             q = q.eq('resource_label', resource_label);
+        if (hub_resource_id)
+            q = q.eq('hub_resource_id', hub_resource_id);
         const { data, error } = await q;
         if (error)
             return res.status(500).json({ error: error.message });
@@ -1332,11 +1413,6 @@ const createHubAppointment = async (req, res) => {
         }
         // Kind preliminar (walk-in etc.); pode virar pickup_route após carregar o serviço principal.
         let resolvedAppointmentKind = b.appointment_kind ?? 'standard';
-        if (b.allow_schedule_overlap === true &&
-            !isWalkInAppointmentKind(resolvedAppointmentKind) &&
-            !b.visit_group_id) {
-            return res.status(400).json({ error: 'allow_schedule_overlap só é permitido para encaixes (walk-in) ou visitas multi-pet.' });
-        }
         const skipScheduleConflictCheck = isWalkInAppointmentKind(resolvedAppointmentKind) || b.allow_schedule_overlap === true;
         // validations
         if (!(await assertServiceTypeInClinic(b.clinic_id, b.hub_service_type_id))) {
@@ -1425,6 +1501,55 @@ const createHubAppointment = async (req, res) => {
         }
         const primarySt = stMap.get(b.hub_service_type_id);
         resolvedAppointmentKind = resolveAppointmentKindForCreate(b.appointment_kind, primarySt);
+        const mainGroupErr = (0, appointmentBlockRules_1.validateHomogeneousServiceGroups)(normLines, stMap);
+        if (mainGroupErr)
+            return res.status(400).json({ error: mainGroupErr });
+        for (const block of b.extra_blocks ?? []) {
+            const extraGroupErr = (0, appointmentBlockRules_1.validateHomogeneousServiceGroups)(block.services, stMap);
+            if (extraGroupErr)
+                return res.status(400).json({ error: extraGroupErr });
+        }
+        const primaryGroup = (0, appointmentBlockRules_1.primaryServiceGroup)(b.hub_service_type_id, stMap);
+        const extraBlockGroups = (b.extra_blocks ?? []).map((block) => (0, appointmentBlockRules_1.primaryServiceGroup)(block.services[0].hub_service_type_id, stMap));
+        const independentExtras = b.independent_extra_blocks === true;
+        const boardingIsoErr = (0, appointmentBlockRules_1.validateBoardingBlockIsolation)({
+            primaryGroup,
+            extraBlockGroups,
+            allowBoardingWithSiblingBlocks: independentExtras,
+        });
+        if (boardingIsoErr)
+            return res.status(400).json({ error: boardingIsoErr });
+        const hotelRecErr = (0, appointmentBlockRules_1.validateHotelNoRecurrence)({
+            primaryGroup,
+            hasRecurrence: Boolean(b.recurrence),
+        });
+        if (hotelRecErr)
+            return res.status(400).json({ error: hotelRecErr });
+        for (const block of b.extra_blocks ?? []) {
+            if (!block.recurrence)
+                continue;
+            const eg = (0, appointmentBlockRules_1.primaryServiceGroup)(block.services[0].hub_service_type_id, stMap);
+            const extraHotelRec = (0, appointmentBlockRules_1.validateHotelNoRecurrence)({ primaryGroup: eg, hasRecurrence: true });
+            if (extraHotelRec)
+                return res.status(400).json({ error: extraHotelRec });
+        }
+        const extrasHavePickup = (b.extra_blocks ?? []).some((block) => Boolean(block.with_pickup_route_before ?? block.with_pickup_route_after));
+        const pickupMutexErr = (0, appointmentBlockRules_1.validatePickupMutex)({
+            visitHasPickup: hasPickupRoutes,
+            extrasHavePickup,
+        });
+        if (pickupMutexErr)
+            return res.status(400).json({ error: pickupMutexErr });
+        if (hasPickupRoutes && (b.extra_blocks?.length ?? 0) > 0) {
+            const mainRhythm = (0, appointmentBlockRules_1.recurrenceRhythmSignature)(b.recurrence ?? null);
+            const extraRhythms = (b.extra_blocks ?? []).map((block) => (0, appointmentBlockRules_1.recurrenceRhythmSignature)(block.recurrence ?? null));
+            const rhythmErr = (0, appointmentBlockRules_1.validateVisitPickupSameRhythm)({
+                visitHasPickup: true,
+                rhythms: [mainRhythm, ...extraRhythms],
+            });
+            if (rhythmErr)
+                return res.status(400).json({ error: rhythmErr });
+        }
         if (hasPickupRoutes && isLevaTrazServiceGroup(primarySt)) {
             return res.status(400).json({
                 error: 'O atendimento principal já é Leva e Traz. Use o checkbox «Incluir Leva e Traz» apenas junto de banho, clínica ou outros serviços — não combine com um serviço L&T como principal.',
@@ -1624,11 +1749,70 @@ const createHubAppointment = async (req, res) => {
                 return res.status(400).json({ error: e.message || 'Erro ao precificar Leva e Traz' });
             }
         }
+        const extraSnaps = [];
+        for (const block of b.extra_blocks ?? []) {
+            const snap = await (0, hubResourcesService_1.resolveResourceSnapshot)({
+                clinicId: b.clinic_id,
+                unitId: careResolved.value.unit_id,
+                hubResourceId: block.hub_resource_id,
+                resourceLabel: block.resource_label ?? null,
+            });
+            if (!snap.ok)
+                return res.status(400).json({ error: snap.error });
+            extraSnaps.push(snap);
+        }
+        const mainSnap = await (0, hubResourcesService_1.resolveResourceSnapshot)({
+            clinicId: b.clinic_id,
+            unitId: careResolved.value.unit_id,
+            hubResourceId: b.hub_resource_id,
+            resourceLabel: b.resource_label ?? null,
+        });
+        if (!mainSnap.ok)
+            return res.status(400).json({ error: mainSnap.error });
+        const scheduleBody = {
+            ...b,
+            resource_label: mainSnap.resource_label,
+            hub_resource_id: mainSnap.hub_resource_id,
+            extra_blocks: (b.extra_blocks ?? []).map((block, index) => ({
+                ...block,
+                resource_label: extraSnaps[index].resource_label,
+                hub_resource_id: extraSnaps[index].hub_resource_id,
+            })),
+        };
         // ── Create series if recurrence requested ─────────────────────────────
         let seriesId = null;
-        let occurrenceDates = [];
+        const occurrenceDates = b.recurrence
+            ? (0, hubRecurrenceService_1.generateOccurrenceDates)(b.starts_at.slice(0, 10), b.recurrence)
+            : [b.starts_at.slice(0, 10)];
+        if (!skipScheduleConflictCheck) {
+            const preConflicts = [];
+            const useShift = Boolean(b.recurrence);
+            for (const occDate of occurrenceDates) {
+                const windows = buildOccurrenceConflictWindows(scheduleBody, occDate, useShift, standalonePickupMode);
+                for (const w of windows) {
+                    const chk = await assertNoScheduleConflict(b.clinic_id, [], w.staff, w.resource, resolvedUnitId, w.starts, w.ends, w.resourceId ?? null);
+                    if (chk.conflict) {
+                        preConflicts.push({
+                            date: occDate,
+                            reason: `${w.label}: ${chk.reason}`,
+                            conflictingId: chk.conflictingId,
+                        });
+                        break;
+                    }
+                }
+            }
+            if (preConflicts.length > 0) {
+                const firstReason = preConflicts[0]?.reason.replace(/^[^:]+:\s*/, '') ?? preConflicts[0]?.reason;
+                return res.status(409).json(scheduleConflictJson(preConflicts.length === 1 && occurrenceDates.length === 1
+                    ? firstReason || 'Horário em conflito com outro atendimento.'
+                    : 'Alguns horários da série entram em conflito com outro atendimento.', { conflicts: preConflicts }));
+            }
+        }
         if (b.recurrence) {
-            const rule = b.recurrence;
+            const rule = (0, hubRecurrenceService_1.normalizeRecurrenceRule)(b.recurrence);
+            const seriesStartDate = b.starts_at.slice(0, 10);
+            // Persistir o dia da semana efetivo (mesmo fallback usado na geração das datas).
+            const seriesDows = (0, hubRecurrenceService_1.seriesDaysOfWeek)(seriesStartDate, rule);
             const billingFields = (0, hubSeriesBillingService_1.normalizeSeriesBillingForInsert)({
                 billing_mode: rule.billing_mode ?? 'per_occurrence',
                 invoice_issue_rule: rule.invoice_issue_rule,
@@ -1657,9 +1841,9 @@ const createHubAppointment = async (req, res) => {
                 clinic_id: b.clinic_id,
                 kind: rule.kind,
                 interval_value: rule.interval_value ?? 1,
-                days_of_week: rule.days_of_week ?? null,
+                days_of_week: seriesDows,
                 day_of_month: rule.day_of_month ?? null,
-                start_date: b.starts_at.slice(0, 10),
+                start_date: seriesStartDate,
                 until_date: rule.until_date ?? null,
                 occurrences: rule.occurrences ?? null,
                 ...billingFields,
@@ -1675,9 +1859,9 @@ const createHubAppointment = async (req, res) => {
                         clinic_id: b.clinic_id,
                         kind: rule.kind,
                         interval_value: rule.interval_value ?? 1,
-                        days_of_week: rule.days_of_week ?? null,
+                        days_of_week: seriesDows,
                         day_of_month: rule.day_of_month ?? null,
-                        start_date: b.starts_at.slice(0, 10),
+                        start_date: seriesStartDate,
                         until_date: rule.until_date ?? null,
                         occurrences: rule.occurrences ?? null,
                     })
@@ -1694,75 +1878,17 @@ const createHubAppointment = async (req, res) => {
             else {
                 seriesId = seriesRow.id;
             }
-            occurrenceDates = generateOccurrenceDates(b.starts_at.slice(0, 10), rule);
-        }
-        else {
-            occurrenceDates = [b.starts_at.slice(0, 10)];
         }
         const conflicts = [];
         const createdIds = [];
         for (const occDate of occurrenceDates) {
             const startsAt = seriesId ? shiftTimestampToDate(b.starts_at, occDate) : b.starts_at;
             const endsAt = seriesId ? shiftTimestampToDate(b.ends_at, occDate) : b.ends_at;
-            const conflictWindows = [];
-            if (b.with_pickup_route_before) {
-                const pb = b.with_pickup_route_before;
-                const pStarts = seriesId ? shiftTimestampToDate(pb.starts_at, occDate) : pb.starts_at;
-                const pEnds = seriesId ? shiftTimestampToDate(pb.ends_at, occDate) : pb.ends_at;
-                conflictWindows.push({
-                    staff: pb.hub_staff_member_id ?? null,
-                    resource: pb.resource_label ?? null,
-                    starts: pStarts,
-                    ends: pEnds,
-                    label: 'Busca (Leva e Traz)',
-                });
-            }
-            conflictWindows.push({
-                staff: b.hub_staff_member_id ?? null,
-                resource: b.resource_label ?? null,
-                starts: startsAt,
-                ends: endsAt,
-                label: standalonePickupMode ? 'Leva e Traz (parada)' : 'Atendimento principal',
-            });
-            if (standalonePickupMode === 'round_trip' && b.standalone_pickup_return) {
-                const rb = b.standalone_pickup_return;
-                const rStarts = seriesId ? shiftTimestampToDate(rb.starts_at, occDate) : rb.starts_at;
-                const rEnds = seriesId ? shiftTimestampToDate(rb.ends_at, occDate) : rb.ends_at;
-                conflictWindows.push({
-                    staff: rb.hub_staff_member_id ?? null,
-                    resource: rb.resource_label ?? null,
-                    starts: rStarts,
-                    ends: rEnds,
-                    label: 'Retorno (Leva e Traz)',
-                });
-            }
-            for (const block of b.extra_blocks ?? []) {
-                const bStarts = seriesId ? shiftTimestampToDate(block.starts_at, occDate) : block.starts_at;
-                const bEnds = seriesId ? shiftTimestampToDate(block.ends_at, occDate) : block.ends_at;
-                conflictWindows.push({
-                    staff: block.hub_staff_member_id ?? null,
-                    resource: block.resource_label ?? null,
-                    starts: bStarts,
-                    ends: bEnds,
-                    label: 'Bloco extra',
-                });
-            }
-            if (b.with_pickup_route_after) {
-                const pa = b.with_pickup_route_after;
-                const pStarts = seriesId ? shiftTimestampToDate(pa.starts_at, occDate) : pa.starts_at;
-                const pEnds = seriesId ? shiftTimestampToDate(pa.ends_at, occDate) : pa.ends_at;
-                conflictWindows.push({
-                    staff: pa.hub_staff_member_id ?? null,
-                    resource: pa.resource_label ?? null,
-                    starts: pStarts,
-                    ends: pEnds,
-                    label: 'Retorno (Leva e Traz)',
-                });
-            }
+            const conflictWindows = buildOccurrenceConflictWindows(scheduleBody, occDate, Boolean(seriesId), standalonePickupMode);
             let skipOcc = false;
             if (!skipScheduleConflictCheck) {
                 for (const w of conflictWindows) {
-                    const chk = await assertNoScheduleConflict(b.clinic_id, [], w.staff, w.resource, resolvedUnitId, w.starts, w.ends);
+                    const chk = await assertNoScheduleConflict(b.clinic_id, [], w.staff, w.resource, resolvedUnitId, w.starts, w.ends, w.resourceId ?? null);
                     if (chk.conflict) {
                         conflicts.push({
                             date: occDate,
@@ -1788,7 +1914,8 @@ const createHubAppointment = async (req, res) => {
                 starts_at: startsAt,
                 ends_at: endsAt,
                 status: b.status ?? 'confirmed',
-                resource_label: b.resource_label ?? null,
+                resource_label: mainSnap.resource_label,
+                hub_resource_id: mainSnap.hub_resource_id,
                 notes: b.notes ?? null,
                 appointment_kind: resolvedAppointmentKind,
                 title: b.title ?? null,
@@ -1848,6 +1975,7 @@ const createHubAppointment = async (req, res) => {
             const { error: svcErr } = await supabase_1.supabaseAdmin.from('hub_appointment_services').insert(svcInsert);
             if (svcErr)
                 return res.status(500).json({ error: svcErr.message });
+            await (0, hubSurgeryFromAppointment_1.syncSurgeryForAppointmentSafe)({ clinicId: b.clinic_id, appointmentId: apptId, userId });
             const ltCfg = b.pickup_route_pricing;
             const hasBefore = Boolean(b.with_pickup_route_before);
             const hasAfter = Boolean(b.with_pickup_route_after);
@@ -2023,90 +2151,386 @@ const createHubAppointment = async (req, res) => {
                 if (rSvcErr)
                     return res.status(500).json({ error: rSvcErr.message });
             }
-            for (const block of b.extra_blocks ?? []) {
-                const bStarts = seriesId ? shiftTimestampToDate(block.starts_at, occDate) : block.starts_at;
-                const bEnds = seriesId ? shiftTimestampToDate(block.ends_at, occDate) : block.ends_at;
-                const firstSvcType = block.services[0].hub_service_type_id;
-                const { data: blockRow, error: blockErr } = await supabase_1.supabaseAdmin
-                    .from('hub_appointments')
-                    .insert({
-                    clinic_id: b.clinic_id,
-                    unit_id: resolvedUnitId,
-                    hub_service_type_id: firstSvcType,
-                    hub_staff_member_id: block.hub_staff_member_id ?? null,
-                    pet_id: b.pet_id ?? null,
-                    guardian_id: b.guardian_id ?? null,
-                    starts_at: bStarts,
-                    ends_at: bEnds,
-                    status: block.status ?? b.status ?? 'confirmed',
-                    resource_label: block.resource_label ?? null,
-                    notes: block.notes ?? null,
-                    title: block.title ?? null,
-                    appointment_kind: 'standard',
-                    series_id: seriesId,
-                    series_occurrence_date: seriesId ? occDate : null,
-                    pricing_porte_tier: apptOverride,
-                    pricing_coat_type: apptCoatOverride,
-                    parent_appointment_id: apptId,
-                })
-                    .select('id')
-                    .single();
-                if (blockErr)
-                    return res.status(500).json({ error: blockErr.message });
-                const blockId = blockRow.id;
-                const blockNormLines = block.services.map((s) => ({
-                    hub_service_type_id: s.hub_service_type_id,
-                    duration_minutes: s.duration_minutes,
-                    pricing_porte_tier: s.pricing_porte_tier ?? null,
-                    pricing_coat_type: s.pricing_coat_type ?? null,
-                    pricing_variant: s.pricing_variant ?? null,
-                }));
-                const blockYmd = bStarts.slice(0, 10);
-                let blockSnaps;
-                try {
-                    blockSnaps = buildServiceLineSnapshots({
-                        lines: blockNormLines,
-                        stMap,
-                        pet,
-                        appointmentYmd: blockYmd,
-                        puppyMaxMonths: puppy.pet_puppy_max_months,
-                        appointmentOverride: apptOverride,
-                        appointmentCoatOverride: apptCoatOverride,
-                    });
+            // Legado: extras clonam com a série do pai. Com independent_extra_blocks, ficam fora do loop.
+            if (!independentExtras) {
+                for (const [blockIndex, block] of (b.extra_blocks ?? []).entries()) {
+                    const blockResource = extraSnaps[blockIndex];
+                    const bStarts = seriesId ? shiftTimestampToDate(block.starts_at, occDate) : block.starts_at;
+                    const bEnds = seriesId ? shiftTimestampToDate(block.ends_at, occDate) : block.ends_at;
+                    const firstSvcType = block.services[0].hub_service_type_id;
+                    const { data: blockRow, error: blockErr } = await supabase_1.supabaseAdmin
+                        .from('hub_appointments')
+                        .insert({
+                        clinic_id: b.clinic_id,
+                        unit_id: resolvedUnitId,
+                        hub_service_type_id: firstSvcType,
+                        hub_staff_member_id: block.hub_staff_member_id ?? null,
+                        pet_id: b.pet_id ?? null,
+                        guardian_id: b.guardian_id ?? null,
+                        starts_at: bStarts,
+                        ends_at: bEnds,
+                        status: block.status ?? b.status ?? 'confirmed',
+                        resource_label: blockResource.resource_label,
+                        hub_resource_id: blockResource.hub_resource_id,
+                        notes: block.notes ?? null,
+                        title: block.title ?? null,
+                        appointment_kind: 'standard',
+                        series_id: seriesId,
+                        series_occurrence_date: seriesId ? occDate : null,
+                        pricing_porte_tier: apptOverride,
+                        pricing_coat_type: apptCoatOverride,
+                        parent_appointment_id: apptId,
+                    })
+                        .select('id')
+                        .single();
+                    if (blockErr)
+                        return res.status(500).json({ error: blockErr.message });
+                    const blockId = blockRow.id;
+                    const blockNormLines = block.services.map((s) => ({
+                        hub_service_type_id: s.hub_service_type_id,
+                        duration_minutes: s.duration_minutes,
+                        pricing_porte_tier: s.pricing_porte_tier ?? null,
+                        pricing_coat_type: s.pricing_coat_type ?? null,
+                        pricing_variant: s.pricing_variant ?? null,
+                    }));
+                    const blockYmd = bStarts.slice(0, 10);
+                    let blockSnaps;
+                    try {
+                        blockSnaps = buildServiceLineSnapshots({
+                            lines: blockNormLines,
+                            stMap,
+                            pet,
+                            appointmentYmd: blockYmd,
+                            puppyMaxMonths: puppy.pet_puppy_max_months,
+                            appointmentOverride: apptOverride,
+                            appointmentCoatOverride: apptCoatOverride,
+                        });
+                    }
+                    catch (e) {
+                        return res.status(500).json({ error: e.message });
+                    }
+                    const blockSvcInsert = blockSnaps.map((row) => ({
+                        appointment_id: blockId,
+                        hub_service_type_id: row.hub_service_type_id,
+                        duration_minutes: row.duration_minutes,
+                        order_index: row.order_index,
+                        pricing_porte_tier_applied: row.pricing_porte_tier_applied,
+                        pricing_coat_type_applied: row.pricing_coat_type_applied,
+                        cost_amount_applied: row.cost_amount_applied,
+                        sale_amount_applied: row.sale_amount_applied,
+                        pricing_variant: row.pricing_variant,
+                    }));
+                    const { error: bSvcErr } = await supabase_1.supabaseAdmin.from('hub_appointment_services').insert(blockSvcInsert);
+                    if (bSvcErr)
+                        return res.status(500).json({ error: bSvcErr.message });
+                    await (0, hubSurgeryFromAppointment_1.syncSurgeryForAppointmentSafe)({ clinicId: b.clinic_id, appointmentId: blockId, userId });
                 }
-                catch (e) {
-                    return res.status(500).json({ error: e.message });
-                }
-                const blockSvcInsert = blockSnaps.map((row) => ({
-                    appointment_id: blockId,
-                    hub_service_type_id: row.hub_service_type_id,
-                    duration_minutes: row.duration_minutes,
-                    order_index: row.order_index,
-                    pricing_porte_tier_applied: row.pricing_porte_tier_applied,
-                    pricing_coat_type_applied: row.pricing_coat_type_applied,
-                    cost_amount_applied: row.cost_amount_applied,
-                    sale_amount_applied: row.sale_amount_applied,
-                    pricing_variant: row.pricing_variant,
-                }));
-                const { error: bSvcErr } = await supabase_1.supabaseAdmin.from('hub_appointment_services').insert(blockSvcInsert);
-                if (bSvcErr)
-                    return res.status(500).json({ error: bSvcErr.message });
             }
         }
         if (conflicts.length > 0 && createdIds.length === 0) {
-            return res.status(409).json({
-                error: 'Todos os horários solicitados entram em conflito.',
-                conflicts,
-            });
+            return res.status(409).json(scheduleConflictJson('Todos os horários solicitados entram em conflito.', { conflicts }));
         }
         // Fetch and return the main appointment (first created)
         if (createdIds.length === 0) {
-            return res.status(409).json({ error: 'Nenhum agendamento criado (conflitos em todas as datas).', conflicts });
+            return res.status(409).json(scheduleConflictJson('Nenhum agendamento criado (conflitos em todas as datas).', { conflicts }));
+        }
+        const parentApptId = createdIds[0];
+        let visitGroupId = b.visit_group_id ??
+            (independentExtras && (b.extra_blocks?.length ?? 0) > 0 ? (0, crypto_1.randomUUID)() : null);
+        if (visitGroupId && !b.visit_group_id) {
+            await supabase_1.supabaseAdmin
+                .from('hub_appointments')
+                .update({ visit_group_id: visitGroupId })
+                .in('id', createdIds);
+        }
+        // Blocos extras de 1ª classe: série/L&T próprios, ligados por visit_group_id + parent.
+        if (independentExtras && (b.extra_blocks?.length ?? 0) > 0) {
+            for (const [blockIndex, block] of (b.extra_blocks ?? []).entries()) {
+                const blockResource = extraSnaps[blockIndex];
+                const firstSvcType = block.services[0].hub_service_type_id;
+                const blockPrimary = stMap.get(firstSvcType);
+                const blockKind = resolveAppointmentKindForCreate(undefined, blockPrimary);
+                let blockSeriesId = null;
+                const blockOccDates = block.recurrence
+                    ? (0, hubRecurrenceService_1.generateOccurrenceDates)(block.starts_at.slice(0, 10), block.recurrence)
+                    : [block.starts_at.slice(0, 10)];
+                if (block.recurrence) {
+                    const rule = (0, hubRecurrenceService_1.normalizeRecurrenceRule)(block.recurrence);
+                    const seriesStartDate = block.starts_at.slice(0, 10);
+                    const seriesDows = (0, hubRecurrenceService_1.seriesDaysOfWeek)(seriesStartDate, rule);
+                    const billingFields = (0, hubSeriesBillingService_1.normalizeSeriesBillingForInsert)({
+                        billing_mode: rule.billing_mode ?? 'per_occurrence',
+                        invoice_issue_rule: rule.invoice_issue_rule,
+                        invoice_issue_day: rule.invoice_issue_day,
+                        invoice_due_rule: rule.invoice_due_rule,
+                        invoice_due_day: rule.invoice_due_day,
+                        invoice_due_plus_days: rule.invoice_due_plus_days,
+                    });
+                    const { data: seriesRow, error: serErr } = await supabase_1.supabaseAdmin
+                        .from('hub_appointment_series')
+                        .insert({
+                        clinic_id: b.clinic_id,
+                        kind: rule.kind,
+                        interval_value: rule.interval_value ?? 1,
+                        days_of_week: seriesDows,
+                        day_of_month: rule.day_of_month ?? null,
+                        start_date: seriesStartDate,
+                        until_date: rule.until_date ?? null,
+                        occurrences: rule.occurrences ?? null,
+                        ...billingFields,
+                    })
+                        .select('id')
+                        .single();
+                    if (serErr) {
+                        if (String(serErr.message || '').includes('billing_mode')) {
+                            const { data: fallback, error: fbErr } = await supabase_1.supabaseAdmin
+                                .from('hub_appointment_series')
+                                .insert({
+                                clinic_id: b.clinic_id,
+                                kind: rule.kind,
+                                interval_value: rule.interval_value ?? 1,
+                                days_of_week: seriesDows,
+                                day_of_month: rule.day_of_month ?? null,
+                                start_date: seriesStartDate,
+                                until_date: rule.until_date ?? null,
+                                occurrences: rule.occurrences ?? null,
+                            })
+                                .select('id')
+                                .single();
+                            if (fbErr)
+                                return res.status(500).json({ error: fbErr.message });
+                            blockSeriesId = fallback.id;
+                        }
+                        else {
+                            return res.status(500).json({ error: serErr.message });
+                        }
+                    }
+                    else {
+                        blockSeriesId = seriesRow.id;
+                    }
+                }
+                const blockHasPickup = Boolean(block.with_pickup_route_before ?? block.with_pickup_route_after);
+                let blockPickupPricingBase = null;
+                if (blockHasPickup && block.pickup_route_pricing) {
+                    const ltSt = stMap.get(block.pickup_route_pricing.hub_service_type_id);
+                    const ge = validateLevaTrazServiceType(ltSt);
+                    if (ge)
+                        return res.status(400).json({ error: ge });
+                    const scope = (0, hubPickupPricing_1.normalizePickupPriceScope)(ltSt.pickup_price_scope);
+                    blockPickupPricingBase = {
+                        catalogSale: (0, hubServiceTypesPricingMatrix_1.roundMoney2)(Number(ltSt.sale_amount) || 0),
+                        catalogCost: (0, hubServiceTypesPricingMatrix_1.roundMoney2)(Number(ltSt.cost_amount) || 0),
+                        priceScope: scope,
+                        kmVariant: block.pickup_route_pricing.pricing_variant ?? null,
+                    };
+                }
+                for (const occDate of blockOccDates) {
+                    const bStarts = blockSeriesId
+                        ? shiftTimestampToDate(block.starts_at, occDate)
+                        : block.starts_at;
+                    const bEnds = blockSeriesId ? shiftTimestampToDate(block.ends_at, occDate) : block.ends_at;
+                    const { data: blockRow, error: blockErr } = await supabase_1.supabaseAdmin
+                        .from('hub_appointments')
+                        .insert({
+                        clinic_id: b.clinic_id,
+                        unit_id: resolvedUnitId,
+                        hub_service_type_id: firstSvcType,
+                        hub_staff_member_id: block.hub_staff_member_id ?? null,
+                        pet_id: b.pet_id ?? null,
+                        guardian_id: b.guardian_id ?? null,
+                        starts_at: bStarts,
+                        ends_at: bEnds,
+                        status: block.status ?? b.status ?? 'confirmed',
+                        resource_label: blockResource.resource_label,
+                        hub_resource_id: blockResource.hub_resource_id,
+                        notes: block.notes ?? null,
+                        title: block.title ?? null,
+                        appointment_kind: blockKind,
+                        series_id: blockSeriesId,
+                        series_occurrence_date: blockSeriesId ? occDate : null,
+                        pricing_porte_tier: apptOverride,
+                        pricing_coat_type: apptCoatOverride,
+                        parent_appointment_id: parentApptId,
+                        visit_group_id: visitGroupId
+                            ? blockSeriesId
+                                ? visitGroupIdForOccurrence(visitGroupId, occDate)
+                                : visitGroupId
+                            : null,
+                    })
+                        .select('id')
+                        .single();
+                    if (blockErr)
+                        return res.status(500).json({ error: blockErr.message });
+                    const blockId = blockRow.id;
+                    createdIds.push(blockId);
+                    const blockNormLines = block.services.map((s) => ({
+                        hub_service_type_id: s.hub_service_type_id,
+                        duration_minutes: s.duration_minutes,
+                        pricing_porte_tier: s.pricing_porte_tier ?? null,
+                        pricing_coat_type: s.pricing_coat_type ?? null,
+                        pricing_variant: s.pricing_variant ?? null,
+                    }));
+                    let blockSnaps;
+                    try {
+                        blockSnaps = buildServiceLineSnapshots({
+                            lines: blockNormLines,
+                            stMap,
+                            pet,
+                            appointmentYmd: bStarts.slice(0, 10),
+                            puppyMaxMonths: puppy.pet_puppy_max_months,
+                            appointmentOverride: apptOverride,
+                            appointmentCoatOverride: apptCoatOverride,
+                        });
+                    }
+                    catch (e) {
+                        return res.status(500).json({ error: e.message });
+                    }
+                    const blockSvcInsert = blockSnaps.map((row) => ({
+                        appointment_id: blockId,
+                        hub_service_type_id: row.hub_service_type_id,
+                        duration_minutes: row.duration_minutes,
+                        order_index: row.order_index,
+                        pricing_porte_tier_applied: row.pricing_porte_tier_applied,
+                        pricing_coat_type_applied: row.pricing_coat_type_applied,
+                        cost_amount_applied: row.cost_amount_applied,
+                        sale_amount_applied: row.sale_amount_applied,
+                        pricing_variant: row.pricing_variant,
+                    }));
+                    const { error: bSvcErr } = await supabase_1.supabaseAdmin.from('hub_appointment_services').insert(blockSvcInsert);
+                    if (bSvcErr)
+                        return res.status(500).json({ error: bSvcErr.message });
+                    await (0, hubSurgeryFromAppointment_1.syncSurgeryForAppointmentSafe)({ clinicId: b.clinic_id, appointmentId: blockId, userId });
+                    if (blockHasPickup && block.pickup_route_pricing && blockPickupPricingBase) {
+                        const ltCfg = block.pickup_route_pricing;
+                        const hasBefore = Boolean(block.with_pickup_route_before);
+                        const hasAfter = Boolean(block.with_pickup_route_after);
+                        const attachedLegCount = hasBefore && hasAfter ? 2 : 1;
+                        const attachedAmounts = (0, hubPickupPricing_1.resolvePickupLegAmounts)(blockPickupPricingBase.catalogSale, blockPickupPricingBase.catalogCost, blockPickupPricingBase.priceScope, attachedLegCount);
+                        for (const [_kind, pickupBlock, saleLeg, costLeg] of [
+                            [
+                                'before',
+                                block.with_pickup_route_before,
+                                hasBefore && hasAfter ? attachedAmounts.saleLegs[0] : hasBefore ? attachedAmounts.saleLegs[0] : 0,
+                                hasBefore && hasAfter ? attachedAmounts.costLegs[0] : hasBefore ? attachedAmounts.costLegs[0] : 0,
+                            ],
+                            [
+                                'after',
+                                block.with_pickup_route_after,
+                                hasBefore && hasAfter ? attachedAmounts.saleLegs[1] : hasAfter ? attachedAmounts.saleLegs[0] : 0,
+                                hasBefore && hasAfter ? attachedAmounts.costLegs[1] : hasAfter ? attachedAmounts.costLegs[0] : 0,
+                            ],
+                        ]) {
+                            if (!pickupBlock)
+                                continue;
+                            const pStarts = blockSeriesId
+                                ? shiftTimestampToDate(pickupBlock.starts_at, occDate)
+                                : pickupBlock.starts_at;
+                            const pEnds = blockSeriesId
+                                ? shiftTimestampToDate(pickupBlock.ends_at, occDate)
+                                : pickupBlock.ends_at;
+                            const legDur = pickupLegMinutes(pStarts, pEnds);
+                            const { data: pRow, error: pInsErr } = await supabase_1.supabaseAdmin
+                                .from('hub_appointments')
+                                .insert({
+                                clinic_id: b.clinic_id,
+                                unit_id: resolvedUnitId,
+                                hub_service_type_id: ltCfg.hub_service_type_id,
+                                hub_staff_member_id: pickupBlock.hub_staff_member_id ?? null,
+                                pet_id: b.pet_id ?? null,
+                                guardian_id: b.guardian_id ?? null,
+                                starts_at: pStarts,
+                                ends_at: pEnds,
+                                status: b.status ?? 'confirmed',
+                                resource_label: pickupBlock.resource_label ?? null,
+                                appointment_kind: 'pickup_route',
+                                parent_appointment_id: blockId,
+                                series_id: blockSeriesId,
+                                series_occurrence_date: blockSeriesId ? occDate : null,
+                                pricing_porte_tier: apptOverride,
+                                pricing_coat_type: apptCoatOverride,
+                            })
+                                .select('id')
+                                .single();
+                            if (pInsErr || !pRow) {
+                                return res.status(500).json({ error: pInsErr?.message || 'Erro ao criar transporte do bloco' });
+                            }
+                            let pickupSnaps;
+                            try {
+                                pickupSnaps = buildServiceLineSnapshots({
+                                    lines: [
+                                        {
+                                            hub_service_type_id: ltCfg.hub_service_type_id,
+                                            duration_minutes: legDur,
+                                            pricing_variant: blockPickupPricingBase.kmVariant,
+                                            sale_amount_override: saleLeg ?? 0,
+                                            cost_amount_override: costLeg ?? 0,
+                                        },
+                                    ],
+                                    stMap,
+                                    pet,
+                                    appointmentYmd: bStarts.slice(0, 10),
+                                    puppyMaxMonths: puppy.pet_puppy_max_months,
+                                    appointmentOverride: apptOverride,
+                                    appointmentCoatOverride: apptCoatOverride,
+                                });
+                            }
+                            catch (e) {
+                                return res.status(500).json({ error: e.message });
+                            }
+                            const pickupSvcInsert = pickupSnaps.map((row) => ({
+                                appointment_id: pRow.id,
+                                hub_service_type_id: row.hub_service_type_id,
+                                duration_minutes: row.duration_minutes,
+                                order_index: row.order_index,
+                                pricing_porte_tier_applied: row.pricing_porte_tier_applied,
+                                pricing_coat_type_applied: row.pricing_coat_type_applied,
+                                cost_amount_applied: row.cost_amount_applied,
+                                sale_amount_applied: row.sale_amount_applied,
+                                pricing_variant: row.pricing_variant,
+                            }));
+                            const { error: pSvcErr } = await supabase_1.supabaseAdmin
+                                .from('hub_appointment_services')
+                                .insert(pickupSvcInsert);
+                            if (pSvcErr)
+                                return res.status(500).json({ error: pSvcErr.message });
+                        }
+                    }
+                }
+            }
+        }
+        if (b.create_boarding_reservation === true &&
+            b.pet_id &&
+            (resolvedAppointmentKind === 'hotel_stay' || resolvedAppointmentKind === 'daycare_block')) {
+            const mode = resolvedAppointmentKind === 'daycare_block' ? 'daycare' : 'hotel';
+            const { data: existingRsv } = await supabase_1.supabaseAdmin
+                .from('hub_boarding_reservations')
+                .select('id')
+                .eq('hub_appointment_id', parentApptId)
+                .eq('clinic_id', b.clinic_id)
+                .is('deleted_at', null)
+                .maybeSingle();
+            if (!existingRsv) {
+                const { error: rsvErr } = await supabase_1.supabaseAdmin.from('hub_boarding_reservations').insert({
+                    clinic_id: b.clinic_id,
+                    unit_id: resolvedUnitId,
+                    pet_id: b.pet_id,
+                    guardian_id: b.guardian_id ?? null,
+                    hub_appointment_id: parentApptId,
+                    mode,
+                    status: 'reserved',
+                    expected_check_in: b.starts_at,
+                    expected_check_out: b.ends_at,
+                    hub_service_type_id: b.hub_service_type_id,
+                });
+                if (rsvErr) {
+                    console.warn('create_boarding_reservation', rsvErr.message);
+                }
+            }
         }
         const { data: mainAppt } = await supabase_1.supabaseAdmin
             .from('hub_appointments')
             .select('*')
-            .eq('id', createdIds[0])
+            .eq('id', parentApptId)
             .single();
         const [enriched] = await enrichAppointments([mainAppt]);
         return res.status(201).json({
@@ -2161,36 +2585,28 @@ const patchHubAppointment = async (req, res) => {
         // soft-delete scoped
         if (b.deleted === true) {
             const now = new Date().toISOString();
-            if (scope === 'this') {
-                await supabase_1.supabaseAdmin
+            const deleteSeriesId = existing.series_id;
+            let deletedIds = [id];
+            if (scope !== 'this' && deleteSeriesId) {
+                let seriesQ = supabase_1.supabaseAdmin
                     .from('hub_appointments')
-                    .update({ deleted_at: now })
-                    .eq('id', id)
-                    .eq('clinic_id', b.clinic_id);
-            }
-            else if (scope === 'future' && existing.series_id) {
-                await supabase_1.supabaseAdmin
-                    .from('hub_appointments')
-                    .update({ deleted_at: now })
+                    .select('id')
                     .eq('clinic_id', b.clinic_id)
-                    .eq('series_id', existing.series_id)
-                    .gte('starts_at', existing.starts_at)
+                    .eq('series_id', deleteSeriesId)
                     .is('deleted_at', null);
+                if (scope === 'future') {
+                    seriesQ = seriesQ.gte('starts_at', existing.starts_at);
+                }
+                const { data: seriesRows } = await seriesQ;
+                deletedIds = (seriesRows ?? []).map((r) => r.id);
             }
-            else if (scope === 'all' && existing.series_id) {
-                await supabase_1.supabaseAdmin
-                    .from('hub_appointments')
-                    .update({ deleted_at: now })
-                    .eq('clinic_id', b.clinic_id)
-                    .eq('series_id', existing.series_id)
-                    .is('deleted_at', null);
-            }
-            else {
-                await supabase_1.supabaseAdmin
-                    .from('hub_appointments')
-                    .update({ deleted_at: now })
-                    .eq('id', id)
-                    .eq('clinic_id', b.clinic_id);
+            await supabase_1.supabaseAdmin
+                .from('hub_appointments')
+                .update({ deleted_at: now, resource_released_at: now })
+                .in('id', deletedIds)
+                .eq('clinic_id', b.clinic_id);
+            for (const did of deletedIds) {
+                await (0, hubSurgeryFromAppointment_1.syncSurgeryForAppointmentSafe)({ clinicId: b.clinic_id, appointmentId: did });
             }
             return res.status(204).send();
         }
@@ -2200,8 +2616,10 @@ const patchHubAppointment = async (req, res) => {
             return res.status(400).json({ error: 'ends_at deve ser posterior a starts_at' });
         }
         const nextStaff = b.hub_staff_member_id !== undefined ? b.hub_staff_member_id : existing.hub_staff_member_id;
-        const nextResource = b.resource_label !== undefined ? b.resource_label : existing.resource_label;
         const nextUnit = b.unit_id !== undefined ? b.unit_id : existing.unit_id;
+        let nextResource = existing.resource_label ?? null;
+        let nextResourceId = existing.hub_resource_id ?? null;
+        const resourceTouched = b.hub_resource_id !== undefined || b.resource_label !== undefined;
         if (b.hub_service_type_id && !(await assertServiceTypeInClinic(b.clinic_id, b.hub_service_type_id))) {
             return res.status(400).json({ error: 'Tipo de serviço inválido' });
         }
@@ -2238,9 +2656,27 @@ const patchHubAppointment = async (req, res) => {
         if (!careResolved.ok) {
             return res.status(400).json({ error: careResolved.error });
         }
-        const check = await assertNoScheduleConflict(b.clinic_id, [id], nextStaff, nextResource, careResolved.value.unit_id, starts, ends);
-        if (check.conflict) {
-            return res.status(409).json({ error: check.reason });
+        if (resourceTouched) {
+            const snap = await (0, hubResourcesService_1.resolveResourceSnapshot)({
+                clinicId: b.clinic_id,
+                unitId: careResolved.value.unit_id,
+                hubResourceId: b.hub_resource_id !== undefined ? b.hub_resource_id : null,
+                resourceLabel: b.hub_resource_id !== undefined
+                    ? b.resource_label
+                    : b.resource_label !== undefined
+                        ? b.resource_label
+                        : null,
+            });
+            if (!snap.ok)
+                return res.status(400).json({ error: snap.error });
+            nextResourceId = snap.hub_resource_id;
+            nextResource = snap.resource_label;
+        }
+        if (b.allow_schedule_overlap !== true) {
+            const check = await assertNoScheduleConflict(b.clinic_id, [id], nextStaff, nextResource, careResolved.value.unit_id, starts, ends, nextResourceId);
+            if (check.conflict) {
+                return res.status(409).json(scheduleConflictJson(check.reason, { conflictingId: check.conflictingId }));
+            }
         }
         const patch = {};
         if (b.unit_id !== undefined || b.care_location_kind !== undefined || b.hub_partner_clinic_id !== undefined) {
@@ -2262,8 +2698,15 @@ const patchHubAppointment = async (req, res) => {
             patch.ends_at = b.ends_at;
         if (b.status !== undefined)
             patch.status = b.status;
-        if (b.resource_label !== undefined)
-            patch.resource_label = b.resource_label;
+        if (resourceTouched) {
+            patch.hub_resource_id = nextResourceId;
+            patch.resource_label = nextResource;
+            patch.resource_released_at = null;
+        }
+        const nextStatus = (b.status ?? existing.status);
+        if (['done', 'cancelled', 'paid'].includes(nextStatus)) {
+            patch.resource_released_at = existing.resource_released_at ?? new Date().toISOString();
+        }
         if (b.notes !== undefined)
             patch.notes = b.notes;
         if (b.financial_notes !== undefined)
@@ -2446,6 +2889,9 @@ const patchHubAppointment = async (req, res) => {
                 }
             }
         }
+        for (const tid of targetIds) {
+            await (0, hubSurgeryFromAppointment_1.syncSurgeryForAppointmentSafe)({ clinicId: b.clinic_id, appointmentId: tid, userId: req.user?.id });
+        }
         if (patch.status === 'cancelled') {
             for (const tid of targetIds) {
                 void (0, hubComandasController_1.maybeFlagComandaCancellationPending)(b.clinic_id, 'appointment', tid);
@@ -2466,9 +2912,12 @@ const patchHubAppointment = async (req, res) => {
             if (!parentAfterPatch) {
                 return res.status(500).json({ error: 'Erro ao recarregar agendamento principal' });
             }
-            const syncResult = await syncExtraBlocksForParent(b.clinic_id, id, parentAfterPatch, b.extra_blocks, [id, ...targetIds]);
+            const syncResult = await syncExtraBlocksForParent(b.clinic_id, id, parentAfterPatch, b.extra_blocks, [id, ...targetIds], b.allow_schedule_overlap === true);
             if (syncResult.error) {
-                return res.status(syncResult.status ?? 500).json({ error: syncResult.error });
+                return res.status(syncResult.status ?? 500).json({
+                    error: syncResult.error,
+                    ...(syncResult.code ? { code: syncResult.code } : {}),
+                });
             }
         }
         const { data: updated } = await supabase_1.supabaseAdmin
@@ -2477,6 +2926,11 @@ const patchHubAppointment = async (req, res) => {
             .eq('id', id)
             .single();
         const [enriched] = await enrichAppointments([updated]);
+        const petId = updated?.pet_id;
+        if (petId && b.clinic_id) {
+            const { scheduleReceptionSync } = await Promise.resolve().then(() => __importStar(require('./receptionSync')));
+            scheduleReceptionSync(b.clinic_id, petId);
+        }
         return res.json({ appointment: enriched, updated_count: targetIds.length });
     }
     catch (e) {
@@ -2649,6 +3103,7 @@ const createHubAppointmentBatch = async (req, res) => {
                         ? petEntry.hub_staff_member_id ?? null
                         : shared.hub_staff_member_id ?? null,
                     resource_label: petEntry.resource_label ?? shared.resource_label,
+                    hub_resource_id: petEntry.hub_resource_id !== undefined ? petEntry.hub_resource_id : shared.hub_resource_id,
                     pricing_porte_tier: petEntry.pricing_porte_tier ?? shared.pricing_porte_tier ?? null,
                     pricing_coat_type: petEntry.pricing_coat_type ?? shared.pricing_coat_type ?? null,
                     services: petServices,

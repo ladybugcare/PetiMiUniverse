@@ -396,6 +396,9 @@ import {
   openHubBoardingReservationFromAppointment,
   createHubBoardingReservation,
   patchHubBoardingReservation,
+  postHubBoardingStartCheckoutPrep,
+  postHubBoardingReleaseForHandoff,
+  postHubBoardingRevertHandoffReady,
   getHubBoardingUnitSettings,
   patchHubBoardingUnitSettings,
   getHubBoardingOccupancy,
@@ -2096,6 +2099,24 @@ router.patch(
   authenticateUser,
   requirePermission('boarding.reservations.manage'),
   patchHubBoardingReservation
+);
+router.post(
+  '/boarding/reservations/:id/start-checkout-prep',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  postHubBoardingStartCheckoutPrep
+);
+router.post(
+  '/boarding/reservations/:id/release-for-handoff',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  postHubBoardingReleaseForHandoff
+);
+router.post(
+  '/boarding/reservations/:id/revert-handoff-ready',
+  authenticateUser,
+  requirePermission('boarding.reservations.manage'),
+  postHubBoardingRevertHandoffReady
 );
 router.get(
   '/boarding/reservations/:id/drawer',

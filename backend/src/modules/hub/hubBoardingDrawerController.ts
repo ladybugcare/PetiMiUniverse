@@ -272,7 +272,9 @@ export const getHubBoardingReservationDrawer = async (req: Request, res: Respons
           outcome: (t.outcome as string | null) ?? null,
         })),
       isLate:
-        reservation.status === 'checked_in' &&
+        (reservation.status === 'checked_in' ||
+          reservation.status === 'checkout_preparing' ||
+          reservation.status === 'ready_for_handoff') &&
         !reservation.checked_out_at &&
         Boolean(reservation.expected_check_out && new Date(reservation.expected_check_out).getTime() < Date.now()),
       missingBelongings: belongings.filter((b) => b.checkout_status === 'missing').length,

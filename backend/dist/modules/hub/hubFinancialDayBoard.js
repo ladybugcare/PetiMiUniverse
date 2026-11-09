@@ -4,6 +4,7 @@ exports.isDayBoardOperationallyComplete = isDayBoardOperationallyComplete;
 exports.isDayBoardPaidAndComplete = isDayBoardPaidAndComplete;
 exports.pickActiveReceivableId = pickActiveReceivableId;
 exports.matchesFinanceiroDayBoardScope = matchesFinanceiroDayBoardScope;
+exports.hasFinanceiroChargeableAmount = hasFinanceiroChargeableAmount;
 exports.aggregateReceivableStatus = aggregateReceivableStatus;
 function isDayBoardOperationallyComplete(originType, operationalStatus) {
     switch (originType) {
@@ -13,9 +14,10 @@ function isDayBoardOperationallyComplete(originType, operationalStatus) {
             return operationalStatus === 'closed';
         case 'encounter':
             return operationalStatus === 'completed';
+        case 'boarding_reservation':
+            return operationalStatus === 'checked_out';
         case 'quote':
         case 'manual':
-        case 'boarding_reservation':
             return true;
         default:
             return true;
@@ -40,6 +42,15 @@ function matchesFinanceiroDayBoardScope(billing) {
     if (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid')
         return true;
     return false;
+}
+/** Contas a receber: ignora títulos/estimativas com valor efetivo zerado. */
+function hasFinanceiroChargeableAmount(opts) {
+    const recvAmt = Number(opts.billing.receivable_amount ?? 0);
+    if (opts.billing.receivable_status === 'pending' ||
+        opts.billing.receivable_status === 'partially_paid') {
+        return recvAmt > 0.009;
+    }
+    return Number(opts.estimated_amount ?? 0) > 0.009;
 }
 function aggregateReceivableStatus(statuses) {
     if (statuses.length === 0)

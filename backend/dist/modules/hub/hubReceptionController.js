@@ -1,0 +1,625 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.postHubReceptionResolve = exports.getHubReceptionHandoffDetail = exports.getHubReceptionBoard = void 0;
+const zod_1 = require("zod");
+const supabase_1 = require("../../config/supabase");
+const authMiddleware_1 = require("../../middleware/authMiddleware");
+const receptionHandoffService_1 = require("./receptionHandoffService");
+const receptionCustody_1 = require("./receptionCustody");
+const uuidStr = zod_1.z.string().uuid();
+const dateYmd = zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+const boardQuery = zod_1.z.object({
+    clinic_id: uuidStr,
+    unit_id: uuidStr,
+    date: dateYmd.optional(),
+});
+function originModule(sourceType, kind, context) {
+    if (sourceType === 'grooming_session' || sourceType === 'grooming_event') {
+        return { key: 'banho', label: 'Banho & Tosa', href: '/hub/banho-tosa' };
+    }
+    if (sourceType === 'encounter') {
+        return { key: 'clinica', label: 'Clínica', href: '/hub/clinica' };
+    }
+    if (sourceType === 'hospitalization') {
+        return { key: 'internacao', label: 'Internação', href: '/hub/clinica' };
+    }
+    if (sourceType === 'pickup_stop') {
+        return { key: 'leva_traz', label: 'Leva e Traz', href: '/hub/leva-e-traz' };
+    }
+    if (sourceType === 'boarding_reservation') {
+        const mode = context?.boarding_mode === 'daycare' || context?.label === 'Creche' ? 'daycare' : 'hotel';
+        return {
+            key: mode === 'daycare' ? 'creche' : 'hotel',
+            label: mode === 'daycare' ? 'Creche' : 'Hotel',
+            href: '/hub/hotel-creche',
+        };
+    }
+    if (kind === 'chegada') {
+        return { key: 'agenda', label: 'Agenda', href: '/hub/appointments' };
+    }
+    return { key: 'operacao', label: 'Operação', href: '/hub/recepcao' };
+}
+async function petHasOpenCharge(clinicId, petId) {
+    if (!petId)
+        return false;
+    const { count, error } = await supabase_1.supabaseAdmin
+        .from('hub_comandas')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', clinicId)
+        .eq('pet_id', petId)
+        .is('deleted_at', null)
+        .in('financial_status', ['open', 'awaiting_balance']);
+    if (error)
+        throw new Error(error.message);
+    return (count ?? 0) > 0;
+}
+/** Recupera pet_id pela origem quando o handoff ficou sem pet (ex.: ON DELETE SET NULL). */
+async function resolvePetIdFromSource(clinicId, sourceType, sourceId) {
+    const tableBySource = {
+        appointment: 'hub_appointments',
+        grooming_session: 'hub_grooming_sessions',
+        grooming_event: 'hub_grooming_session_events',
+        encounter: 'hub_encounters',
+        hospitalization: 'hub_hospitalizations',
+        pickup_stop: 'hub_pickup_stops',
+        boarding_reservation: 'hub_boarding_reservations',
+    };
+    const table = tableBySource[sourceType];
+    if (!table)
+        return null;
+    if (sourceType === 'grooming_event') {
+        const { data: ev } = await supabase_1.supabaseAdmin
+            .from('hub_grooming_session_events')
+            .select('hub_grooming_session_id')
+            .eq('id', sourceId)
+            .maybeSingle();
+        const sessionId = ev?.hub_grooming_session_id;
+        if (!sessionId)
+            return null;
+        const { data: session } = await supabase_1.supabaseAdmin
+            .from('hub_grooming_sessions')
+            .select('pet_id')
+            .eq('id', sessionId)
+            .eq('clinic_id', clinicId)
+            .maybeSingle();
+        return session?.pet_id ?? null;
+    }
+    const { data } = await supabase_1.supabaseAdmin
+        .from(table)
+        .select('pet_id')
+        .eq('id', sourceId)
+        .eq('clinic_id', clinicId)
+        .maybeSingle();
+    return data?.pet_id ?? null;
+}
+async function staffIdForUser(clinicId, userId) {
+    if (!userId)
+        return null;
+    const { data: clinicUser } = await supabase_1.supabaseAdmin
+        .from('clinic_users')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .maybeSingle();
+    if (!clinicUser?.id)
+        return null;
+    const { data: staff } = await supabase_1.supabaseAdmin
+        .from('hub_staff_members')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .eq('clinic_user_id', clinicUser.id)
+        .is('deleted_at', null)
+        .maybeSingle();
+    return staff?.id ?? null;
+}
+/** GET /reception/board */
+const getHubReceptionBoard = async (req, res) => {
+    try {
+        const parsed = boardQuery.safeParse(req.query);
+        if (!parsed.success)
+            return res.status(400).json({ error: 'clinic_id e unit_id são obrigatórios' });
+        const day = parsed.data.date || (0, receptionCustody_1.todayYmdSaoPaulo)();
+        try {
+            await (0, receptionHandoffService_1.syncReceptionUnit)(parsed.data.clinic_id, parsed.data.unit_id, day);
+        }
+        catch (syncErr) {
+            console.error('getHubReceptionBoard sync', syncErr);
+        }
+        const { data, error } = await supabase_1.supabaseAdmin
+            .from('hub_reception_handoffs')
+            .select('id, kind, source_type, source_id, status, context, opened_at, resolved_at, resolution, pet_id, guardian_id')
+            .eq('clinic_id', parsed.data.clinic_id)
+            .eq('unit_id', parsed.data.unit_id)
+            .order('opened_at', { ascending: true })
+            .limit(300);
+        if (error)
+            return res.status(500).json({ error: error.message });
+        const dayRows = (data ?? []).filter((row) => (0, receptionHandoffService_1.handoffInDay)({
+            status: String(row.status),
+            kind: String(row.kind),
+            opened_at: String(row.opened_at),
+            resolved_at: row.resolved_at ?? null,
+        }, day));
+        const resolvedPetIds = new Map();
+        await Promise.all(dayRows.map(async (row) => {
+            const existing = row.pet_id ?? null;
+            if (existing) {
+                resolvedPetIds.set(row.id, existing);
+                return;
+            }
+            const recovered = await resolvePetIdFromSource(parsed.data.clinic_id, String(row.source_type), String(row.source_id));
+            if (!recovered)
+                return;
+            resolvedPetIds.set(row.id, recovered);
+            void supabase_1.supabaseAdmin
+                .from('hub_reception_handoffs')
+                .update({ pet_id: recovered, updated_at: new Date().toISOString() })
+                .eq('id', row.id)
+                .is('pet_id', null);
+        }));
+        const petIds = [...new Set([...resolvedPetIds.values()])];
+        const guardianIds = [
+            ...new Set(dayRows.map((r) => r.guardian_id).filter((id) => Boolean(id))),
+        ];
+        const [petsRes, guardiansRes] = await Promise.all([
+            petIds.length
+                ? supabase_1.supabaseAdmin.from('hub_pets').select('id, name').in('id', petIds)
+                : Promise.resolve({ data: [], error: null }),
+            guardianIds.length
+                ? supabase_1.supabaseAdmin.from('hub_guardians').select('id, full_name, phone').in('id', guardianIds)
+                : Promise.resolve({
+                    data: [],
+                    error: null,
+                }),
+        ]);
+        if (petsRes.error)
+            return res.status(500).json({ error: petsRes.error.message });
+        if (guardiansRes.error)
+            return res.status(500).json({ error: guardiansRes.error.message });
+        const petById = new Map((petsRes.data ?? []).map((p) => [p.id, p]));
+        const guardianById = new Map((guardiansRes.data ?? []).map((g) => [g.id, g]));
+        const items = dayRows.map((row) => {
+            const petId = resolvedPetIds.get(row.id) ?? null;
+            const guardianId = row.guardian_id ?? null;
+            const petRow = petId ? petById.get(petId) : undefined;
+            const guardianRow = guardianId ? guardianById.get(guardianId) : undefined;
+            const petName = typeof petRow?.name === 'string' ? petRow.name.trim() : '';
+            return {
+                id: row.id,
+                kind: row.kind,
+                source_type: row.source_type,
+                source_id: row.source_id,
+                status: row.status,
+                context: row.context,
+                opened_at: row.opened_at,
+                resolved_at: row.resolved_at,
+                resolution: row.resolution,
+                pet: {
+                    id: petId,
+                    name: petName || 'Sem nome',
+                },
+                guardian: guardianRow
+                    ? {
+                        id: guardianId,
+                        full_name: guardianRow.full_name?.trim() || 'Tutor',
+                        phone: guardianRow.phone ?? null,
+                    }
+                    : null,
+            };
+        });
+        return res.json({ date: day, items });
+    }
+    catch (e) {
+        console.error('getHubReceptionBoard', e);
+        return res.status(500).json({ error: e?.message || 'Erro ao carregar a recepção' });
+    }
+};
+exports.getHubReceptionBoard = getHubReceptionBoard;
+const resolveBody = zod_1.z
+    .object({
+    clinic_id: uuidStr,
+    action: zod_1.z.enum(['entreguei', 'embarquei', 'chegou', 'autorizar', 'dispensar', 'recebi', 'tutor_busca', 'novo_lt']),
+    charge: zod_1.z.boolean().optional(),
+    sale_amount: zod_1.z.number().min(0).max(100000).nullable().optional(),
+    starts_at: zod_1.z.string().datetime({ offset: true }).nullable().optional(),
+})
+    .strict();
+async function pickupLegsForAppointment(clinicId, appointmentId) {
+    const { data: legs } = await supabase_1.supabaseAdmin
+        .from('hub_appointments')
+        .select('id, status')
+        .eq('clinic_id', clinicId)
+        .eq('parent_appointment_id', appointmentId)
+        .eq('appointment_kind', 'pickup_route')
+        .is('deleted_at', null);
+    if (!legs?.length)
+        return [];
+    const legIds = legs.map((l) => l.id);
+    const { data: stops } = await supabase_1.supabaseAdmin
+        .from('hub_pickup_stops')
+        .select('hub_appointment_id, direction, status, hub_pickup_route_id')
+        .eq('clinic_id', clinicId)
+        .in('hub_appointment_id', legIds);
+    return (stops ?? []).map((s) => ({
+        direction: String(s.direction || ''),
+        status: String(s.status || ''),
+        route_id: s.hub_pickup_route_id ?? null,
+    }));
+}
+async function buildReceptionCues(opts) {
+    const cues = [];
+    let nextStep = null;
+    let appointmentId = typeof opts.context.appointment_id === 'string'
+        ? opts.context.appointment_id
+        : opts.sourceType === 'appointment'
+            ? opts.sourceId
+            : null;
+    let startsAt = typeof opts.context.starts_at === 'string' ? opts.context.starts_at : null;
+    let serviceName = typeof opts.context.label === 'string' ? opts.context.label : null;
+    let isLate = false;
+    if (opts.kind === 'chegada') {
+        if (!appointmentId && opts.sourceType === 'appointment')
+            appointmentId = opts.sourceId;
+        let apptStatus = null;
+        if (appointmentId) {
+            const { data: appt } = await supabase_1.supabaseAdmin
+                .from('hub_appointments')
+                .select('id, status, starts_at, hub_service_type_id')
+                .eq('id', appointmentId)
+                .eq('clinic_id', opts.clinicId)
+                .maybeSingle();
+            if (appt) {
+                apptStatus = String(appt.status);
+                startsAt = appt.starts_at ?? startsAt;
+                if (appt.hub_service_type_id) {
+                    const { data: st } = await supabase_1.supabaseAdmin
+                        .from('hub_service_types')
+                        .select('name')
+                        .eq('id', appt.hub_service_type_id)
+                        .maybeSingle();
+                    if (st?.name)
+                        serviceName = String(st.name);
+                }
+            }
+            const legs = await pickupLegsForAppointment(opts.clinicId, appointmentId);
+            const pickups = legs.filter((l) => l.direction === 'pickup' && l.status !== 'failed');
+            if (pickups.length === 0) {
+                cues.push({
+                    key: 'arrival_tutor',
+                    label: 'Tutor traz o pet',
+                    detail: 'Aguarde na recepção. Não há coleta de Leva e Traz para este horário.',
+                });
+                nextStep = 'Quando o tutor chegar com o pet, registre a chegada.';
+            }
+            else if (pickups.some((l) => l.status === 'completed')) {
+                cues.push({
+                    key: 'arrival_pickup_done',
+                    label: 'Chegada pelo Leva e Traz',
+                    detail: 'A coleta já foi concluída pelo motorista.',
+                });
+                nextStep = 'Confirme o recebimento na clínica e encaminhe ao setor.';
+            }
+            else if (pickups.some((l) => l.route_id)) {
+                cues.push({
+                    key: 'arrival_pickup_en_route',
+                    label: 'Motorista traz o pet',
+                    detail: 'Há coleta de Leva e Traz em andamento ou na rota.',
+                });
+                nextStep = 'Espere o motorista. Só registre chegada se o pet já estiver na clínica.';
+            }
+            else {
+                cues.push({
+                    key: 'arrival_pickup_pending',
+                    label: 'Leva e Traz previsto',
+                    detail: 'Há perna de coleta, mas ainda sem rota/motorista.',
+                });
+                nextStep = 'Confirme com o tutor se virá trazer ou se aguarda o motorista.';
+            }
+        }
+        else {
+            cues.push({ key: 'arrival_tutor', label: 'Tutor traz o pet' });
+            nextStep = 'Quando o tutor chegar com o pet, registre a chegada.';
+        }
+        if (startsAt && new Date(startsAt).getTime() < Date.now() && apptStatus !== 'checked_in') {
+            isLate = true;
+            cues.push({ key: 'late', label: 'Horário já passou', detail: 'Chegada em atraso em relação à agenda.' });
+        }
+    }
+    else if (opts.kind === 'retirada_balcao') {
+        cues.push({
+            key: 'exit_counter',
+            label: 'Retirada no balcão',
+            detail: 'O tutor busca o pet na recepção.',
+        });
+        nextStep = 'Confirme a identidade do tutor e entregue o pet.';
+        appointmentId =
+            typeof opts.context.appointment_id === 'string' ? opts.context.appointment_id : appointmentId;
+    }
+    else if (opts.kind === 'embarque') {
+        cues.push({
+            key: 'exit_board',
+            label: 'Embarque / Leva e Traz',
+            detail: 'Há devolução prevista, mas ainda sem motorista ou rota pronta.',
+        });
+        nextStep = 'Prepare o pet para embarcar quando o motorista chegar ou liberar a rota.';
+        appointmentId =
+            typeof opts.context.appointment_id === 'string' ? opts.context.appointment_id : appointmentId;
+        if (appointmentId) {
+            const legs = await pickupLegsForAppointment(opts.clinicId, appointmentId);
+            const deliveries = legs.filter((l) => l.direction === 'delivery' && l.status !== 'failed');
+            if (deliveries.some((l) => l.route_id)) {
+                cues.push({
+                    key: 'exit_wait_driver',
+                    label: 'Já tem rota',
+                    detail: 'Há entrega com rota — a recepção só acompanha se o pet ainda estiver aqui.',
+                });
+            }
+        }
+    }
+    else if (opts.kind === 'autorizar_extra') {
+        const extraName = (typeof opts.context.extra_name === 'string' && opts.context.extra_name) ||
+            (typeof opts.context.label === 'string' && opts.context.label) ||
+            'Serviço extra';
+        cues.push({
+            key: 'extra',
+            label: 'Pedido de extra no salão',
+            detail: extraName,
+        });
+        nextStep = 'Fale com o tutor, autorize o extra ou dispense o pedido.';
+    }
+    else if (opts.kind === 'encaminhar') {
+        cues.push({
+            key: 'route_unknown',
+            label: 'Chegou sem setor',
+            detail: 'O pet chegou (ex.: motorista), mas o destino operacional não está claro.',
+        });
+        nextStep =
+            'Agende o destino (banho, consulta, hotel…) com o pet já preenchido. Depois disso a tarefa some sozinha; use “Só recebi” só se ainda não for agendar.';
+    }
+    else if (opts.kind === 'lt_falha') {
+        const direction = opts.context.failed_direction === 'pickup' ? 'Coleta' : 'Entrega';
+        const reason = typeof opts.context.failure_reason === 'string' ? opts.context.failure_reason.trim() : '';
+        cues.push({
+            key: 'lt_failed',
+            label: `${direction} não concluída`,
+            detail: reason ? `Motivo do motorista: ${reason}` : 'O motorista registrou falha e trouxe o pet de volta.',
+        });
+        cues.push({
+            key: 'lt_back_at_clinic',
+            label: 'Pet de volta na clínica',
+            detail: 'O retorno à clínica foi concluído pelo motorista.',
+        });
+        nextStep =
+            'Fale com o tutor: ele vem buscar no balcão ou agende um novo Leva e Traz (com ou sem cobrança da perna).';
+    }
+    else if (opts.kind === 'saida_prevista') {
+        const preparing = opts.context.preparing === true;
+        cues.push({
+            key: preparing ? 'boarding_preparing' : 'boarding_planned',
+            label: preparing ? 'Preparando saída' : 'Saída prevista',
+            detail: preparing
+                ? 'O hotel/creche está conferindo pertences e pendências.'
+                : 'O pet ainda não foi liberado pelo hotel/creche.',
+        });
+        nextStep = preparing
+            ? 'Aguarde a liberação do setor. Não entregue o pet ainda.'
+            : 'Acompanhe o horário. A entrega só fica disponível depois que o setor liberar.';
+        appointmentId =
+            typeof opts.context.appointment_id === 'string' ? opts.context.appointment_id : appointmentId;
+    }
+    if (opts.sourceType === 'hospitalization') {
+        cues.push({ key: 'discharge', label: 'Alta hospitalar', detail: 'Pet liberado da internação.' });
+        if (!nextStep)
+            nextStep = 'Entregue o pet ao tutor ou prepare o embarque.';
+    }
+    if (opts.sourceType === 'encounter') {
+        cues.push({ key: 'consult_done', label: 'Consulta concluída' });
+        if (!nextStep)
+            nextStep = 'Pet livre para saída — confirme com o tutor.';
+    }
+    return {
+        cues,
+        next_step: nextStep,
+        appointment_id: appointmentId,
+        starts_at: startsAt,
+        service_name: serviceName,
+        is_late: isLate,
+    };
+}
+/** GET /reception/handoffs/:id — detalhes operacionais (sem valores financeiros). */
+const getHubReceptionHandoffDetail = async (req, res) => {
+    try {
+        const id = uuidStr.safeParse(req.params.id);
+        const clinicId = uuidStr.safeParse(req.query.clinic_id);
+        if (!id.success || !clinicId.success)
+            return res.status(400).json({ error: 'id e clinic_id são obrigatórios' });
+        const { data: row, error } = await supabase_1.supabaseAdmin
+            .from('hub_reception_handoffs')
+            .select('id, kind, source_type, source_id, status, context, opened_at, resolved_at, resolution, pet_id, guardian_id, unit_id')
+            .eq('id', id.data)
+            .eq('clinic_id', clinicId.data)
+            .maybeSingle();
+        if (error)
+            return res.status(500).json({ error: error.message });
+        if (!row)
+            return res.status(404).json({ error: 'Tarefa não encontrada' });
+        let petId = row.pet_id ?? null;
+        const guardianId = row.guardian_id ?? null;
+        const unitId = row.unit_id ?? null;
+        if (!petId) {
+            petId = await resolvePetIdFromSource(clinicId.data, String(row.source_type), String(row.source_id));
+            if (petId) {
+                void supabase_1.supabaseAdmin
+                    .from('hub_reception_handoffs')
+                    .update({ pet_id: petId, updated_at: new Date().toISOString() })
+                    .eq('id', row.id)
+                    .is('pet_id', null);
+            }
+        }
+        const [petRes, guardianRes, unitRes] = await Promise.all([
+            petId
+                ? supabase_1.supabaseAdmin
+                    .from('hub_pets')
+                    .select('id, name, species, breed, size_tier, birth_date, coat_type, notes')
+                    .eq('id', petId)
+                    .maybeSingle()
+                : Promise.resolve({ data: null, error: null }),
+            guardianId
+                ? supabase_1.supabaseAdmin
+                    .from('hub_guardians')
+                    .select('id, full_name, phone, email')
+                    .eq('id', guardianId)
+                    .maybeSingle()
+                : Promise.resolve({ data: null, error: null }),
+            unitId
+                ? supabase_1.supabaseAdmin.from('units').select('id, name').eq('id', unitId).maybeSingle()
+                : Promise.resolve({ data: null, error: null }),
+        ]);
+        if (petRes.error)
+            return res.status(500).json({ error: petRes.error.message });
+        if (guardianRes.error)
+            return res.status(500).json({ error: guardianRes.error.message });
+        if (unitRes.error)
+            return res.status(500).json({ error: unitRes.error.message });
+        const context = (row.context ?? {});
+        const kind = String(row.kind);
+        const sourceType = String(row.source_type);
+        const origin = originModule(sourceType, kind, context);
+        const ops = await buildReceptionCues({
+            clinicId: clinicId.data,
+            kind,
+            sourceType,
+            sourceId: String(row.source_id),
+            context,
+        });
+        let chargePending = null;
+        const userId = req.user?.id;
+        if (userId) {
+            const canSeeCharge = (await (0, authMiddleware_1.checkPermission)(userId, clinicId.data, 'hub.financial.read')) ||
+                (await (0, authMiddleware_1.checkPermission)(userId, clinicId.data, 'hub.cash.receive'));
+            if (canSeeCharge) {
+                chargePending = await petHasOpenCharge(clinicId.data, petId);
+            }
+        }
+        let boardingSummary = null;
+        if (sourceType === 'boarding_reservation') {
+            const reservationId = String(row.source_id);
+            const [{ data: rsv }, { data: belongings }, { data: incidents }] = await Promise.all([
+                supabase_1.supabaseAdmin
+                    .from('hub_boarding_reservations')
+                    .select('id, mode, status, expected_check_out, handoff_ready_at')
+                    .eq('id', reservationId)
+                    .eq('clinic_id', clinicId.data)
+                    .maybeSingle(),
+                supabase_1.supabaseAdmin
+                    .from('hub_boarding_belongings')
+                    .select('id, checkout_status')
+                    .eq('clinic_id', clinicId.data)
+                    .eq('hub_boarding_reservation_id', reservationId)
+                    .is('deleted_at', null),
+                supabase_1.supabaseAdmin
+                    .from('hub_boarding_incidents')
+                    .select('id')
+                    .eq('clinic_id', clinicId.data)
+                    .eq('hub_boarding_reservation_id', reservationId)
+                    .eq('status', 'open'),
+            ]);
+            if (rsv) {
+                boardingSummary = {
+                    reservation_id: reservationId,
+                    mode: rsv.mode ?? null,
+                    status: String(rsv.status),
+                    expected_check_out: rsv.expected_check_out ?? null,
+                    handoff_ready_at: rsv.handoff_ready_at ?? null,
+                    pending_belongings: (belongings ?? []).filter((b) => b.checkout_status === 'pending').length,
+                    open_incidents: (incidents ?? []).length,
+                };
+            }
+        }
+        const petRow = petRes.data;
+        const guardianRow = guardianRes.data;
+        const petName = typeof petRow?.name === 'string' && petRow.name.trim() ? petRow.name.trim() : 'Sem nome';
+        const contextLabel = sourceType === 'boarding_reservation' && typeof context.label === 'string'
+            ? context.label
+            : ops.service_name || (typeof context.label === 'string' ? context.label : 'Operação');
+        return res.json({
+            id: row.id,
+            kind: row.kind,
+            source_type: row.source_type,
+            source_id: row.source_id,
+            status: row.status,
+            context: {
+                ...context,
+                label: contextLabel,
+                starts_at: ops.starts_at ?? context.starts_at ?? null,
+                appointment_id: ops.appointment_id ?? context.appointment_id ?? null,
+            },
+            opened_at: row.opened_at,
+            resolved_at: row.resolved_at,
+            resolution: row.resolution,
+            unit_id: unitId,
+            unit_name: unitRes.data?.name ?? null,
+            pet: {
+                id: petRow?.id ?? petId,
+                name: petName,
+                species: petRow?.species ?? null,
+                breed: petRow?.breed ?? null,
+                size_tier: petRow?.size_tier ?? null,
+                birth_date: petRow?.birth_date ?? null,
+                coat_type: petRow?.coat_type ?? null,
+                /** Coluna opcional (migration 033); não selecionamos para não quebrar bancos sem ela. */
+                avatar_url: null,
+                notes: petRow?.notes ?? null,
+            },
+            guardian: guardianRow
+                ? {
+                    id: guardianRow.id,
+                    full_name: guardianRow.full_name || 'Tutor',
+                    phone: guardianRow.phone ?? null,
+                    email: guardianRow.email ?? null,
+                }
+                : null,
+            origin,
+            cues: ops.cues,
+            next_step: ops.next_step,
+            is_late: ops.is_late,
+            charge_pending: chargePending,
+            boarding: boardingSummary,
+        });
+    }
+    catch (e) {
+        console.error('getHubReceptionHandoffDetail', e);
+        return res.status(500).json({ error: e?.message || 'Erro ao carregar detalhes' });
+    }
+};
+exports.getHubReceptionHandoffDetail = getHubReceptionHandoffDetail;
+/** POST /reception/handoffs/:id/resolve */
+const postHubReceptionResolve = async (req, res) => {
+    try {
+        const id = uuidStr.safeParse(req.params.id);
+        const body = resolveBody.safeParse(req.body);
+        if (!id.success || !body.success)
+            return res.status(400).json({ error: 'Dados inválidos' });
+        const staffId = await staffIdForUser(body.data.clinic_id, req.user?.id);
+        const result = await (0, receptionHandoffService_1.resolveReceptionHandoff)({
+            clinicId: body.data.clinic_id,
+            handoffId: id.data,
+            action: body.data.action,
+            staffId,
+            payload: {
+                charge: body.data.charge,
+                sale_amount: body.data.sale_amount ?? null,
+                starts_at: body.data.starts_at ?? null,
+            },
+        });
+        if (!result.ok)
+            return res.status(result.status).json({ error: result.error });
+        return res.json({ ok: true });
+    }
+    catch (e) {
+        console.error('postHubReceptionResolve', e);
+        return res.status(500).json({ error: e?.message || 'Erro ao concluir a tarefa' });
+    }
+};
+exports.postHubReceptionResolve = postHubReceptionResolve;

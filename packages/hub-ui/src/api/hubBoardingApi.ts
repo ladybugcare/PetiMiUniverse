@@ -186,6 +186,30 @@ export const hubBoardingApi = {
     }) as Promise<{ reservation: BoardingReservation }>;
   },
 
+  startCheckoutPrep(id: string, clinicId: string) {
+    return apiRequest(`${boardingBase}/reservations/${encodeURIComponent(id)}/start-checkout-prep`, {
+      method: 'POST',
+      body: JSON.stringify({ clinic_id: clinicId }),
+    }) as Promise<{ reservation: BoardingReservation }>;
+  },
+
+  releaseForHandoff(
+    id: string,
+    payload: { clinic_id: string; force_belongings?: boolean; force_belongings_reason?: string | null },
+  ) {
+    return apiRequest(`${boardingBase}/reservations/${encodeURIComponent(id)}/release-for-handoff`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<{ reservation: BoardingReservation }>;
+  },
+
+  revertHandoffReady(id: string, clinicId: string) {
+    return apiRequest(`${boardingBase}/reservations/${encodeURIComponent(id)}/revert-handoff-ready`, {
+      method: 'POST',
+      body: JSON.stringify({ clinic_id: clinicId }),
+    }) as Promise<{ reservation: BoardingReservation }>;
+  },
+
   reservationDrawer(reservationId: string, clinicId: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });
     return apiRequest(
@@ -266,6 +290,7 @@ export const hubBoardingApi = {
     recreation_capacity?: number | null;
     overbooking_policy?: BoardingOverbookingPolicy;
     meal_slot_times?: BoardingMealSlotTimes;
+    block_exit_if_charge_pending?: boolean;
   }) {
     return apiRequest(`${boardingBase}/unit-settings`, {
       method: 'PATCH',
@@ -675,6 +700,7 @@ export type BoardingUnitSettings = {
   recreation_capacity?: number | null;
   overbooking_policy?: BoardingOverbookingPolicy | null;
   meal_slot_times?: BoardingMealSlotTimes | null;
+  block_exit_if_charge_pending?: boolean;
   updated_at?: string;
 };
 

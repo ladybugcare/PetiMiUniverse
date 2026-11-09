@@ -103,6 +103,16 @@ const createClinicPublic = async (req, res) => {
             await supabase_js_1.supabaseAdmin.auth.admin.deleteUser(userId);
             return res.status(500).json({ error: 'Erro ao verificar vínculo do usuário.' });
         }
+        const nowIso = new Date().toISOString();
+        const shiftSignupFields = {
+            name: String(name).trim(),
+            email: String(email).trim().toLowerCase(),
+            onboarding_state: {
+                source: 'shift',
+                last_step: 'person',
+                completed: false,
+            },
+        };
         // Se o trigger não criou, cria manualmente
         if (!existingClinicUser) {
             console.log('🔹 Trigger não criou clinic_users, criando manualmente...');
@@ -114,7 +124,9 @@ const createClinicPublic = async (req, res) => {
                     unit_id: null, // ✅ NULL até criar primeira unidade
                     role: 'CADMIN',
                     status: 'pending_clinic', // ✅ Status: aguardando criar clínica
-                    created_at: new Date().toISOString(),
+                    ...shiftSignupFields,
+                    created_at: nowIso,
+                    updated_at: nowIso,
                 },
             ]);
             if (insertError) {
@@ -125,24 +137,23 @@ const createClinicPublic = async (req, res) => {
             }
         }
         else {
-            // Atualiza clinic_users se necessário (garantir role e status corretos)
-            if (existingClinicUser.status !== 'pending_clinic' || existingClinicUser.clinic_id !== null) {
-                console.log('🔹 Atualizando clinic_users para status correto...');
-                const { error: updateError } = await supabase_js_1.supabaseAdmin
-                    .from('clinic_users')
-                    .update({
-                    clinic_id: null, // ✅ Garantir que é NULL
-                    status: 'pending_clinic', // ✅ Status correto
-                    role: 'CADMIN',
-                    updated_at: new Date().toISOString(),
-                })
-                    .eq('id', existingClinicUser.id);
-                if (updateError) {
-                    console.error('Erro ao atualizar clinic_users:', updateError);
-                    // Rollback: deleta user criado
-                    await supabase_js_1.supabaseAdmin.auth.admin.deleteUser(userId);
-                    return res.status(500).json({ error: 'Erro ao atualizar vínculo do usuário.' });
-                }
+            // Atualiza clinic_users: origem Shift + role/status corretos
+            console.log('🔹 Atualizando clinic_users com origem Shift...');
+            const { error: updateError } = await supabase_js_1.supabaseAdmin
+                .from('clinic_users')
+                .update({
+                clinic_id: null, // ✅ Garantir que é NULL
+                status: 'pending_clinic', // ✅ Status correto
+                role: 'CADMIN',
+                ...shiftSignupFields,
+                updated_at: nowIso,
+            })
+                .eq('id', existingClinicUser.id);
+            if (updateError) {
+                console.error('Erro ao atualizar clinic_users:', updateError);
+                // Rollback: deleta user criado
+                await supabase_js_1.supabaseAdmin.auth.admin.deleteUser(userId);
+                return res.status(500).json({ error: 'Erro ao atualizar vínculo do usuário.' });
             }
         }
         // ❌ NÃO criar registro em clinics aqui!

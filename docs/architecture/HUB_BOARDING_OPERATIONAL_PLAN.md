@@ -88,7 +88,10 @@ flowchart LR
 | Check-in | Recepção | Confere pertences, aloca acomodação, revê pendências |
 | Durante | Cuidador | Executa tarefas (por pet ou por horário), registra intercorrências e fotos |
 | Troca de turno | Cuidador | Encerra o turno; o próximo recebe as pendências |
-| Check-out | Recepção | Confere a saída dos pertences e o resumo ao tutor (pet liberado para ir embora). Cobrança no Caixa, não neste passo. |
+| Preparar saída | Hotel & Creche | Confere pertences, rotina e pendências (`checkout_preparing`). |
+| Liberar para recepção | Hotel & Creche | Marca `ready_for_handoff` e abre tarefa na Operação da Recepção (`retirada_balcao` ou `embarque`). |
+| Saída prevista (dia) | Recepção | Vê `saida_prevista` no quadro — sem Entregar ainda. |
+| Entrega / embarque | Recepção | Confirma no balcão ou embarque; isso fecha o check-out da estadia (`checked_out`). Cobrança no Caixa (bloqueio opcional por unidade). |
 
 ## 5. Hotel × Creche
 
@@ -108,7 +111,8 @@ Mesma base de dados; modelos de geração de tarefas e rótulos diferentes.
 
 | Tabela | Migração | Papel |
 |---|---|---|
-| `hub_boarding_reservations` | 051, 057, 123, 127, 128 | Estadia; agora com serviço, período, turno de creche e acomodação |
+| `hub_boarding_reservations` | 051, 057, 123, 127, 128, 132 | Estadia; status de preparação/liberação (`checkout_preparing`, `ready_for_handoff`) e handoff da recepção |
+| `hub_reception_handoffs` | 121, 122, 132 | Inclui `saida_prevista` e entrega/embarque com `source_type = boarding_reservation` |
 | `hub_boarding_extras` | 123 | Adicionais cobrados na comanda (banho no dia, horário extra, produtos) |
 | `hub_pet_care_profiles` | 124 | Ficha de cuidados do pet |
 | `hub_boarding_care_plans` | 124 | Plano confirmável da estadia + link do tutor |
@@ -229,9 +233,9 @@ A equipe opera **sem planilha paralela** para alimentação, medicação, interc
 
 ## 12. Migrações (executar em ordem no Supabase SQL Editor)
 
-`123_alter_hub_boarding_pricing_extras.sql` → `124_create_hub_boarding_care.sql` → `125_create_hub_boarding_tasks.sql` → `126_create_hub_boarding_incidents_belongings.sql` → `127_alter_hub_boarding_daycare_recreation.sql` → `128_create_hub_boarding_spaces.sql` → `129_create_hub_boarding_handoffs_tutor_reports.sql` → `130_create_hub_boarding_media.sql`.
+`123_alter_hub_boarding_pricing_extras.sql` → `124_create_hub_boarding_care.sql` → `125_create_hub_boarding_tasks.sql` → `126_create_hub_boarding_incidents_belongings.sql` → `127_alter_hub_boarding_daycare_recreation.sql` → `128_create_hub_boarding_spaces.sql` → `129_create_hub_boarding_handoffs_tutor_reports.sql` → `130_create_hub_boarding_media.sql` → `131_alter_hub_boarding_meal_slot_times.sql` → `132_alter_boarding_reception_handoff.sql`.
 
-O banner da UI (`migrations_ready === false`) aponta para esse intervalo **123–130**. Sem essas migrações, o painel operacional e a rotina ficam desabilitados.
+O banner da UI (`migrations_ready === false`) aponta para o intervalo operacional de Hotel & Creche. Sem essas migrações, o painel e a rotina ficam desabilitados. A **132** liga a saída à Operação da Recepção.
 
 ## 13. Smoke checklist (manual, ~5 min)
 
@@ -241,6 +245,6 @@ Depois de `npm run seed:hotel-creche` (ou com dados reais):
 2. **Plano** — na aba Rotina/Hospedagem, confirmar alimentação, medicação e manejo; salvar e conferir que as tarefas do dia aparecem.
 3. **Check-in** — marcar check-in (se ainda reservada); acomodar em uma baia se houver; pet aparece em Presentes com atenção se o plano estiver incompleto.
 4. **Tarefa + foto** — executar uma refeição (resultado) e anexar foto na rotina; conferir na linha do tempo.
-5. **Checkout + comanda** — check-out operacional (pertences + liberação); na aba Hospedagem conferir diárias/adicionais/pacote; abrir a comanda da reserva no **Caixa** (Atendimentos sem cobrança).
+5. **Saída + recepção** — no painel, iniciar preparação e liberar para a recepção; em `/hub/recepcao`, o pet sai de Previstas e entra em Aguardando ação; Entreguei fecha o check-out. Cobrança no **Caixa**.
 
-Se algum passo falhar com erro de tabela/coluna, rode as migrações 123–130 e recarregue.
+Se algum passo falhar com erro de tabela/coluna, rode as migrações 123–132 e recarregue.

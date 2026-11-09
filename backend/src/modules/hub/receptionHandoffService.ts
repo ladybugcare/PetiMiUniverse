@@ -133,47 +133,78 @@ function failureOutcomeOf(stop: Record<string, unknown> | undefined): 'no_pet' |
   return v === 'no_pet' || v === 'return_to_clinic' ? v : null;
 }
 
+async function applyCustodySideEffects(
+  clinicId: string,
+  plan: ReturnType<typeof planCustody>,
+): Promise<void> {
+  if (plan.closeGroomingSessionIds.length > 0) {
+    const { closeGroomingSessionFromCustody } = await import('./hubGroomingController');
+    for (const sessionId of [...new Set(plan.closeGroomingSessionIds)]) {
+      await closeGroomingSessionFromCustody(clinicId, sessionId);
+    }
+  }
+  if (plan.completeBoardingReservationIds.length > 0) {
+    const { completeBoardingReservationCheckout } = await import('./boardingCareService');
+    for (const reservationId of [...new Set(plan.completeBoardingReservationIds)]) {
+      await completeBoardingReservationCheckout({ clinicId, reservationId });
+    }
+  }
+}
+
+async function persistReconcile(
+  clinicId: string,
+  reconciled: ReturnType<typeof reconcileHandoffRows>,
+): Promise<void> {
+  const now = new Date().toISOString();
+  if (reconciled.cancelIds.length > 0) {
+    for (const part of chunkIds(reconciled.cancelIds)) {
+      const { error } = await supabaseAdmin
+        .from('hub_reception_handoffs')
+        .update({ status: 'cancelled', resolved_at: now, resolution: 'superseded', updated_at: now })
+        .in('id', part)
+        .eq('status', 'open');
+      if (error) throw new Error(error.message);
+    }
+  }
+  for (const row of reconciled.refresh) {
+    const { error } = await supabaseAdmin
+      .from('hub_reception_handoffs')
+      .update({ context: row.context, updated_at: now })
+      .eq('id', row.id)
+      .eq('status', 'open');
+    if (error) throw new Error(error.message);
+  }
+  if (reconciled.insert.length > 0) {
+    const payload = reconciled.insert.map((h) => ({
+      clinic_id: clinicId,
+      unit_id: h.unit_id,
+      pet_id: h.pet_id,
+      guardian_id: h.guardian_id,
+      kind: h.kind,
+      source_type: h.source_type,
+      source_id: h.source_id,
+      status: 'open' as const,
+      context: h.context,
+      opened_at: h.opened_at,
+    }));
+    for (let i = 0; i < payload.length; i += 50) {
+      const slice = payload.slice(i, i + 50);
+      const { error } = await supabaseAdmin.from('hub_reception_handoffs').insert(slice);
+      if (error && !/duplicate|unique/i.test(error.message)) throw new Error(error.message);
+    }
+  }
+}
+
 export async function syncReceptionHandoffsForPet(clinicId: string, petId: string, dayYmd?: string): Promise<void> {
   const day = dayYmd || todayYmdSaoPaulo();
   const snap = await loadSnapshot(clinicId, petId, day);
   const plan = planCustody(snap);
-  if (plan.closeGroomingSessionIds.length > 0) {
-    const { closeGroomingSessionFromCustody } = await import('./hubGroomingController');
-    for (const sessionId of plan.closeGroomingSessionIds) {
-      await closeGroomingSessionFromCustody(clinicId, sessionId);
-    }
-  }
+  await applyCustodySideEffects(clinicId, plan);
   const existing = await loadStored(clinicId, petId);
-  const { insert, cancelIds } = reconcileHandoffRows(existing, plan.handoffs, day, {
+  const reconciled = reconcileHandoffRows(existing, plan.handoffs, day, {
     preserveChegadaSourceIds: arrivalPendingAppointmentIds(snap),
   });
-  if (cancelIds.length > 0) {
-    const now = new Date().toISOString();
-    await supabaseAdmin
-      .from('hub_reception_handoffs')
-      .update({ status: 'cancelled', resolved_at: now, resolution: 'superseded', updated_at: now })
-      .in('id', cancelIds)
-      .eq('status', 'open');
-  }
-  if (insert.length > 0) {
-    const { error } = await supabaseAdmin.from('hub_reception_handoffs').insert(
-      insert.map((h) => ({
-        clinic_id: clinicId,
-        unit_id: h.unit_id,
-        pet_id: h.pet_id,
-        guardian_id: h.guardian_id,
-        kind: h.kind,
-        source_type: h.source_type,
-        source_id: h.source_id,
-        status: 'open',
-        context: h.context,
-        opened_at: h.opened_at,
-      })),
-    );
-    if (error && !/duplicate|unique/i.test(error.message)) {
-      throw new Error(error.message);
-    }
-  }
+  await persistReconcile(clinicId, reconciled);
 }
 
 async function loadStored(clinicId: string, petId: string): Promise<StoredHandoff[]> {
@@ -287,9 +318,10 @@ async function loadSnapshot(clinicId: string, petId: string, dayYmd: string): Pr
 
   const { data: boarding, error: bErr } = await supabaseAdmin
     .from('hub_boarding_reservations')
-    .select('id, unit_id, status')
+    .select('id, unit_id, status, guardian_id, hub_appointment_id, mode, expected_check_out, handoff_ready_at')
     .eq('clinic_id', clinicId)
-    .eq('pet_id', petId);
+    .eq('pet_id', petId)
+    .is('deleted_at', null);
   if (bErr) throw new Error(bErr.message);
 
   const apptIds = appointments.map((a) => a.id);
@@ -415,6 +447,11 @@ async function loadSnapshot(clinicId: string, petId: string, dayYmd: string): Pr
       id: b.id as string,
       unit_id: (b.unit_id as string | null) ?? null,
       status: String(b.status),
+      guardian_id: (b.guardian_id as string | null) ?? null,
+      hub_appointment_id: (b.hub_appointment_id as string | null) ?? null,
+      mode: (b.mode as 'hotel' | 'daycare' | null) ?? null,
+      expected_check_out: (b.expected_check_out as string | null) ?? null,
+      handoff_ready_at: (b.handoff_ready_at as string | null) ?? null,
     })),
     legs,
     unresolvedArrivals,
@@ -452,7 +489,7 @@ export async function collectReceptionPetIds(clinicId: string, unitId: string, d
   const { from, to } = dayBoundsFromYmdSaoPaulo(dayYmd);
   const ids = new Set<string>();
 
-  const [appts, sessions, open, encounters, discharges] = await Promise.all([
+  const [appts, sessions, open, encounters, discharges, boardingOut] = await Promise.all([
     supabaseAdmin
       .from('hub_appointments')
       .select('pet_id')
@@ -494,6 +531,17 @@ export async function collectReceptionPetIds(clinicId: string, unitId: string, d
       .gte('discharged_at', from)
       .lte('discharged_at', to)
       .limit(100),
+    supabaseAdmin
+      .from('hub_boarding_reservations')
+      .select('pet_id')
+      .eq('clinic_id', clinicId)
+      .eq('unit_id', unitId)
+      .is('deleted_at', null)
+      .in('status', ['checked_in', 'checkout_preparing', 'ready_for_handoff'])
+      .or(
+        `and(expected_check_out.gte.${from},expected_check_out.lte.${to}),status.eq.ready_for_handoff`,
+      )
+      .limit(150),
   ]);
 
   for (const row of appts.data ?? []) if (row.pet_id) ids.add(row.pet_id as string);
@@ -501,6 +549,7 @@ export async function collectReceptionPetIds(clinicId: string, unitId: string, d
   for (const row of open.data ?? []) if (row.pet_id) ids.add(row.pet_id as string);
   for (const row of encounters.data ?? []) if (row.pet_id) ids.add(row.pet_id as string);
   for (const row of discharges.data ?? []) if (row.pet_id) ids.add(row.pet_id as string);
+  for (const row of boardingOut.data ?? []) if (row.pet_id) ids.add(row.pet_id as string);
 
   return [...ids].slice(0, 80);
 }
@@ -562,11 +611,22 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
       discharged_at: string | null;
     }>('hub_hospitalizations', clinicId, petIds, 'id, pet_id, unit_id, guardian_id, hub_appointment_id, status, discharged_at'),
     selectByPetIds<{ id: string; pet_id: string; status: string }>('hub_surgeries', clinicId, petIds, 'id, pet_id, status'),
-    selectByPetIds<{ id: string; pet_id: string; unit_id: string | null; status: string }>(
+    selectByPetIds<{
+      id: string;
+      pet_id: string;
+      unit_id: string | null;
+      status: string;
+      guardian_id: string | null;
+      hub_appointment_id: string | null;
+      mode: string | null;
+      expected_check_out: string | null;
+      handoff_ready_at: string | null;
+    }>(
       'hub_boarding_reservations',
       clinicId,
       petIds,
-      'id, pet_id, unit_id, status',
+      'id, pet_id, unit_id, status, guardian_id, hub_appointment_id, mode, expected_check_out, handoff_ready_at',
+      { activeOnly: true },
     ),
     selectByPetIds<{
       id: string;
@@ -692,8 +752,10 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
   const nowIso = new Date().toISOString();
   const returnStops = await loadReturnStops(clinicId, stopRows);
   const closeSessionIds: string[] = [];
+  const completeBoardingIds: string[] = [];
   const cancelIds: string[] = [];
   const inserts: DesiredHandoff[] = [];
+  const refreshRows: Array<{ id: string; context: ReceptionContext }> = [];
 
   for (const petId of petIds) {
     const appointments = apptsByPet.get(petId) ?? [];
@@ -796,6 +858,11 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
         id: b.id,
         unit_id: b.unit_id,
         status: String(b.status),
+        guardian_id: b.guardian_id,
+        hub_appointment_id: b.hub_appointment_id,
+        mode: (b.mode as 'hotel' | 'daycare' | null) ?? null,
+        expected_check_out: b.expected_check_out,
+        handoff_ready_at: b.handoff_ready_at,
       })),
       legs,
       unresolvedArrivals,
@@ -804,6 +871,7 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
 
     const plan = planCustody(snap);
     closeSessionIds.push(...plan.closeGroomingSessionIds);
+    completeBoardingIds.push(...plan.completeBoardingReservationIds);
     const existing: StoredHandoff[] = (storedByPet.get(petId) ?? []).map((row) => ({
       id: row.id,
       kind: row.kind as StoredHandoff['kind'],
@@ -818,45 +886,15 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
     });
     inserts.push(...reconciled.insert);
     cancelIds.push(...reconciled.cancelIds);
+    refreshRows.push(...reconciled.refresh);
   }
 
-  if (closeSessionIds.length > 0) {
-    const { closeGroomingSessionFromCustody } = await import('./hubGroomingController');
-    const uniqueClose = [...new Set(closeSessionIds)];
-    await Promise.all(uniqueClose.map((sessionId) => closeGroomingSessionFromCustody(clinicId, sessionId)));
-  }
-
-  if (cancelIds.length > 0) {
-    const now = new Date().toISOString();
-    for (const part of chunkIds(cancelIds)) {
-      const { error } = await supabaseAdmin
-        .from('hub_reception_handoffs')
-        .update({ status: 'cancelled', resolved_at: now, resolution: 'superseded', updated_at: now })
-        .in('id', part)
-        .eq('status', 'open');
-      if (error) throw new Error(error.message);
-    }
-  }
-
-  if (inserts.length > 0) {
-    const payload = inserts.map((h) => ({
-      clinic_id: clinicId,
-      unit_id: h.unit_id,
-      pet_id: h.pet_id,
-      guardian_id: h.guardian_id,
-      kind: h.kind,
-      source_type: h.source_type,
-      source_id: h.source_id,
-      status: 'open' as const,
-      context: h.context,
-      opened_at: h.opened_at,
-    }));
-    for (let i = 0; i < payload.length; i += 50) {
-      const slice = payload.slice(i, i + 50);
-      const { error } = await supabaseAdmin.from('hub_reception_handoffs').insert(slice);
-      if (error && !/duplicate|unique/i.test(error.message)) throw new Error(error.message);
-    }
-  }
+  await applyCustodySideEffects(clinicId, {
+    handoffs: [],
+    closeGroomingSessionIds: closeSessionIds,
+    completeBoardingReservationIds: completeBoardingIds,
+  });
+  await persistReconcile(clinicId, { insert: inserts, cancelIds, refresh: refreshRows });
 }
 
 const ACTION_BY_KIND: Record<string, string[]> = {
@@ -970,6 +1008,21 @@ async function applyResolution(
   }
 
   if (action === 'entreguei' || action === 'embarquei') {
+    if (row.source_type === 'boarding_reservation') {
+      const { completeBoardingReservationCheckout, loadReservation, loadUnitSettings, petHasOpenBoardingCharge } =
+        await import('./boardingCareService');
+      const reservation = await loadReservation(clinicId, row.source_id);
+      if (reservation) {
+        const settings = await loadUnitSettings(clinicId, reservation.unit_id);
+        if (settings.block_exit_if_charge_pending) {
+          const pending = await petHasOpenBoardingCharge(clinicId, reservation.pet_id);
+          if (pending) {
+            throw new Error('Há cobrança em aberto no Caixa. Quite a comanda antes de confirmar a saída.');
+          }
+        }
+        await completeBoardingReservationCheckout({ clinicId, reservationId: row.source_id });
+      }
+    }
     if (row.pet_id) {
       const { closeReadyGroomingSessionsForPet } = await import('./hubGroomingController');
       await closeReadyGroomingSessionsForPet(clinicId, row.pet_id);
@@ -1038,9 +1091,11 @@ export function handoffInDay(
   row: { status: string; kind?: string; opened_at: string; resolved_at: string | null },
   dayYmd: string,
 ): boolean {
-  // Chegada aberta só no dia do horário — evita card eterno de dias anteriores.
+  // Chegada / saída prevista abertas só no dia do horário — evita card eterno.
   if (row.status === 'open') {
-    if (row.kind === 'chegada') return ymdInSaoPaulo(row.opened_at) === dayYmd;
+    if (row.kind === 'chegada' || row.kind === 'saida_prevista') {
+      return ymdInSaoPaulo(row.opened_at) === dayYmd;
+    }
     return true;
   }
   const stamp = row.resolved_at || row.opened_at;

@@ -1,10 +1,15 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.advanceHubGroomingSession = exports.listHubGroomingSessionEvents = exports.postHubGroomingSessionEvent = exports.patchHubGroomingSession = exports.createHubGroomingSession = exports.openHubGroomingSessionFromAppointment = exports.getHubGroomingDayBoard = void 0;
+exports.closeGroomingSessionFromCustody = closeGroomingSessionFromCustody;
+exports.closeReadyGroomingSessionsForPet = closeReadyGroomingSessionsForPet;
+exports.ensureGroomingQueuedForAppointment = ensureGroomingQueuedForAppointment;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const hubNotifyEvents_1 = require("./hubNotifyEvents");
+const receptionSync_1 = require("./receptionSync");
 const groomingStages_1 = require("./groomingStages");
+const hubResourcesService_1 = require("./hubResourcesService");
 const groomingPetTags_1 = require("./groomingPetTags");
 const hubComandasController_1 = require("./hubComandasController");
 const hubDayBoardPets_1 = require("./hubDayBoardPets");
@@ -131,6 +136,19 @@ async function syncAppointmentStatusForStage(clinicId, appointmentId, stage) {
     const nextStatus = (0, groomingStages_1.appointmentStatusForGroomingStage)(stage);
     if (!nextStatus)
         return;
+    const { data: current } = await supabase_1.supabaseAdmin
+        .from('hub_appointments')
+        .select('status')
+        .eq('id', appointmentId)
+        .eq('clinic_id', clinicId)
+        .maybeSingle();
+    // Quitação financeira (`paid`) não é rebaixada por encerramento operacional (`done`).
+    if (current?.status === 'paid' && nextStatus !== 'paid') {
+        if (nextStatus === 'done') {
+            void (0, hubComandasController_1.syncOpenComandasAfterAppointmentOperationalComplete)(clinicId, appointmentId);
+        }
+        return;
+    }
     await supabase_1.supabaseAdmin
         .from('hub_appointments')
         .update({ status: nextStatus })
@@ -187,7 +205,7 @@ const getHubGroomingDayBoard = async (req, res) => {
         }
         let apptQ = supabase_1.supabaseAdmin
             .from('hub_appointments')
-            .select('id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, starts_at, ends_at, status, title, hub_service_type_id, appointment_kind, notes, description')
+            .select('id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, starts_at, ends_at, status, title, hub_service_type_id, appointment_kind, notes, description, hub_resource_id, resource_label')
             .eq('clinic_id', clinic_id)
             .is('deleted_at', null)
             .neq('status', 'cancelled')
@@ -233,6 +251,23 @@ const getHubGroomingDayBoard = async (req, res) => {
         }
         const appointments = apptRowsRaw.filter((a) => appointmentMatchesGroomingTypes(a, groomingTypeSet, lineTypeIdsByAppt));
         const groomingApptIds = appointments.map((a) => a.id);
+        const parentIdsWithPickup = new Set();
+        if (groomingApptIds.length > 0) {
+            const { data: pickupLegs, error: pickupLegsErr } = await supabase_1.supabaseAdmin
+                .from('hub_appointments')
+                .select('parent_appointment_id')
+                .eq('clinic_id', clinic_id)
+                .eq('appointment_kind', 'pickup_route')
+                .in('parent_appointment_id', groomingApptIds)
+                .is('deleted_at', null);
+            if (pickupLegsErr)
+                return res.status(500).json({ error: pickupLegsErr.message });
+            for (const row of pickupLegs ?? []) {
+                const pid = row.parent_appointment_id;
+                if (pid)
+                    parentIdsWithPickup.add(pid);
+            }
+        }
         let sessQ = supabase_1.supabaseAdmin
             .from('hub_grooming_sessions')
             .select(SESSION_SELECT)
@@ -329,19 +364,82 @@ const getHubGroomingDayBoard = async (req, res) => {
         const petMap = await (0, hubDayBoardPets_1.fetchHubPetsMapByIds)(petIds);
         const guMap = new Map((gusRes.data ?? []).map((g) => [g.id, g]));
         const staffMap = new Map((staffRes.data ?? []).map((s) => [s.id, s]));
-        const closedCountsByPet = new Map();
+        const priorVisitCountsByPet = new Map();
         if (petIds.size) {
-            const { data: closedRows, error: crErr } = await supabase_1.supabaseAdmin
+            const todayApptIdSet = new Set(groomingApptIds);
+            const COMPLETED_STAGES = new Set(['ready', 'delivered', 'closed']);
+            const { data: priorSessionRows, error: priorSessErr } = await supabase_1.supabaseAdmin
                 .from('hub_grooming_sessions')
-                .select('pet_id')
+                .select('pet_id, hub_appointment_id, grooming_stage, ready_at, delivered_at, closed_at, checked_in_at, created_at')
                 .eq('clinic_id', clinic_id)
                 .in('pet_id', [...petIds])
-                .not('closed_at', 'is', null)
                 .is('deleted_at', null);
-            if (!crErr && closedRows) {
-                for (const row of closedRows) {
+            if (!priorSessErr && priorSessionRows) {
+                for (const row of priorSessionRows) {
                     const pid = row.pet_id;
-                    closedCountsByPet.set(pid, (closedCountsByPet.get(pid) ?? 0) + 1);
+                    if (!pid)
+                        continue;
+                    const stage = String(row.grooming_stage || '');
+                    const completed = Boolean(row.closed_at) ||
+                        Boolean(row.delivered_at) ||
+                        Boolean(row.ready_at) ||
+                        COMPLETED_STAGES.has(stage);
+                    if (!completed)
+                        continue;
+                    const aid = row.hub_appointment_id;
+                    if (aid && todayApptIdSet.has(aid))
+                        continue;
+                    const checkedIn = row.checked_in_at;
+                    if (!aid && checkedIn && checkedIn >= from && checkedIn <= to)
+                        continue;
+                    const created = row.created_at;
+                    if (!aid && !checkedIn && created && created >= from && created <= to)
+                        continue;
+                    priorVisitCountsByPet.set(pid, (priorVisitCountsByPet.get(pid) ?? 0) + 1);
+                }
+            }
+            const { data: priorApptRows, error: priorApptErr } = await supabase_1.supabaseAdmin
+                .from('hub_appointments')
+                .select('id, pet_id, hub_service_type_id')
+                .eq('clinic_id', clinic_id)
+                .in('pet_id', [...petIds])
+                .in('status', ['done', 'paid'])
+                .lt('starts_at', from)
+                .is('deleted_at', null);
+            if (!priorApptErr && priorApptRows && priorApptRows.length > 0) {
+                const priorApptIds = priorApptRows.map((a) => a.id);
+                const priorLineTypeIdsByAppt = new Map();
+                const { data: priorLines } = await supabase_1.supabaseAdmin
+                    .from('hub_appointment_services')
+                    .select('appointment_id, hub_service_type_id')
+                    .in('appointment_id', priorApptIds);
+                for (const row of priorLines ?? []) {
+                    const aid = row.appointment_id;
+                    const list = priorLineTypeIdsByAppt.get(aid) ?? [];
+                    list.push(row.hub_service_type_id);
+                    priorLineTypeIdsByAppt.set(aid, list);
+                }
+                const countedSessionApptIds = new Set((priorSessionRows ?? [])
+                    .filter((r) => {
+                    const stage = String(r.grooming_stage || '');
+                    return (Boolean(r.closed_at) ||
+                        Boolean(r.delivered_at) ||
+                        Boolean(r.ready_at) ||
+                        COMPLETED_STAGES.has(stage));
+                })
+                    .map((r) => r.hub_appointment_id)
+                    .filter((id) => Boolean(id)));
+                for (const a of priorApptRows) {
+                    if (!appointmentMatchesGroomingTypes(a, groomingTypeSet, priorLineTypeIdsByAppt)) {
+                        continue;
+                    }
+                    const aid = a.id;
+                    if (countedSessionApptIds.has(aid))
+                        continue;
+                    const pid = a.pet_id;
+                    if (!pid)
+                        continue;
+                    priorVisitCountsByPet.set(pid, (priorVisitCountsByPet.get(pid) ?? 0) + 1);
                 }
             }
         }
@@ -351,8 +449,8 @@ const getHubGroomingDayBoard = async (req, res) => {
             const raw = petMap.get(pid);
             if (!raw)
                 return null;
-            const closedCount = closedCountsByPet.get(pid) ?? 0;
-            return { ...raw, is_first_grooming_visit: closedCount === 0 };
+            const priorVisits = priorVisitCountsByPet.get(pid) ?? 0;
+            return { ...raw, is_first_grooming_visit: priorVisits === 0 };
         };
         const flagsByPet = new Map();
         if (petIds.size) {
@@ -390,7 +488,7 @@ const getHubGroomingDayBoard = async (req, res) => {
             const appointment_status = a.status;
             const grooming_stage = session
                 ? session.grooming_stage
-                : (0, groomingStages_1.boardStageFromAppointmentStatus)(appointment_status);
+                : (0, groomingStages_1.boardStageFromAppointmentStatus)(appointment_status, a.appointment_kind);
             const is_late = ['scheduled', 'checked_in', 'queued'].includes(grooming_stage) &&
                 ['pending_confirm', 'confirmed', 'checked_in', 'in_progress'].includes(appointment_status) &&
                 new Date(startsAt).getTime() < nowMs;
@@ -399,6 +497,7 @@ const getHubGroomingDayBoard = async (req, res) => {
             let petId = (0, hubDayBoardPets_1.coalesceAppointmentPetId)(a.pet_id, session?.pet_id);
             if (!petId && guardianId)
                 petId = petByGuardian.get(guardianId) ?? null;
+            const has_pickup_legs = parentIdsWithPickup.has(apptId);
             if (session) {
                 seenSessionIds.add(session.id);
                 items.push({
@@ -411,6 +510,7 @@ const getHubGroomingDayBoard = async (req, res) => {
                     starts_at: startsAt,
                     ends_at: a.ends_at,
                     appointment_kind: a.appointment_kind,
+                    has_pickup_legs,
                     title: a.title,
                     notes: a.notes,
                     description: a.description,
@@ -430,6 +530,9 @@ const getHubGroomingDayBoard = async (req, res) => {
                     guardian_id: guardianId,
                     hub_staff_member_id: staffId,
                     clinical_tags: tagsForPet(petId),
+                    unit_id: a.unit_id,
+                    hub_resource_id: a.hub_resource_id ?? null,
+                    resource_label: a.resource_label ?? null,
                 });
             }
             else {
@@ -442,6 +545,7 @@ const getHubGroomingDayBoard = async (req, res) => {
                     starts_at: startsAt,
                     ends_at: a.ends_at,
                     appointment_kind: a.appointment_kind,
+                    has_pickup_legs,
                     title: a.title,
                     notes: a.notes,
                     description: a.description,
@@ -460,6 +564,9 @@ const getHubGroomingDayBoard = async (req, res) => {
                     guardian_id: guardianId,
                     hub_staff_member_id: staffId,
                     clinical_tags: tagsForPet(petId),
+                    unit_id: a.unit_id,
+                    hub_resource_id: a.hub_resource_id ?? null,
+                    resource_label: a.resource_label ?? null,
                 });
             }
         }
@@ -479,6 +586,7 @@ const getHubGroomingDayBoard = async (req, res) => {
                 starts_at: checkedIn,
                 ends_at: checkedIn,
                 appointment_kind: 'standard',
+                has_pickup_legs: false,
                 title: 'Avulso',
                 service_type: null,
                 services: [],
@@ -544,7 +652,6 @@ const openHubGroomingSessionFromAppointment = async (req, res) => {
         if (!parsed.success)
             return res.status(400).json({ error: parsed.error.flatten() });
         const { clinic_id, hub_appointment_id } = parsed.data;
-        const targetStage = parsed.data.grooming_stage ?? 'checked_in';
         const { data: existing } = await supabase_1.supabaseAdmin
             .from('hub_grooming_sessions')
             .select(SESSION_SELECT)
@@ -557,7 +664,7 @@ const openHubGroomingSessionFromAppointment = async (req, res) => {
         }
         const { data: appt, error: apptErr } = await supabase_1.supabaseAdmin
             .from('hub_appointments')
-            .select('id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes')
+            .select('id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes, appointment_kind, status')
             .eq('id', hub_appointment_id)
             .eq('clinic_id', clinic_id)
             .is('deleted_at', null)
@@ -568,6 +675,8 @@ const openHubGroomingSessionFromAppointment = async (req, res) => {
             return res.status(404).json({ error: 'Agendamento não encontrado' });
         if (!appt.pet_id)
             return res.status(400).json({ error: 'Agendamento sem pet associado' });
+        // Check-in operacional entra direto na fila (caminho enxuto do dia a dia).
+        const targetStage = parsed.data.grooming_stage ?? 'queued';
         let tutorSnapshot = null;
         if (appt.pet_id) {
             const { data: petRow } = await supabase_1.supabaseAdmin
@@ -602,6 +711,7 @@ const openHubGroomingSessionFromAppointment = async (req, res) => {
             body: appt.notes,
         });
         await syncAppointmentStatusForStage(clinic_id, hub_appointment_id, targetStage);
+        (0, receptionSync_1.scheduleReceptionSync)(clinic_id, appt.pet_id);
         return res.status(201).json({ session: data, created: true });
     }
     catch (e) {
@@ -639,7 +749,7 @@ const createHubGroomingSession = async (req, res) => {
             pet_id: b.pet_id,
             guardian_id: b.guardian_id ?? null,
             hub_staff_member_id: b.hub_staff_member_id,
-            grooming_stage: 'checked_in',
+            grooming_stage: 'queued',
             checked_in_at: now,
             operational_notes: b.operational_notes ?? null,
         })
@@ -670,6 +780,8 @@ const patchSessionSchema = zod_1.z
     priority: zod_1.z.number().int().min(0).max(99).optional(),
     operational_notes: zod_1.z.string().trim().max(8000).optional().nullable(),
     checklist: zod_1.z.record(zod_1.z.string(), zod_1.z.object({ done: zod_1.z.boolean() }).strict()).optional(),
+    hub_resource_id: uuidStr.optional().nullable(),
+    skip_resource: zod_1.z.boolean().optional(),
 })
     .strict();
 /** PATCH /grooming/sessions/:id */
@@ -707,6 +819,16 @@ const patchHubGroomingSession = async (req, res) => {
                 return res.status(400).json({
                     error: `Transição inválida: ${groomingStages_1.GROOMING_STAGE_LABELS[from]} → ${groomingStages_1.GROOMING_STAGE_LABELS[to]}`,
                 });
+            }
+            if (to === 'in_service') {
+                const decision = await (0, hubResourcesService_1.prepareResourceForGroomingStart)({
+                    clinicId: b.clinic_id,
+                    appointmentId: current.hub_appointment_id,
+                    hubResourceId: b.hub_resource_id,
+                    skipResource: b.skip_resource,
+                });
+                if (!decision.ok)
+                    return res.status(decision.status).json(decision.body);
             }
             patch.grooming_stage = to;
             Object.assign(patch, stageTimestampsPatch(to, now));
@@ -772,6 +894,9 @@ const patchHubGroomingSession = async (req, res) => {
                 payload: { from: current.grooming_stage, to: b.grooming_stage },
             });
             await syncAppointmentStatusForStage(b.clinic_id, current.hub_appointment_id, b.grooming_stage);
+            if (b.grooming_stage === 'ready' || b.grooming_stage === 'delivered' || b.grooming_stage === 'closed') {
+                await (0, hubResourcesService_1.releaseAppointmentResource)(b.clinic_id, current.hub_appointment_id);
+            }
             if (b.grooming_stage === 'closed') {
                 void (0, hubComandasController_1.syncOpenComandasAfterGroomingClosed)(b.clinic_id, id.data);
             }
@@ -785,6 +910,7 @@ const patchHubGroomingSession = async (req, res) => {
                     excludeUserIds: req.user?.id ? [req.user.id] : undefined,
                 });
             }
+            (0, receptionSync_1.scheduleReceptionSync)(b.clinic_id, current.pet_id);
         }
         if (shouldLogPause) {
             await logGroomingEvent({ clinic_id: b.clinic_id, session_id: id.data, event_type: 'pause' });
@@ -811,6 +937,7 @@ const postEventSchema = zod_1.z
         'staff_change',
         'stage_change',
         'note',
+        'extra_request',
         'ready',
         'delivered',
         'closed',
@@ -833,7 +960,7 @@ const postHubGroomingSessionEvent = async (req, res) => {
         const b = parsed.data;
         const { data: session } = await supabase_1.supabaseAdmin
             .from('hub_grooming_sessions')
-            .select('id')
+            .select('id, pet_id, unit_id')
             .eq('id', id.data)
             .eq('clinic_id', b.clinic_id)
             .is('deleted_at', null)
@@ -855,6 +982,20 @@ const postHubGroomingSessionEvent = async (req, res) => {
             .single();
         if (error)
             return res.status(500).json({ error: error.message });
+        if (b.event_type === 'extra_request') {
+            const extraName = (typeof b.body === 'string' && b.body.trim()) ||
+                (typeof b.payload?.name === 'string' ? b.payload.name : '') ||
+                'outro serviço';
+            void (0, hubNotifyEvents_1.notifyHubGroomingExtraRequest)({
+                clinicId: b.clinic_id,
+                unitId: session.unit_id,
+                petId: session.pet_id,
+                sessionId: id.data,
+                extraName,
+                excludeUserIds: req.user?.id ? [req.user.id] : undefined,
+            });
+            (0, receptionSync_1.scheduleReceptionSync)(b.clinic_id, session.pet_id);
+        }
         return res.status(201).json({ event: data });
     }
     catch (e) {
@@ -888,11 +1029,131 @@ const listHubGroomingSessionEvents = async (req, res) => {
     }
 };
 exports.listHubGroomingSessionEvents = listHubGroomingSessionEvents;
-/** POST /grooming/sessions/:id/advance — avança para o próximo estágio */
+/** Fecha sessão pronta por custódia (estadia, motorista ou recepção). Não reabre a fila do salão. */
+async function closeGroomingSessionFromCustody(clinicId, sessionId) {
+    const { data: current, error } = await supabase_1.supabaseAdmin
+        .from('hub_grooming_sessions')
+        .select('id, grooming_stage, hub_appointment_id')
+        .eq('id', sessionId)
+        .eq('clinic_id', clinicId)
+        .is('deleted_at', null)
+        .maybeSingle();
+    if (error)
+        throw new Error(error.message);
+    if (!current)
+        return false;
+    const from = current.grooming_stage;
+    if (from === 'closed')
+        return true;
+    if (from !== 'ready' && from !== 'delivered')
+        return false;
+    const now = new Date().toISOString();
+    const { error: upErr } = await supabase_1.supabaseAdmin
+        .from('hub_grooming_sessions')
+        .update({ grooming_stage: 'closed', closed_at: now, paused_at: null })
+        .eq('id', sessionId)
+        .eq('clinic_id', clinicId);
+    if (upErr)
+        throw new Error(upErr.message);
+    await logGroomingEvent({
+        clinic_id: clinicId,
+        session_id: sessionId,
+        event_type: 'stage_change',
+        body: `${groomingStages_1.GROOMING_STAGE_LABELS[from]} → ${groomingStages_1.GROOMING_STAGE_LABELS.closed}`,
+        payload: { from, to: 'closed', via: 'reception_custody' },
+    });
+    await syncAppointmentStatusForStage(clinicId, current.hub_appointment_id, 'closed');
+    void (0, hubComandasController_1.syncOpenComandasAfterGroomingClosed)(clinicId, sessionId);
+    return true;
+}
+async function closeReadyGroomingSessionsForPet(clinicId, petId) {
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_grooming_sessions')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .eq('pet_id', petId)
+        .is('deleted_at', null)
+        .in('grooming_stage', ['ready', 'delivered']);
+    if (error)
+        throw new Error(error.message);
+    for (const row of data ?? []) {
+        await closeGroomingSessionFromCustody(clinicId, row.id);
+    }
+}
+/** Check-in do banho a partir da recepção: abre a sessão já na fila. */
+async function ensureGroomingQueuedForAppointment(clinicId, appointmentId) {
+    const { data: existing } = await supabase_1.supabaseAdmin
+        .from('hub_grooming_sessions')
+        .select('id, grooming_stage')
+        .eq('hub_appointment_id', appointmentId)
+        .eq('clinic_id', clinicId)
+        .is('deleted_at', null)
+        .maybeSingle();
+    if (existing) {
+        const stage = String(existing.grooming_stage || '');
+        if (stage === 'scheduled' || stage === 'checked_in') {
+            const now = new Date().toISOString();
+            await supabase_1.supabaseAdmin
+                .from('hub_grooming_sessions')
+                .update({ grooming_stage: 'queued', checked_in_at: now })
+                .eq('id', existing.id);
+            await syncAppointmentStatusForStage(clinicId, appointmentId, 'queued');
+        }
+        return { ok: true };
+    }
+    const { data: appt, error: apptErr } = await supabase_1.supabaseAdmin
+        .from('hub_appointments')
+        .select('id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes, status')
+        .eq('id', appointmentId)
+        .eq('clinic_id', clinicId)
+        .is('deleted_at', null)
+        .maybeSingle();
+    if (apptErr)
+        return { ok: false, error: apptErr.message };
+    if (!appt)
+        return { ok: false, error: 'Agendamento não encontrado' };
+    if (!appt.pet_id)
+        return { ok: false, error: 'Agendamento sem pet associado' };
+    if (appt.status === 'cancelled')
+        return { ok: false, error: 'Agendamento cancelado' };
+    const now = new Date().toISOString();
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_grooming_sessions')
+        .insert({
+        clinic_id: clinicId,
+        unit_id: appt.unit_id,
+        pet_id: appt.pet_id,
+        guardian_id: appt.guardian_id,
+        hub_appointment_id: appointmentId,
+        hub_staff_member_id: appt.hub_staff_member_id,
+        grooming_stage: 'queued',
+        checked_in_at: now,
+    })
+        .select('id')
+        .single();
+    if (error)
+        return { ok: false, error: error.message };
+    await logGroomingEvent({
+        clinic_id: clinicId,
+        session_id: data.id,
+        event_type: 'check_in',
+        body: appt.notes,
+    });
+    await syncAppointmentStatusForStage(clinicId, appointmentId, 'queued');
+    return { ok: true };
+}
+/** POST /grooming/sessions/:id/advance — avança para o próximo estágio do salão */
 const advanceHubGroomingSession = async (req, res) => {
     try {
         const id = uuidStr.safeParse(req.params.id);
-        const body = zod_1.z.object({ clinic_id: uuidStr }).strict().safeParse(req.body);
+        const body = zod_1.z
+            .object({
+            clinic_id: uuidStr,
+            hub_resource_id: uuidStr.optional().nullable(),
+            skip_resource: zod_1.z.boolean().optional(),
+        })
+            .strict()
+            .safeParse(req.body);
         if (!id.success || !body.success)
             return res.status(400).json({ error: 'id e clinic_id são obrigatórios' });
         const { data: current } = await supabase_1.supabaseAdmin
@@ -908,7 +1169,12 @@ const advanceHubGroomingSession = async (req, res) => {
         const next = groomingStages_1.GROOMING_NEXT_STAGE[from];
         if (!next)
             return res.status(400).json({ error: 'Não há próximo estágio' });
-        req.body = { clinic_id: body.data.clinic_id, grooming_stage: next };
+        req.body = {
+            clinic_id: body.data.clinic_id,
+            grooming_stage: next,
+            ...(body.data.hub_resource_id !== undefined ? { hub_resource_id: body.data.hub_resource_id } : {}),
+            ...(body.data.skip_resource !== undefined ? { skip_resource: body.data.skip_resource } : {}),
+        };
         return (0, exports.patchHubGroomingSession)(req, res);
     }
     catch (e) {

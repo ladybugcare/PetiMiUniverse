@@ -1,12 +1,13 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getHubInventoryTurnoverReport = exports.getHubInventoryAbcReport = exports.listHubInventoryLots = exports.listHubLowStock = exports.listHubExpiringLots = exports.createHubStockMovement = exports.getHubInventoryMovementsReport = exports.listHubStockMovements = exports.patchHubInventoryItem = exports.createHubInventoryItem = exports.listHubInventoryItems = exports.patchHubManufacturer = exports.createHubManufacturer = exports.listHubManufacturers = exports.patchHubSupplier = exports.createHubSupplier = exports.listHubSuppliers = void 0;
+exports.getHubInventoryTurnoverReport = exports.getHubInventoryAbcReport = exports.listHubInventoryLots = exports.listHubNearlyEmptyLots = exports.listHubLowStock = exports.listHubExpiringLots = exports.createHubStockMovement = exports.getHubInventoryMovementsReport = exports.listHubStockMovements = exports.patchHubInventoryItem = exports.createHubInventoryItem = exports.listHubInventoryItems = exports.patchHubManufacturer = exports.createHubManufacturer = exports.listHubManufacturers = exports.patchHubSupplier = exports.createHubSupplier = exports.listHubSuppliers = void 0;
 exports.movementSign = movementSign;
 exports.computeBalances = computeBalances;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const hubInventoryStockAlerts_1 = require("./hubInventoryStockAlerts");
 const inventoryEan_1 = require("./inventoryEan");
+const hubInventoryContentUtils_1 = require("./hubInventoryContentUtils");
 const uuidStr = zod_1.z.string().uuid();
 const moneyProductSchema = zod_1.z.coerce
     .number()
@@ -54,7 +55,7 @@ async function computeBalances(clinicId) {
 async function assertClinicItem(clinicId, itemId) {
     const { data, error } = await supabase_1.supabaseAdmin
         .from('hub_inventory_items')
-        .select('id, clinic_id, deleted_at, name, min_stock_qty')
+        .select('id, clinic_id, deleted_at, name, min_stock_qty, expiry_alert_policy, unit_label, content_qty, content_unit')
         .eq('id', itemId)
         .maybeSingle();
     if (error || !data || data.clinic_id !== clinicId || data.deleted_at) {
@@ -65,7 +66,7 @@ async function assertClinicItem(clinicId, itemId) {
 async function assertClinicLot(clinicId, lotId) {
     const { data, error } = await supabase_1.supabaseAdmin
         .from('hub_inventory_lots')
-        .select('id, clinic_id, item_id')
+        .select('id, clinic_id, item_id, lot_code, expiry_date')
         .eq('id', lotId)
         .maybeSingle();
     if (error || !data || data.clinic_id !== clinicId)
@@ -81,7 +82,7 @@ const listHubSuppliers = async (req, res) => {
         const clinic_id = parsed.data;
         const { data, error } = await supabase_1.supabaseAdmin
             .from('hub_suppliers')
-            .select('id, clinic_id, name, tax_id, phone, email, notes, active, created_at, updated_at, deleted_at')
+            .select('id, clinic_id, name, party_name, tax_id, phone, email, notes, active, created_at, updated_at, deleted_at')
             .eq('clinic_id', clinic_id)
             .is('deleted_at', null)
             .order('name', { ascending: true });
@@ -101,6 +102,7 @@ const createSupplierSchema = zod_1.z
     .object({
     clinic_id: uuidStr,
     name: zod_1.z.string().trim().min(1).max(300),
+    party_name: zod_1.z.string().max(300).optional().nullable(),
     tax_id: zod_1.z.string().max(64).optional().nullable(),
     phone: zod_1.z.string().max(64).optional().nullable(),
     email: zod_1.z.string().email().max(200).optional().nullable().or(zod_1.z.literal('')),
@@ -114,6 +116,7 @@ const createHubSupplier = async (req, res) => {
             return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
         const row = {
             ...body.data,
+            party_name: body.data.party_name?.trim() || null,
             email: body.data.email === '' ? null : body.data.email,
             active: true,
             deleted_at: null,
@@ -135,6 +138,7 @@ const patchSupplierSchema = zod_1.z
     .object({
     clinic_id: uuidStr,
     name: zod_1.z.string().trim().min(1).max(300).optional(),
+    party_name: zod_1.z.string().max(300).optional().nullable(),
     tax_id: zod_1.z.string().max(64).optional().nullable(),
     phone: zod_1.z.string().max(64).optional().nullable(),
     email: zod_1.z.string().email().max(200).optional().nullable().or(zod_1.z.literal('')),
@@ -155,6 +159,8 @@ const patchHubSupplier = async (req, res) => {
         const patch = {};
         if (rest.name !== undefined)
             patch.name = rest.name;
+        if (rest.party_name !== undefined)
+            patch.party_name = rest.party_name?.trim() || null;
         if (rest.tax_id !== undefined)
             patch.tax_id = rest.tax_id;
         if (rest.phone !== undefined)
@@ -197,7 +203,7 @@ const listHubManufacturers = async (req, res) => {
         const clinic_id = parsed.data;
         const { data, error } = await supabase_1.supabaseAdmin
             .from('hub_manufacturers')
-            .select('id, clinic_id, name, created_at, updated_at, deleted_at')
+            .select('id, clinic_id, name, party_name, tax_id, phone, email, notes, created_at, updated_at, deleted_at')
             .eq('clinic_id', clinic_id)
             .is('deleted_at', null)
             .order('name', { ascending: true });
@@ -213,13 +219,31 @@ const listHubManufacturers = async (req, res) => {
     }
 };
 exports.listHubManufacturers = listHubManufacturers;
-const createManufacturerSchema = zod_1.z.object({ clinic_id: uuidStr, name: zod_1.z.string().trim().min(1).max(300) }).strict();
+const manufacturerContactSchema = {
+    party_name: zod_1.z.string().max(300).optional().nullable(),
+    tax_id: zod_1.z.string().max(64).optional().nullable(),
+    phone: zod_1.z.string().max(64).optional().nullable(),
+    email: zod_1.z.string().email().max(200).optional().nullable().or(zod_1.z.literal('')),
+    notes: zod_1.z.string().max(4000).optional().nullable(),
+};
+const createManufacturerSchema = zod_1.z
+    .object({
+    clinic_id: uuidStr,
+    name: zod_1.z.string().trim().min(1).max(300),
+    ...manufacturerContactSchema,
+})
+    .strict();
 const createHubManufacturer = async (req, res) => {
     try {
         const body = createManufacturerSchema.safeParse(req.body);
         if (!body.success)
             return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
-        const row = { ...body.data, deleted_at: null };
+        const row = {
+            ...body.data,
+            party_name: body.data.party_name?.trim() || null,
+            email: body.data.email === '' ? null : body.data.email,
+            deleted_at: null,
+        };
         const { data, error } = await supabase_1.supabaseAdmin.from('hub_manufacturers').insert([row]).select('*').single();
         if (error) {
             console.error('[hub_inventory] create manufacturer', error);
@@ -234,7 +258,12 @@ const createHubManufacturer = async (req, res) => {
 };
 exports.createHubManufacturer = createHubManufacturer;
 const patchManufacturerSchema = zod_1.z
-    .object({ clinic_id: uuidStr, name: zod_1.z.string().trim().min(1).max(300).optional(), archived: zod_1.z.boolean().optional() })
+    .object({
+    clinic_id: uuidStr,
+    name: zod_1.z.string().trim().min(1).max(300).optional(),
+    archived: zod_1.z.boolean().optional(),
+    ...manufacturerContactSchema,
+})
     .strict();
 const patchHubManufacturer = async (req, res) => {
     try {
@@ -244,10 +273,20 @@ const patchHubManufacturer = async (req, res) => {
         const body = patchManufacturerSchema.safeParse(req.body);
         if (!body.success)
             return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
-        const { clinic_id, name, archived } = body.data;
+        const { clinic_id, name, archived, party_name, tax_id, phone, email, notes } = body.data;
         const patch = {};
         if (name !== undefined)
             patch.name = name;
+        if (party_name !== undefined)
+            patch.party_name = party_name?.trim() || null;
+        if (tax_id !== undefined)
+            patch.tax_id = tax_id;
+        if (phone !== undefined)
+            patch.phone = phone;
+        if (email !== undefined)
+            patch.email = email === '' ? null : email;
+        if (notes !== undefined)
+            patch.notes = notes;
         if (archived === true)
             patch.deleted_at = new Date().toISOString();
         if (archived === false)
@@ -272,7 +311,35 @@ const patchHubManufacturer = async (req, res) => {
 };
 exports.patchHubManufacturer = patchHubManufacturer;
 // --- Items ---
-const ITEM_SELECT = 'id, clinic_id, item_kind, ean, name, unit_label, manufacturer_id, allow_fractional, store_sku, sale_purpose, product_group, default_supplier_id, description, cost_amount, sale_amount, supplier_discount_pct, max_sale_discount_pct, allow_price_override_on_sale, generates_staff_commission, min_stock_qty, expiry_alert_policy, active, created_at, updated_at, deleted_at';
+const ITEM_SELECT = 'id, clinic_id, item_kind, ean, name, unit_label, manufacturer_id, allow_fractional, store_sku, sale_purpose, product_group, default_supplier_id, description, cost_amount, sale_amount, supplier_discount_pct, max_sale_discount_pct, allow_price_override_on_sale, generates_staff_commission, min_stock_qty, expiry_alert_policy, content_qty, content_unit, active, created_at, updated_at, deleted_at';
+function normalizeContentFields(opts) {
+    if ((0, hubInventoryContentUtils_1.stockUnitIsConsumption)(opts.unit_label)) {
+        return { content_qty: null, content_unit: null };
+    }
+    const qtyRaw = opts.content_qty;
+    const unitRaw = opts.content_unit?.trim() || null;
+    const hasQty = qtyRaw != null && Number.isFinite(Number(qtyRaw)) && Number(qtyRaw) > 0;
+    const hasUnit = Boolean(unitRaw);
+    if ((0, hubInventoryContentUtils_1.stockUnitRequiresContent)(opts.unit_label)) {
+        if (!hasQty || !hasUnit) {
+            return {
+                content_qty: null,
+                content_unit: null,
+                error: 'Informe o conteúdo por frasco/ampola (quantidade e unidade, ex.: 10 ml).',
+            };
+        }
+    }
+    if (hasQty !== hasUnit) {
+        return {
+            content_qty: null,
+            content_unit: null,
+            error: 'Preencha quantidade e unidade de conteúdo juntos, ou deixe ambos vazios.',
+        };
+    }
+    if (!hasQty)
+        return { content_qty: null, content_unit: null };
+    return { content_qty: Number(qtyRaw), content_unit: unitRaw };
+}
 const initialLotSchema = zod_1.z
     .object({
     received_at: zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
@@ -303,6 +370,8 @@ const createItemSchema = zod_1.z
     generates_staff_commission: zod_1.z.boolean().optional(),
     min_stock_qty: zod_1.z.coerce.number().finite().min(0).optional(),
     expiry_alert_policy: expiryPolicySchema.optional(),
+    content_qty: zod_1.z.preprocess((v) => (v === '' || v === undefined ? undefined : v === null ? null : v), zod_1.z.union([zod_1.z.coerce.number().finite().positive(), zod_1.z.null()]).optional()),
+    content_unit: zod_1.z.string().trim().max(64).optional().nullable(),
     initial_lot: initialLotSchema.optional().nullable(),
 })
     .strict();
@@ -360,6 +429,13 @@ const createHubInventoryItem = async (req, res) => {
         catch (err) {
             return res.status(400).json({ error: err.message });
         }
+        const content = normalizeContentFields({
+            unit_label: d.unit_label ?? null,
+            content_qty: d.content_qty,
+            content_unit: d.content_unit,
+        });
+        if (content.error)
+            return res.status(400).json({ error: content.error });
         const row = {
             clinic_id: d.clinic_id,
             item_kind: d.item_kind,
@@ -367,7 +443,7 @@ const createHubInventoryItem = async (req, res) => {
             name: d.name,
             unit_label: d.unit_label ?? null,
             manufacturer_id: d.manufacturer_id ?? null,
-            allow_fractional: d.allow_fractional ?? false,
+            allow_fractional: content.content_qty != null ? true : (d.allow_fractional ?? false),
             store_sku: d.store_sku?.trim() || null,
             sale_purpose: d.sale_purpose ?? null,
             product_group: d.product_group ?? null,
@@ -381,6 +457,8 @@ const createHubInventoryItem = async (req, res) => {
             generates_staff_commission: d.generates_staff_commission ?? false,
             min_stock_qty: d.min_stock_qty ?? 0,
             expiry_alert_policy: d.expiry_alert_policy ?? 'none',
+            content_qty: content.content_qty,
+            content_unit: content.content_unit,
             active: true,
             deleted_at: null,
         };
@@ -463,6 +541,8 @@ const patchItemSchema = zod_1.z
     generates_staff_commission: zod_1.z.boolean().optional(),
     min_stock_qty: zod_1.z.coerce.number().finite().min(0).optional(),
     expiry_alert_policy: expiryPolicySchema.optional(),
+    content_qty: zod_1.z.preprocess((v) => (v === '' || v === undefined ? undefined : v === null ? null : v), zod_1.z.union([zod_1.z.coerce.number().finite().positive(), zod_1.z.null()]).optional()),
+    content_unit: zod_1.z.string().trim().max(64).optional().nullable(),
     active: zod_1.z.boolean().optional(),
     archived: zod_1.z.boolean().optional(),
 })
@@ -530,6 +610,26 @@ const patchHubInventoryItem = async (req, res) => {
             patch.deleted_at = new Date().toISOString();
         if (d.archived === false)
             patch.deleted_at = null;
+        if (d.content_qty !== undefined || d.content_unit !== undefined || d.unit_label !== undefined) {
+            const nextUnit = d.unit_label !== undefined ? d.unit_label : (existing.unit_label ?? null);
+            const nextContentQty = d.content_qty !== undefined
+                ? d.content_qty
+                : (existing.content_qty ?? null);
+            const nextContentUnit = d.content_unit !== undefined
+                ? d.content_unit
+                : (existing.content_unit ?? null);
+            const content = normalizeContentFields({
+                unit_label: nextUnit,
+                content_qty: nextContentQty,
+                content_unit: nextContentUnit,
+            });
+            if (content.error)
+                return res.status(400).json({ error: content.error });
+            patch.content_qty = content.content_qty;
+            patch.content_unit = content.content_unit;
+            if (content.content_qty != null)
+                patch.allow_fractional = true;
+        }
         if (Object.keys(patch).length === 0)
             return res.status(400).json({ error: 'Nada para atualizar' });
         const { data, error } = await supabase_1.supabaseAdmin
@@ -605,7 +705,7 @@ const listHubStockMovements = async (req, res) => {
         }
         let q = supabase_1.supabaseAdmin
             .from('hub_stock_movements')
-            .select('id, clinic_id, item_id, lot_id, movement_type, qty, unit_cost, reference_type, reference_id, notes, created_by, created_at')
+            .select('id, clinic_id, item_id, lot_id, movement_type, qty, unit_cost, reference_type, reference_id, notes, created_by, created_at, lot:hub_inventory_lots(id, lot_code, expiry_date)')
             .eq('clinic_id', clinic_id)
             .order('created_at', { ascending: false })
             .limit(500);
@@ -767,7 +867,7 @@ const createHubStockMovement = async (req, res) => {
                 return res.status(400).json({ error: `Quantidade insuficiente no lote (disponível: ${available})` });
             }
         }
-        if (sign > 0 && d.movement_type === 'purchase_in' && !lotId && d.new_lot) {
+        if (sign > 0 && !lotId && d.new_lot) {
             const { data: lot, error: lotErr } = await supabase_1.supabaseAdmin
                 .from('hub_inventory_lots')
                 .insert([
@@ -828,6 +928,18 @@ const createHubStockMovement = async (req, res) => {
                 qtyAfter: qtyBefore - d.qty,
             });
         }
+        if (sign > 0 && lotId) {
+            const lot = await assertClinicLot(d.clinic_id, lotId);
+            void (0, hubInventoryStockAlerts_1.notifyExpiryAlertIfNeeded)({
+                clinicId: d.clinic_id,
+                itemId: d.item_id,
+                itemName: String(item.name ?? 'Item'),
+                expiryAlertPolicy: String(item.expiry_alert_policy ?? 'none'),
+                lotId,
+                lotCode: lot?.lot_code ?? null,
+                expiryDate: lot?.expiry_date ?? (d.new_lot?.expiry_date ?? null),
+            });
+        }
         return res.status(201).json({ movement: mov });
     }
     catch (e) {
@@ -843,10 +955,13 @@ const listHubExpiringLots = async (req, res) => {
         if (!parsed.success)
             return res.status(400).json({ error: 'clinic_id inválido' });
         const clinic_id = parsed.data;
+        const byPolicy = String(req.query.by_policy || '') === '1' ||
+            String(req.query.by_policy || '').toLowerCase() === 'true';
         const within = Math.min(365, Math.max(1, parseInt(String(req.query.within_days || '30'), 10) || 30));
         const today = new Date();
         const end = new Date(today);
-        end.setDate(end.getDate() + within);
+        // Para by_policy, busca até 90 dias (máximo das policies d30/d60/d90) e filtra por item.
+        end.setDate(end.getDate() + (byPolicy ? 90 : within));
         const isoToday = today.toISOString().slice(0, 10);
         const isoEnd = end.toISOString().slice(0, 10);
         const { data: lots, error } = await supabase_1.supabaseAdmin
@@ -865,21 +980,59 @@ const listHubExpiringLots = async (req, res) => {
         const itemIds = [...new Set((lots ?? []).map((l) => l.item_id))];
         let itemMap = new Map();
         if (itemIds.length) {
-            const { data: items } = await supabase_1.supabaseAdmin.from('hub_inventory_items').select('id, name, item_kind').in('id', itemIds);
+            const { data: items } = await supabase_1.supabaseAdmin
+                .from('hub_inventory_items')
+                .select('id, name, item_kind, expiry_alert_policy')
+                .in('id', itemIds);
             for (const it of items ?? []) {
-                itemMap.set(it.id, { name: it.name, item_kind: it.item_kind });
+                itemMap.set(it.id, {
+                    name: it.name,
+                    item_kind: it.item_kind,
+                    expiry_alert_policy: String(it.expiry_alert_policy ?? 'none'),
+                });
             }
         }
+        const policyDays = (p) => {
+            if (p === 'd30')
+                return 30;
+            if (p === 'd60')
+                return 60;
+            if (p === 'd90')
+                return 90;
+            return null;
+        };
+        const daysUntil = (ymd) => {
+            const t0 = Date.parse(`${isoToday}T12:00:00Z`);
+            const t1 = Date.parse(`${ymd}T12:00:00Z`);
+            return Math.round((t1 - t0) / 86400000);
+        };
         const enriched = (lots ?? [])
             .map((l) => {
             const qty = byLot.get(l.id) ?? 0;
+            const meta = itemMap.get(l.item_id) ?? {
+                name: '?',
+                item_kind: 'product',
+                expiry_alert_policy: 'none',
+            };
             return {
                 ...l,
                 qty_on_hand: qty,
-                item: itemMap.get(l.item_id) ?? { name: '?', item_kind: 'product' },
+                item: { name: meta.name, item_kind: meta.item_kind },
+                expiry_alert_policy: meta.expiry_alert_policy,
             };
         })
-            .filter((l) => l.qty_on_hand > 0);
+            .filter((l) => {
+            if (l.qty_on_hand <= 0)
+                return false;
+            if (!byPolicy)
+                return true;
+            const days = policyDays(l.expiry_alert_policy);
+            if (days == null)
+                return false;
+            if (!l.expiry_date)
+                return false;
+            return daysUntil(l.expiry_date) <= days;
+        });
         return res.json({ lots: enriched });
     }
     catch (e) {
@@ -902,7 +1055,7 @@ const listHubLowStock = async (req, res) => {
             .eq('active', true);
         if (error) {
             console.error('[hub_inventory] low stock', error);
-            return res.status(500).json({ error: 'Erro ao listar stock baixo' });
+            return res.status(500).json({ error: 'Erro ao listar estoque baixo' });
         }
         const { byItem } = await computeBalances(clinic_id);
         const low = (items ?? []).filter((it) => {
@@ -921,6 +1074,86 @@ const listHubLowStock = async (req, res) => {
     }
 };
 exports.listHubLowStock = listHubLowStock;
+/** Lotes com resto abaixo de 20% de 1 unidade (embalagem quase vazia). */
+const listHubNearlyEmptyLots = async (req, res) => {
+    try {
+        const parsed = uuidStr.safeParse(req.query.clinic_id);
+        if (!parsed.success)
+            return res.status(400).json({ error: 'clinic_id inválido' });
+        const clinic_id = parsed.data;
+        const { data: items, error: itemsErr } = await supabase_1.supabaseAdmin
+            .from('hub_inventory_items')
+            .select('id, name, item_kind, unit_label, content_qty, content_unit')
+            .eq('clinic_id', clinic_id)
+            .is('deleted_at', null)
+            .eq('active', true)
+            .not('content_qty', 'is', null);
+        if (itemsErr) {
+            if (String(itemsErr.message || '').includes('content_qty')) {
+                return res.json({ lots: [] });
+            }
+            console.error('[hub_inventory] nearly empty items', itemsErr);
+            return res.status(500).json({ error: 'Erro ao listar embalagens quase vazias' });
+        }
+        const withContent = (items ?? []).filter((it) => Number(it.content_qty) > 0);
+        if (withContent.length === 0)
+            return res.json({ lots: [] });
+        const itemIds = withContent.map((it) => it.id);
+        const itemMap = new Map(withContent.map((it) => [
+            it.id,
+            {
+                name: it.name,
+                item_kind: it.item_kind,
+                unit_label: it.unit_label ?? null,
+                content_qty: Number(it.content_qty),
+                content_unit: it.content_unit ?? null,
+            },
+        ]));
+        const { data: lots, error: lotsErr } = await supabase_1.supabaseAdmin
+            .from('hub_inventory_lots')
+            .select('id, item_id, lot_code, expiry_date, received_at')
+            .eq('clinic_id', clinic_id)
+            .in('item_id', itemIds);
+        if (lotsErr) {
+            console.error('[hub_inventory] nearly empty lots', lotsErr);
+            return res.status(500).json({ error: 'Erro ao listar lotes' });
+        }
+        const { byLot } = await computeBalances(clinic_id);
+        const enriched = (lots ?? [])
+            .map((l) => {
+            const qty = byLot.get(l.id) ?? 0;
+            const meta = itemMap.get(l.item_id);
+            if (!meta)
+                return null;
+            if (!(0, hubInventoryContentUtils_1.isNearlyEmptyLotBalance)(qty, true))
+                return null;
+            const remainingContent = (0, hubInventoryContentUtils_1.roundStockQty)(qty * meta.content_qty);
+            return {
+                id: l.id,
+                item_id: l.item_id,
+                lot_code: l.lot_code,
+                expiry_date: l.expiry_date,
+                received_at: l.received_at,
+                qty_on_hand: (0, hubInventoryContentUtils_1.roundStockQty)(qty),
+                remaining_content: remainingContent,
+                item: {
+                    name: meta.name,
+                    item_kind: meta.item_kind,
+                    unit_label: meta.unit_label,
+                    content_qty: meta.content_qty,
+                    content_unit: meta.content_unit,
+                },
+            };
+        })
+            .filter(Boolean);
+        return res.json({ lots: enriched });
+    }
+    catch (e) {
+        console.error('[hub_inventory] nearly empty lots', e);
+        return res.status(500).json({ error: 'Erro interno' });
+    }
+};
+exports.listHubNearlyEmptyLots = listHubNearlyEmptyLots;
 /** Lista lotes com quantidade > 0 (vista inventário). */
 const listHubInventoryLots = async (req, res) => {
     try {

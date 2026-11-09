@@ -12,6 +12,7 @@ export const RECEPTION_HANDOFF_KINDS = [
   'retirada_balcao',
   'embarque',
   'lt_falha',
+  'saida_prevista',
 ] as const;
 
 export type ReceptionHandoffKind = (typeof RECEPTION_HANDOFF_KINDS)[number];
@@ -29,6 +30,10 @@ export type ReceptionContext = {
   failed_direction?: 'pickup' | 'delivery' | null;
   route_id?: string | null;
   failed_at?: string | null;
+  /** Hotel/creche: saída em preparação (ainda sem entrega). */
+  preparing?: boolean;
+  boarding_mode?: 'hotel' | 'daycare' | null;
+  boarding_reservation_id?: string | null;
 };
 
 export type DesiredHandoff = {
@@ -102,6 +107,11 @@ export type CustodyBoarding = {
   id: string;
   unit_id: string | null;
   status: string;
+  guardian_id?: string | null;
+  hub_appointment_id?: string | null;
+  mode?: 'hotel' | 'daycare' | null;
+  expected_check_out?: string | null;
+  handoff_ready_at?: string | null;
 };
 
 export type CustodyLeg = {
@@ -156,6 +166,8 @@ export type CustodySnapshot = {
 export type CustodyPlan = {
   handoffs: DesiredHandoff[];
   closeGroomingSessionIds: string[];
+  /** Estadias liberadas cujo Leva e Traz de entrega já foi concluído. */
+  completeBoardingReservationIds: string[];
 };
 
 export type StoredHandoff = {
@@ -185,12 +197,18 @@ export function todayYmdSaoPaulo(now = new Date()): string {
   return ymdInSaoPaulo(now.toISOString());
 }
 
+const ACTIVE_STAY = new Set(['checked_in', 'checkout_preparing', 'ready_for_handoff']);
+
 function hasActiveStay(snap: CustodySnapshot, unitId: string | null): boolean {
   return snap.boarding.some((b) => {
-    if (b.status !== 'checked_in') return false;
+    if (!ACTIVE_STAY.has(b.status)) return false;
     if (unitId && b.unit_id && b.unit_id !== unitId) return false;
     return true;
   });
+}
+
+function boardingLabel(mode: 'hotel' | 'daycare' | null | undefined): string {
+  return mode === 'daycare' ? 'Creche' : 'Hotel';
 }
 
 function exitBlocked(snap: CustodySnapshot, exceptAppointmentId: string | null): boolean {
@@ -309,9 +327,75 @@ function pushExit(
   });
 }
 
+function planBoardingExits(
+  snap: CustodySnapshot,
+  handoffs: DesiredHandoff[],
+  completeBoardingReservationIds: string[],
+): void {
+  for (const stay of snap.boarding) {
+    const expected = stay.expected_check_out ?? null;
+    const label = boardingLabel(stay.mode);
+    const appointmentId = stay.hub_appointment_id ?? null;
+
+    if (stay.status === 'checked_in' || stay.status === 'checkout_preparing') {
+      if (!expected || ymdInSaoPaulo(expected) !== snap.dayYmd) continue;
+      handoffs.push({
+        kind: 'saida_prevista',
+        source_type: 'boarding_reservation',
+        source_id: stay.id,
+        pet_id: snap.petId,
+        guardian_id: stay.guardian_id ?? null,
+        unit_id: stay.unit_id,
+        opened_at: expected,
+        context: {
+          label,
+          starts_at: expected,
+          appointment_id: appointmentId,
+          preparing: stay.status === 'checkout_preparing',
+          boarding_mode: stay.mode ?? null,
+          boarding_reservation_id: stay.id,
+        },
+      });
+      continue;
+    }
+
+    if (stay.status !== 'ready_for_handoff') continue;
+
+    const outcome = deliveryOutcome(legsFor(snap, appointmentId));
+    if (outcome === 'delivered') {
+      completeBoardingReservationIds.push(stay.id);
+      continue;
+    }
+    if (outcome === 'wait_driver') continue;
+
+    const kind = outcome === 'needs_boarding' ? 'embarque' : 'retirada_balcao';
+    const openedAt = stay.handoff_ready_at || snap.nowIso;
+    pushExit(
+      handoffs,
+      snap,
+      kind,
+      'boarding_reservation',
+      stay.id,
+      stay.unit_id,
+      stay.guardian_id ?? null,
+      openedAt,
+      label,
+      appointmentId,
+      null,
+    );
+    const last = handoffs[handoffs.length - 1];
+    if (last) {
+      last.context.boarding_mode = stay.mode ?? null;
+      last.context.boarding_reservation_id = stay.id;
+      last.context.starts_at = expected;
+    }
+  }
+}
+
 export function planCustody(snap: CustodySnapshot): CustodyPlan {
   const handoffs: DesiredHandoff[] = [];
   const closeGroomingSessionIds: string[] = [];
+  const completeBoardingReservationIds: string[] = [];
 
   for (const appt of snap.appointments) {
     if (!isArrivalCandidate(snap, appt)) continue;
@@ -386,6 +470,9 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
     });
   }
 
+  // Saídas de hotel/creche (prevista / liberada) convivem com a custódia — independente do banho.
+  planBoardingExits(snap, handoffs, completeBoardingReservationIds);
+
   const ready = snap.groomingSessions.filter(
     (s) => !s.deleted_at && (s.grooming_stage === 'ready' || s.grooming_stage === 'delivered'),
   );
@@ -406,12 +493,12 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
 
   if (stay) {
     for (const s of readyLive) closeGroomingSessionIds.push(s.id);
-    return { handoffs, closeGroomingSessionIds };
+    return { handoffs, closeGroomingSessionIds, completeBoardingReservationIds };
   }
 
   // Saída só depois da decisão sobre a falha (tutor busca ou novo Leva e Traz).
   if (failedReturns.length > 0) {
-    return { handoffs, closeGroomingSessionIds };
+    return { handoffs, closeGroomingSessionIds, completeBoardingReservationIds };
   }
 
   const releaseAppointmentIds = [
@@ -439,7 +526,7 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
         });
 
   if (blocked) {
-    return { handoffs, closeGroomingSessionIds };
+    return { handoffs, closeGroomingSessionIds, completeBoardingReservationIds };
   }
 
   const outcomes = releaseAppointmentIds.map((id) => deliveryOutcome(legsFor(snap, id)));
@@ -447,10 +534,10 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
 
   if (outcome === 'delivered') {
     for (const s of readyLive) closeGroomingSessionIds.push(s.id);
-    return { handoffs, closeGroomingSessionIds };
+    return { handoffs, closeGroomingSessionIds, completeBoardingReservationIds };
   }
   if (outcome === 'wait_driver') {
-    return { handoffs, closeGroomingSessionIds };
+    return { handoffs, closeGroomingSessionIds, completeBoardingReservationIds };
   }
 
   const latestReady = [...readyLive].sort((a, b) => String(b.ready_at).localeCompare(String(a.ready_at)))[0];
@@ -458,7 +545,7 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
   const encounter = dischargedToday.length > 0 ? undefined : encountersToday[0];
 
   if (!latestReady && !discharge && !encounter) {
-    return { handoffs, closeGroomingSessionIds };
+    return { handoffs, closeGroomingSessionIds, completeBoardingReservationIds };
   }
 
   const kind = outcome === 'needs_boarding' ? 'embarque' : 'retirada_balcao';
@@ -506,7 +593,7 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
     );
   }
 
-  return { handoffs, closeGroomingSessionIds };
+  return { handoffs, closeGroomingSessionIds, completeBoardingReservationIds };
 }
 
 function handoffKey(kind: string, sourceType: string, sourceId: string): string {
@@ -519,20 +606,34 @@ export function reconcileHandoffRows(
   desired: DesiredHandoff[],
   dayYmd: string,
   opts?: { preserveChegadaSourceIds?: Set<string> },
-): { insert: DesiredHandoff[]; cancelIds: string[] } {
+): {
+  insert: DesiredHandoff[];
+  cancelIds: string[];
+  refresh: Array<{ id: string; context: ReceptionContext }>;
+} {
   const desiredKeys = new Set(desired.map((d) => handoffKey(d.kind, d.source_type, d.source_id)));
   const preserveChegada = opts?.preserveChegadaSourceIds;
   const insert: DesiredHandoff[] = [];
+  const refresh: Array<{ id: string; context: ReceptionContext }> = [];
 
   for (const d of desired) {
-    const open = existing.some(
+    const open = existing.find(
       (e) =>
         e.status === 'open' &&
         e.kind === d.kind &&
         e.source_type === d.source_type &&
         e.source_id === d.source_id,
     );
-    if (open) continue;
+    if (open) {
+      if (d.kind === 'saida_prevista') {
+        const prevPreparing = Boolean(open.context?.preparing);
+        const nextPreparing = Boolean(d.context.preparing);
+        if (prevPreparing !== nextPreparing || open.context?.label !== d.context.label) {
+          refresh.push({ id: open.id, context: d.context });
+        }
+      }
+      continue;
+    }
 
     if (d.kind === 'retirada_balcao' || d.kind === 'embarque') {
       const readyAt = d.context.ready_at;
@@ -560,6 +661,19 @@ export function reconcileHandoffRows(
       if (already) continue;
     }
 
+    if (d.kind === 'saida_prevista') {
+      const alreadyOpenOrDoneToday = existing.some(
+        (e) =>
+          e.kind === d.kind &&
+          e.source_type === d.source_type &&
+          e.source_id === d.source_id &&
+          e.status === 'done' &&
+          e.resolved_at &&
+          ymdInSaoPaulo(e.resolved_at) === dayYmd,
+      );
+      if (alreadyOpenOrDoneToday) continue;
+    }
+
     insert.push(d);
   }
 
@@ -578,5 +692,5 @@ export function reconcileHandoffRows(
     cancelIds.push(e.id);
   }
 
-  return { insert, cancelIds };
+  return { insert, cancelIds, refresh };
 }

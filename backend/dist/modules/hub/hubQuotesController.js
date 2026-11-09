@@ -5,7 +5,9 @@ const node_crypto_1 = require("node:crypto");
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const hubPricingResolve_1 = require("./hubPricingResolve");
+const hubQuoteDiscount_1 = require("./hubQuoteDiscount");
 const hubQuotePdf_1 = require("./hubQuotePdf");
+const hubProspectsController_1 = require("./hubProspectsController");
 const uuidStr = zod_1.z.string().uuid();
 const DEFAULT_VALID_DAYS = 7;
 function normalizeTaxId(raw) {
@@ -55,6 +57,7 @@ const quotePetInputSchema = zod_1.z.object({
     coat_type: zod_1.z.string().trim().max(40).optional().nullable(),
     age_months: zod_1.z.coerce.number().int().min(0).max(720).optional().nullable(),
     sex: sexSchema.optional().nullable(),
+    hub_pet_id: uuidStr.optional().nullable(),
     sort_order: zod_1.z.number().int().min(0).max(9999).optional(),
 });
 const pricingVariantSchema = zod_1.z
@@ -180,23 +183,10 @@ const suggestPriceBodySchema = zod_1.z
     pricing_variant: pricingVariantSchema.optional(),
 })
     .strict();
-function roundMoney2(n) {
-    return Math.round(n * 100) / 100;
-}
 function addDaysIso(d, days) {
     const x = new Date(d.getTime());
     x.setUTCDate(x.getUTCDate() + days);
     return x.toISOString();
-}
-function applyQuoteDiscount(subtotal, kind, value) {
-    const v = value ?? 0;
-    if (!kind || v <= 0)
-        return subtotal;
-    if (kind === 'percent') {
-        const pct = Math.min(100, Math.max(0, v));
-        return roundMoney2(Math.max(0, subtotal - (subtotal * pct) / 100));
-    }
-    return roundMoney2(Math.max(0, subtotal - v));
 }
 async function refreshExpiredQuotesForClinic(clinicId) {
     const now = new Date().toISOString();
@@ -211,14 +201,29 @@ async function refreshExpiredQuotesForClinic(clinicId) {
     }
 }
 function computeLineTotalFromPets(linePets) {
-    return roundMoney2(linePets.reduce((acc, lp) => acc + (lp.unit_price || 0), 0));
+    return (0, hubQuoteDiscount_1.roundMoney2)(linePets.reduce((acc, lp) => acc + (lp.unit_price || 0), 0));
 }
-async function replaceQuotePets(quoteId, pets) {
+async function replaceQuotePets(quoteId, clinicId, pets) {
     await supabase_1.supabaseAdmin.from('hub_quote_pets').delete().eq('quote_id', quoteId);
     const map = new Map();
     const orderedDbIds = [];
     if (pets.length === 0)
         return { clientIdToDbId: map, orderedDbIds };
+    const linkedIds = [...new Set(pets.map((p) => p.hub_pet_id).filter((id) => Boolean(id)))];
+    if (linkedIds.length > 0) {
+        const { data: existingPets, error: petErr } = await supabase_1.supabaseAdmin
+            .from('hub_pets')
+            .select('id, clinic_id, deleted_at')
+            .in('id', linkedIds);
+        if (petErr)
+            throw new Error(petErr.message);
+        const ok = new Set((existingPets ?? [])
+            .filter((p) => p.clinic_id === clinicId && !p.deleted_at)
+            .map((p) => p.id));
+        if (linkedIds.some((id) => !ok.has(id))) {
+            throw new Error('Pet vinculado não pertence a esta clínica.');
+        }
+    }
     const rows = pets.map((p, i) => ({
         quote_id: quoteId,
         display_name: p.display_name?.trim() || null,
@@ -228,6 +233,7 @@ async function replaceQuotePets(quoteId, pets) {
         coat_type: p.coat_type?.trim() || null,
         age_months: p.age_months ?? null,
         sex: p.sex ?? null,
+        hub_pet_id: p.hub_pet_id ?? null,
         sort_order: p.sort_order ?? i,
     }));
     const { data, error } = await supabase_1.supabaseAdmin
@@ -284,7 +290,7 @@ async function replaceQuoteLines(quoteId, clinicId, lines, petsMap) {
                     continue;
                 resolvedLinePets.push({
                     quote_pet_id: petId,
-                    unit_price: roundMoney2(lp.unit_price || 0),
+                    unit_price: (0, hubQuoteDiscount_1.roundMoney2)(lp.unit_price || 0),
                     applied_porte: lp.applied_porte?.trim() || null,
                     applied_coat_type: lp.applied_coat_type?.trim() || null,
                     sort_order: lp.sort_order ?? j,
@@ -295,7 +301,7 @@ async function replaceQuoteLines(quoteId, clinicId, lines, petsMap) {
             petsMap.orderedDbIds.forEach((petId, j) => {
                 resolvedLinePets.push({
                     quote_pet_id: petId,
-                    unit_price: roundMoney2(ln.unit_price || 0),
+                    unit_price: (0, hubQuoteDiscount_1.roundMoney2)(ln.unit_price || 0),
                     applied_porte: null,
                     applied_coat_type: null,
                     sort_order: j,
@@ -304,7 +310,7 @@ async function replaceQuoteLines(quoteId, clinicId, lines, petsMap) {
         }
         const lineTotal = resolvedLinePets.length > 0
             ? computeLineTotalFromPets(resolvedLinePets)
-            : roundMoney2((ln.unit_price ?? 0) * (ln.quantity ?? 1));
+            : (0, hubQuoteDiscount_1.roundMoney2)((ln.unit_price ?? 0) * (ln.quantity ?? 1));
         subtotal += lineTotal;
         const pricing_variant = normalizeLinePricingVariant(ln.pricing_variant);
         const { data: lineRow, error: lineErr } = await supabase_1.supabaseAdmin
@@ -315,8 +321,8 @@ async function replaceQuoteLines(quoteId, clinicId, lines, petsMap) {
                 hub_service_type_id: serviceId,
                 description: ln.description?.trim() || null,
                 quantity: ln.quantity ?? 1,
-                unit_price: roundMoney2(ln.unit_price ?? 0),
-                discount_amount: roundMoney2(ln.discount_amount ?? 0),
+                unit_price: (0, hubQuoteDiscount_1.roundMoney2)(ln.unit_price ?? 0),
+                discount_amount: (0, hubQuoteDiscount_1.roundMoney2)(ln.discount_amount ?? 0),
                 line_total: lineTotal,
                 sort_order: ln.sort_order ?? i,
                 pricing_variant,
@@ -341,7 +347,7 @@ async function replaceQuoteLines(quoteId, clinicId, lines, petsMap) {
                 throw new Error(lpErr.message);
         }
     }
-    return roundMoney2(subtotal);
+    return (0, hubQuoteDiscount_1.roundMoney2)(subtotal);
 }
 const QUOTE_LIST_SELECT = `
   id, clinic_id, prospect_id, unit_id, status, notes, client_notes, total_amount, subtotal_amount,
@@ -358,7 +364,7 @@ const QUOTE_FULL_SELECT = `
   billing_state, billing_waived_at, billing_waive_reason,
   clinic:clinics(name, photo_url),
   prospect:hub_prospects(id, clinic_id, full_name, tax_id, phone, email, created_at, updated_at, deleted_at),
-  pets:hub_quote_pets(id, quote_id, display_name, species, breed, size_tier, coat_type, age_months, sex, sort_order, created_at),
+  pets:hub_quote_pets(id, quote_id, display_name, species, breed, size_tier, coat_type, age_months, sex, hub_pet_id, sort_order, created_at),
   lines:hub_quote_lines(id, quote_id, hub_service_type_id, description, quantity, unit_price, discount_amount, line_total, sort_order, pricing_variant, created_at,
     hub_service_types(name, service_group, description),
     line_pets:hub_quote_line_pets(id, line_id, quote_pet_id, unit_price, applied_porte, applied_coat_type, sort_order)
@@ -439,27 +445,35 @@ const createHubQuote = async (req, res) => {
             return res.status(400).json({ error: draftErr });
         }
         let resolvedProspectId = prospect_id;
+        let prospectReused = false;
         if (prospect) {
             const tax = normalizeTaxId(prospect.tax_id);
-            const { data: ins, error: pErr } = await supabase_1.supabaseAdmin
-                .from('hub_prospects')
-                .insert([
-                {
-                    clinic_id,
-                    full_name: prospect.full_name.trim(),
-                    tax_id: tax || null,
-                    phone: prospect.phone.trim(),
-                    email: prospect.email?.trim() || null,
-                    deleted_at: null,
-                },
-            ])
-                .select('id')
-                .single();
-            if (pErr || !ins) {
-                console.error('[hub_quotes] create prospect', pErr);
-                return res.status(500).json({ error: 'Erro ao criar contato' });
+            const existing = await (0, hubProspectsController_1.findActiveProspectByTax)(clinic_id, tax);
+            if (existing) {
+                resolvedProspectId = existing.id;
+                prospectReused = true;
             }
-            resolvedProspectId = ins.id;
+            else {
+                const { data: ins, error: pErr } = await supabase_1.supabaseAdmin
+                    .from('hub_prospects')
+                    .insert([
+                    {
+                        clinic_id,
+                        full_name: prospect.full_name.trim(),
+                        tax_id: tax || null,
+                        phone: prospect.phone.trim(),
+                        email: prospect.email?.trim() || null,
+                        deleted_at: null,
+                    },
+                ])
+                    .select('id')
+                    .single();
+                if (pErr || !ins) {
+                    console.error('[hub_quotes] create prospect', pErr);
+                    return res.status(500).json({ error: 'Erro ao criar contato' });
+                }
+                resolvedProspectId = ins.id;
+            }
         }
         if (!resolvedProspectId) {
             return res.status(400).json({ error: 'Contato inválido' });
@@ -479,10 +493,10 @@ const createHubQuote = async (req, res) => {
             status: 'draft',
             notes: notes?.trim() || null,
             client_notes: client_notes?.trim() || null,
-            total_amount: total_amount != null ? roundMoney2(total_amount) : 0,
+            total_amount: total_amount != null ? (0, hubQuoteDiscount_1.roundMoney2)(total_amount) : 0,
             subtotal_amount: 0,
             discount_kind: discount_kind ?? null,
-            discount_value: discount_value != null ? roundMoney2(discount_value) : 0,
+            discount_value: discount_value != null ? (0, hubQuoteDiscount_1.roundMoney2)(discount_value) : 0,
             currency: 'BRL',
             sent_at: null,
             expires_at: expires_at ?? null,
@@ -502,10 +516,10 @@ const createHubQuote = async (req, res) => {
         }
         const qid = quote.id;
         try {
-            const petsMap = await replaceQuotePets(qid, pets ?? []);
+            const petsMap = await replaceQuotePets(qid, clinic_id, pets ?? []);
             if (lines && lines.length > 0) {
                 const subtotal = await replaceQuoteLines(qid, clinic_id, lines, petsMap);
-                const total = applyQuoteDiscount(subtotal, discount_kind ?? null, discount_value ?? 0);
+                const total = (0, hubQuoteDiscount_1.applyQuoteDiscount)(subtotal, discount_kind ?? null, discount_value ?? 0);
                 await supabase_1.supabaseAdmin
                     .from('hub_quotes')
                     .update({ subtotal_amount: subtotal, total_amount: total })
@@ -514,7 +528,7 @@ const createHubQuote = async (req, res) => {
             else if (total_amount != null) {
                 await supabase_1.supabaseAdmin
                     .from('hub_quotes')
-                    .update({ subtotal_amount: roundMoney2(total_amount), total_amount: roundMoney2(total_amount) })
+                    .update({ subtotal_amount: (0, hubQuoteDiscount_1.roundMoney2)(total_amount), total_amount: (0, hubQuoteDiscount_1.roundMoney2)(total_amount) })
                     .eq('id', qid);
             }
         }
@@ -528,7 +542,13 @@ const createHubQuote = async (req, res) => {
             .select(QUOTE_FULL_SELECT)
             .eq('id', qid)
             .single();
-        return res.status(201).json({ quote: full });
+        return res.status(201).json({
+            quote: full,
+            prospect_reused: prospectReused,
+            ...(prospectReused
+                ? { message: 'Já existia um contato ativo com este CPF. O cadastro existente foi usado.' }
+                : {}),
+        });
     }
     catch (e) {
         console.error('[hub_quotes] create', e);
@@ -575,7 +595,7 @@ const patchHubQuote = async (req, res) => {
         if (discount_kind !== undefined)
             patch.discount_kind = discount_kind;
         if (discount_value !== undefined)
-            patch.discount_value = roundMoney2(discount_value);
+            patch.discount_value = (0, hubQuoteDiscount_1.roundMoney2)(discount_value);
         if (valid_days !== undefined)
             patch.valid_days = valid_days;
         if (expires_at !== undefined)
@@ -596,7 +616,7 @@ const patchHubQuote = async (req, res) => {
                 }
             }
             if (pets !== undefined) {
-                petsMap = await replaceQuotePets(idParsed.data, pets);
+                petsMap = await replaceQuotePets(idParsed.data, clinic_id, pets);
             }
             else {
                 const { data: existingPets } = await supabase_1.supabaseAdmin
@@ -620,7 +640,7 @@ const patchHubQuote = async (req, res) => {
                 : Number(existing.discount_value ?? 0);
             if (lines !== undefined) {
                 const subtotal = await replaceQuoteLines(idParsed.data, clinic_id, lines, petsMap);
-                const total = applyQuoteDiscount(subtotal, effectiveDiscountKind, effectiveDiscountValue);
+                const total = (0, hubQuoteDiscount_1.applyQuoteDiscount)(subtotal, effectiveDiscountKind, effectiveDiscountValue);
                 await supabase_1.supabaseAdmin
                     .from('hub_quotes')
                     .update({ subtotal_amount: subtotal, total_amount: total })
@@ -633,13 +653,13 @@ const patchHubQuote = async (req, res) => {
                     .eq('id', idParsed.data)
                     .single();
                 const subtotal = Number(cur?.subtotal_amount ?? 0);
-                const total = applyQuoteDiscount(subtotal, effectiveDiscountKind, effectiveDiscountValue);
+                const total = (0, hubQuoteDiscount_1.applyQuoteDiscount)(subtotal, effectiveDiscountKind, effectiveDiscountValue);
                 await supabase_1.supabaseAdmin.from('hub_quotes').update({ total_amount: total }).eq('id', idParsed.data);
             }
             else if (total_amount !== undefined) {
                 await supabase_1.supabaseAdmin
                     .from('hub_quotes')
-                    .update({ total_amount: roundMoney2(total_amount) })
+                    .update({ total_amount: (0, hubQuoteDiscount_1.roundMoney2)(total_amount) })
                     .eq('id', idParsed.data);
             }
         }
@@ -716,6 +736,25 @@ const sendHubQuote = async (req, res) => {
         }
         if (existing.status !== 'draft') {
             return res.status(409).json({ error: 'Só rascunhos podem ser enviados' });
+        }
+        const { data: draftBody, error: draftErr } = await supabase_1.supabaseAdmin
+            .from('hub_quotes')
+            .select(`
+        total_amount,
+        pets:hub_quote_pets(species),
+        lines:hub_quote_lines(hub_service_type_id, line_pets:hub_quote_line_pets(unit_price))
+      `)
+            .eq('id', idParsed.data)
+            .single();
+        if (draftErr || !draftBody) {
+            return res.status(500).json({ error: 'Erro ao validar o orçamento' });
+        }
+        const contentErr = validateQuoteDraftPetsAndLines(draftBody.pets, draftBody.lines);
+        if (contentErr) {
+            return res.status(400).json({ error: contentErr });
+        }
+        if (Number(draftBody.total_amount ?? 0) <= 0) {
+            return res.status(400).json({ error: 'Informe valores (R$) superiores a zero para os serviços por pet.' });
         }
         const sentAt = new Date();
         const days = Number(existing.valid_days) || DEFAULT_VALID_DAYS;
@@ -884,6 +923,7 @@ const duplicateHubQuote = async (req, res) => {
                 coat_type: p.coat_type,
                 age_months: p.age_months,
                 sex: p.sex,
+                hub_pet_id: p.hub_pet_id ?? null,
                 sort_order: p.sort_order ?? i,
             }));
             const { data: inserted, error: piErr } = await supabase_1.supabaseAdmin
@@ -1025,6 +1065,54 @@ const reopenHubQuoteAsDraft = async (req, res) => {
     }
 };
 exports.reopenHubQuoteAsDraft = reopenHubQuoteAsDraft;
+const PUBLIC_TOKEN_STATUSES = new Set(['sent', 'awaiting_return', 'accepted', 'expired']);
+const PUBLIC_QUOTE_SELECT = `
+  id, clinic_id, status, client_notes, total_amount, subtotal_amount,
+  discount_kind, discount_value, currency, valid_days, sent_at, expires_at, created_at,
+  clinic:clinics(name, photo_url),
+  prospect:hub_prospects(id, full_name, tax_id, phone, email),
+  pets:hub_quote_pets(id, quote_id, display_name, species, breed, size_tier, coat_type, age_months, sex, sort_order),
+  lines:hub_quote_lines(id, quote_id, hub_service_type_id, description, quantity, unit_price, discount_amount, line_total, sort_order, pricing_variant,
+    hub_service_types(name, service_group, description),
+    line_pets:hub_quote_line_pets(id, line_id, quote_pet_id, unit_price, applied_porte, applied_coat_type, sort_order)
+  )
+`;
+function embedOne(value) {
+    if (value == null)
+        return null;
+    return Array.isArray(value) ? (value[0] ?? null) : value;
+}
+/** Payload do link público: proposta visível ao cliente, sem notas internas nem cobrança. */
+function toPublicQuote(row) {
+    const prospect = embedOne(row.prospect);
+    return {
+        id: row.id,
+        clinic_id: row.clinic_id,
+        status: row.status,
+        client_notes: row.client_notes ?? null,
+        total_amount: row.total_amount,
+        subtotal_amount: row.subtotal_amount,
+        discount_kind: row.discount_kind ?? null,
+        discount_value: row.discount_value ?? 0,
+        currency: row.currency ?? 'BRL',
+        valid_days: row.valid_days ?? null,
+        sent_at: row.sent_at ?? null,
+        expires_at: row.expires_at ?? null,
+        created_at: row.created_at ?? null,
+        clinic: embedOne(row.clinic),
+        prospect: prospect
+            ? {
+                id: prospect.id,
+                full_name: prospect.full_name,
+                tax_id: prospect.tax_id ?? null,
+                phone: prospect.phone,
+                email: prospect.email ?? null,
+            }
+            : null,
+        pets: row.pets ?? [],
+        lines: row.lines ?? [],
+    };
+}
 const ensurePublicToken = async (req, res) => {
     try {
         const idParsed = uuidStr.safeParse(req.params.id);
@@ -1038,11 +1126,19 @@ const ensurePublicToken = async (req, res) => {
         const clinic_id = clinicParsed.data;
         const { data: existing } = await supabase_1.supabaseAdmin
             .from('hub_quotes')
-            .select('id, clinic_id, public_token')
+            .select('id, clinic_id, status, public_token')
             .eq('id', idParsed.data)
             .maybeSingle();
         if (!existing || existing.clinic_id !== clinic_id) {
             return res.status(404).json({ error: 'Orçamento não encontrado' });
+        }
+        const status = String(existing.status ?? '');
+        if (!PUBLIC_TOKEN_STATUSES.has(status)) {
+            return res.status(409).json({
+                error: status === 'draft'
+                    ? 'Envie o orçamento antes de gerar o link público.'
+                    : 'Este orçamento não pode mais gerar link público.',
+            });
         }
         let token = existing.public_token;
         if (!token) {
@@ -1072,7 +1168,7 @@ const getPublicQuote = async (req, res) => {
         }
         const { data, error } = await supabase_1.supabaseAdmin
             .from('hub_quotes')
-            .select(QUOTE_FULL_SELECT)
+            .select(PUBLIC_QUOTE_SELECT)
             .eq('public_token', token)
             .maybeSingle();
         if (error) {
@@ -1082,7 +1178,11 @@ const getPublicQuote = async (req, res) => {
         if (!data) {
             return res.status(404).json({ error: 'Orçamento não encontrado' });
         }
-        return res.json({ quote: data });
+        const status = String(data.status ?? '');
+        if (status === 'draft' || !status) {
+            return res.status(404).json({ error: 'Orçamento não encontrado' });
+        }
+        return res.json({ quote: toPublicQuote(data) });
     }
     catch (e) {
         console.error('[hub_quotes] public get', e);
@@ -1204,9 +1304,9 @@ const convertHubQuote = async (req, res) => {
         const { data: quote, error: qErr } = await supabase_1.supabaseAdmin
             .from('hub_quotes')
             .select(`
-        id, clinic_id, prospect_id, status,
+        id, clinic_id, prospect_id, status, expires_at,
         prospect:hub_prospects(id, full_name, tax_id, phone, email, deleted_at),
-        pets:hub_quote_pets(id, display_name, species, breed, size_tier, coat_type, age_months, sex)
+        pets:hub_quote_pets(id, display_name, species, breed, size_tier, coat_type, age_months, sex, hub_pet_id)
       `)
             .eq('id', idParsed.data)
             .eq('clinic_id', clinic_id)
@@ -1215,6 +1315,13 @@ const convertHubQuote = async (req, res) => {
             return res.status(404).json({ error: 'Orçamento não encontrado' });
         }
         const st = quote.status;
+        await refreshExpiredQuotesForClinic(clinic_id);
+        const expiresAt = quote.expires_at;
+        if (expiresAt && new Date(expiresAt).getTime() < Date.now() && st !== 'accepted') {
+            return res.status(409).json({
+                error: 'Orçamento expirado. Duplique ou reabra como rascunho para enviar de novo.',
+            });
+        }
         if (st === 'accepted') {
             return res.status(409).json({ error: 'Orçamento já convertido' });
         }
@@ -1293,9 +1400,69 @@ const convertHubQuote = async (req, res) => {
         const rawPets = quote.pets;
         const pets = (Array.isArray(rawPets) ? rawPets : []);
         if (!pets || pets.length === 0) {
+            if (!link_to_guardian_id && guardianId) {
+                await supabase_1.supabaseAdmin.from('hub_guardians').delete().eq('id', guardianId);
+            }
             return res.status(400).json({ error: 'Orçamento sem pets para converter' });
         }
+        const createdPetIds = [];
+        const linkedExistingPetIds = [];
+        const rollbackPartialConvert = async () => {
+            for (const petId of createdPetIds) {
+                await supabase_1.supabaseAdmin.from('hub_pet_guardians').delete().eq('pet_id', petId).eq('guardian_id', guardianId);
+                await supabase_1.supabaseAdmin.from('hub_pets').delete().eq('id', petId);
+                await supabase_1.supabaseAdmin
+                    .from('hub_quote_pets')
+                    .update({ hub_pet_id: null })
+                    .eq('quote_id', idParsed.data)
+                    .eq('hub_pet_id', petId);
+            }
+            for (const petId of linkedExistingPetIds) {
+                await supabase_1.supabaseAdmin.from('hub_pet_guardians').delete().eq('pet_id', petId).eq('guardian_id', guardianId);
+            }
+            if (!link_to_guardian_id && guardianId) {
+                await supabase_1.supabaseAdmin.from('hub_guardians').delete().eq('id', guardianId);
+            }
+        };
         for (const p of pets) {
+            if (p.hub_pet_id) {
+                const { data: existingPet, error: existingErr } = await supabase_1.supabaseAdmin
+                    .from('hub_pets')
+                    .select('id, clinic_id, deleted_at')
+                    .eq('id', p.hub_pet_id)
+                    .maybeSingle();
+                if (existingErr || !existingPet || existingPet.clinic_id !== clinic_id || existingPet.deleted_at) {
+                    await rollbackPartialConvert();
+                    return res.status(400).json({ error: 'Pet vinculado ao orçamento não foi encontrado nesta clínica.' });
+                }
+                const { data: links, error: linksErr } = await supabase_1.supabaseAdmin
+                    .from('hub_pet_guardians')
+                    .select('guardian_id, role')
+                    .eq('pet_id', existingPet.id);
+                if (linksErr) {
+                    console.error('[hub_quotes] convert existing pet links', linksErr);
+                    await rollbackPartialConvert();
+                    return res.status(500).json({ error: 'Erro ao associar pet ao tutor' });
+                }
+                const already = (links ?? []).some((l) => l.guardian_id === guardianId);
+                if (!already) {
+                    const hasPrimary = (links ?? []).some((l) => l.role === 'primary');
+                    const { error: linkErr } = await supabase_1.supabaseAdmin.from('hub_pet_guardians').insert([
+                        {
+                            pet_id: existingPet.id,
+                            guardian_id: guardianId,
+                            role: hasPrimary ? 'secondary' : 'primary',
+                        },
+                    ]);
+                    if (linkErr) {
+                        console.error('[hub_quotes] convert link existing', linkErr);
+                        await rollbackPartialConvert();
+                        return res.status(500).json({ error: 'Erro ao associar pet ao tutor' });
+                    }
+                    linkedExistingPetIds.push(existingPet.id);
+                }
+                continue;
+            }
             const petName = (p.display_name && p.display_name.trim()) || 'Pet';
             const { data: pet, error: petErr } = await supabase_1.supabaseAdmin
                 .from('hub_pets')
@@ -1318,14 +1485,16 @@ const convertHubQuote = async (req, res) => {
                 .single();
             if (petErr || !pet) {
                 console.error('[hub_quotes] convert pet', petErr);
+                await rollbackPartialConvert();
                 return res.status(500).json({ error: 'Erro ao criar pet' });
             }
+            createdPetIds.push(pet.id);
             const { error: linkErr } = await supabase_1.supabaseAdmin.from('hub_pet_guardians').insert([
                 { pet_id: pet.id, guardian_id: guardianId, role: 'primary' },
             ]);
             if (linkErr) {
                 console.error('[hub_quotes] convert link', linkErr);
-                await supabase_1.supabaseAdmin.from('hub_pets').delete().eq('id', pet.id);
+                await rollbackPartialConvert();
                 return res.status(500).json({ error: 'Erro ao associar pet ao tutor' });
             }
             await supabase_1.supabaseAdmin
@@ -1348,6 +1517,7 @@ const convertHubQuote = async (req, res) => {
             .single();
         if (finErr) {
             console.error('[hub_quotes] convert finalize', finErr);
+            await rollbackPartialConvert();
             return res.status(500).json({ error: 'Erro ao finalizar conversão' });
         }
         return res.json({ quote: updated, guardian_id: guardianId });

@@ -9,6 +9,11 @@ const GUARDIAN_SELECT = 'id, clinic_id, full_name, phone, email, notes, created_
 const clientKindSchema = zod_1.z.enum(['individual', 'company']);
 const clientStatusSchema = zod_1.z.enum(['active', 'inactive']);
 const sexSchema = zod_1.z.enum(['M', 'F', 'U']).optional().nullable();
+function normalizeGuardianTaxId(raw) {
+    if (!raw)
+        return '';
+    return String(raw).replace(/\D/g, '');
+}
 const optionalTrimmed = (max) => zod_1.z
     .union([zod_1.z.string(), zod_1.z.null(), zod_1.z.undefined()])
     .transform((v) => (v === undefined || v === null ? undefined : String(v).trim()))
@@ -301,7 +306,32 @@ const listHubGuardians = async (req, res) => {
             console.error('[hub_guardians] list', error);
             return res.status(500).json({ error: 'Erro ao listar tutores' });
         }
-        const rows = data ?? [];
+        let rows = data ?? [];
+        const qDigits = qRaw.replace(/\D/g, '');
+        if (qDigits.length === 11 || qDigits.length === 14) {
+            const { data: taxRows, error: taxErr } = await supabase_1.supabaseAdmin
+                .from('hub_guardians')
+                .select(GUARDIAN_SELECT)
+                .eq('clinic_id', clinic_id)
+                .is('deleted_at', null);
+            if (taxErr) {
+                console.error('[hub_guardians] list tax match', taxErr);
+                return res.status(500).json({ error: 'Erro ao listar tutores' });
+            }
+            const seen = new Set(rows.map((r) => r.id));
+            for (const g of taxRows ?? []) {
+                if (seen.has(g.id))
+                    continue;
+                if (normalizeGuardianTaxId(g.tax_id) !== qDigits)
+                    continue;
+                if (kind.success && kind.data && kind.data !== 'all' && g.client_kind !== kind.data)
+                    continue;
+                if (status.success && status.data && status.data !== 'all' && g.client_status !== status.data)
+                    continue;
+                rows.push(g);
+                seen.add(g.id);
+            }
+        }
         const ids = rows.map((r) => r.id);
         const petMap = await fetchPetsByGuardianIds(clinic_id, ids);
         const guardians = rows.map((g) => ({

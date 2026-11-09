@@ -28,6 +28,19 @@
   grid-column: 1 / -1;
 }
 
+.hub-reception__saidas-section {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--hub-muted, #64748b);
+}
+
+.hub-reception__saidas-section:first-child {
+  margin-top: 0;
+}
+
 .hub-reception__pill--failure {
   background: #fee2e2;
   color: #991b1b;

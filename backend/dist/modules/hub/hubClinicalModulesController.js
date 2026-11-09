@@ -1,9 +1,42 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getHubClinicalAlerts = exports.patchHubSurgery = exports.createHubSurgery = exports.listHubSurgeries = exports.createHubHospitalizationEvent = exports.listHubHospitalizationEvents = exports.addHubHospitalizationDailyNote = exports.patchHubHospitalization = exports.createHubHospitalization = exports.listHubHospitalizations = exports.createHubHospitalBed = exports.listHubHospitalBeds = exports.uploadHubClinicalAttachment = exports.createHubClinicalAttachment = exports.listHubClinicalAttachments = exports.createHubVaccination = exports.listHubVaccinations = exports.getHubPrescriptionPdf = exports.revokePrescriptionDocument = exports.listPrescriptionDocuments = exports.issuePrescriptionDocument = exports.patchHubPrescription = exports.createHubPrescription = exports.listHubPrescriptions = exports.createHubEncounterEvent = exports.listHubEncounterEvents = exports.upsertHubPetClinicalFlag = exports.listHubPetClinicalFlags = void 0;
+exports.getHubClinicalAlerts = exports.patchHubSurgery = exports.createHubSurgery = exports.getHubSurgery = exports.listHubSurgeries = exports.createHubHospitalizationEvent = exports.listHubHospitalizationEvents = exports.addHubHospitalizationDailyNote = exports.patchHubHospitalization = exports.getHubHospitalization = exports.createHubHospitalization = exports.listHubHospitalizations = exports.createHubHospitalBed = exports.listHubHospitalBeds = exports.uploadHubClinicalAttachment = exports.createHubClinicalAttachment = exports.listHubClinicalAttachments = exports.createHubMedicationAdministration = exports.listHubMedicationAdministrations = exports.createHubVaccination = exports.listHubVaccinations = exports.getHubPrescriptionPdf = exports.revokePrescriptionDocument = exports.listPrescriptionDocuments = exports.issuePrescriptionDocument = exports.patchHubPrescription = exports.createHubPrescription = exports.listHubPrescriptions = exports.createHubEncounterEvent = exports.listHubEncounterEvents = exports.upsertHubPetClinicalFlag = exports.listHubPetClinicalFlags = void 0;
 const multer_1 = __importDefault(require("multer"));
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
@@ -16,7 +49,20 @@ const prescriptionValidation_1 = require("./prescriptionValidation");
 const prescriptionDocumentIssue_1 = require("./prescriptionDocumentIssue");
 const hubInventoryStockUtils_js_1 = require("./hubInventoryStockUtils.js");
 const hubPetHealthProfile_1 = require("./hubPetHealthProfile");
+const hubComandasController_1 = require("./hubComandasController");
+const hubClinicalBillableServicesController_1 = require("./hubClinicalBillableServicesController");
+const hubSurgeryFromAppointment_1 = require("./hubSurgeryFromAppointment");
+const hubClinicalAppointmentMirror_1 = require("./hubClinicalAppointmentMirror");
+const hubPayablesService_1 = require("./hubPayablesService");
+const hubVariablePrice_1 = require("./hubVariablePrice");
 const uuidStr = zod_1.z.string().uuid();
+const surgeryServiceInputSchema = zod_1.z.object({
+    hub_service_type_id: uuidStr,
+    unit_amount: zod_1.z.number().min(0).optional().nullable(),
+    quantity: zod_1.z.number().positive().optional().default(1),
+    billing_mode: zod_1.z.enum(['charge', 'included']).optional().default('charge'),
+    notes: zod_1.z.string().trim().max(2000).optional().nullable(),
+});
 // ── Pet clinical flags ───────────────────────────────────────────────────────
 const flagKeySchema = zod_1.z.enum(['allergy', 'cardiac', 'aggressive', 'diabetic', 'epileptic', 'other']);
 const listHubPetClinicalFlags = async (req, res) => {
@@ -140,6 +186,7 @@ const prescriptionItemInputSchema = zod_1.z.object({
     instructions: zod_1.z.string().trim().max(2000).optional().nullable(),
     hub_inventory_item_id: uuidStr.optional().nullable(),
     administration: zod_1.z.enum(['home_use', 'administered_in_clinic']).optional().default('home_use'),
+    use_route: zod_1.z.string().trim().max(200).optional().nullable(),
 });
 function mapPrescriptionItemInsert(prescriptionId, it, orderIndex) {
     return {
@@ -155,6 +202,7 @@ function mapPrescriptionItemInsert(prescriptionId, it, orderIndex) {
         instructions: it.instructions ?? null,
         hub_inventory_item_id: it.hub_inventory_item_id ?? null,
         administration: it.administration ?? 'home_use',
+        use_route: it.use_route ?? null,
         order_index: orderIndex,
     };
 }
@@ -258,6 +306,20 @@ const createHubPrescription = async (req, res) => {
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
+    if (b.hub_case_id) {
+        const { data: caseRow } = await supabase_1.supabaseAdmin
+            .from('hub_clinical_cases')
+            .select('id, status')
+            .eq('id', b.hub_case_id)
+            .eq('clinic_id', b.clinic_id)
+            .is('deleted_at', null)
+            .maybeSingle();
+        if (!caseRow)
+            return res.status(400).json({ error: 'Caso clínico inválido' });
+        if (caseRow.status === 'cancelled') {
+            return res.status(400).json({ error: 'Caso cancelado não pode receber receita. Abra um caso novo.' });
+        }
+    }
     /** Uma prescrição ativa/rascunho por atendimento: novos itens são anexados à existente. */
     if (b.hub_encounter_id) {
         const { data: issuedList } = await supabase_1.supabaseAdmin
@@ -410,7 +472,7 @@ const patchHubPrescription = async (req, res) => {
     if (b.hub_case_id) {
         const { data: caseRow } = await supabase_1.supabaseAdmin
             .from('hub_clinical_cases')
-            .select('id, pet_id')
+            .select('id, pet_id, status')
             .eq('id', b.hub_case_id)
             .eq('clinic_id', b.clinic_id)
             .is('deleted_at', null)
@@ -419,6 +481,9 @@ const patchHubPrescription = async (req, res) => {
             return res.status(400).json({ error: 'Caso clínico inválido' });
         if (caseRow.pet_id !== rx.pet_id) {
             return res.status(400).json({ error: 'Caso clínico não pertence a este pet' });
+        }
+        if (caseRow.status === 'cancelled') {
+            return res.status(400).json({ error: 'Caso cancelado não pode receber receita. Abra um caso novo.' });
         }
     }
     if (b.hub_encounter_id) {
@@ -661,7 +726,9 @@ const getHubPrescriptionPdf = async (req, res) => {
             event_type: 'pdf_downloaded',
             actor_user_id: actorUserId,
         });
-        const pdfView = (0, prescriptionValidation_1.snapshotToPdfView)(loaded.snapshot);
+        const pdfView = (0, prescriptionValidation_1.snapshotToPdfView)(loaded.snapshot, {
+            expires_at: loaded.validation.expires_at,
+        });
         await (0, hubPrescriptionPdf_1.streamValidatablePrescriptionPdf)(res, pdfView, loaded.validation);
         return;
     }
@@ -669,8 +736,8 @@ const getHubPrescriptionPdf = async (req, res) => {
         .from('hub_prescriptions')
         .select(`
       *,
-      clinic:clinics(name, phone, email),
-      pet:hub_pets(name, species, breed),
+      clinic:clinics(name, phone, email, address, city, state),
+      pet:hub_pets(name, species, breed, birth_date),
       staff:hub_staff_members(full_name, crmv, crmv_uf)
     `)
         .eq('id', id.data)
@@ -689,7 +756,7 @@ const getHubPrescriptionPdf = async (req, res) => {
             .order('order_index'),
         supabase_1.supabaseAdmin
             .from('hub_pet_guardians')
-            .select('guardian:hub_guardians(full_name, phone)')
+            .select('guardian:hub_guardians(full_name, phone, tax_id, id_doc_number, street, street_number, district, city, state, postal_code)')
             .eq('pet_id', rx.pet_id)
             .order('role', { ascending: true })
             .limit(1),
@@ -751,21 +818,20 @@ const createHubVaccination = async (req, res) => {
     let inventoryLot = null;
     let priceSnapshot = null;
     if (b.source === 'in_clinic' && b.hub_inventory_item_id) {
-        if (!b.hub_inventory_lot_id) {
-            return res.status(400).json({ error: 'Lote de estoque é obrigatório para vacina aplicada na clínica.' });
-        }
         inventoryItem = await (0, hubInventoryStockUtils_js_1.assertClinicInventoryItem)(b.clinic_id, b.hub_inventory_item_id);
         if (!inventoryItem || !inventoryItem.active) {
             return res.status(400).json({ error: 'Item de estoque de vacina inválido ou inativo.' });
         }
-        inventoryLot = await (0, hubInventoryStockUtils_js_1.assertClinicInventoryLot)(b.clinic_id, b.hub_inventory_lot_id);
-        if (!inventoryLot || inventoryLot.item_id !== b.hub_inventory_item_id) {
-            return res.status(400).json({ error: 'Lote inválido para o item de vacina selecionado.' });
-        }
-        const stockErr = await (0, hubInventoryStockUtils_js_1.validateLotStockForOut)(b.clinic_id, b.hub_inventory_item_id, b.hub_inventory_lot_id, 1);
-        if (stockErr)
-            return res.status(400).json({ error: stockErr });
         priceSnapshot = Number(inventoryItem.sale_amount);
+        if (b.hub_inventory_lot_id) {
+            inventoryLot = await (0, hubInventoryStockUtils_js_1.assertClinicInventoryLot)(b.clinic_id, b.hub_inventory_lot_id);
+            if (!inventoryLot || inventoryLot.item_id !== b.hub_inventory_item_id) {
+                return res.status(400).json({ error: 'Lote inválido para o item de vacina selecionado.' });
+            }
+            const stockErr = await (0, hubInventoryStockUtils_js_1.validateLotStockForOut)(b.clinic_id, b.hub_inventory_item_id, b.hub_inventory_lot_id, 1);
+            if (stockErr)
+                return res.status(400).json({ error: stockErr });
+        }
     }
     const batchNumber = b.batch_number?.trim() ||
         (inventoryLot?.lot_code?.trim() ? inventoryLot.lot_code.trim() : null);
@@ -835,9 +901,204 @@ const createHubVaccination = async (req, res) => {
         body: b.next_dose_at ? `Próxima dose: ${b.next_dose_at}` : null,
         created_by: b.hub_staff_member_id ?? null,
     });
+    if (b.hub_encounter_id) {
+        void (0, hubComandasController_1.syncOpenComandasAfterEncounterChargeableChange)(b.clinic_id, b.hub_encounter_id);
+    }
     return res.status(201).json({ vaccination: data });
 };
 exports.createHubVaccination = createHubVaccination;
+// ── Medicação aplicada na consulta ────────────────────────────────────────────
+const listHubMedicationAdministrations = async (req, res) => {
+    const clinic_id = uuidStr.safeParse(req.query.clinic_id);
+    if (!clinic_id.success)
+        return res.status(400).json({ error: 'clinic_id obrigatório' });
+    let q = supabase_1.supabaseAdmin
+        .from('hub_encounter_medication_administrations')
+        .select('*')
+        .eq('clinic_id', clinic_id.data)
+        .is('deleted_at', null)
+        .order('administered_at', { ascending: false });
+    const pet_id = req.query.pet_id ? uuidStr.safeParse(req.query.pet_id) : null;
+    if (pet_id?.success)
+        q = q.eq('pet_id', pet_id.data);
+    const hub_encounter_id = req.query.hub_encounter_id ? uuidStr.safeParse(req.query.hub_encounter_id) : null;
+    if (hub_encounter_id?.success)
+        q = q.eq('hub_encounter_id', hub_encounter_id.data);
+    const { data, error } = await q;
+    if (error) {
+        if ((0, supabaseSchemaErrors_js_1.isMissingPostgrestRelation)(error)) {
+            return res.json({ administrations: [] });
+        }
+        return res.status(500).json({ error: error.message });
+    }
+    return res.json({ administrations: data ?? [] });
+};
+exports.listHubMedicationAdministrations = listHubMedicationAdministrations;
+const createHubMedicationAdministration = async (req, res) => {
+    const parsed = zod_1.z
+        .object({
+        clinic_id: uuidStr,
+        pet_id: uuidStr,
+        hub_encounter_id: uuidStr,
+        hub_case_id: uuidStr.optional().nullable(),
+        hub_staff_member_id: uuidStr.optional().nullable(),
+        hub_service_type_id: uuidStr,
+        hub_inventory_item_id: uuidStr.optional().nullable(),
+        hub_inventory_lot_id: uuidStr.optional().nullable(),
+        medication_name: zod_1.z.string().trim().max(200).optional().nullable(),
+        dose: zod_1.z.string().trim().max(200).optional().nullable(),
+        use_route: zod_1.z.string().trim().max(120).optional().nullable(),
+        quantity: zod_1.z.coerce.number().positive().max(999).optional().default(1),
+        notes: zod_1.z.string().trim().max(2000).optional().nullable(),
+        confirm_stock_out: zod_1.z.boolean().optional().default(false),
+    })
+        .safeParse(req.body);
+    if (!parsed.success)
+        return res.status(400).json({ error: parsed.error.flatten() });
+    const b = parsed.data;
+    let service = null;
+    {
+        const first = await supabase_1.supabaseAdmin
+            .from('hub_service_types')
+            .select('id, clinic_id, name, sale_amount, active, deleted_at, is_encounter_application, service_group')
+            .eq('id', b.hub_service_type_id)
+            .maybeSingle();
+        if (first.error && String(first.error.message || '').includes('is_encounter_application')) {
+            return res.status(503).json({
+                error: 'Coluna is_encounter_application ausente. Aplique a migration 106_alter_hub_service_types_encounter_application.sql.',
+            });
+        }
+        if (first.error || !first.data || first.data.clinic_id !== b.clinic_id || first.data.deleted_at) {
+            return res.status(400).json({ error: 'Serviço inválido para esta clínica.' });
+        }
+        service = first.data;
+    }
+    if (service.active === false) {
+        return res.status(400).json({ error: 'Este serviço está inativo.' });
+    }
+    const isApp = Boolean(service.is_encounter_application);
+    if (!isApp) {
+        return res.status(400).json({
+            error: 'Selecione um serviço marcado como «Aplicação na consulta» (cadastro em Serviços → Clínica).',
+        });
+    }
+    const qtyConsumed = b.quantity ?? 1;
+    let inventoryItem = null;
+    let inventoryLot = null;
+    let productPrice = null;
+    let stockQty = qtyConsumed;
+    let quantityUnit = null;
+    if (b.hub_inventory_item_id) {
+        if (!b.hub_inventory_lot_id) {
+            return res.status(400).json({ error: 'Selecione o lote do medicamento no estoque.' });
+        }
+        if (!b.confirm_stock_out) {
+            return res.status(400).json({ error: 'Confirme a baixa de estoque.' });
+        }
+        inventoryItem = await (0, hubInventoryStockUtils_js_1.assertClinicInventoryItem)(b.clinic_id, b.hub_inventory_item_id);
+        if (!inventoryItem || !inventoryItem.active) {
+            return res.status(400).json({ error: 'Medicamento do estoque inválido ou inativo.' });
+        }
+        inventoryLot = await (0, hubInventoryStockUtils_js_1.assertClinicInventoryLot)(b.clinic_id, b.hub_inventory_lot_id);
+        if (!inventoryLot || inventoryLot.item_id !== b.hub_inventory_item_id) {
+            return res.status(400).json({ error: 'Lote inválido para o medicamento selecionado.' });
+        }
+        const contentQty = inventoryItem.content_qty != null ? Number(inventoryItem.content_qty) : null;
+        stockQty = (0, hubInventoryStockUtils_js_1.stockQtyFromConsumption)(qtyConsumed, contentQty);
+        if (!Number.isFinite(stockQty) || stockQty <= 0) {
+            return res.status(400).json({ error: 'Quantidade inválida para baixa de estoque.' });
+        }
+        quantityUnit =
+            contentQty != null && contentQty > 0
+                ? inventoryItem.content_unit?.trim() || null
+                : inventoryItem.unit_label?.trim() || null;
+        const stockErr = await (0, hubInventoryStockUtils_js_1.validateLotStockForOut)(b.clinic_id, b.hub_inventory_item_id, b.hub_inventory_lot_id, stockQty);
+        if (stockErr)
+            return res.status(400).json({ error: stockErr });
+        productPrice = Number(inventoryItem.sale_amount);
+    }
+    const medicationName = b.medication_name?.trim() ||
+        inventoryItem?.name ||
+        null;
+    const batchNumber = inventoryLot?.lot_code?.trim() || null;
+    const servicePrice = Number(service.sale_amount ?? 0);
+    const { data: inserted, error: insertErr } = await supabase_1.supabaseAdmin
+        .from('hub_encounter_medication_administrations')
+        .insert({
+        clinic_id: b.clinic_id,
+        pet_id: b.pet_id,
+        hub_encounter_id: b.hub_encounter_id,
+        hub_case_id: b.hub_case_id ?? null,
+        hub_staff_member_id: b.hub_staff_member_id ?? null,
+        hub_service_type_id: b.hub_service_type_id,
+        service_name: String(service.name),
+        service_price: servicePrice,
+        hub_inventory_item_id: b.hub_inventory_item_id ?? null,
+        hub_inventory_lot_id: b.hub_inventory_lot_id ?? null,
+        medication_name: medicationName,
+        batch_number: batchNumber,
+        dose: b.dose ?? null,
+        use_route: b.use_route ?? null,
+        quantity: qtyConsumed,
+        quantity_unit: quantityUnit,
+        stock_qty: b.hub_inventory_item_id ? stockQty : null,
+        product_price: productPrice,
+        notes: b.notes ?? null,
+        stock_movement_id: null,
+    })
+        .select('*')
+        .single();
+    if (insertErr || !inserted) {
+        return res.status(500).json({ error: insertErr?.message || 'Erro ao registrar medicação.' });
+    }
+    const adminId = inserted.id;
+    let data = inserted;
+    if (b.hub_inventory_item_id && b.hub_inventory_lot_id && inventoryItem) {
+        const movement = await (0, hubInventoryStockUtils_js_1.createEncounterStockOut)({
+            clinicId: b.clinic_id,
+            itemId: b.hub_inventory_item_id,
+            lotId: b.hub_inventory_lot_id,
+            qty: stockQty,
+            notes: `Medicação na consulta: ${medicationName || service.name}`,
+            referenceType: 'medication_administration',
+            referenceId: adminId,
+            createdBy: req.user?.id ?? null,
+            contentQty: inventoryItem.content_qty != null ? Number(inventoryItem.content_qty) : null,
+            contentUnit: inventoryItem.content_unit,
+            itemName: inventoryItem.name,
+            unitLabel: inventoryItem.unit_label,
+        });
+        if ('error' in movement) {
+            await supabase_1.supabaseAdmin.from('hub_encounter_medication_administrations').delete().eq('id', adminId);
+            return res.status(400).json({ error: movement.error });
+        }
+        const { data: updated, error: patchErr } = await supabase_1.supabaseAdmin
+            .from('hub_encounter_medication_administrations')
+            .update({ stock_movement_id: movement.id })
+            .eq('id', adminId)
+            .select('*')
+            .single();
+        if (patchErr || !updated) {
+            return res.status(500).json({ error: patchErr?.message || 'Erro ao vincular baixa de estoque.' });
+        }
+        data = updated;
+    }
+    void (0, hubClinicalTimelineController_1.recordTimelineEvent)({
+        clinic_id: b.clinic_id,
+        pet_id: b.pet_id,
+        hub_case_id: b.hub_case_id ?? null,
+        hub_encounter_id: b.hub_encounter_id,
+        event_type: 'note',
+        ref_type: 'medication_administration',
+        ref_id: adminId,
+        title: `Medicação na consulta: ${medicationName || service.name}`,
+        body: [b.dose, b.use_route, `Serviço: ${service.name}`].filter(Boolean).join(' · ') || null,
+        created_by: b.hub_staff_member_id ?? null,
+    });
+    void (0, hubComandasController_1.syncOpenComandasAfterEncounterChargeableChange)(b.clinic_id, b.hub_encounter_id);
+    return res.status(201).json({ administration: data });
+};
+exports.createHubMedicationAdministration = createHubMedicationAdministration;
 // ── Clinical attachments ──────────────────────────────────────────────────────
 const listHubClinicalAttachments = async (req, res) => {
     const clinic_id = uuidStr.safeParse(req.query.clinic_id);
@@ -975,8 +1236,9 @@ const listHubHospitalBeds = async (req, res) => {
         .is('deleted_at', null)
         .order('code');
     const unit_id = req.query.unit_id ? uuidStr.safeParse(req.query.unit_id) : null;
-    if (unit_id?.success)
-        q = q.eq('unit_id', unit_id.data);
+    if (unit_id?.success) {
+        q = q.or(`unit_id.eq.${unit_id.data},unit_id.is.null`);
+    }
     const { data, error } = await q;
     if (error)
         return res.status(500).json({ error: error.message });
@@ -995,8 +1257,12 @@ const createHubHospitalBed = async (req, res) => {
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
     const { data, error } = await supabase_1.supabaseAdmin.from('hub_hospital_beds').insert(parsed.data).select('*').single();
-    if (error)
+    if (error) {
+        if (error.code === '23505' || error.message?.includes('uniq_hub_hospital_beds')) {
+            return res.status(409).json({ error: 'Já existe um leito com este código nesta clínica.' });
+        }
         return res.status(500).json({ error: error.message });
+    }
     return res.status(201).json({ bed: data });
 };
 exports.createHubHospitalBed = createHubHospitalBed;
@@ -1006,7 +1272,7 @@ const listHubHospitalizations = async (req, res) => {
         return res.status(400).json({ error: 'clinic_id obrigatório' });
     let q = supabase_1.supabaseAdmin
         .from('hub_hospitalizations')
-        .select('*, hub_hospital_beds(code, label), hub_pets(name), hub_guardians(full_name)')
+        .select('*, hub_hospital_beds(code, label), hub_pets(name, species), hub_guardians(full_name)')
         .eq('clinic_id', clinic_id.data)
         .is('deleted_at', null)
         .order('admitted_at', { ascending: false });
@@ -1016,10 +1282,14 @@ const listHubHospitalizations = async (req, res) => {
     const hosp_case_id = req.query.hub_case_id ? uuidStr.safeParse(req.query.hub_case_id) : null;
     if (hosp_case_id?.success)
         q = q.eq('hub_case_id', hosp_case_id.data);
+    const hosp_pet_id = req.query.pet_id ? uuidStr.safeParse(req.query.pet_id) : null;
+    if (hosp_pet_id?.success)
+        q = q.eq('pet_id', hosp_pet_id.data);
     const { data, error } = await q;
     if (error)
         return res.status(500).json({ error: error.message });
-    return res.json({ hospitalizations: data ?? [] });
+    const hospitalizations = await attachClinicalCaseSummaries((data ?? []));
+    return res.json({ hospitalizations });
 };
 exports.listHubHospitalizations = listHubHospitalizations;
 const createHubHospitalization = async (req, res) => {
@@ -1033,15 +1303,39 @@ const createHubHospitalization = async (req, res) => {
         hub_case_id: uuidStr.optional().nullable(),
         create_new_case: zod_1.z.boolean().optional(),
         new_case_title: zod_1.z.string().trim().max(500).optional().nullable(),
+        reopen_reason: zod_1.z.string().trim().min(8).max(1000).optional().nullable(),
         hub_hospital_bed_id: uuidStr.optional().nullable(),
         hub_staff_member_id: uuidStr.optional().nullable(),
         admission_notes: zod_1.z.string().trim().max(4000).optional().nullable(),
         reason: zod_1.z.string().trim().max(1000).optional().nullable(),
+        daily_hub_service_type_id: uuidStr.optional().nullable(),
+        daily_unit_amount: zod_1.z.number().min(0).optional().nullable(),
+        daily_includes_medication: zod_1.z.boolean().optional().default(false),
     })
         .safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
+    let dailyUnitAmount = b.daily_unit_amount ?? null;
+    if (b.daily_hub_service_type_id) {
+        const { data: svc, error: svcErr } = await supabase_1.supabaseAdmin
+            .from('hub_service_types')
+            .select('id, name, sale_amount, service_group, active, deleted_at')
+            .eq('id', b.daily_hub_service_type_id)
+            .eq('clinic_id', b.clinic_id)
+            .maybeSingle();
+        if (svcErr)
+            return res.status(500).json({ error: svcErr.message });
+        if (!svc || svc.deleted_at || svc.active === false) {
+            return res.status(400).json({ error: 'Serviço de diária não encontrado' });
+        }
+        if (String(svc.service_group) !== 'internacao') {
+            return res.status(400).json({ error: 'Serviço de diária deve pertencer ao grupo Internação' });
+        }
+        if (dailyUnitAmount == null) {
+            dailyUnitAmount = (0, hubVariablePrice_1.roundMoney2)(Number(svc.sale_amount ?? 0));
+        }
+    }
     let caseId;
     let encounterId;
     try {
@@ -1055,12 +1349,16 @@ const createHubHospitalization = async (req, res) => {
             create_new_case: b.create_new_case,
             new_case_title: b.new_case_title,
             encounter_chief_complaint: b.reason ?? b.admission_notes ?? 'Admissão de internação',
+            reopen_reason: b.reopen_reason,
+            reopened_by: req.user?.id ?? null,
+            hub_staff_member_id: b.hub_staff_member_id,
+            hub_service_type_id: b.daily_hub_service_type_id ?? null,
         });
         caseId = resolved.case_id;
         encounterId = resolved.encounter_id;
     }
     catch (e) {
-        if (e instanceof hubClinicalCasesController_1.CaseSelectionRequiredError) {
+        if (e instanceof hubClinicalCasesController_1.CaseSelectionRequiredError || e instanceof hubClinicalCasesController_1.CaseReopenRequiredError) {
             return res.status(409).json({ error: e.message, code: e.code });
         }
         return res.status(400).json({ error: e?.message });
@@ -1078,6 +1376,9 @@ const createHubHospitalization = async (req, res) => {
         hub_staff_member_id: b.hub_staff_member_id ?? null,
         admission_notes: b.admission_notes ?? null,
         reason: b.reason ?? null,
+        daily_hub_service_type_id: b.daily_hub_service_type_id ?? null,
+        daily_unit_amount: dailyUnitAmount,
+        daily_includes_medication: b.daily_includes_medication ?? false,
         status: 'active',
     })
         .select('*')
@@ -1087,6 +1388,42 @@ const createHubHospitalization = async (req, res) => {
     if (b.hub_hospital_bed_id) {
         await supabase_1.supabaseAdmin.from('hub_hospital_beds').update({ status: 'occupied' }).eq('id', b.hub_hospital_bed_id);
     }
+    const hospitalizationId = data.id;
+    const admittedAt = data.admitted_at ?? new Date().toISOString();
+    // Consultório → Agenda: marco de admissão no dia (não modela estadia multi-dia).
+    const appointmentId = await (0, hubClinicalAppointmentMirror_1.insertLinkedClinicalAppointment)({
+        clinicId: b.clinic_id,
+        unitId: b.unit_id,
+        petId: b.pet_id,
+        guardianId: b.guardian_id,
+        staffMemberId: b.hub_staff_member_id,
+        serviceTypeId: b.daily_hub_service_type_id,
+        serviceGroup: 'internacao',
+        startsAt: admittedAt,
+        title: b.reason?.trim() || 'Internação',
+        status: 'in_progress',
+        appointmentKind: 'clinical_walk_in',
+        notes: b.admission_notes ?? null,
+        intakeHubCaseId: caseId,
+    });
+    let hospitalization = data;
+    if (appointmentId) {
+        await supabase_1.supabaseAdmin
+            .from('hub_encounters')
+            .update({ hub_appointment_id: appointmentId })
+            .eq('id', encounterId)
+            .eq('clinic_id', b.clinic_id)
+            .is('hub_appointment_id', null);
+        const { data: linked } = await supabase_1.supabaseAdmin
+            .from('hub_hospitalizations')
+            .update({ hub_appointment_id: appointmentId })
+            .eq('id', hospitalizationId)
+            .eq('clinic_id', b.clinic_id)
+            .select('*')
+            .maybeSingle();
+        if (linked)
+            hospitalization = linked;
+    }
     void (0, hubClinicalTimelineController_1.recordTimelineEvent)({
         clinic_id: b.clinic_id,
         pet_id: b.pet_id,
@@ -1094,14 +1431,36 @@ const createHubHospitalization = async (req, res) => {
         hub_encounter_id: encounterId,
         event_type: 'hospitalization_started',
         ref_type: 'hospitalization',
-        ref_id: data.id,
+        ref_id: hospitalizationId,
         title: 'Internação iniciada',
         body: b.reason ?? b.admission_notes ?? null,
         created_by: b.hub_staff_member_id ?? null,
     });
-    return res.status(201).json({ hospitalization: data });
+    if (encounterId) {
+        void (0, hubComandasController_1.syncOpenComandasAfterEncounterChargeableChange)(b.clinic_id, encounterId);
+    }
+    return res.status(201).json({ hospitalization });
 };
 exports.createHubHospitalization = createHubHospitalization;
+const getHubHospitalization = async (req, res) => {
+    const id = uuidStr.safeParse(req.params.id);
+    const clinic_id = uuidStr.safeParse(req.query.clinic_id);
+    if (!id.success || !clinic_id.success)
+        return res.status(400).json({ error: 'id e clinic_id obrigatórios' });
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_hospitalizations')
+        .select('*, hub_hospital_beds(code, label), hub_pets(name, species), hub_guardians(full_name)')
+        .eq('id', id.data)
+        .eq('clinic_id', clinic_id.data)
+        .is('deleted_at', null)
+        .maybeSingle();
+    if (error)
+        return res.status(500).json({ error: error.message });
+    if (!data)
+        return res.status(404).json({ error: 'Internação não encontrada' });
+    return res.json({ hospitalization: data });
+};
+exports.getHubHospitalization = getHubHospitalization;
 const patchHubHospitalization = async (req, res) => {
     const id = uuidStr.safeParse(req.params.id);
     const parsed = zod_1.z
@@ -1111,14 +1470,20 @@ const patchHubHospitalization = async (req, res) => {
         discharge_notes: zod_1.z.string().trim().max(4000).optional().nullable(),
         reason: zod_1.z.string().trim().max(1000).optional().nullable(),
         hub_case_id: uuidStr.optional().nullable(),
+        create_new_case: zod_1.z.boolean().optional(),
+        new_case_title: zod_1.z.string().trim().max(500).optional().nullable(),
+        hub_hospital_bed_id: uuidStr.optional().nullable(),
+        daily_hub_service_type_id: uuidStr.optional().nullable(),
+        daily_unit_amount: zod_1.z.number().min(0).optional().nullable(),
+        daily_includes_medication: zod_1.z.boolean().optional(),
     })
         .safeParse(req.body);
     if (!id.success || !parsed.success)
         return res.status(400).json({ error: 'Dados inválidos' });
-    const { clinic_id, ...patch } = parsed.data;
+    const { clinic_id, create_new_case, new_case_title, hub_case_id, hub_hospital_bed_id, ...patch } = parsed.data;
     const { data: existing, error: getErr } = await supabase_1.supabaseAdmin
         .from('hub_hospitalizations')
-        .select('id, hub_hospital_bed_id, status')
+        .select('id, hub_hospital_bed_id, status, pet_id, guardian_id, hub_encounter_id, unit_id, admission_notes, reason, hub_appointment_id')
         .eq('id', id.data)
         .eq('clinic_id', clinic_id)
         .maybeSingle();
@@ -1127,6 +1492,57 @@ const patchHubHospitalization = async (req, res) => {
     if (!existing)
         return res.status(404).json({ error: 'Internação não encontrada' });
     const update = { ...patch };
+    if (hub_hospital_bed_id !== undefined) {
+        if (hub_hospital_bed_id) {
+            const { data: bed, error: bedErr } = await supabase_1.supabaseAdmin
+                .from('hub_hospital_beds')
+                .select('id, status')
+                .eq('id', hub_hospital_bed_id)
+                .eq('clinic_id', clinic_id)
+                .is('deleted_at', null)
+                .maybeSingle();
+            if (bedErr)
+                return res.status(500).json({ error: bedErr.message });
+            if (!bed)
+                return res.status(400).json({ error: 'Leito não encontrado' });
+            const currentBedId = existing.hub_hospital_bed_id ?? null;
+            if (bed.status === 'occupied' && bed.id !== currentBedId) {
+                return res.status(409).json({ error: 'Este leito já está ocupado.' });
+            }
+            if (bed.status === 'maintenance') {
+                return res.status(409).json({ error: 'Este leito está em manutenção.' });
+            }
+        }
+        update.hub_hospital_bed_id = hub_hospital_bed_id;
+    }
+    if (create_new_case || hub_case_id) {
+        try {
+            const resolved = await (0, hubClinicalCasesController_1.ensureCaseAndAdmissionEncounter)({
+                clinic_id,
+                unit_id: existing.unit_id,
+                pet_id: existing.pet_id,
+                guardian_id: existing.guardian_id,
+                hub_encounter_id: existing.hub_encounter_id,
+                hub_case_id,
+                create_new_case,
+                new_case_title,
+                encounter_chief_complaint: existing.reason ??
+                    existing.admission_notes ??
+                    'Vínculo de internação',
+                reopened_by: req.user?.id ?? null,
+            });
+            update.hub_case_id = resolved.case_id;
+            if (!existing.hub_encounter_id) {
+                update.hub_encounter_id = resolved.encounter_id;
+            }
+        }
+        catch (e) {
+            if (e instanceof hubClinicalCasesController_1.CaseSelectionRequiredError || e instanceof hubClinicalCasesController_1.CaseReopenRequiredError) {
+                return res.status(409).json({ error: e.message, code: e.code });
+            }
+            return res.status(400).json({ error: e?.message });
+        }
+    }
     if (patch.status === 'discharged') {
         update.discharged_at = new Date().toISOString();
     }
@@ -1135,16 +1551,44 @@ const patchHubHospitalization = async (req, res) => {
         .update(update)
         .eq('id', id.data)
         .eq('clinic_id', clinic_id)
-        .select('*, hub_hospital_beds(code, label), hub_pets(name), hub_guardians(full_name)')
+        .select('*, hub_hospital_beds(code, label), hub_pets(name, species), hub_guardians(full_name)')
         .maybeSingle();
     if (error)
         return res.status(500).json({ error: error.message });
     const discharged = patch.status === 'discharged' || patch.status === 'death' || patch.status === 'transferred';
-    if (discharged && existing.hub_hospital_bed_id) {
-        await supabase_1.supabaseAdmin
-            .from('hub_hospital_beds')
-            .update({ status: 'available' })
-            .eq('id', existing.hub_hospital_bed_id);
+    const linkedAppointmentId = existing.hub_appointment_id ?? null;
+    if (discharged) {
+        await (0, hubClinicalAppointmentMirror_1.setLinkedAppointmentStatus)({
+            clinicId: clinic_id,
+            appointmentId: linkedAppointmentId,
+            status: 'done',
+        });
+    }
+    else if (patch.status === 'cancelled') {
+        await (0, hubClinicalAppointmentMirror_1.setLinkedAppointmentStatus)({
+            clinicId: clinic_id,
+            appointmentId: linkedAppointmentId,
+            status: 'cancelled',
+        });
+    }
+    const prevBedId = existing.hub_hospital_bed_id ?? null;
+    const nextBedId = hub_hospital_bed_id !== undefined ? hub_hospital_bed_id ?? null : prevBedId;
+    if (discharged) {
+        const toFree = nextBedId ?? prevBedId;
+        if (toFree) {
+            await supabase_1.supabaseAdmin.from('hub_hospital_beds').update({ status: 'available' }).eq('id', toFree);
+        }
+        if (prevBedId && prevBedId !== toFree) {
+            await supabase_1.supabaseAdmin.from('hub_hospital_beds').update({ status: 'available' }).eq('id', prevBedId);
+        }
+    }
+    else if (hub_hospital_bed_id !== undefined && prevBedId !== nextBedId) {
+        if (prevBedId) {
+            await supabase_1.supabaseAdmin.from('hub_hospital_beds').update({ status: 'available' }).eq('id', prevBedId);
+        }
+        if (nextBedId) {
+            await supabase_1.supabaseAdmin.from('hub_hospital_beds').update({ status: 'occupied' }).eq('id', nextBedId);
+        }
     }
     const hospData = data;
     if (hospData) {
@@ -1164,6 +1608,10 @@ const patchHubHospitalization = async (req, res) => {
                 title: timelineTitle,
                 body: patch.discharge_notes ?? null,
             });
+        }
+        if (hospData.pet_id) {
+            const { scheduleReceptionSync } = await Promise.resolve().then(() => __importStar(require('./receptionSync')));
+            scheduleReceptionSync(clinic_id, hospData.pet_id);
         }
     }
     return res.json({ hospitalization: data });
@@ -1217,6 +1665,7 @@ const createHubHospitalizationEvent = async (req, res) => {
     const id = uuidStr.safeParse(req.params.id);
     const parsed = zod_1.z
         .object({
+        clinic_id: uuidStr.optional(),
         kind: hospitalizationEventKindSchema,
         recorded_at: zod_1.z.string().datetime({ offset: true }).optional(),
         payload: zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()).optional().default({}),
@@ -1242,6 +1691,30 @@ const createHubHospitalizationEvent = async (req, res) => {
     return res.status(201).json({ event: data });
 };
 exports.createHubHospitalizationEvent = createHubHospitalizationEvent;
+// ── Clinical case summaries (hospitalizations & surgeries) ───────────────────
+async function attachClinicalCaseSummaries(rows) {
+    const caseIds = [
+        ...new Set(rows
+            .map((r) => r.hub_case_id)
+            .filter((id) => Boolean(id))),
+    ];
+    if (caseIds.length === 0) {
+        return rows.map((r) => ({ ...r, hub_clinical_cases: r.hub_clinical_cases ?? null }));
+    }
+    const { data: cases } = await supabase_1.supabaseAdmin
+        .from('hub_clinical_cases')
+        .select('id, title, status')
+        .in('id', caseIds)
+        .is('deleted_at', null);
+    const byId = new Map((cases ?? []).map((c) => [c.id, c]));
+    return rows.map((r) => {
+        const caseId = r.hub_case_id;
+        return {
+            ...r,
+            hub_clinical_cases: caseId ? byId.get(caseId) ?? null : null,
+        };
+    });
+}
 // ── Surgeries ─────────────────────────────────────────────────────────────────
 const listHubSurgeries = async (req, res) => {
     const clinic_id = uuidStr.safeParse(req.query.clinic_id);
@@ -1259,12 +1732,37 @@ const listHubSurgeries = async (req, res) => {
     const surg_case_id = req.query.hub_case_id ? uuidStr.safeParse(req.query.hub_case_id) : null;
     if (surg_case_id?.success)
         q = q.eq('hub_case_id', surg_case_id.data);
+    const surg_pet_id = req.query.pet_id ? uuidStr.safeParse(req.query.pet_id) : null;
+    if (surg_pet_id?.success)
+        q = q.eq('pet_id', surg_pet_id.data);
     const { data, error } = await q;
     if (error)
         return res.status(500).json({ error: error.message });
-    return res.json({ surgeries: data ?? [] });
+    const surgeries = await attachClinicalCaseSummaries((data ?? []));
+    return res.json({ surgeries });
 };
 exports.listHubSurgeries = listHubSurgeries;
+const getHubSurgery = async (req, res) => {
+    const id = uuidStr.safeParse(req.params.id);
+    const clinic_id = uuidStr.safeParse(req.query.clinic_id);
+    if (!id.success || !clinic_id.success)
+        return res.status(400).json({ error: 'id e clinic_id obrigatórios' });
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_surgeries')
+        .select('*, hub_pets(name, species), hub_guardians(full_name)')
+        .eq('id', id.data)
+        .eq('clinic_id', clinic_id.data)
+        .is('deleted_at', null)
+        .maybeSingle();
+    if (error)
+        return res.status(500).json({ error: error.message });
+    if (!data)
+        return res.status(404).json({ error: 'Cirurgia não encontrada' });
+    const [surgery] = await attachClinicalCaseSummaries([data]);
+    const { payables } = await (0, hubPayablesService_1.listPayablesForSurgery)(clinic_id.data, id.data);
+    return res.json({ surgery, payables });
+};
+exports.getHubSurgery = getHubSurgery;
 const jsonbField = zod_1.z.record(zod_1.z.string(), zod_1.z.unknown()).optional().nullable();
 const createHubSurgery = async (req, res) => {
     const parsed = zod_1.z
@@ -1277,7 +1775,9 @@ const createHubSurgery = async (req, res) => {
         hub_case_id: uuidStr.optional().nullable(),
         create_new_case: zod_1.z.boolean().optional(),
         new_case_title: zod_1.z.string().trim().max(500).optional().nullable(),
+        reopen_reason: zod_1.z.string().trim().min(8).max(1000).optional().nullable(),
         hub_staff_member_id: uuidStr.optional().nullable(),
+        hub_appointment_id: uuidStr.optional().nullable(),
         title: zod_1.z.string().trim().min(1).max(200),
         scheduled_at: zod_1.z.string().datetime({ offset: true }).optional().nullable(),
         anesthetic_risk: zod_1.z.enum(['I', 'II', 'III', 'IV', 'V', 'VI', 'E']).optional().nullable(),
@@ -1286,6 +1786,7 @@ const createHubSurgery = async (req, res) => {
         team: zod_1.z.array(zod_1.z.record(zod_1.z.string(), zod_1.z.unknown())).optional().nullable(),
         materials: zod_1.z.array(zod_1.z.record(zod_1.z.string(), zod_1.z.unknown())).optional().nullable(),
         post_op: jsonbField,
+        services: zod_1.z.array(surgeryServiceInputSchema).optional().default([]),
         // Legacy fields (backward compat)
         anesthesia_notes: zod_1.z.string().optional().nullable(),
         team_notes: zod_1.z.string().optional().nullable(),
@@ -1296,6 +1797,7 @@ const createHubSurgery = async (req, res) => {
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
+    const primaryServiceTypeId = b.services[0]?.hub_service_type_id ?? null;
     let caseId;
     let encounterId;
     try {
@@ -1309,15 +1811,45 @@ const createHubSurgery = async (req, res) => {
             create_new_case: b.create_new_case,
             new_case_title: b.new_case_title,
             encounter_chief_complaint: `Cirurgia: ${b.title}`,
+            reopen_reason: b.reopen_reason,
+            reopened_by: req.user?.id ?? null,
+            hub_staff_member_id: b.hub_staff_member_id,
+            hub_service_type_id: primaryServiceTypeId,
         });
         caseId = resolved.case_id;
         encounterId = resolved.encounter_id;
     }
     catch (e) {
-        if (e instanceof hubClinicalCasesController_1.CaseSelectionRequiredError) {
+        if (e instanceof hubClinicalCasesController_1.CaseSelectionRequiredError || e instanceof hubClinicalCasesController_1.CaseReopenRequiredError) {
             return res.status(409).json({ error: e.message, code: e.code });
         }
         return res.status(400).json({ error: e?.message });
+    }
+    // Consultório → Agenda: cria o slot sem sync (evita ficha duplicada).
+    let appointmentId = b.hub_appointment_id ?? null;
+    if (!appointmentId && b.scheduled_at) {
+        appointmentId = await (0, hubClinicalAppointmentMirror_1.insertLinkedClinicalAppointment)({
+            clinicId: b.clinic_id,
+            unitId: b.unit_id,
+            petId: b.pet_id,
+            guardianId: b.guardian_id,
+            staffMemberId: b.hub_staff_member_id,
+            serviceTypeId: primaryServiceTypeId,
+            serviceGroup: 'cirurgia',
+            startsAt: b.scheduled_at,
+            title: b.title,
+            status: 'confirmed',
+            appointmentKind: 'standard',
+            intakeHubCaseId: caseId,
+        });
+    }
+    if (appointmentId) {
+        await supabase_1.supabaseAdmin
+            .from('hub_encounters')
+            .update({ hub_appointment_id: appointmentId })
+            .eq('id', encounterId)
+            .eq('clinic_id', b.clinic_id)
+            .is('hub_appointment_id', null);
     }
     const { data, error } = await supabase_1.supabaseAdmin
         .from('hub_surgeries')
@@ -1328,13 +1860,14 @@ const createHubSurgery = async (req, res) => {
         guardian_id: b.guardian_id ?? null,
         hub_encounter_id: encounterId,
         hub_case_id: caseId,
+        hub_appointment_id: appointmentId,
         hub_staff_member_id: b.hub_staff_member_id ?? null,
         title: b.title,
         scheduled_at: b.scheduled_at ?? null,
         anesthetic_risk: b.anesthetic_risk ?? null,
         pre_op: b.pre_op ?? {},
         procedure: b.procedure ?? {},
-        team: b.team ?? [],
+        team: (0, hubPayablesService_1.stripTeamFinancialFields)(b.team ?? []),
         materials: b.materials ?? [],
         post_op: b.post_op ?? {},
         anesthesia_notes: b.anesthesia_notes ?? null,
@@ -1347,6 +1880,43 @@ const createHubSurgery = async (req, res) => {
         .single();
     if (error)
         return res.status(500).json({ error: error.message });
+    const surgeryId = data.id;
+    let payables = [];
+    const unitForPayable = b.unit_id ?? null;
+    if (unitForPayable && Array.isArray(b.team) && b.team.length) {
+        const synced = await (0, hubPayablesService_1.syncSurgeryTeamPayables)({
+            clinicId: b.clinic_id,
+            unitId: unitForPayable,
+            surgeryId,
+            surgeryTitle: b.title,
+            team: b.team,
+            createdByUserId: req.user?.id ?? null,
+        });
+        if (synced.error && String(synced.error).includes('hub_payables')) {
+            // migração ainda não aplicada — não bloqueia criação da ficha
+            payables = [];
+        }
+        else if (synced.error) {
+            return res.status(400).json({ error: synced.error, surgery: data });
+        }
+        else {
+            payables = synced.payables;
+        }
+    }
+    if (b.services.length > 0) {
+        try {
+            await (0, hubClinicalBillableServicesController_1.insertSurgeryServicesBatch)({
+                clinicId: b.clinic_id,
+                surgeryId,
+                appointmentId,
+                userId: req.user?.id,
+                services: b.services,
+            });
+        }
+        catch (e) {
+            return res.status(400).json({ error: e.message, surgery: data });
+        }
+    }
     // Agendamento: usar `note` (surgery_performed é reservado para conclusão)
     void (0, hubClinicalTimelineController_1.recordTimelineEvent)({
         clinic_id: b.clinic_id,
@@ -1355,11 +1925,20 @@ const createHubSurgery = async (req, res) => {
         hub_encounter_id: encounterId,
         event_type: 'note',
         ref_type: 'surgery',
-        ref_id: data.id,
+        ref_id: surgeryId,
         title: `Cirurgia agendada: ${b.title}`,
         created_by: b.hub_staff_member_id ?? null,
     });
-    return res.status(201).json({ surgery: data });
+    if (encounterId) {
+        void (0, hubComandasController_1.syncOpenComandasAfterEncounterChargeableChange)(b.clinic_id, encounterId);
+    }
+    const { data: services } = await supabase_1.supabaseAdmin
+        .from('hub_surgery_services')
+        .select('*')
+        .eq('surgery_id', surgeryId)
+        .is('deleted_at', null)
+        .order('sort_order', { ascending: true });
+    return res.status(201).json({ surgery: data, services: services ?? [], payables });
 };
 exports.createHubSurgery = createHubSurgery;
 const patchHubSurgery = async (req, res) => {
@@ -1368,10 +1947,12 @@ const patchHubSurgery = async (req, res) => {
         .object({
         clinic_id: uuidStr,
         status: zod_1.z.enum(['scheduled', 'in_progress', 'completed', 'cancelled']).optional(),
+        scheduled_at: zod_1.z.string().datetime({ offset: true }).optional().nullable(),
         started_at: zod_1.z.string().datetime({ offset: true }).optional().nullable(),
         completed_at: zod_1.z.string().datetime({ offset: true }).optional().nullable(),
         discharge_at: zod_1.z.string().datetime({ offset: true }).optional().nullable(),
         anesthetic_risk: zod_1.z.enum(['I', 'II', 'III', 'IV', 'V', 'VI', 'E']).optional().nullable(),
+        hub_staff_member_id: uuidStr.optional().nullable(),
         pre_op: jsonbField,
         procedure: jsonbField,
         team: zod_1.z.array(zod_1.z.record(zod_1.z.string(), zod_1.z.unknown())).optional().nullable(),
@@ -1382,20 +1963,105 @@ const patchHubSurgery = async (req, res) => {
         materials_notes: zod_1.z.string().optional().nullable(),
         post_op_notes: zod_1.z.string().optional().nullable(),
         hub_case_id: uuidStr.optional().nullable(),
+        create_new_case: zod_1.z.boolean().optional(),
+        new_case_title: zod_1.z.string().trim().max(500).optional().nullable(),
+        reopen_reason: zod_1.z.string().trim().min(8).max(1000).optional().nullable(),
     })
         .safeParse(req.body);
     if (!id.success || !parsed.success)
         return res.status(400).json({ error: 'Dados inválidos' });
-    const { clinic_id, ...patch } = parsed.data;
+    const { clinic_id, create_new_case, new_case_title, hub_case_id, reopen_reason, ...patch } = parsed.data;
     const { data: existing } = await supabase_1.supabaseAdmin
         .from('hub_surgeries')
-        .select('pet_id, hub_case_id, hub_encounter_id, hub_staff_member_id, title')
+        .select('pet_id, guardian_id, unit_id, hub_case_id, hub_encounter_id, hub_staff_member_id, hub_appointment_id, title, status, team')
         .eq('id', id.data)
         .eq('clinic_id', clinic_id)
         .maybeSingle();
+    if (!existing)
+        return res.status(404).json({ error: 'Cirurgia não encontrada' });
+    const rawTeamForSync = Array.isArray(patch.team) ? patch.team : null;
+    const update = { ...patch };
+    if (Array.isArray(patch.team)) {
+        update.team = (0, hubPayablesService_1.stripTeamFinancialFields)(patch.team);
+    }
+    const existingStatus = existing.status;
+    const linkedAppointmentId = existing.hub_appointment_id;
+    // Reagenda o slot enquanto a ficha ainda está scheduled.
+    if (patch.scheduled_at &&
+        existingStatus === 'scheduled' &&
+        patch.status !== 'in_progress' &&
+        patch.status !== 'completed' &&
+        patch.status !== 'cancelled') {
+        await (0, hubClinicalAppointmentMirror_1.rescheduleLinkedAppointment)({
+            clinicId: clinic_id,
+            appointmentId: linkedAppointmentId,
+            startsAt: patch.scheduled_at,
+        });
+    }
+    const becomingOrAlreadyActive = patch.status === 'in_progress' ||
+        (existingStatus === 'in_progress' && patch.status === undefined);
+    if (becomingOrAlreadyActive) {
+        const staffId = patch.hub_staff_member_id ??
+            existing.hub_staff_member_id ??
+            null;
+        try {
+            const moved = await (0, hubSurgeryFromAppointment_1.advanceLinkedAppointmentOnSurgeryStart)({
+                clinicId: clinic_id,
+                appointmentId: linkedAppointmentId,
+                staffMemberId: staffId,
+            });
+            if (moved?.moved && update.scheduled_at === undefined) {
+                update.scheduled_at = moved.starts_at;
+            }
+        }
+        catch (e) {
+            return res.status(400).json({ error: e?.message || 'Erro ao atualizar o agendamento da cirurgia' });
+        }
+    }
+    const needsCaseOnComplete = patch.status === 'completed' &&
+        !hub_case_id &&
+        !create_new_case &&
+        !existing.hub_case_id;
+    if (create_new_case || hub_case_id || needsCaseOnComplete) {
+        try {
+            const ex = existing;
+            const resolved = await (0, hubClinicalCasesController_1.ensureCaseAndAdmissionEncounter)({
+                clinic_id,
+                unit_id: ex.unit_id,
+                pet_id: ex.pet_id,
+                guardian_id: ex.guardian_id,
+                hub_encounter_id: ex.hub_encounter_id,
+                hub_case_id,
+                create_new_case: create_new_case || needsCaseOnComplete,
+                new_case_title: new_case_title?.trim() || ex.title,
+                encounter_chief_complaint: `Cirurgia: ${ex.title}`,
+                reopen_reason,
+                reopened_by: req.user?.id ?? null,
+                hub_staff_member_id: ex.hub_staff_member_id,
+            });
+            update.hub_case_id = resolved.case_id;
+            if (!ex.hub_encounter_id) {
+                update.hub_encounter_id = resolved.encounter_id;
+            }
+            if (ex.hub_appointment_id && !ex.hub_encounter_id) {
+                await supabase_1.supabaseAdmin
+                    .from('hub_encounters')
+                    .update({ hub_appointment_id: ex.hub_appointment_id })
+                    .eq('id', resolved.encounter_id)
+                    .eq('clinic_id', clinic_id)
+                    .is('hub_appointment_id', null);
+            }
+        }
+        catch (e) {
+            if (e instanceof hubClinicalCasesController_1.CaseSelectionRequiredError || e instanceof hubClinicalCasesController_1.CaseReopenRequiredError) {
+                return res.status(409).json({ error: e.message, code: e.code });
+            }
+            return res.status(400).json({ error: e?.message });
+        }
+    }
     const { data, error } = await supabase_1.supabaseAdmin
         .from('hub_surgeries')
-        .update(patch)
+        .update(update)
         .eq('id', id.data)
         .eq('clinic_id', clinic_id)
         .select('*')
@@ -1404,13 +2070,40 @@ const patchHubSurgery = async (req, res) => {
         return res.status(500).json({ error: error.message });
     if (!data)
         return res.status(404).json({ error: 'Cirurgia não encontrada' });
+    const { data: enriched } = await supabase_1.supabaseAdmin
+        .from('hub_surgeries')
+        .select('*, hub_pets(name, species), hub_guardians(full_name)')
+        .eq('id', id.data)
+        .eq('clinic_id', clinic_id)
+        .maybeSingle();
+    const [responseRow] = await attachClinicalCaseSummaries([
+        (enriched ?? data),
+    ]);
+    const encounterId = responseRow.hub_encounter_id
+        ?? existing?.hub_encounter_id
+        ?? null;
+    const staffId = responseRow.hub_staff_member_id ?? null;
+    if (encounterId && staffId) {
+        await supabase_1.supabaseAdmin
+            .from('hub_encounters')
+            .update({ hub_staff_member_id: staffId })
+            .eq('id', encounterId)
+            .eq('clinic_id', clinic_id)
+            .is('hub_staff_member_id', null);
+    }
     if (patch.status === 'completed' && existing) {
         const ex = existing;
+        const row = responseRow;
+        await (0, hubClinicalAppointmentMirror_1.setLinkedAppointmentStatus)({
+            clinicId: clinic_id,
+            appointmentId: ex.hub_appointment_id,
+            status: 'done',
+        });
         void (0, hubClinicalTimelineController_1.recordTimelineEvent)({
             clinic_id,
             pet_id: ex.pet_id,
-            hub_case_id: ex.hub_case_id,
-            hub_encounter_id: ex.hub_encounter_id,
+            hub_case_id: row.hub_case_id ?? ex.hub_case_id,
+            hub_encounter_id: row.hub_encounter_id ?? ex.hub_encounter_id,
             event_type: 'surgery_performed',
             ref_type: 'surgery',
             ref_id: id.data,
@@ -1418,7 +2111,39 @@ const patchHubSurgery = async (req, res) => {
             created_by: ex.hub_staff_member_id,
         });
     }
-    return res.json({ surgery: data });
+    if (patch.status === 'cancelled' && existing) {
+        await (0, hubClinicalAppointmentMirror_1.setLinkedAppointmentStatus)({
+            clinicId: clinic_id,
+            appointmentId: existing.hub_appointment_id,
+            status: 'cancelled',
+        });
+    }
+    let payables = [];
+    const unitId = responseRow.unit_id ??
+        existing.unit_id ??
+        null;
+    const surgeryTitle = responseRow.title ||
+        existing.title ||
+        'Cirurgia';
+    if (rawTeamForSync && unitId) {
+        const synced = await (0, hubPayablesService_1.syncSurgeryTeamPayables)({
+            clinicId: clinic_id,
+            unitId,
+            surgeryId: id.data,
+            surgeryTitle,
+            team: rawTeamForSync,
+            createdByUserId: req.user?.id ?? null,
+        });
+        if (synced.error && !String(synced.error).includes('hub_payables')) {
+            return res.status(400).json({ error: synced.error, surgery: responseRow });
+        }
+        payables = synced.payables;
+    }
+    else {
+        const listed = await (0, hubPayablesService_1.listPayablesForSurgery)(clinic_id, id.data);
+        payables = listed.payables;
+    }
+    return res.json({ surgery: responseRow, payables });
 };
 exports.patchHubSurgery = patchHubSurgery;
 /** Alertas simples: vacinas com próxima dose nos próximos 30 dias. */

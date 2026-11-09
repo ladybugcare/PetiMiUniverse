@@ -6,7 +6,8 @@ export type ReceptionHandoffKind =
   | 'encaminhar'
   | 'retirada_balcao'
   | 'embarque'
-  | 'lt_falha';
+  | 'lt_falha'
+  | 'saida_prevista';
 
 export type ReceptionHandoffStatus = 'open' | 'done' | 'cancelled';
 
@@ -40,6 +41,9 @@ export type ReceptionContext = {
   failed_direction?: 'pickup' | 'delivery' | null;
   route_id?: string | null;
   failed_at?: string | null;
+  preparing?: boolean;
+  boarding_mode?: 'hotel' | 'daycare' | null;
+  boarding_reservation_id?: string | null;
 };
 
 export type ReceptionBoardItem = {
@@ -88,6 +92,15 @@ export type ReceptionHandoffDetail = Omit<ReceptionBoardItem, 'pet' | 'guardian'
   is_late: boolean;
   /** `null` = usuário sem acesso ao caixa/financeiro; não mostrar aviso. */
   charge_pending: boolean | null;
+  boarding?: {
+    reservation_id: string;
+    mode: string | null;
+    status: string;
+    expected_check_out: string | null;
+    handoff_ready_at: string | null;
+    pending_belongings: number;
+    open_incidents: number;
+  } | null;
 };
 
 export const hubReceptionApi = {

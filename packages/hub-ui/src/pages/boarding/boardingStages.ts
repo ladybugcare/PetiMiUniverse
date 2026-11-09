@@ -1,15 +1,36 @@
 export type BoardingMode = 'hotel' | 'daycare' | 'all';
 
-export const BOARDING_STAGES = ['reserved', 'checked_in', 'checked_out', 'cancelled', 'no_show'] as const;
+export const BOARDING_STAGES = [
+  'reserved',
+  'checked_in',
+  'checkout_preparing',
+  'ready_for_handoff',
+  'checked_out',
+  'cancelled',
+  'no_show',
+] as const;
 export type BoardingStage = (typeof BOARDING_STAGES)[number];
 
 export const BOARDING_STAGE_LABELS: Record<BoardingStage, string> = {
   reserved: 'Reservado',
   checked_in: 'Hospedado',
+  checkout_preparing: 'Preparando saída',
+  ready_for_handoff: 'Aguardando recepção',
   checked_out: 'Check-out',
   cancelled: 'Cancelado',
   no_show: 'Não compareceu',
 };
+
+/** Ainda sob custódia do hotel/creche. */
+export const BOARDING_ACTIVE_STAGES: BoardingStage[] = [
+  'checked_in',
+  'checkout_preparing',
+  'ready_for_handoff',
+];
+
+export function isBoardingActiveStage(stage: string | null | undefined): boolean {
+  return BOARDING_ACTIVE_STAGES.includes(stage as BoardingStage);
+}
 
 /**
  * Três colunas operacionais do painel do dia.
@@ -17,7 +38,11 @@ export const BOARDING_STAGE_LABELS: Record<BoardingStage, string> = {
  */
 export const BOARDING_BOARD_COLUMNS: { id: string; title: string; stages: BoardingStage[] }[] = [
   { id: 'expected', title: 'Previstos hoje', stages: ['reserved'] },
-  { id: 'hosting', title: 'Hospedados', stages: ['checked_in'] },
+  {
+    id: 'hosting',
+    title: 'Hospedados',
+    stages: ['checked_in', 'checkout_preparing', 'ready_for_handoff'],
+  },
   { id: 'departed', title: 'Saídas de hoje', stages: ['checked_out'] },
 ];
 

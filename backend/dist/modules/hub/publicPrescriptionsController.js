@@ -101,7 +101,9 @@ const getPublicPrescriptionPdf = async (req, res) => {
             (0, prescriptionValidation_1.resolvePrescriptionPublicUrl)(String(doc.public_token));
         applyPublicPrescriptionHeaders(res);
         void (0, publicPrescriptionViewAudit_1.recordPrescriptionPdfDownloaded)(req, String(doc.clinic_id), String(doc.id));
-        const pdfView = (0, prescriptionValidation_1.snapshotToPdfView)(doc.snapshot);
+        const pdfView = (0, prescriptionValidation_1.snapshotToPdfView)(doc.snapshot, {
+            expires_at: payload.expires_at,
+        });
         await (0, hubPrescriptionPdf_1.streamValidatablePrescriptionPdf)(res, pdfView, {
             validation_code: payload.validation_code,
             public_url: publicUrl,

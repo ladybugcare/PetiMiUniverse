@@ -91,6 +91,22 @@ function taskTimeline(view: ReceptionHandoffDetail): Array<{ label: string; valu
     if (starts) {
       rows.push({ label: 'Horário do serviço', value: formatWhen(starts) });
     }
+  } else if (view.kind === 'saida_prevista') {
+    rows.push({
+      label: 'Saída prevista',
+      value: formatWhen(starts || view.opened_at),
+      hint: startsRel
+        ? startsRel.kind === 'future'
+          ? startsRel.text
+          : startsRel.kind === 'past'
+            ? `já passou ${startsRel.text.replace(/^há /, '')}`
+            : startsRel.text
+        : undefined,
+    });
+    rows.push({
+      label: 'Situação no hotel/creche',
+      value: view.context?.preparing ? 'Preparando saída' : 'Ainda hospedado',
+    });
   } else if (view.kind === 'autorizar_extra') {
     rows.push({
       label: 'Pedido feito em',
@@ -144,6 +160,7 @@ function taskKindLabel(kind: ReceptionBoardItem['kind']): string {
   if (kind === 'encaminhar') return 'Encaminhar';
   if (kind === 'embarque') return 'Embarque';
   if (kind === 'lt_falha') return 'Falha no Leva e Traz';
+  if (kind === 'saida_prevista') return 'Saída prevista';
   return 'Retirada no balcão';
 }
 
@@ -559,6 +576,30 @@ const ReceptionHandoffPanel: React.FC<ReceptionHandoffPanelProps> = ({
                   </li>
                 ))}
               </ul>
+            </section>
+          ) : null}
+
+          {view.boarding ? (
+            <section className="hub-reception-panel__section" aria-label="Hotel e Creche">
+              <h3 className="hub-reception-panel__section-title">Estadia</h3>
+              <ul className="hub-reception-panel__cues">
+                <li className="hub-reception-panel__cue">
+                  <p className="hub-reception-panel__cue-label">
+                    {view.boarding.mode === 'daycare' ? 'Creche' : 'Hotel'}
+                  </p>
+                  <p className="hub-reception-panel__cue-detail">
+                    {view.boarding.pending_belongings
+                      ? `${view.boarding.pending_belongings} pertence(s) pendente(s)`
+                      : 'Pertences conferidos'}
+                    {view.boarding.open_incidents
+                      ? ` · ${view.boarding.open_incidents} intercorrência(s) aberta(s)`
+                      : ''}
+                  </p>
+                </li>
+              </ul>
+              <Link to="/hub/hotel-creche" className="hub-reception-panel__charge-link">
+                Abrir Hotel &amp; Creche
+              </Link>
             </section>
           ) : null}
 

@@ -4,8 +4,10 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 const express_1 = __importDefault(require("express"));
+const authMiddleware_1 = require("../middleware/authMiddleware");
 const notificationsController_1 = require("../controllers/notificationsController");
 const router = express_1.default.Router();
+router.use(authMiddleware_1.authenticateUser);
 // GET /api/notifications - Buscar notificações do usuário (paginadas)
 // Query params: user_id (required), page (default: 1), limit (default: 20), unread_only (optional: true/false)
 router.get('/', notificationsController_1.getNotifications);
@@ -17,9 +19,9 @@ router.put('/:id/read', notificationsController_1.markAsRead);
 // PUT /api/notifications/read-all - Marcar todas como lidas
 // Body: { user_id: string }
 router.put('/read-all', notificationsController_1.markAllAsRead);
-// DELETE /api/notifications/:id - Deletar notificação específica
-router.delete('/:id', notificationsController_1.deleteNotification);
 // DELETE /api/notifications/clear-read - Limpar todas as notificações lidas
 // Body: { user_id: string }
 router.delete('/clear-read', notificationsController_1.clearReadNotifications);
+// DELETE /api/notifications/:id - Deletar notificação específica
+router.delete('/:id', notificationsController_1.deleteNotification);
 exports.default = router;

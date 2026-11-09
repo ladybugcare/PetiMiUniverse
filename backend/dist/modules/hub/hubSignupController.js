@@ -13,6 +13,7 @@ const errorHandler_js_1 = require("../../middleware/errorHandler.js");
 const errors_js_1 = require("../../utils/errors.js");
 const hubServiceGroupsController_js_1 = require("./hubServiceGroupsController.js");
 const hubSubscriptionService_js_1 = require("./hubSubscriptionService.js");
+const sendHubSignupConfirmation_js_1 = require("./sendHubSignupConfirmation.js");
 function resolveHubWebUrl() {
     const raw = process.env.HUB_WEB_URL?.trim() ||
         process.env.VITE_HUB_WEB_URL?.trim() ||
@@ -54,7 +55,18 @@ const hubOnboardingBodySchema = zod_1.z.object({
     plan_slug: zod_1.z.string().trim().max(50).optional(),
     beta_terms_accepted: zod_1.z.boolean().optional(),
 });
-async function ensureClinicUserForSignup(userId) {
+async function ensureClinicUserForSignup(userId, profile) {
+    const nowIso = new Date().toISOString();
+    const signupFields = {
+        name: profile.name,
+        email: profile.email.trim().toLowerCase(),
+        phone: profile.phone?.trim() || null,
+        onboarding_state: {
+            source: 'hub',
+            last_step: 'person',
+            completed: false,
+        },
+    };
     const { data: existing, error: fetchError } = await supabase_js_1.supabaseAdmin
         .from('clinic_users')
         .select('id, status, clinic_id, role')
@@ -70,8 +82,9 @@ async function ensureClinicUserForSignup(userId) {
             unit_id: null,
             role: 'CADMIN',
             status: 'pending_clinic',
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
+            ...signupFields,
+            created_at: nowIso,
+            updated_at: nowIso,
         });
         if (insertError)
             throw insertError;
@@ -86,7 +99,8 @@ async function ensureClinicUserForSignup(userId) {
         unit_id: null,
         role: 'CADMIN',
         status: 'pending_clinic',
-        updated_at: new Date().toISOString(),
+        ...signupFields,
+        updated_at: nowIso,
     })
         .eq('id', existing.id);
     if (updateError)
@@ -116,21 +130,29 @@ exports.postHubSignup = (0, errorHandler_js_1.asyncHandler)(async (req, res) => 
     if (authError || !authData?.user) {
         const msg = authError?.message || 'Erro ao criar usuário';
         if (msg.toLowerCase().includes('already') || msg.toLowerCase().includes('registered')) {
-            return res.status(409).json({ error: 'Este e-mail já está registado.' });
+            if (!isLocalEnv) {
+                await (0, sendHubSignupConfirmation_js_1.sendHubSignupConfirmationEmail)(email.trim().toLowerCase(), emailRedirectTo);
+                return res.status(200).json({
+                    success: true,
+                    message: 'Se a conta ainda não foi confirmada, enviamos um novo link. Confira a caixa de entrada e o spam.',
+                    email_confirmed: false,
+                    needs_onboarding: true,
+                });
+            }
+            return res.status(409).json({ error: 'Este e-mail já está registrado.' });
         }
         return res.status(400).json({ error: msg });
     }
     const userId = authData.user.id;
     try {
         if (!isLocalEnv) {
-            await supabase_js_1.supabaseAdmin.auth.admin.generateLink({
-                type: 'signup',
-                email: email.trim().toLowerCase(),
-                password,
-                options: { redirectTo: emailRedirectTo },
-            });
+            await (0, sendHubSignupConfirmation_js_1.sendHubSignupConfirmationEmail)(email.trim().toLowerCase(), emailRedirectTo);
         }
-        await ensureClinicUserForSignup(userId);
+        await ensureClinicUserForSignup(userId, {
+            name: full_name,
+            email: email.trim().toLowerCase(),
+            phone: phone?.trim() || null,
+        });
     }
     catch (e) {
         await supabase_js_1.supabaseAdmin.auth.admin.deleteUser(userId);
@@ -269,16 +291,38 @@ exports.postHubOnboardingClinic = (0, errorHandler_js_1.asyncHandler)(async (req
     catch (bootstrapErr) {
         console.warn('[hub_onboarding] ensureDefaultGroupJobFunctions', bootstrapErr);
     }
+    const planSlug = (parsed.data.plan_slug || 'beta').trim().toLowerCase();
     let subscription = null;
     try {
-        subscription = await (0, hubSubscriptionService_js_1.createBetaSubscription)(finalClinicId, {
-            notes: parsed.data.beta_terms_accepted
-                ? 'Programa Beta — termos aceitos no onboarding'
-                : 'Programa Beta (pré-MVP)',
-        });
+        if (planSlug && planSlug !== 'beta') {
+            subscription = await (0, hubSubscriptionService_js_1.createPendingPlanSubscription)(finalClinicId, planSlug);
+        }
+        else {
+            subscription = await (0, hubSubscriptionService_js_1.createBetaSubscription)(finalClinicId, {
+                notes: parsed.data.beta_terms_accepted
+                    ? 'Programa Beta — termos aceitos no onboarding'
+                    : 'Programa Beta (pré-MVP)',
+            });
+        }
     }
     catch (subErr) {
-        console.warn('[hub_onboarding] createBetaSubscription', subErr);
+        if (planSlug !== 'beta') {
+            await supabase_js_1.supabaseAdmin.from('units').delete().eq('id', unit.id);
+            await supabase_js_1.supabaseAdmin.from('clinics').delete().eq('id', finalClinicId);
+            await supabase_js_1.supabaseAdmin
+                .from('clinic_users')
+                .update({
+                clinic_id: null,
+                unit_id: null,
+                status: 'pending_clinic',
+                updated_at: new Date().toISOString(),
+            })
+                .eq('id', clinicUser.id);
+            if (subErr instanceof hubSubscriptionService_js_1.HubPlanError)
+                throw new errors_js_1.ValidationError(subErr.message);
+            throw subErr;
+        }
+        console.warn('[hub_onboarding] subscription', subErr);
     }
     const adminFullName = req.user?.user_metadata?.full_name ||
         req.user?.user_metadata?.name ||

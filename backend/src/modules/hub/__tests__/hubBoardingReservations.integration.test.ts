@@ -151,7 +151,7 @@ describe('Boarding reservations (integração)', () => {
       expect(res.body.reservation.checked_in_at).toBeTruthy();
     });
 
-    it('checked_in → checked_out sincroniza agendamento done', async () => {
+    it('rejeita checked_out direto — saída fecha na recepção', async () => {
       configureSupabaseMock({
         tables: {
           ...emptyBoardingTables(),
@@ -166,12 +166,34 @@ describe('Boarding reservations (integração)', () => {
         .patch(`/api/hub/boarding/reservations/${RESERVED_ID}`)
         .send({ clinic_id: TEST_CLINIC_ID, status: 'checked_out' });
 
-      expect(res.status).toBe(200);
-      expect(res.body.reservation.status).toBe('checked_out');
-      expect(res.body.reservation.checked_out_at).toBeTruthy();
+      expect(res.status).toBe(422);
+      expect(res.body.error).toMatch(/Operação da Recepção/i);
+    });
 
-      const appt = getMockSupabaseClient()._state.tables.hub_appointments?.[0];
-      expect(appt?.status).toBe('done');
+    it('libera para recepção via release-for-handoff', async () => {
+      configureSupabaseMock({
+        tables: {
+          ...emptyBoardingTables(),
+          hub_boarding_reservations: [
+            checkedInHotelReservation({ id: RESERVED_ID, hub_appointment_id: TEST_APPOINTMENT_ID }),
+          ],
+          hub_appointments: [boardingAppointment({ status: 'in_progress' })],
+          hub_boarding_belongings: [],
+        },
+      });
+
+      const prep = await request(app)
+        .post(`/api/hub/boarding/reservations/${RESERVED_ID}/start-checkout-prep`)
+        .send({ clinic_id: TEST_CLINIC_ID });
+      expect(prep.status).toBe(200);
+      expect(prep.body.reservation.status).toBe('checkout_preparing');
+
+      const release = await request(app)
+        .post(`/api/hub/boarding/reservations/${RESERVED_ID}/release-for-handoff`)
+        .send({ clinic_id: TEST_CLINIC_ID });
+      expect(release.status).toBe(200);
+      expect(release.body.reservation.status).toBe('ready_for_handoff');
+      expect(release.body.reservation.handoff_ready_at).toBeTruthy();
     });
 
     it('rejeita transição inválida com 422', async () => {

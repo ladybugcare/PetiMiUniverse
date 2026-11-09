@@ -13,6 +13,7 @@ const createClinic_1 = require("../controllers/admin/createClinic");
 const createVet_1 = require("../controllers/admin/createVet");
 const createFreelancer_1 = require("../controllers/admin/createFreelancer");
 const getAdmins_1 = require("../controllers/admin/getAdmins");
+const getRecentSignups_1 = require("../controllers/admin/getRecentSignups");
 // Controllers de unidades
 const getPendingUnits_1 = require("../controllers/units/getPendingUnits");
 const reviewUnit_1 = require("../controllers/units/reviewUnit");
@@ -40,6 +41,8 @@ router.post('/users/create/freelancer', authMiddleware_1.authenticateUser, creat
 router.post('/users/create/admin', authMiddleware_1.authenticateUser, createAdmin_1.createAdmin);
 // Listar administradores
 router.get('/users/admins', authMiddleware_1.authenticateUser, getAdmins_1.getAdmins);
+// Listar cadastros recentes (Hub + Shift)
+router.get('/signups', authMiddleware_1.authenticateUser, getRecentSignups_1.getRecentSignups);
 /**
  * ==============================================
  * 🔹 CLINIC UNITS MANAGEMENT

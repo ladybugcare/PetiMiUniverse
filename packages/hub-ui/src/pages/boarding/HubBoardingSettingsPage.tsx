@@ -42,6 +42,7 @@ type SettingsDraft = {
   recreation_windows: BoardingRecreationWindow[];
   recreation_capacity: string;
   meal_slot_times: Record<BoardingCareMealSlot, string>;
+  block_exit_if_charge_pending: boolean;
 };
 
 type SpaceDraft = {
@@ -63,6 +64,7 @@ const EMPTY_SETTINGS: SettingsDraft = {
   recreation_windows: [],
   recreation_capacity: '',
   meal_slot_times: { ...DEFAULT_MEAL_SLOT_TIMES },
+  block_exit_if_charge_pending: false,
 };
 
 function mealTimesFrom(raw: BoardingMealSlotTimes | null | undefined): Record<BoardingCareMealSlot, string> {
@@ -140,6 +142,7 @@ const HubBoardingSettingsPage: React.FC = () => {
         recreation_windows: row?.recreation_windows ?? [],
         recreation_capacity: row?.recreation_capacity != null ? String(row.recreation_capacity) : '',
         meal_slot_times: mealTimesFrom(row?.meal_slot_times),
+        block_exit_if_charge_pending: row?.block_exit_if_charge_pending === true,
       });
       setSpaces(sp.spaces ?? []);
       setDirty(false);
@@ -193,6 +196,7 @@ const HubBoardingSettingsPage: React.FC = () => {
           .map((w) => ({ start: w.start, end: w.end || null, label: w.label?.trim() || null })),
         recreation_capacity: intOrNull(draft.recreation_capacity),
         meal_slot_times: draft.meal_slot_times,
+        block_exit_if_charge_pending: draft.block_exit_if_charge_pending,
       });
       showSuccess('Configurações salvas');
       await load();
@@ -344,6 +348,21 @@ const HubBoardingSettingsPage: React.FC = () => {
             onChangeHm={(v) => update({ checkout_cutoff_time: v })}
           />
         </div>
+      </section>
+
+      <section className="hub-boarding-settings__section">
+        <h3 className="hub-grooming-drawer__heading">Saída e cobrança</h3>
+        <p className="hub-grooming-drawer__hint">
+          A liberação para a recepção e a confirmação de entrega podem exigir comanda quitada.
+        </p>
+        <label className="hub-clientes__check">
+          <input
+            type="checkbox"
+            checked={draft.block_exit_if_charge_pending}
+            onChange={(e) => update({ block_exit_if_charge_pending: e.target.checked })}
+          />
+          <span>Bloquear saída se houver cobrança em aberto no Caixa</span>
+        </label>
       </section>
 
       <section className="hub-boarding-settings__section">

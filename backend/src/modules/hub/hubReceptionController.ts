@@ -14,7 +14,11 @@ const boardQuery = z.object({
   date: dateYmd.optional(),
 });
 
-function originModule(sourceType: string, kind: string): { key: string; label: string; href: string } {
+function originModule(sourceType: string, kind: string, context?: Record<string, unknown> | null): {
+  key: string;
+  label: string;
+  href: string;
+} {
   if (sourceType === 'grooming_session' || sourceType === 'grooming_event') {
     return { key: 'banho', label: 'Banho & Tosa', href: '/hub/banho-tosa' };
   }
@@ -26,6 +30,14 @@ function originModule(sourceType: string, kind: string): { key: string; label: s
   }
   if (sourceType === 'pickup_stop') {
     return { key: 'leva_traz', label: 'Leva e Traz', href: '/hub/leva-e-traz' };
+  }
+  if (sourceType === 'boarding_reservation') {
+    const mode = context?.boarding_mode === 'daycare' || context?.label === 'Creche' ? 'daycare' : 'hotel';
+    return {
+      key: mode === 'daycare' ? 'creche' : 'hotel',
+      label: mode === 'daycare' ? 'Creche' : 'Hotel',
+      href: '/hub/hotel-creche',
+    };
   }
   if (kind === 'chegada') {
     return { key: 'agenda', label: 'Agenda', href: '/hub/appointments' };
@@ -59,6 +71,7 @@ async function resolvePetIdFromSource(
     encounter: 'hub_encounters',
     hospitalization: 'hub_hospitalizations',
     pickup_stop: 'hub_pickup_stops',
+    boarding_reservation: 'hub_boarding_reservations',
   };
   const table = tableBySource[sourceType];
   if (!table) return null;
@@ -415,6 +428,20 @@ async function buildReceptionCues(opts: {
     });
     nextStep =
       'Fale com o tutor: ele vem buscar no balcão ou agende um novo Leva e Traz (com ou sem cobrança da perna).';
+  } else if (opts.kind === 'saida_prevista') {
+    const preparing = opts.context.preparing === true;
+    cues.push({
+      key: preparing ? 'boarding_preparing' : 'boarding_planned',
+      label: preparing ? 'Preparando saída' : 'Saída prevista',
+      detail: preparing
+        ? 'O hotel/creche está conferindo pertences e pendências.'
+        : 'O pet ainda não foi liberado pelo hotel/creche.',
+    });
+    nextStep = preparing
+      ? 'Aguarde a liberação do setor. Não entregue o pet ainda.'
+      : 'Acompanhe o horário. A entrega só fica disponível depois que o setor liberar.';
+    appointmentId =
+      typeof opts.context.appointment_id === 'string' ? opts.context.appointment_id : appointmentId;
   }
 
   if (opts.sourceType === 'hospitalization') {
@@ -495,7 +522,7 @@ export const getHubReceptionHandoffDetail = async (req: Request, res: Response) 
     const context = (row.context ?? {}) as Record<string, unknown>;
     const kind = String(row.kind);
     const sourceType = String(row.source_type);
-    const origin = originModule(sourceType, kind);
+    const origin = originModule(sourceType, kind, context);
     const ops = await buildReceptionCues({
       clinicId: clinicId.data,
       kind,
@@ -515,10 +542,59 @@ export const getHubReceptionHandoffDetail = async (req: Request, res: Response) 
       }
     }
 
+    let boardingSummary: {
+      reservation_id: string;
+      mode: string | null;
+      status: string;
+      expected_check_out: string | null;
+      handoff_ready_at: string | null;
+      pending_belongings: number;
+      open_incidents: number;
+    } | null = null;
+    if (sourceType === 'boarding_reservation') {
+      const reservationId = String(row.source_id);
+      const [{ data: rsv }, { data: belongings }, { data: incidents }] = await Promise.all([
+        supabaseAdmin
+          .from('hub_boarding_reservations')
+          .select('id, mode, status, expected_check_out, handoff_ready_at')
+          .eq('id', reservationId)
+          .eq('clinic_id', clinicId.data)
+          .maybeSingle(),
+        supabaseAdmin
+          .from('hub_boarding_belongings')
+          .select('id, checkout_status')
+          .eq('clinic_id', clinicId.data)
+          .eq('hub_boarding_reservation_id', reservationId)
+          .is('deleted_at', null),
+        supabaseAdmin
+          .from('hub_boarding_incidents')
+          .select('id')
+          .eq('clinic_id', clinicId.data)
+          .eq('hub_boarding_reservation_id', reservationId)
+          .eq('status', 'open'),
+      ]);
+      if (rsv) {
+        boardingSummary = {
+          reservation_id: reservationId,
+          mode: (rsv.mode as string | null) ?? null,
+          status: String(rsv.status),
+          expected_check_out: (rsv.expected_check_out as string | null) ?? null,
+          handoff_ready_at: (rsv.handoff_ready_at as string | null) ?? null,
+          pending_belongings: (belongings ?? []).filter((b) => b.checkout_status === 'pending').length,
+          open_incidents: (incidents ?? []).length,
+        };
+      }
+    }
+
     const petRow = petRes.data;
     const guardianRow = guardianRes.data;
     const petName =
       typeof petRow?.name === 'string' && petRow.name.trim() ? petRow.name.trim() : 'Sem nome';
+
+    const contextLabel =
+      sourceType === 'boarding_reservation' && typeof context.label === 'string'
+        ? context.label
+        : ops.service_name || (typeof context.label === 'string' ? context.label : 'Operação');
 
     return res.json({
       id: row.id,
@@ -528,7 +604,7 @@ export const getHubReceptionHandoffDetail = async (req: Request, res: Response) 
       status: row.status,
       context: {
         ...context,
-        label: ops.service_name || (typeof context.label === 'string' ? context.label : 'Operação'),
+        label: contextLabel,
         starts_at: ops.starts_at ?? context.starts_at ?? null,
         appointment_id: ops.appointment_id ?? context.appointment_id ?? null,
       },
@@ -562,6 +638,7 @@ export const getHubReceptionHandoffDetail = async (req: Request, res: Response) 
       next_step: ops.next_step,
       is_late: ops.is_late,
       charge_pending: chargePending,
+      boarding: boardingSummary,
     });
   } catch (e: unknown) {
     console.error('getHubReceptionHandoffDetail', e);
