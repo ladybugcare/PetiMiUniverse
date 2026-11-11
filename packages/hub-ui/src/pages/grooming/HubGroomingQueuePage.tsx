@@ -23,7 +23,6 @@ import { isGroomingFloorStaff } from './groomingAccess';
 import GroomingDayList from './GroomingDayList';
 import GroomingAppointmentDrawer from './GroomingAppointmentDrawer';
 import { useGroomingResourcePrompt } from './useGroomingResourcePrompt';
-import GroomingWalkInPanel from './GroomingWalkInPanel';
 import { PORTE_LABELS, PORTE_VALUES } from '../../utils/hubServiceTypesPricingMatrix';
 
 const POLL_MS = 30_000;
@@ -98,8 +97,6 @@ const HubGroomingQueuePage: React.FC = () => {
   const [searchQ, setSearchQ] = useState('');
   const [groomingTypesConfigured, setGroomingTypesConfigured] = useState(true);
   const [selected, setSelected] = useState<GroomingDayBoardItem | null>(null);
-  const [walkInOpen, setWalkInOpen] = useState(false);
-  const [walkInBusy, setWalkInBusy] = useState(false);
   const [cursor, setCursor] = useState(() => new Date());
 
   const itemsAfterChips = useMemo(() => {
@@ -272,26 +269,6 @@ const HubGroomingQueuePage: React.FC = () => {
     }
   };
 
-  const createWalkIn = async (payload: { petId: string; staffId: string; notes: string }) => {
-    if (!clinicId) return;
-    setWalkInBusy(true);
-    try {
-      await hubGroomingApi.createSession({
-        clinic_id: clinicId,
-        pet_id: payload.petId,
-        hub_staff_member_id: payload.staffId,
-        unit_id: unitIdParam ?? null,
-        operational_notes: payload.notes.trim() || null,
-      });
-      setWalkInOpen(false);
-      await load();
-    } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao registrar avulso');
-    } finally {
-      setWalkInBusy(false);
-    }
-  };
-
   const unitOptions: HubComboboxOption[] = useMemo(() => {
     const rows: HubComboboxOption[] = [{ value: 'all', label: 'Todas as unidades' }];
     for (const u of units) rows.push({ value: u.id, label: u.name });
@@ -444,15 +421,6 @@ const HubGroomingQueuePage: React.FC = () => {
             <CalendarDays size={16} aria-hidden />
             Agenda
           </Link>
-          {canWrite ? (
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-              onClick={() => setWalkInOpen(true)}
-            >
-              Avulso
-            </button>
-          ) : null}
         </div>
       </div>
 
@@ -581,22 +549,12 @@ const HubGroomingQueuePage: React.FC = () => {
             {isToday ? 'Nenhum pet na fila hoje' : 'Nenhum pet neste dia'}
           </h2>
           <p className="hub-grooming-page__empty-day-text">
-            Agendamentos da Agenda com grupo Banho & Tosa aparecem aqui automaticamente. Você também
-            pode registrar um atendimento avulso.
+            Agendamentos da Agenda com grupo Banho & Tosa aparecem aqui automaticamente.
           </p>
           <div className="hub-grooming-page__empty-day-actions">
-            {canWrite ? (
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--primary"
-                onClick={() => setWalkInOpen(true)}
-              >
-                Registrar avulso
-              </button>
-            ) : null}
-            <Link to="/hub/appointments" className="hub-clientes__btn hub-clientes__btn--ghost">
+            <Link to="/hub/appointments" className="hub-clientes__btn hub-clientes__btn--primary">
               <CalendarDays size={16} aria-hidden />
-              Abrir Agenda
+              Ir para a Agenda
             </Link>
           </div>
         </div>
@@ -639,14 +597,6 @@ const HubGroomingQueuePage: React.FC = () => {
         canAddExtras={canWrite}
       />
 
-      <GroomingWalkInPanel
-        open={walkInOpen}
-        clinicId={clinicId!}
-        unitId={unitIdParam}
-        onClose={() => setWalkInOpen(false)}
-        onSubmit={createWalkIn}
-        submitting={walkInBusy}
-      />
     </div>
   );
 };

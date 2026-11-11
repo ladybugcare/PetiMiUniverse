@@ -39,7 +39,16 @@ import {
   pricingVariantsEqual,
 } from './hubPackagesService';
 import { createSaleStockOut } from './hubInventoryStockUtils';
-import { markHubAppointmentPaidFromReceivable } from './appointmentPaidFromBilling';
+import {
+  markHubAppointmentPaidFromReceivable,
+  syncHubAppointmentPaidFromReceivable,
+} from './appointmentPaidFromBilling';
+import {
+  consumeHubCustomerCredit,
+  CustomerCreditError,
+  restoreCustomerCreditIfNeeded,
+  restoreHubCustomerCredit,
+} from './hubCustomerCredit';
 import type { HubQuotePricingVariantInput } from './hubPricingResolve';
 
 const uuidStr = z.string().uuid();
@@ -105,7 +114,10 @@ import {
   isAppointmentLineReplacedByBoarding,
   type BoardingExtraInput,
 } from './boardingBilling';
-import { buildHospitalizationDailyItems } from './hubHospitalizationBilling';
+import {
+  loadHospitalizationComandaItems,
+  mergeHospitalizationItemsIntoSnapshot,
+} from './hubHospitalizationBilling';
 import { comandaOriginSchema } from './hubComandaSchemas';
 
 async function resolveClinicDefaultUnitId(clinicId: string): Promise<string | null> {
@@ -262,16 +274,29 @@ async function findLatestCompletedEncounterIdForAppointment(
   clinicId: string,
   appointmentId: string
 ): Promise<string | null> {
-  const { data, error } = await supabaseAdmin
+  return findLatestEncounterIdForAppointment(clinicId, appointmentId, { completedOnly: true });
+}
+
+async function findLatestEncounterIdForAppointment(
+  clinicId: string,
+  appointmentId: string,
+  opts?: { completedOnly?: boolean; anyOpen?: boolean },
+): Promise<string | null> {
+  let q = supabaseAdmin
     .from('hub_encounters')
-    .select('id')
+    .select('id, status, completed_at, created_at')
     .eq('clinic_id', clinicId)
     .eq('hub_appointment_id', appointmentId)
-    .eq('status', 'completed')
     .is('deleted_at', null)
-    .order('completed_at', { ascending: false, nullsFirst: false })
-    .limit(1)
-    .maybeSingle();
+    .neq('status', 'cancelled');
+  if (opts?.completedOnly) {
+    q = q.eq('status', 'completed').order('completed_at', { ascending: false, nullsFirst: false });
+  } else if (opts?.anyOpen) {
+    q = q.neq('status', 'completed').order('created_at', { ascending: false });
+  } else {
+    q = q.order('created_at', { ascending: false });
+  }
+  const { data, error } = await q.limit(1).maybeSingle();
   if (error) throw new Error(error.message);
   return (data?.id as string) ?? null;
 }
@@ -1295,100 +1320,17 @@ async function buildComandaItemsFromEncounter(
     }
   }
 
-  // 6. Diárias e lançamentos de internação vinculados a este atendimento
-  const { data: hospRows, error: hospErr } = await supabaseAdmin
-    .from('hub_hospitalizations')
-    .select(
-      'id, pet_id, status, admitted_at, discharged_at, daily_hub_service_type_id, daily_unit_amount',
-    )
-    .eq('hub_encounter_id', encounterId)
-    .eq('clinic_id', clinicId)
-    .is('deleted_at', null);
-  const hospList = hospErr && isMissingPostgrestRelation(hospErr) ? [] : hospRows ?? [];
-  const dailyServiceIds = [
-    ...new Set(
-      hospList
-        .map((h) => (h as { daily_hub_service_type_id?: string | null }).daily_hub_service_type_id)
-        .filter(Boolean) as string[],
-    ),
-  ];
-  const dailyNameById = new Map<string, string>();
-  if (dailyServiceIds.length > 0) {
-    const { data: dailySvcs } = await supabaseAdmin
-      .from('hub_service_types')
-      .select('id, name')
-      .in('id', dailyServiceIds);
-    for (const s of dailySvcs ?? []) {
-      dailyNameById.set((s as { id: string }).id, String((s as { name: string }).name));
-    }
+  // 6. Diárias e lançamentos de internação (encounter e/ou appointment espelhado)
+  const hospBuilt = await loadHospitalizationComandaItems({
+    clinicId,
+    encounterId,
+    appointmentId: apptId,
+    defaultPetId: petId,
+  });
+  for (const line of hospBuilt.items) {
+    allItems.push({ ...line, sort_order: allItems.length });
   }
-  for (const raw of hospList) {
-    const hosp = raw as Record<string, unknown>;
-    const built = buildHospitalizationDailyItems({
-      id: hosp.id as string,
-      pet_id: (hosp.pet_id as string | null) ?? petId,
-      status: String(hosp.status ?? ''),
-      admitted_at: String(hosp.admitted_at ?? ''),
-      discharged_at: (hosp.discharged_at as string | null) ?? null,
-      daily_hub_service_type_id: (hosp.daily_hub_service_type_id as string | null) ?? null,
-      daily_unit_amount: hosp.daily_unit_amount == null ? null : Number(hosp.daily_unit_amount),
-      service_name: hosp.daily_hub_service_type_id
-        ? dailyNameById.get(hosp.daily_hub_service_type_id as string) ?? null
-        : null,
-    });
-    if (built) {
-      allItems.push({
-        ...built.line,
-        sort_order: allItems.length,
-      });
-      subtotal += built.subtotal;
-    }
-  }
-  const hospIds = hospList.map((h) => (h as { id: string }).id);
-  if (hospIds.length > 0) {
-    const { data: chargeRows, error: chargeErr } = await supabaseAdmin
-      .from('hub_hospitalization_charges')
-      .select(
-        'id, hub_service_type_id, hub_inventory_item_id, hub_inventory_lot_id, service_name, quantity, unit_amount, billing_mode, price_status, service_date, charge_kind',
-      )
-      .in('hospitalization_id', hospIds)
-      .eq('billing_mode', 'charge')
-      .eq('price_status', 'confirmed')
-      .is('deleted_at', null);
-    const chargeList = chargeErr && isMissingPostgrestRelation(chargeErr) ? [] : chargeRows ?? [];
-    for (const raw of chargeList) {
-      const row = raw as Record<string, unknown>;
-      const qty = Number(row.quantity ?? 1) || 1;
-      const unit = Number(row.unit_amount ?? 0);
-      const lineTotal = round2(qty * unit);
-      const kind = String(row.charge_kind ?? 'other');
-      const prefix =
-        kind === 'medication'
-          ? 'Medicação (internação)'
-          : kind === 'material'
-            ? 'Material (internação)'
-            : kind === 'procedure'
-              ? 'Procedimento (internação)'
-              : 'Internação';
-      allItems.push({
-        pet_id: petId,
-        item_kind: row.hub_inventory_item_id ? 'product' : 'service',
-        hub_service_type_id: (row.hub_service_type_id as string | null) ?? null,
-        hub_inventory_item_id: (row.hub_inventory_item_id as string | null) ?? null,
-        hub_inventory_lot_id: (row.hub_inventory_lot_id as string | null) ?? null,
-        description: `${prefix}: ${String(row.service_name || 'Item')}`,
-        quantity: qty,
-        unit_amount: unit,
-        discount_amount: 0,
-        line_total: lineTotal,
-        service_date: (row.service_date as string | null) ?? null,
-        origin_type: 'hospitalization_charge',
-        origin_id: row.id as string,
-        sort_order: allItems.length,
-      });
-      subtotal += lineTotal;
-    }
-  }
+  subtotal += hospBuilt.subtotal;
 
   // Fallback: generic consultation fee if nothing was found
   if (allItems.length === 0) {
@@ -1562,6 +1504,26 @@ async function buildDesiredComandaSnapshot(
 
     let snapshot = await buildComandaItemsFromAppointment(clinicId, oid, { allowIncompleteStatus: true });
     snapshot = await appendGroomingExtrasToAppointmentSnapshot(clinicId, oid, snapshot);
+
+    // Internação ligada ao appointment (ou encounter incompleto): anexa diárias/charges.
+    const hospForAppt = await loadHospitalizationComandaItems({
+      clinicId,
+      appointmentId: oid,
+      defaultPetId: snapshot.pet_id,
+    });
+    snapshot = mergeHospitalizationItemsIntoSnapshot(snapshot, hospForAppt.items);
+
+    // Encounter aberto com internação: também puxa por encounter_id.
+    const openEncId = await findLatestEncounterIdForAppointment(clinicId, oid, { anyOpen: true });
+    if (openEncId) {
+      const hospForEnc = await loadHospitalizationComandaItems({
+        clinicId,
+        encounterId: openEncId,
+        appointmentId: oid,
+        defaultPetId: snapshot.pet_id,
+      });
+      snapshot = mergeHospitalizationItemsIntoSnapshot(snapshot, hospForEnc.items);
+    }
 
     const boardingId = await findCheckedOutBoardingReservationForAppointment(clinicId, oid);
     if (boardingId) {
@@ -2834,6 +2796,7 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
     const receivableIds: string[] = [];
     const nonEmptyGroupIndices: number[] = [];
     const stockMovementIds: string[] = [];
+    const creditConsumptions: { guardianId: string; amount: number; receivableId: string }[] = [];
     let unitId = (comanda.unit_id as string | null) ?? null;
     if (!unitId) unitId = await resolveClinicDefaultUnitId(clinic_id);
     const guardianId = comanda.guardian_id as string;
@@ -2843,6 +2806,21 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
         await supabaseAdmin.from('hub_stock_movements').delete().eq('id', mid);
       }
       stockMovementIds.length = 0;
+      for (const credit of creditConsumptions.splice(0)) {
+        try {
+          await restoreHubCustomerCredit({
+            clinicId: clinic_id,
+            guardianId: credit.guardianId,
+            amount: credit.amount,
+            reason: 'Rollback de checkout — crédito devolvido',
+            comandaId,
+            receivableId: credit.receivableId,
+            createdByUserId: userId,
+          });
+        } catch (restoreErr) {
+          console.error('rollbackReceivables restore credit', restoreErr);
+        }
+      }
       for (const rid of receivableIds) {
         await supabaseAdmin.from('hub_payments').delete().eq('receivable_id', rid);
         await supabaseAdmin.from('hub_receivable_lines').delete().eq('receivable_id', rid);
@@ -3113,6 +3091,35 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
             recUnit,
             unitId,
           );
+        }
+
+        if (pay.payment_method === 'customer_credit') {
+          if (!guardianId) {
+            await rollbackReceivables();
+            return res.status(409).json({ error: 'Comanda sem tutor — não é possível pagar com crédito.' });
+          }
+          try {
+            await consumeHubCustomerCredit({
+              clinicId: clinic_id,
+              guardianId,
+              amount: round2(pay.amount),
+              reason: 'Pagamento com crédito do tutor (checkout)',
+              comandaId,
+              receivableId: rid,
+              createdByUserId: userId,
+            });
+            creditConsumptions.push({
+              guardianId,
+              amount: round2(pay.amount),
+              receivableId: rid,
+            });
+          } catch (e) {
+            await rollbackReceivables();
+            if (e instanceof CustomerCreditError) {
+              return res.status(e.status).json({ error: e.message });
+            }
+            throw e;
+          }
         }
 
         const { error: pErr } = await supabaseAdmin.from('hub_payments').insert({
@@ -3579,7 +3586,7 @@ type CancellationOperationalType = 'appointment' | 'grooming_session' | 'encount
 async function recalculateReceivableStatusLocal(receivableId: string): Promise<string> {
   const { data: rec, error: rErr } = await supabaseAdmin
     .from('hub_receivables')
-    .select('id, final_amount, status')
+    .select('id, clinic_id, final_amount, status')
     .eq('id', receivableId)
     .maybeSingle();
   if (rErr || !rec) throw new Error(rErr?.message || 'Recebível não encontrado');
@@ -3593,6 +3600,12 @@ async function recalculateReceivableStatusLocal(receivableId: string): Promise<s
   const finalAmount = Number(rec.final_amount ?? 0);
   const nextStatus = paid <= 0.009 ? 'pending' : paid >= finalAmount - 0.009 ? 'paid' : 'partially_paid';
   await supabaseAdmin.from('hub_receivables').update({ status: nextStatus }).eq('id', receivableId);
+  if (rec.clinic_id) {
+    await syncHubAppointmentPaidFromReceivable({
+      clinicId: rec.clinic_id as string,
+      receivableId,
+    });
+  }
   return nextStatus;
 }
 
@@ -3789,7 +3802,7 @@ async function reverseAllComandaPayments(
   comandaId: string,
   reason: string,
   userId: string | null
-): Promise<number> {
+): Promise<{ totalReversed: number; restoredCustomerCredit: number }> {
   const { data: recs, error: rErr } = await supabaseAdmin
     .from('hub_receivables')
     .select('id, final_amount, status')
@@ -3798,7 +3811,7 @@ async function reverseAllComandaPayments(
     .neq('status', 'cancelled');
   if (rErr) throw new Error(rErr.message);
   const recRows = recs ?? [];
-  if (!recRows.length) return 0;
+  if (!recRows.length) return { totalReversed: 0, restoredCustomerCredit: 0 };
 
   const recIds = recRows.map((r) => r.id as string);
   const { data: payments, error: pErr } = await supabaseAdmin
@@ -3808,6 +3821,7 @@ async function reverseAllComandaPayments(
   if (pErr) throw new Error(pErr.message);
 
   let totalReversed = 0;
+  let restoredCustomerCredit = 0;
   for (const payment of payments ?? []) {
     if (payment.clinic_id !== clinicId) continue;
     let warning: string | null = null;
@@ -3822,6 +3836,15 @@ async function reverseAllComandaPayments(
         warning = 'Pagamento em dinheiro estornado de caixa já fechado; revise a conferência da sessão.';
       }
     }
+    const restored = await restoreCustomerCreditIfNeeded({
+      clinicId,
+      paymentMethod: payment.payment_method as string | null,
+      amount: Number(payment.amount ?? 0),
+      receivableId: payment.receivable_id as string,
+      reason,
+      createdByUserId: userId,
+    });
+    restoredCustomerCredit = round2(restoredCustomerCredit + restored);
     await supabaseAdmin.from('hub_financial_adjustments').insert({
       clinic_id: clinicId,
       receivable_id: payment.receivable_id,
@@ -3853,9 +3876,10 @@ async function reverseAllComandaPayments(
       });
     }
     await supabaseAdmin.from('hub_receivables').update({ status: 'cancelled' }).eq('id', rid);
+    await syncHubAppointmentPaidFromReceivable({ clinicId, receivableId: rid });
   }
 
-  return totalReversed;
+  return { totalReversed, restoredCustomerCredit };
 }
 
 async function enrichCancellationQueueRows(
@@ -4178,35 +4202,44 @@ export const postHubComandaResolveCancellation = async (req: Request, res: Respo
       if (paid_total <= 0.009) {
         return res.status(409).json({ error: 'Não há pagamentos na comanda para converter em crédito.' });
       }
-      const reversed = await reverseAllComandaPayments(clinic_id, comandaId, reason, userId);
-      if (cash_session_id) {
-        const { data: sess } = await supabaseAdmin
-          .from('hub_cash_sessions')
-          .select('id, clinic_id, status')
-          .eq('id', cash_session_id)
-          .maybeSingle();
-        if (!sess || sess.clinic_id !== clinic_id || sess.status !== 'open') {
-          return res.status(409).json({ error: 'Sessão de caixa inválida' });
-        }
-      }
-      const { error: crErr } = await supabaseAdmin.from('hub_customer_credit_movements').insert({
+      const { totalReversed, restoredCustomerCredit } = await reverseAllComandaPayments(
         clinic_id,
-        guardian_id: guardianId,
-        direction: 'in',
-        amount: reversed,
+        comandaId,
         reason,
-        comanda_id: comandaId,
-        receivable_id: null,
-        payment_method: null,
-        cash_session_id: cash_session_id ?? null,
-        notes: 'Crédito por cancelamento operacional (comanda)',
-        created_by_user_id: userId,
-      });
-      if (crErr) {
-        if (String(crErr.message || '').includes('hub_customer_credit')) {
-          return res.status(503).json({ error: 'Tabela de crédito do tutor não encontrada.' });
+        userId,
+      );
+      // Pagamentos já feitos com crédito voltam no reverse; aqui só credita o restante (pix/dinheiro/etc.).
+      const creditToGrant = round2(totalReversed - restoredCustomerCredit);
+      if (creditToGrant > 0.009) {
+        if (cash_session_id) {
+          const { data: sess } = await supabaseAdmin
+            .from('hub_cash_sessions')
+            .select('id, clinic_id, status')
+            .eq('id', cash_session_id)
+            .maybeSingle();
+          if (!sess || sess.clinic_id !== clinic_id || sess.status !== 'open') {
+            return res.status(409).json({ error: 'Sessão de caixa inválida' });
+          }
         }
-        return res.status(500).json({ error: crErr.message });
+        const { error: crErr } = await supabaseAdmin.from('hub_customer_credit_movements').insert({
+          clinic_id,
+          guardian_id: guardianId,
+          direction: 'in',
+          amount: creditToGrant,
+          reason,
+          comanda_id: comandaId,
+          receivable_id: null,
+          payment_method: null,
+          cash_session_id: cash_session_id ?? null,
+          notes: 'Crédito por cancelamento operacional (comanda)',
+          created_by_user_id: userId,
+        });
+        if (crErr) {
+          if (String(crErr.message || '').includes('hub_customer_credit')) {
+            return res.status(503).json({ error: 'Tabela de crédito do tutor não encontrada.' });
+          }
+          return res.status(500).json({ error: crErr.message });
+        }
       }
     } else {
       // keep_billing — mantém pagamentos; apenas encerra pendência
@@ -4768,7 +4801,7 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
               for (const rid of activeRecIds) {
                 const { data: rec } = await supabaseAdmin
                   .from('hub_receivables')
-                  .select('id, status, final_amount, unit_id')
+                  .select('id, status, final_amount, unit_id, guardian_id, comanda_id')
                   .eq('id', rid)
                   .maybeSingle();
                 if (!rec || rec.status === 'cancelled' || rec.status === 'paid') continue;
@@ -4790,6 +4823,33 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
                     (rec.unit_id as string | null) ?? null,
                     unitId,
                   );
+                }
+
+                if (payment_method === 'customer_credit') {
+                  const creditGuardianId =
+                    (rec.guardian_id as string | null) ??
+                    ((detail.comanda as Record<string, unknown>).guardian_id as string | null);
+                  if (!creditGuardianId) {
+                    payError = 'Comanda sem tutor — não é possível pagar com crédito.';
+                    break;
+                  }
+                  try {
+                    await consumeHubCustomerCredit({
+                      clinicId: clinic_id,
+                      guardianId: creditGuardianId,
+                      amount: due,
+                      reason: 'Pagamento com crédito do tutor (checkout em lote)',
+                      comandaId,
+                      receivableId: rid,
+                      createdByUserId: userId,
+                    });
+                  } catch (e) {
+                    payError =
+                      e instanceof CustomerCreditError
+                        ? e.message
+                        : (e as Error).message ?? 'Erro ao debitar crédito do tutor';
+                    break;
+                  }
                 }
 
                 const { error: payInsErr } = await supabaseAdmin.from('hub_payments').insert({
@@ -4907,6 +4967,42 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
             validatedCashSessionId = cash_session_id;
           } else {
             validatedCashSessionId = await resolvePaymentCashSessionId(clinic_id, unitId, unitId);
+          }
+
+          if (payment_method === 'customer_credit') {
+            if (!guardianId) {
+              await supabaseAdmin.from('hub_receivable_lines').delete().eq('receivable_id', receivableId);
+              await supabaseAdmin.from('hub_receivables').delete().eq('id', receivableId);
+              results.push({
+                comanda_id: comandaId,
+                receivable_ids: [],
+                error: 'Comanda sem tutor — não é possível pagar com crédito.',
+              });
+              continue;
+            }
+            try {
+              await consumeHubCustomerCredit({
+                clinicId: clinic_id,
+                guardianId,
+                amount: round2(subtotal),
+                reason: 'Pagamento com crédito do tutor (checkout em lote)',
+                comandaId,
+                receivableId,
+                createdByUserId: userId,
+              });
+            } catch (e) {
+              await supabaseAdmin.from('hub_receivable_lines').delete().eq('receivable_id', receivableId);
+              await supabaseAdmin.from('hub_receivables').delete().eq('id', receivableId);
+              results.push({
+                comanda_id: comandaId,
+                receivable_ids: [],
+                error:
+                  e instanceof CustomerCreditError
+                    ? e.message
+                    : (e as Error).message ?? 'Erro ao debitar crédito do tutor',
+              });
+              continue;
+            }
           }
 
           await supabaseAdmin.from('hub_payments').insert({

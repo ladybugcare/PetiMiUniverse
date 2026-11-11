@@ -39,7 +39,9 @@ Alterações posteriores com rastreio: `discount`, `credit`, `write_off`, `refun
 
 ### `hub_payments`
 
-Pagamento liquidado: `receivable_id`, `amount`, `payment_method` (`pix` | `cash` | `credit_card` | `debit_card` | `transfer` | `payment_link`), parcelas, `payment_date`, `external_reference`, ligação opcional a sessão de caixa.
+Pagamento liquidado: `receivable_id`, `amount`, `payment_method` (`pix` | `cash` | `credit_card` | `debit_card` | `transfer` | `payment_link` | `customer_credit` | `other`), parcelas, `payment_date`, `external_reference`, ligação opcional a sessão de caixa.
+
+**`payment_link` no MVP:** é apenas **rótulo de forma de pagamento** para baixa manual (“recebi via link externo”). Não gera URL, não chama gateway e não liquida recebível sozinho. Integração com gateway / Payment Intent fica **fora do escopo atual** (ver secção abaixo).
 
 ### `hub_expenses` (Fase 2)
 
@@ -87,15 +89,15 @@ Episódios **concluídos na operação** sem recebível ativo e sem **waive** de
 - Ao concluir conversão para tutor (`accepted`), definir `billing_state = awaiting_billing` até **Gerar cobrança**.
 - CTA na UI: **Gerar cobrança** (igual Grooming/Clínica).
 
-## Payment Intent (fase futura)
+## Payment Intent (fase futura — fora do escopo atual)
 
-Modelo alvo, **sem tabelas no MVP:**
+Modelo alvo, **sem tabelas no MVP** e **sem trabalho previsto agora**:
 
 ```text
 Receivable → PaymentIntent (pending | succeeded | failed | cancelled) → Payment
 ```
 
-Útil para links (Mercado Pago, Stripe, Asaas, …). Primeira migração `hub_payment_intents` apenas quando existir integração.
+Útil quando houver gateway de **cobrança ao tutor** (ex.: Asaas, Stripe) com link + webhook liquidando `hub_receivables`. Isso é independente da assinatura/plano PetiMi Hub da clínica. Até lá, `payment_link` permanece só como método de registro manual no Caixa/Financeiro. Primeira migração `hub_payment_intents` apenas quando a integração de recebíveis for prioridade de produto.
 
 ## Comissões (fase 3)
 

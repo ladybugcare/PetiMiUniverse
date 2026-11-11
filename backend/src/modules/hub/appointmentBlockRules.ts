@@ -62,11 +62,11 @@ export function validateBoardingBlockIsolation(opts: {
 }): string | null {
   if (opts.allowBoardingWithSiblingBlocks) return null;
   if (isBoardingServiceGroup(opts.primaryGroup) && opts.extraBlockGroups.length > 0) {
-    return 'Hotel e creche não podem compartilhar o agendamento com outro bloco. Use um agendamento separado ou Hotel & Creche → Nova hospedagem.';
+    return 'Hotel e creche não podem compartilhar o agendamento com outro bloco. Use um agendamento separado.';
   }
   for (const g of opts.extraBlockGroups) {
     if (isBoardingServiceGroup(g)) {
-      return 'Hotel e creche devem ser o atendimento principal (ou use Hotel & Creche → Nova hospedagem).';
+      return 'Hotel e creche devem ser o atendimento principal do agendamento.';
     }
   }
   return null;

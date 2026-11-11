@@ -10,6 +10,7 @@ export const COMANDA_ORIGIN_LABELS: Record<string, string> = {
   encounter: 'Clínica',
   quote: 'Orçamento',
   boarding_reservation: 'Hotel/Creche',
+  hospitalization: 'Internação',
   package: 'Pacote',
   manual: 'Manual',
 };

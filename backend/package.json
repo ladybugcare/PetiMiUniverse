@@ -14,7 +14,10 @@
     "test:watch": "jest --watch",
     "test:coverage": "jest --coverage",
     "seed:banho-simultaneo": "tsx scripts/seed-grooming-simultaneos.ts",
-    "seed:hotel-creche": "tsx scripts/seed-boarding-hotel-creche.ts"
+    "seed:hotel-creche": "tsx scripts/seed-boarding-hotel-creche.ts",
+    "seed:leva-traz": "tsx scripts/seed-leva-traz.ts",
+    "seed:clinica-cirurgia-internacao": "tsx scripts/seed-clinica-cirurgia-internacao.ts",
+    "seed:ops-demo": "npm run seed:banho-simultaneo && npm run seed:hotel-creche && npm run seed:leva-traz && npm run seed:clinica-cirurgia-internacao"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.76.1",

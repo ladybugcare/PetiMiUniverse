@@ -133,7 +133,7 @@ const PAYMENT_METHOD_OPTIONS: HubComboboxOption[] = [
   { value: 'transfer', label: 'Transferência' },
   { value: 'credit_card', label: 'Cartão de crédito' },
   { value: 'debit_card', label: 'Cartão de débito' },
-  { value: 'payment_link', label: 'Link de pagamento' },
+  { value: 'payment_link', label: 'Link externo (baixa manual)' },
   { value: 'other', label: 'Outro' },
 ];
 

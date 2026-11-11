@@ -25,9 +25,28 @@ const BoardingStockConsumption: React.FC<Props> = ({ clinicId, reservationId }) 
       .catch(() => {});
   }, [clinicId]);
 
-  if (!items.length) return null;
+  const lotsForItem = useMemo(
+    () => lots.filter((l) => l.item_id === itemId && l.qty_on_hand > 0),
+    [lots, itemId],
+  );
 
-  const lotsForItem = lots.filter((l) => l.item_id === itemId && l.qty_on_hand > 0);
+  const itemOptions = useMemo(
+    () => items.map((si) => ({ value: si.id, label: si.name })),
+    [items],
+  );
+  const lotOptions = useMemo(
+    () =>
+      lotsForItem.map((l) => ({
+        value: l.id,
+        label:
+          (l.lot_code || 'Sem código') +
+          (l.expiry_date ? ` · val. ${new Date(`${l.expiry_date}T12:00:00`).toLocaleDateString('pt-BR')}` : '') +
+          ` · ${l.qty_on_hand} un.`,
+      })),
+    [lotsForItem],
+  );
+
+  if (!items.length) return null;
 
   const submit = async () => {
     const n = parseFloat(qty.replace(',', '.'));
@@ -57,22 +76,6 @@ const BoardingStockConsumption: React.FC<Props> = ({ clinicId, reservationId }) 
       setBusy(false);
     }
   };
-
-  const itemOptions = useMemo(
-    () => items.map((si) => ({ value: si.id, label: si.name })),
-    [items],
-  );
-  const lotOptions = useMemo(
-    () =>
-      lotsForItem.map((l) => ({
-        value: l.id,
-        label:
-          (l.lot_code || 'Sem código') +
-          (l.expiry_date ? ` · val. ${new Date(`${l.expiry_date}T12:00:00`).toLocaleDateString('pt-BR')}` : '') +
-          ` · ${l.qty_on_hand} un.`,
-      })),
-    [lotsForItem],
-  );
 
   return (
     <section className="hub-grooming-drawer__section">

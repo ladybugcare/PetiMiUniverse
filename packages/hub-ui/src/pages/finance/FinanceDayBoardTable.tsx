@@ -32,6 +32,9 @@ export const STATUS_OP_LABEL: Record<string, string> = {
   reserved: 'Reservado',
   checked_in_boarding: 'Hospedado',
   closed: 'Encerrado',
+  discharged: 'Alta',
+  death: 'Óbito',
+  transferred: 'Transferido',
 };
 
 /** No Financeiro, status operacional "paid" confunde com recebível quitado. */

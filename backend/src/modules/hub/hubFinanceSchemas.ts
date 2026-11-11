@@ -6,6 +6,7 @@ export const financeSourceTypeSchema = z.enum([
   'quote',
   'appointment',
   'boarding_reservation',
+  'hospitalization',
 ]);
 
 export const receivableSourceTypeSchema = z.enum([

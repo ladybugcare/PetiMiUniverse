@@ -15,8 +15,11 @@ export type HubFinanceUnbilledSourceType =
   | 'encounter'
   | 'quote'
   | 'appointment'
-  | 'boarding_reservation';
-export type HubFinanceReceivableSourceType = HubFinanceUnbilledSourceType | 'manual';
+  | 'boarding_reservation'
+  | 'hospitalization';
+export type HubFinanceReceivableSourceType =
+  | Exclude<HubFinanceUnbilledSourceType, 'hospitalization'>
+  | 'manual';
 
 export type HubFinanceUnbilledItem = {
   source_type: HubFinanceUnbilledSourceType;
@@ -29,6 +32,9 @@ export type HubFinanceUnbilledItem = {
   staff: { id: string; full_name: string } | null;
   estimated_amount: number;
   operational_status: string;
+  /** Presente em `hospitalization`: origem real da comanda. */
+  billing_origin_type?: 'encounter' | 'appointment' | null;
+  billing_origin_id?: string | null;
 };
 
 export type HubFinanceDayBoardBilling = {
@@ -59,6 +65,9 @@ export type HubFinanceDayBoardItem = {
   has_package_balance?: boolean;
   coverage_kind?: 'none' | 'package' | 'series_invoice';
   series_invoice_comanda_id?: string | null;
+  /** Presente em `hospitalization`: origem real da comanda. */
+  billing_origin_type?: 'encounter' | 'appointment' | null;
+  billing_origin_id?: string | null;
 };
 
 export type HubFinanceReceivable = {

@@ -23,6 +23,13 @@ import {
   type DayBoardBilling,
 } from './boardingBilling';
 import {
+  HOSPITALIZATION_CLOSED_STATUSES,
+  isHospitalizationClosed,
+  loadHospitalizationComandaItems,
+  resolveHospitalizationBillingOrigin,
+  shouldIncludeInUnbilledHospitalization,
+} from './hubHospitalizationBilling';
+import {
   aggregateReceivableStatus,
   hasFinanceiroChargeableAmount,
   isDayBoardOperationallyComplete,
@@ -36,7 +43,15 @@ import { notifyHubPaymentDue } from './hubNotifyEvents';
 import { syncChargeBundleStatusForReceivable } from './hubChargeBundlesService';
 import { applyPackageCoverageToEstimate, hasPackageBalanceForServices, listActivePackageBalances } from './hubPackagesService';
 import { findSeriesInvoiceCoverageForAppointments } from './hubSeriesBillingService';
-import { markHubAppointmentPaidFromReceivable } from './appointmentPaidFromBilling';
+import {
+  markHubAppointmentPaidFromReceivable,
+  syncHubAppointmentPaidFromReceivable,
+} from './appointmentPaidFromBilling';
+import {
+  consumeHubCustomerCredit,
+  CustomerCreditError,
+  restoreCustomerCreditIfNeeded,
+} from './hubCustomerCredit';
 import {
   PAYABLE_CATEGORIES,
   PAYABLE_PAYMENT_METHODS,
@@ -199,18 +214,17 @@ async function recalculateReceivableStatus(receivableId: string): Promise<string
   const finalAmount = Number(rec.final_amount ?? 0);
   const nextStatus = paid <= 0.009 ? 'pending' : paid >= finalAmount - 0.009 ? 'paid' : 'partially_paid';
   await supabaseAdmin.from('hub_receivables').update({ status: nextStatus }).eq('id', receivableId);
-  if (nextStatus === 'paid') {
-    const { data: recClinic } = await supabaseAdmin
-      .from('hub_receivables')
-      .select('clinic_id')
-      .eq('id', receivableId)
-      .maybeSingle();
-    if (recClinic?.clinic_id) {
-      void markHubAppointmentPaidFromReceivable({
-        clinicId: recClinic.clinic_id as string,
-        receivableId,
-      });
-    }
+  const { data: recClinic } = await supabaseAdmin
+    .from('hub_receivables')
+    .select('clinic_id')
+    .eq('id', receivableId)
+    .maybeSingle();
+  if (recClinic?.clinic_id) {
+    // Marca paid na quitação e desmarca (paid → done) no estorno/parcial.
+    await syncHubAppointmentPaidFromReceivable({
+      clinicId: recClinic.clinic_id as string,
+      receivableId,
+    });
   }
   return nextStatus;
 }
@@ -482,6 +496,31 @@ async function buildPreviewForGroomingSession(
   };
 }
 
+function hospComandaItemsToPreviewLines(
+  items: Array<{
+    hub_service_type_id: string | null;
+    description: string;
+    quantity: number;
+    unit_amount: number;
+    line_total: number;
+    origin_id: string;
+    sort_order: number;
+  }>,
+): ReceivableLineInsert[] {
+  return items.map((it) => ({
+    clinic_id: '',
+    receivable_id: '',
+    line_kind: 'manual' as const,
+    source_line_id: it.origin_id,
+    hub_service_type_id: it.hub_service_type_id,
+    description: it.description,
+    quantity: it.quantity,
+    unit_sale_amount: it.unit_amount,
+    line_total: it.line_total,
+    sort_order: it.sort_order,
+  }));
+}
+
 async function buildPreviewForEncounter(
   clinicId: string,
   encounterId: string
@@ -500,6 +539,15 @@ async function buildPreviewForEncounter(
     const ap = await sumAppointmentServicesSale(apptId);
     allLines.push(...ap.lines);
     subtotal += ap.subtotal;
+  }
+  const hosp = await loadHospitalizationComandaItems({
+    clinicId,
+    encounterId,
+    appointmentId: apptId,
+  });
+  if (hosp.items.length) {
+    allLines.push(...hospComandaItemsToPreviewLines(hosp.items));
+    subtotal = round2(subtotal + hosp.subtotal);
   }
   if (allLines.length === 0) {
     allLines.push({
@@ -536,6 +584,14 @@ async function buildPreviewForAppointment(
   if (!appt || appt.clinic_id !== clinicId) throw new Error('NOT_FOUND');
 
   const built = await sumAppointmentServicesSale(appointmentId);
+  const hosp = await loadHospitalizationComandaItems({
+    clinicId,
+    appointmentId,
+  });
+  if (hosp.items.length) {
+    built.lines.push(...hospComandaItemsToPreviewLines(hosp.items));
+    built.subtotal = round2(built.subtotal + hosp.subtotal);
+  }
   if (built.lines.length === 0) {
     built.lines.push({
       clinic_id: '',
@@ -555,6 +611,55 @@ async function buildPreviewForAppointment(
     subtotal: built.subtotal,
     unit_id: (appt.unit_id as string) ?? null,
     guardian_id: (appt.guardian_id as string) ?? null,
+  };
+}
+
+async function buildPreviewForHospitalization(
+  clinicId: string,
+  hospitalizationId: string,
+): Promise<{ lines: ReceivableLineInsert[]; subtotal: number; unit_id: string | null; guardian_id: string | null }> {
+  const { data: hosp, error } = await supabaseAdmin
+    .from('hub_hospitalizations')
+    .select(
+      'id, clinic_id, unit_id, guardian_id, pet_id, status, admitted_at, discharged_at, billing_waived_at, hub_encounter_id, hub_appointment_id, daily_hub_service_type_id, daily_unit_amount, deleted_at',
+    )
+    .eq('id', hospitalizationId)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!hosp) throw new Error('NOT_FOUND');
+  if (!isHospitalizationClosed(String(hosp.status))) throw new Error('NOT_READY');
+  if (hosp.billing_waived_at) throw new Error('WAIVED');
+
+  const loaded = await loadHospitalizationComandaItems({
+    clinicId,
+    hospitalizationId,
+    encounterId: (hosp.hub_encounter_id as string | null) ?? null,
+    appointmentId: (hosp.hub_appointment_id as string | null) ?? null,
+    defaultPetId: (hosp.pet_id as string | null) ?? null,
+  });
+  const lines = hospComandaItemsToPreviewLines(loaded.items);
+  const subtotal = loaded.subtotal;
+  if (!lines.length) {
+    lines.push({
+      clinic_id: '',
+      receivable_id: '',
+      line_kind: 'manual',
+      source_line_id: hospitalizationId,
+      hub_service_type_id: null,
+      description: 'Internação (sem linhas de cobrança)',
+      quantity: 1,
+      unit_sale_amount: 0,
+      line_total: 0,
+      sort_order: 0,
+    });
+  }
+  return {
+    lines,
+    subtotal: round2(subtotal),
+    unit_id: (hosp.unit_id as string) ?? null,
+    guardian_id: (hosp.guardian_id as string) ?? null,
   };
 }
 
@@ -728,6 +833,8 @@ export const getHubFinancePreview = async (req: Request, res: Response) => {
       built = await buildPreviewForAppointment(clinic_id, source_id);
     } else if (source_type === 'boarding_reservation') {
       built = await buildPreviewForBoardingReservation(clinic_id, source_id);
+    } else if (source_type === 'hospitalization') {
+      built = await buildPreviewForHospitalization(clinic_id, source_id);
     } else {
       built = await buildPreviewForQuote(clinic_id, source_id);
     }
@@ -1089,6 +1196,17 @@ export const postHubFinanceWaiveBilling = async (req: Request, res: Response) =>
         .eq('id', source_id)
         .eq('clinic_id', clinic_id);
       if (error) return res.status(500).json({ error: error.message });
+      try {
+        await cascadeWaiveLinkedHospitalizations({
+          clinicId: clinic_id,
+          originType: 'encounter',
+          originId: source_id,
+          waivedAt: now,
+          reason,
+        });
+      } catch (cascadeErr: unknown) {
+        return res.status(500).json({ error: (cascadeErr as Error)?.message || 'Erro ao dispensar internações vinculadas' });
+      }
     } else if (source_type === 'appointment') {
       const { error } = await supabaseAdmin
         .from('hub_appointments')
@@ -1096,6 +1214,17 @@ export const postHubFinanceWaiveBilling = async (req: Request, res: Response) =>
         .eq('id', source_id)
         .eq('clinic_id', clinic_id);
       if (error) return res.status(500).json({ error: error.message });
+      try {
+        await cascadeWaiveLinkedHospitalizations({
+          clinicId: clinic_id,
+          originType: 'appointment',
+          originId: source_id,
+          waivedAt: now,
+          reason,
+        });
+      } catch (cascadeErr: unknown) {
+        return res.status(500).json({ error: (cascadeErr as Error)?.message || 'Erro ao dispensar internações vinculadas' });
+      }
     } else if (source_type === 'boarding_reservation') {
       const { error } = await supabaseAdmin
         .from('hub_boarding_reservations')
@@ -1103,6 +1232,35 @@ export const postHubFinanceWaiveBilling = async (req: Request, res: Response) =>
         .eq('id', source_id)
         .eq('clinic_id', clinic_id);
       if (error) return res.status(500).json({ error: error.message });
+    } else if (source_type === 'hospitalization') {
+      const { data: hosp, error: hErr } = await supabaseAdmin
+        .from('hub_hospitalizations')
+        .select('id, status, billing_waived_at')
+        .eq('id', source_id)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (hErr) return res.status(500).json({ error: hErr.message });
+      if (!hosp) return res.status(404).json({ error: 'Internação não encontrada' });
+      if (!isHospitalizationClosed(String(hosp.status))) {
+        return res.status(409).json({ error: 'Só é possível dispensar cobrança após a alta da internação' });
+      }
+      if (hosp.billing_waived_at) {
+        return res.status(409).json({ error: 'Internação já marcada sem cobrança' });
+      }
+      const { error } = await supabaseAdmin
+        .from('hub_hospitalizations')
+        .update({ billing_waived_at: now, billing_waive_reason: reason })
+        .eq('id', source_id)
+        .eq('clinic_id', clinic_id);
+      if (error) {
+        if (String(error.message || '').includes('billing_waived')) {
+          return res.status(503).json({
+            error: 'Colunas de waive da internação ausentes. Aplique 133_alter_hub_hospitalizations_billing.sql.',
+          });
+        }
+        return res.status(500).json({ error: error.message });
+      }
     } else {
       const { error } = await supabaseAdmin
         .from('hub_quotes')
@@ -1212,6 +1370,29 @@ export const postHubFinanceReceivablePayment = async (req: Request, res: Respons
         rec.unit_id as string | null,
         comandaUnitId,
       );
+    }
+
+    if (payment_method === 'customer_credit') {
+      const guardianId = rec.guardian_id as string | null;
+      if (!guardianId) {
+        return res.status(409).json({ error: 'Recebível sem tutor — não é possível pagar com crédito.' });
+      }
+      try {
+        await consumeHubCustomerCredit({
+          clinicId: clinic_id,
+          guardianId,
+          amount: round2(amount),
+          reason: 'Pagamento com crédito do tutor',
+          comandaId: (rec.comanda_id as string | null) ?? null,
+          receivableId,
+          createdByUserId: userId,
+        });
+      } catch (e) {
+        if (e instanceof CustomerCreditError) {
+          return res.status(e.status).json({ error: e.message });
+        }
+        throw e;
+      }
     }
 
     const payAt = payment_date ?? new Date().toISOString();
@@ -1498,6 +1679,21 @@ export const postHubFinancePaymentReverse = async (req: Request, res: Response) 
       }
     }
     const userId = req.user?.id ?? null;
+    try {
+      await restoreCustomerCreditIfNeeded({
+        clinicId: clinic_id,
+        paymentMethod: payment.payment_method as string | null,
+        amount: Number(payment.amount ?? 0),
+        receivableId: payment.receivable_id as string,
+        reason: reason,
+        createdByUserId: userId,
+      });
+    } catch (e) {
+      if (e instanceof CustomerCreditError) {
+        return res.status(e.status).json({ error: e.message });
+      }
+      throw e;
+    }
     await supabaseAdmin.from('hub_financial_adjustments').insert({
       clinic_id,
       receivable_id: payment.receivable_id,
@@ -2433,6 +2629,9 @@ type UnbilledItem = {
   staff: { id: string; full_name: string } | null;
   estimated_amount: number;
   operational_status: string;
+  /** Para `hospitalization`: origem da comanda (encounter/appointment). */
+  billing_origin_type?: 'encounter' | 'appointment' | null;
+  billing_origin_id?: string | null;
 };
 
 async function fetchBilledOriginKeysFromComandas(clinicId: string): Promise<Set<string>> {
@@ -2512,8 +2711,10 @@ async function collectUnbilledItems(
   for (const row of groomRows ?? []) {
     if (keys.has(`grooming_session:${row.id}`)) continue;
     if (comandaOpenKeys.has(`grooming_session:${row.id}`)) continue;
+    if (billedViaComandaKeys.has(`grooming_session:${row.id}`)) continue;
     const apptId = row.hub_appointment_id as string | null | undefined;
     if (apptId && comandaOpenKeys.has(`appointment:${apptId}`)) continue;
+    if (apptId && billedViaComandaKeys.has(`appointment:${apptId}`)) continue;
     const pv = await buildPreviewForGroomingSession(clinicId, row.id as string);
     const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
     const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
@@ -2552,8 +2753,10 @@ async function collectUnbilledItems(
   for (const row of encRows ?? []) {
     if (keys.has(`encounter:${row.id}`)) continue;
     if (comandaOpenKeys.has(`encounter:${row.id}`)) continue;
+    if (billedViaComandaKeys.has(`encounter:${row.id}`)) continue;
     const apptIdEnc = row.hub_appointment_id as string | null | undefined;
     if (apptIdEnc && comandaOpenKeys.has(`appointment:${apptIdEnc}`)) continue;
+    if (apptIdEnc && billedViaComandaKeys.has(`appointment:${apptIdEnc}`)) continue;
     const pv = await buildPreviewForEncounter(clinicId, row.id as string);
     const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
     const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
@@ -2592,6 +2795,7 @@ async function collectUnbilledItems(
   for (const row of quoteRows ?? []) {
     if (keys.has(`quote:${row.id}`)) continue;
     if (comandaOpenKeys.has(`quote:${row.id}`)) continue;
+    if (billedViaComandaKeys.has(`quote:${row.id}`)) continue;
     const pv = await buildPreviewForQuote(clinicId, row.id as string);
     const prospect = row.prospect as { full_name?: string } | { full_name?: string }[] | null;
     const prospectName = prospect
@@ -2678,6 +2882,7 @@ async function collectUnbilledItems(
     const id = row.id as string;
     if (keys.has(`appointment:${id}`)) continue;
     if (comandaOpenKeys.has(`appointment:${id}`)) continue;
+    if (billedViaComandaKeys.has(`appointment:${id}`)) continue;
     if (apptIdsWithOperation.has(id)) continue;
     const pv = await buildPreviewForAppointment(clinicId, id);
     const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
@@ -2776,6 +2981,92 @@ async function collectUnbilledItems(
       ),
       operational_status: 'checked_out',
     });
+  }
+
+  // C — Internações encerradas como origem explícita na fila sem cobrança.
+  {
+    let hq = supabaseAdmin
+      .from('hub_hospitalizations')
+      .select(
+        `
+        id, unit_id, status, discharged_at, admitted_at, guardian_id, pet_id,
+        hub_encounter_id, hub_appointment_id, daily_hub_service_type_id, daily_unit_amount,
+        billing_waived_at, deleted_at,
+        pet:hub_pets(id, name),
+        guardian:hub_guardians(id, full_name)
+      `
+      )
+      .eq('clinic_id', clinicId)
+      .in('status', [...HOSPITALIZATION_CLOSED_STATUSES])
+      .is('deleted_at', null)
+      .is('billing_waived_at', null)
+      .not('discharged_at', 'is', null)
+      .order('discharged_at', { ascending: false })
+      .limit(200);
+    if (unitId) hq = hq.eq('unit_id', unitId);
+    const { data: hospRows, error: hErr } = await hq;
+    if (hErr && !String(hErr.message || '').includes('hub_hospitalizations')) throw new Error(hErr.message);
+
+    const alreadyListedBillingOrigins = new Set(
+      items
+        .filter((i) => i.source_type === 'encounter' || i.source_type === 'appointment')
+        .map((i) => `${i.source_type}:${i.source_id}`),
+    );
+    // Também considera billing_origin já emitido por outra internação.
+    for (const i of items) {
+      if (i.billing_origin_type && i.billing_origin_id) {
+        alreadyListedBillingOrigins.add(`${i.billing_origin_type}:${i.billing_origin_id}`);
+      }
+    }
+
+    const unbilledHospCtx = {
+      activeReceivableKeys: keys,
+      comandaOpenKeys,
+      billedViaComandaKeys,
+      alreadyListedBillingOrigins,
+    };
+
+    for (const row of hospRows ?? []) {
+      const hospInput = {
+        id: row.id as string,
+        status: String(row.status ?? ''),
+        billing_waived_at: (row.billing_waived_at as string | null) ?? null,
+        deleted_at: (row.deleted_at as string | null) ?? null,
+        hub_encounter_id: (row.hub_encounter_id as string | null) ?? null,
+        hub_appointment_id: (row.hub_appointment_id as string | null) ?? null,
+      };
+      if (!shouldIncludeInUnbilledHospitalization(hospInput, unbilledHospCtx)) continue;
+
+      const origin = resolveHospitalizationBillingOrigin(hospInput);
+      if (!origin) continue;
+
+      const hosp = await loadHospitalizationComandaItems({
+        clinicId,
+        hospitalizationId: row.id as string,
+        encounterId: origin.origin_type === 'encounter' ? origin.origin_id : null,
+        appointmentId: origin.origin_type === 'appointment' ? origin.origin_id : hospInput.hub_appointment_id,
+        defaultPetId: (row.pet_id as string | null) ?? null,
+      });
+      if (hosp.subtotal <= 0.009 && hosp.items.length === 0) continue;
+
+      const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
+      const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
+      alreadyListedBillingOrigins.add(`${origin.origin_type}:${origin.origin_id}`);
+      items.push({
+        source_type: 'hospitalization',
+        source_id: row.id as string,
+        origin_label: 'Internação (alta)',
+        completed_at: (row.discharged_at as string) ?? (row.admitted_at as string) ?? null,
+        unit_id: (row.unit_id as string) ?? null,
+        guardian: g ? (Array.isArray(g) ? g[0] : g) : null,
+        pet: pet ? (Array.isArray(pet) ? pet[0] : pet) : null,
+        staff: null,
+        estimated_amount: hosp.subtotal,
+        operational_status: String(row.status),
+        billing_origin_type: origin.origin_type,
+        billing_origin_id: origin.origin_id,
+      });
+    }
   }
 
   items.sort((a, b) => {
@@ -3014,7 +3305,32 @@ type DayBoardItem = {
   /** none | package | series_invoice */
   coverage_kind?: 'none' | 'package' | 'series_invoice';
   series_invoice_comanda_id?: string | null;
+  /** Presente em `hospitalization`: origem real da comanda. */
+  billing_origin_type?: 'encounter' | 'appointment' | null;
+  billing_origin_id?: string | null;
 };
+
+/** Waive em cascata: alta cobrada via encounter/appointment também sai da fila C. */
+async function cascadeWaiveLinkedHospitalizations(opts: {
+  clinicId: string;
+  originType: 'encounter' | 'appointment';
+  originId: string;
+  waivedAt: string;
+  reason: string;
+}): Promise<void> {
+  const col = opts.originType === 'encounter' ? 'hub_encounter_id' : 'hub_appointment_id';
+  const { error } = await supabaseAdmin
+    .from('hub_hospitalizations')
+    .update({ billing_waived_at: opts.waivedAt, billing_waive_reason: opts.reason })
+    .eq('clinic_id', opts.clinicId)
+    .eq(col, opts.originId)
+    .in('status', [...HOSPITALIZATION_CLOSED_STATUSES])
+    .is('deleted_at', null)
+    .is('billing_waived_at', null);
+  if (error && !String(error.message || '').includes('billing_waived')) {
+    throw new Error(error.message);
+  }
+}
 
 const ymdSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
@@ -3369,6 +3685,106 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       });
     }
 
+    // ── 4a. Internações com alta no período → origem explícita (gap C) ──
+    if (!openMode) {
+      let hq = supabaseAdmin
+        .from('hub_hospitalizations')
+        .select(
+          `id, unit_id, status, admitted_at, discharged_at, guardian_id, pet_id, hub_encounter_id, hub_appointment_id,
+           daily_hub_service_type_id, daily_unit_amount, billing_waived_at,
+           pet:hub_pets(id, name),
+           guardian:hub_guardians(id, full_name)`
+        )
+        .eq('clinic_id', clinic_id)
+        .in('status', [...HOSPITALIZATION_CLOSED_STATUSES])
+        .is('deleted_at', null)
+        .is('billing_waived_at', null)
+        .not('discharged_at', 'is', null)
+        .gte('discharged_at', dayStart)
+        .lte('discharged_at', dayEnd)
+        .order('discharged_at', { ascending: true });
+      if (unit_id) hq = hq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+      const hospRes = await hq;
+      if (hospRes.error && !String(hospRes.error.message || '').includes('hub_hospitalizations')) {
+        throw new Error(hospRes.error.message);
+      }
+      const hospRows = (hospRes.data as Array<Record<string, unknown>> | null) ?? [];
+
+      const seenBoardKeys = new Set(items.map((i) => `${i.origin_type}:${i.origin_id}`));
+      for (const row of hospRows) {
+        if (!isHospitalizationClosed(String(row.status))) continue;
+        const origin = resolveHospitalizationBillingOrigin({
+          hub_encounter_id: (row.hub_encounter_id as string | null) ?? null,
+          hub_appointment_id: (row.hub_appointment_id as string | null) ?? null,
+        });
+        if (!origin) continue;
+
+        const encId = origin.origin_type === 'encounter' ? origin.origin_id : null;
+        const apptId =
+          origin.origin_type === 'appointment'
+            ? origin.origin_id
+            : ((row.hub_appointment_id as string | null) ?? null);
+
+        const hospEstimate = (
+          await loadHospitalizationComandaItems({
+            clinicId: clinic_id,
+            hospitalizationId: row.id as string,
+            encounterId: encId,
+            appointmentId: apptId,
+            defaultPetId: (row.pet_id as string | null) ?? null,
+          })
+        ).subtotal;
+
+        // Se a origem cobrável já está no board, só anexa estimativa (evita duplicar linha).
+        const existing = items.find(
+          (i) => i.origin_type === origin.origin_type && i.origin_id === origin.origin_id,
+        );
+        if (existing) {
+          existing.estimated_amount = round2(Number(existing.estimated_amount ?? 0) + hospEstimate);
+          if (!String(existing.origin_label).includes('Internação')) {
+            existing.origin_label = `${existing.origin_label} · Internação (alta)`;
+          }
+          continue;
+        }
+
+        const billingOriginKey = `${origin.origin_type}:${origin.origin_id}`;
+        const hospKey = `hospitalization:${row.id as string}`;
+        if (seenBoardKeys.has(hospKey) || seenBoardKeys.has(billingOriginKey)) continue;
+        seenBoardKeys.add(hospKey);
+        seenBoardKeys.add(billingOriginKey);
+
+        const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
+        const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
+        // Billing da comanda vive na origem cobrável (encounter/appointment).
+        originKeys.push({ origin_type: origin.origin_type, origin_id: origin.origin_id });
+        items.push({
+          origin_type: 'hospitalization',
+          origin_id: row.id as string,
+          origin_label: 'Internação (alta)',
+          service_group: 'clinica',
+          starts_at: (row.discharged_at as string) ?? (row.admitted_at as string) ?? null,
+          guardian_id: (row.guardian_id as string) ?? null,
+          guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
+          pet_id: (row.pet_id as string) ?? null,
+          pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
+          operational_status: String(row.status),
+          estimated_amount: hospEstimate,
+          services: [],
+          billing_origin_type: origin.origin_type,
+          billing_origin_id: origin.origin_id,
+          billing: {
+            comanda_id: null,
+            comanda_status: null,
+            has_receivable: false,
+            receivable_status: null,
+            finance_handoff_at: null,
+            active_receivable_id: null,
+            due_date: null,
+          },
+        });
+      }
+    }
+
     // ── 4b. Origens em aberto sem entidade operacional carregada (orçamento, pacote, etc.) ──
     if (openMode && openOriginKeys) {
       const seen = new Set(items.map((i) => `${i.origin_type}:${i.origin_id}`));
@@ -3406,7 +3822,10 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
     // ── 5. Enriquecer billing em batch ──
     const billingMap = await fetchBillingStatusBatch(clinic_id, originKeys);
     for (const item of items) {
-      const key = `${item.origin_type}:${item.origin_id}`;
+      const key =
+        item.origin_type === 'hospitalization' && item.billing_origin_type && item.billing_origin_id
+          ? `${item.billing_origin_type}:${item.billing_origin_id}`
+          : `${item.origin_type}:${item.origin_id}`;
       const billing = billingMap.get(key);
       if (billing) item.billing = billing;
     }
@@ -3533,6 +3952,8 @@ function resolveOpenOriginLabel(originType: string): string {
       return 'Atendimento clínico';
     case 'boarding_reservation':
       return 'Hotel & Creche';
+    case 'hospitalization':
+      return 'Internação';
     default:
       return originType.replace(/_/g, ' ');
   }

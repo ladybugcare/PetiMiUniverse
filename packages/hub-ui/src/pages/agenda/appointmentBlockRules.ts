@@ -95,12 +95,12 @@ export function validateBoardingBlockIsolation(opts: {
   const mainGroup = blockAnchorGroup(opts.mainServiceTypeIds, opts.serviceTypes);
   const hasExtras = opts.extraBlocksServiceTypeIds.some((ids) => ids.length > 0);
   if (isBoardingServiceGroup(mainGroup) && hasExtras) {
-    return 'Hotel e creche não podem compartilhar o agendamento com outro bloco. Agende banho ou consulta em um agendamento separado, ou lance a estadia em Hotel & Creche.';
+    return 'Hotel e creche não podem compartilhar o agendamento com outro bloco. Agende banho ou consulta em um agendamento separado.';
   }
   for (const ids of opts.extraBlocksServiceTypeIds) {
     const g = blockAnchorGroup(ids, opts.serviceTypes);
     if (isBoardingServiceGroup(g)) {
-      return 'Hotel e creche devem ser o bloco principal do agendamento (ou use Hotel & Creche → Nova hospedagem).';
+      return 'Hotel e creche devem ser o bloco principal do agendamento.';
     }
   }
   return null;

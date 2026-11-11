@@ -57,7 +57,7 @@ flowchart TB
 | **2** | Sessão grooming | `hub_grooming_sessions` + estágios + transições | Sim — fluxo completo no chão de fábrica |
 | **3** | Drawer operacional | Checklist, **adicionais**, serviços executados, timeline | Sim — registro sem burocracia |
 | **4** | UX avançada | DnD, mobile, foto pet, tags estruturadas | Sim — polish |
-| **5** | Integrações | Pagamento, realtime, L&T motorista | Incremental |
+| **5** | Integrações | Ledger/Caixa (Gerar cobrança + `hub_payments`), realtime, L&T motorista | Incremental |
 
 ---
 
@@ -364,7 +364,7 @@ Seções (ordem do requisito):
 | Entrega | Depende de | Notas |
 |---------|------------|--------|
 | Revisão financeira + Gerar cobrança | [HUB_FINANCIAL_MODEL.md](./HUB_FINANCIAL_MODEL.md) | Sessão em `closed` entra em **Atendimentos sem cobrança** até ação explícita; **não** criar `hub_receivables` ao mudar de estágio sozinha. |
-| Pagamento no drawer | Recebível + `hub_payments` | Depois de existir recebível; não só flag `paid` no appointment |
+| Pagamento no drawer (ledger) | Recebível + `hub_payments` no Caixa/Financeiro | Depois de existir recebível; baixa manual — **não** gateway de cobrança ao tutor; não só flag `paid` no appointment |
 | Aprovação de extra via mensagem | Orçamentos / CRM futuro | Fora do Kanban |
 | Supabase Realtime na fila | Infra | Substituir polling |
 | L&T motorista / tracking | Produto L&T | MVP: badge + link agenda pickup |
@@ -385,7 +385,7 @@ Seções (ordem do requisito):
 | Card compacto (pet, tutor, horário, serviço, porte, responsável) | 1–2 |
 | Foto no card | 4 |
 | Tags coloridas | 3 (parcial) → 4 (completo) |
-| Status pago/pendente | 1 (`paid` / não) → 5 (pagamento real) |
+| Status pago/pendente | 1 (`paid` / não) → 5 (recebível + `hub_payments` no ledger) |
 | Ações rápidas sem modal | 1–2 |
 | Drawer lateral | 1 (básico) → 3 (completo) |
 | Checklist operacional | 3 |

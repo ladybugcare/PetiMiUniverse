@@ -11,7 +11,7 @@ Documento espelhado do plano aprovado. **Fonte de trabalho:** manter este fichei
 | **1** | 01–03 + UI mínima | Recebíveis (criação explícita), caixa, pagamentos, lista **Atendimentos sem cobrança**, card no Caixa, `billing_state` em orçamentos, API preview/create (iterativo) |
 | **2** | 04–06 | Dashboard gerencial, despesas, fluxo de caixa — **entregue (mai/2026):** migração `037_create_hub_expenses.sql`; API `GET /finance/dashboard-summary`, `GET /finance/cash-flow`, `GET|POST /finance/expenses`, `POST /finance/cash-sessions/:id/movements`; UI `/hub/dashboard`, separadores Despesas e Fluxo em `/hub/financeiro`, sangria/suprimento no Caixa. |
 | **3** | 07 | Comissões por `hub_service_type_id` — **entregue (mai/2026):** migração `038_create_hub_commission_rules.sql`; API `GET|POST /finance/commission-rules`, `PATCH|DELETE /finance/commission-rules/:id`, `GET /finance/commission-preview`; separador **Comissões** em `/hub/financeiro`. |
-| **4** | 08–09 | Integrações (interface), relatórios |
+| **4** | 08–09 | Integrações de **interface**/export e relatórios (não inclui gateway de cobrança ao tutor) |
 | **5** | contas a pagar | **`hub_payables`** (migração `113_create_hub_payables.sql`): honorário / obrigação pendente ou já paga; sync na equipe da cirurgia; aba **Contas a pagar**; saídas liquidadas no fluxo/dashboard. Separado de `hub_expenses`. |
 | **Defer** | 10 | Centro de custos (colunas reservadas) |
 
@@ -20,7 +20,7 @@ Documento espelhado do plano aprovado. **Fonte de trabalho:** manter este fichei
 - **Receivable** só após ação **Gerar cobrança** (sem automático em conclusão de Grooming, Encounter ou aceite de Quote).
 - **Atendimentos sem cobrança:** visão obrigatória; nada concluído desaparece sem cobrança ou **waive** explícito com motivo.
 - **Quote:** `accepted` ≠ cobrado; fluxo `accepted` → `awaiting_billing` → Gerar cobrança → Receivable.
-- **Payment Intent:** apenas documentado em [HUB_FINANCIAL_MODEL.md](./HUB_FINANCIAL_MODEL.md) até fase de gateway.
+- **Payment Intent:** apenas documentado em [HUB_FINANCIAL_MODEL.md](./HUB_FINANCIAL_MODEL.md) como fase futura de **cobrança ao tutor** (fora do escopo atual). Independente da assinatura PetiMi Hub da clínica.
 
 ## Diagrama resumido
 

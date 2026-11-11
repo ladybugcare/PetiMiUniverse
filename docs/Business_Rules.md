@@ -344,7 +344,7 @@ applications (
 - [ ] Sistema de favoritos
 
 ### **Fase 3:**
-- [ ] Pagamento integrado (Stripe/MercadoPago)
+- [ ] Pagamento integrado (Stripe/MercadoPago) — escopo **Vet-match** (marketplace), não Caixa/recebíveis do Hub
 - [ ] Calendário de disponibilidade
 - [ ] Histórico de trabalhos
 - [ ] Certificados digitais

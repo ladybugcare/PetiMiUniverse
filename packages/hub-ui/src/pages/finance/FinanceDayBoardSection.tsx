@@ -78,6 +78,7 @@ type OriginFilter =
   | 'grooming_session'
   | 'boarding_reservation'
   | 'encounter'
+  | 'hospitalization'
   | 'quote'
   | 'other';
 
@@ -94,6 +95,7 @@ const ORIGIN_FILTERS: { id: OriginFilter; label: string }[] = [
   { id: 'grooming_session', label: 'Banho e tosa' },
   { id: 'boarding_reservation', label: 'Hotel & Creche' },
   { id: 'encounter', label: 'Atendimento clínico' },
+  { id: 'hospitalization', label: 'Internação' },
   { id: 'quote', label: 'Orçamento' },
   { id: 'other', label: 'Outras' },
 ];
@@ -103,6 +105,7 @@ const KNOWN_ORIGINS = new Set([
   'grooming_session',
   'boarding_reservation',
   'encounter',
+  'hospitalization',
   'quote',
 ]);
 

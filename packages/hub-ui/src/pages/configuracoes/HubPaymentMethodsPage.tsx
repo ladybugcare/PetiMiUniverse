@@ -45,7 +45,7 @@ const METHOD_META: Record<
   },
   payment_link: {
     icon: <Link2 size={18} strokeWidth={1.75} />,
-    hint: 'Link enviado ao tutor para pagar online',
+    hint: 'Baixa manual de pagamento feito por link externo (sem gateway no Hub)',
   },
   customer_credit: {
     icon: <Wallet size={18} strokeWidth={1.75} />,

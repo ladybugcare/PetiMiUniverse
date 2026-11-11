@@ -1,6 +1,10 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import {
+  CustomerCreditError,
+  getHubCustomerCreditBalance as computeCustomerCreditBalance,
+} from './hubCustomerCredit';
 
 const uuidStr = z.string().uuid();
 
@@ -84,24 +88,23 @@ export const getHubCustomerCreditBalance = async (req: Request, res: Response) =
     if (!clinicParsed.success || !guardianParsed.success) {
       return res.status(400).json({ error: 'clinic_id e guardian_id obrigatórios' });
     }
-    const { data, error } = await supabaseAdmin
-      .from('hub_customer_credit_movements')
-      .select('direction, amount')
-      .eq('clinic_id', clinicParsed.data)
-      .eq('guardian_id', guardianParsed.data);
-    if (error) {
-      if (String(error.message || '').includes('hub_customer_credit')) {
+    try {
+      const balance = await computeCustomerCreditBalance(clinicParsed.data, guardianParsed.data);
+      const { data, error } = await supabaseAdmin
+        .from('hub_customer_credit_movements')
+        .select('id')
+        .eq('clinic_id', clinicParsed.data)
+        .eq('guardian_id', guardianParsed.data);
+      if (error && !String(error.message || '').includes('hub_customer_credit')) {
+        return res.status(500).json({ error: error.message });
+      }
+      return res.json({ balance, movements_count: (data ?? []).length });
+    } catch (e) {
+      if (e instanceof CustomerCreditError && e.status === 503) {
         return res.json({ balance: 0, movements_count: 0 });
       }
-      return res.status(500).json({ error: error.message });
+      throw e;
     }
-    let balance = 0;
-    for (const row of data ?? []) {
-      const a = Number(row.amount ?? 0);
-      if (row.direction === 'in') balance += a;
-      else balance -= a;
-    }
-    return res.json({ balance: round2(balance), movements_count: (data ?? []).length });
   } catch (e: unknown) {
     console.error('getHubCustomerCreditBalance', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });

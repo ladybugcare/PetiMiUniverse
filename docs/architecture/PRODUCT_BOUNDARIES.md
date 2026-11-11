@@ -80,7 +80,7 @@ Este documento define **o que pertence a cada domínio**, quem é dono dos dados
 - **Onboarding de organização (futuro):** o Hub pode passar a ser o lugar onde uma nova clínica/negócio completa o **cadastro da pessoa administradora** e, em seguida, a **primeira unidade** — em vez de um único formulário “só empresa + e-mail” herdado do Vet. Ver [HUB_SIGNUP_FIRST_ADMIN_AND_UNIT.md](./HUB_SIGNUP_FIRST_ADMIN_AND_UNIT.md) (backlog, não implementado).
 - **Atendimento / encounter**: check-in, execução, check-out, status.
 - **Timeline operacional** do pet na unidade (e agregação para visão ID).
-- **Financeiro simples**: cobrança, status de pagamento, recibo.
+- **Financeiro simples**: cobrança via comanda/recebível, status de pagamento e recibo com **baixa manual** no Caixa/Financeiro. Gateway / Payment Intent para cobrança ao tutor = fase futura (ver [HUB_FINANCIAL_MODEL.md](./HUB_FINANCIAL_MODEL.md)); distinto da assinatura do plano PetiMi Hub.
 - **Dashboard operacional** da unidade (ocupação, fila, KPIs operacionais).
 - Módulos plugáveis: **Grooming**, **Hotel/Daycare**, **Clinic** (camadas que estendem encounter, não substituem org/pet).
 

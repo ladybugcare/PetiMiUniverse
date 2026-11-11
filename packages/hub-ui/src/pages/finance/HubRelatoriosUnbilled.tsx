@@ -25,6 +25,7 @@ const SOURCE_LABELS: Record<string, string> = {
   encounter: 'Atendimento',
   grooming_session: 'Banho e tosa',
   boarding_reservation: 'Hotel & Creche',
+  hospitalization: 'Internação',
 };
 
 const SOURCE_TONE: Record<string, string> = {
@@ -33,6 +34,7 @@ const SOURCE_TONE: Record<string, string> = {
   encounter: 'warn',
   grooming_session: 'risk',
   boarding_reservation: 'critical',
+  hospitalization: 'warn',
 };
 
 const OPENABLE_ORIGINS = new Set<HubFinanceUnbilledSourceType>([
@@ -41,7 +43,28 @@ const OPENABLE_ORIGINS = new Set<HubFinanceUnbilledSourceType>([
   'encounter',
   'boarding_reservation',
   'quote',
+  'hospitalization',
 ]);
+
+function resolveUnbilledComandaOrigin(row: HubFinanceUnbilledItem): {
+  origin_type: HubComandaOriginType;
+  origin_id: string;
+} | null {
+  if (row.source_type === 'hospitalization') {
+    if (row.billing_origin_type && row.billing_origin_id) {
+      return {
+        origin_type: row.billing_origin_type,
+        origin_id: row.billing_origin_id,
+      };
+    }
+    return null;
+  }
+  if (!OPENABLE_ORIGINS.has(row.source_type)) return null;
+  return {
+    origin_type: row.source_type as HubComandaOriginType,
+    origin_id: row.source_id,
+  };
+}
 
 type Props = {
   clinicId: string;
@@ -133,7 +156,8 @@ export const HubRelatoriosUnbilled: React.FC<Props> = ({ clinicId, unitId, perio
 
   const openComandaForRow = useCallback(
     async (row: HubFinanceUnbilledItem) => {
-      if (!OPENABLE_ORIGINS.has(row.source_type)) {
+      const origin = resolveUnbilledComandaOrigin(row);
+      if (!origin) {
         navigate(caixaSemComandaHref(row.completed_at));
         return;
       }
@@ -148,8 +172,8 @@ export const HubRelatoriosUnbilled: React.FC<Props> = ({ clinicId, unitId, perio
       try {
         const detail = await hubComandaApi.openComanda({
           clinic_id: clinicId,
-          origin_type: row.source_type as HubComandaOriginType,
-          origin_id: row.source_id,
+          origin_type: origin.origin_type,
+          origin_id: origin.origin_id,
           unit_id: unitId,
         });
         const comandaId = (detail.comanda as Record<string, unknown>)?.id as string | undefined;
@@ -165,8 +189,8 @@ export const HubRelatoriosUnbilled: React.FC<Props> = ({ clinicId, unitId, perio
           try {
             const existing = await hubComandaApi.getComandaByOrigin({
               clinic_id: clinicId,
-              origin_type: row.source_type as HubComandaOriginType,
-              origin_id: row.source_id,
+              origin_type: origin.origin_type,
+              origin_id: origin.origin_id,
             });
             const comandaId = (existing.comanda as Record<string, unknown> | undefined)?.id as
               | string

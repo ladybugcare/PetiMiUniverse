@@ -10,6 +10,12 @@ export function isDayBoardOperationallyComplete(originType: string, operationalS
       return operationalStatus === 'completed';
     case 'boarding_reservation':
       return operationalStatus === 'checked_out';
+    case 'hospitalization':
+      return (
+        operationalStatus === 'discharged' ||
+        operationalStatus === 'death' ||
+        operationalStatus === 'transferred'
+      );
     case 'quote':
     case 'manual':
       return true;

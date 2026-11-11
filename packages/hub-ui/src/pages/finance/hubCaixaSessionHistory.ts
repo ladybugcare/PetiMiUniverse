@@ -37,7 +37,7 @@ const PAYMENT_META: Record<
   credit_card: { title: 'Pagamento cartão crédito', tone: 'blue' },
   debit_card: { title: 'Pagamento cartão débito', tone: 'purple' },
   transfer: { title: 'Transferência recebida', tone: 'teal' },
-  payment_link: { title: 'Link de pagamento recebido', tone: 'orange' },
+  payment_link: { title: 'Link externo recebido (baixa manual)', tone: 'orange' },
   customer_credit: { title: 'Crédito do tutor utilizado', tone: 'amber' },
 };
 

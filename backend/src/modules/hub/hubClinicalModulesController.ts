@@ -1496,7 +1496,7 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
   const { data: existing, error: getErr } = await supabaseAdmin
     .from('hub_hospitalizations')
     .select(
-      'id, hub_hospital_bed_id, status, pet_id, guardian_id, hub_encounter_id, unit_id, admission_notes, reason, hub_appointment_id',
+      'id, hub_hospital_bed_id, status, pet_id, guardian_id, hub_encounter_id, unit_id, admission_notes, reason, hub_appointment_id, discharged_at',
     )
     .eq('id', id.data)
     .eq('clinic_id', clinic_id)
@@ -1554,8 +1554,12 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
       return res.status(400).json({ error: (e as Error)?.message });
     }
   }
-  if (patch.status === 'discharged') {
-    update.discharged_at = new Date().toISOString();
+  const closingHospitalization =
+    patch.status === 'discharged' || patch.status === 'death' || patch.status === 'transferred';
+  if (closingHospitalization) {
+    // death/transferred também precisam de discharged_at para diárias e fila do Caixa.
+    update.discharged_at =
+      (existing as { discharged_at?: string | null }).discharged_at ?? new Date().toISOString();
   }
 
   const { data, error } = await supabaseAdmin
@@ -1567,14 +1571,32 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
     .maybeSingle();
   if (error) return res.status(500).json({ error: error.message });
 
-  const discharged = patch.status === 'discharged' || patch.status === 'death' || patch.status === 'transferred';
+  const discharged = closingHospitalization;
   const linkedAppointmentId = (existing as { hub_appointment_id?: string | null }).hub_appointment_id ?? null;
+  const linkedEncounterId = (existing as { hub_encounter_id?: string | null }).hub_encounter_id ?? null;
   if (discharged) {
     await setLinkedAppointmentStatus({
       clinicId: clinic_id,
       appointmentId: linkedAppointmentId,
       status: 'done',
     });
+    // Libera o atendimento clínico para a fila do Caixa (comanda do encounter).
+    if (linkedEncounterId) {
+      const { data: enc } = await supabaseAdmin
+        .from('hub_encounters')
+        .select('id, status')
+        .eq('id', linkedEncounterId)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (enc && !['completed', 'cancelled'].includes(String(enc.status ?? ''))) {
+        await supabaseAdmin
+          .from('hub_encounters')
+          .update({ status: 'completed', completed_at: new Date().toISOString() })
+          .eq('id', linkedEncounterId)
+          .eq('clinic_id', clinic_id);
+      }
+    }
   } else if (patch.status === 'cancelled') {
     await setLinkedAppointmentStatus({
       clinicId: clinic_id,

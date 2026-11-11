@@ -396,18 +396,47 @@ const HubCaixaPage: React.FC = () => {
 
   // ── Day board handlers ───────────────────────────────────────────────────
 
+  const resolveDayBoardComandaOrigin = (
+    item: HubFinanceDayBoardItem,
+  ): { origin_type: 'appointment' | 'grooming_session' | 'encounter' | 'boarding_reservation' | 'quote'; origin_id: string } | null => {
+    if (item.origin_type === 'hospitalization') {
+      if (item.billing_origin_type && item.billing_origin_id) {
+        return { origin_type: item.billing_origin_type, origin_id: item.billing_origin_id };
+      }
+      return null;
+    }
+    if (
+      item.origin_type === 'appointment' ||
+      item.origin_type === 'grooming_session' ||
+      item.origin_type === 'encounter' ||
+      item.origin_type === 'boarding_reservation' ||
+      item.origin_type === 'quote'
+    ) {
+      return {
+        origin_type: item.origin_type,
+        origin_id: item.origin_id,
+      };
+    }
+    return null;
+  };
+
   const onOpenComanda = async (item: HubFinanceDayBoardItem) => {
     if (!canCreateReceivable) { showError('Sem permissão para abrir comanda.'); return; }
     if (item.coverage_kind === 'series_invoice' && item.series_invoice_comanda_id) {
       navigate(`/hub/caixa/comanda/${item.series_invoice_comanda_id}`);
       return;
     }
+    const origin = resolveDayBoardComandaOrigin(item);
+    if (!origin) {
+      showError('Não foi possível determinar a origem da comanda para esta internação.');
+      return;
+    }
     setDayBoardBusy(true);
     try {
       const detail = await hubComandaApi.openComanda({
         clinic_id: clinicId,
-        origin_type: item.origin_type as 'appointment' | 'grooming_session' | 'encounter' | 'boarding_reservation',
-        origin_id: item.origin_id,
+        origin_type: origin.origin_type,
+        origin_id: origin.origin_id,
         unit_id: unitId,
       });
       const comandaId = (detail.comanda as Record<string, unknown>)?.id as string | undefined;
@@ -479,10 +508,15 @@ const HubCaixaPage: React.FC = () => {
     try {
       let comandaId = item.billing.comanda_id;
       if (!comandaId) {
+        const origin = resolveDayBoardComandaOrigin(item);
+        if (!origin) {
+          showError('Não foi possível determinar a origem da comanda para esta internação.');
+          return;
+        }
         const detail = await hubComandaApi.openComanda({
           clinic_id: clinicId,
-          origin_type: item.origin_type as 'appointment' | 'grooming_session' | 'encounter' | 'boarding_reservation',
-          origin_id: item.origin_id,
+          origin_type: origin.origin_type,
+          origin_id: origin.origin_id,
           unit_id: unitId,
         });
         comandaId = (detail.comanda as Record<string, unknown>).id as string;

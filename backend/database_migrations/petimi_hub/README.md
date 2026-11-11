@@ -280,3 +280,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 131. **`131_alter_hub_boarding_meal_slot_times.sql`** — `meal_slot_times` em `hub_unit_boarding_settings` (horário de cada período de refeição). Executar depois do item 52.
 
 132. **`132_alter_boarding_reception_handoff.sql`** — Status `checkout_preparing` / `ready_for_handoff` e `handoff_ready_*` em `hub_boarding_reservations`; kind `saida_prevista` em `hub_reception_handoffs`; `block_exit_if_charge_pending` nas settings da unidade. Hotel/creche libera o pet; a recepção confirma a entrega e fecha o check-out. Executar depois dos itens 51, 52 e 121.
+
+133. **`133_alter_hub_hospitalizations_billing.sql`** — `billing_waived_at` / `billing_waive_reason` em `hub_hospitalizations` (waive na fila sem cobrança do Caixa). Cobrança continua na comanda do encounter/appointment. Executar depois dos itens 25k/110.

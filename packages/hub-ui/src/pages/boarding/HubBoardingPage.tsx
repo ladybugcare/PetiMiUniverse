@@ -31,7 +31,6 @@ import BoardingCalendarView from './BoardingCalendarView';
 import BoardingStayPanel, { type BoardingStayTarget } from './BoardingStayPanel';
 import BoardingCheckInPanel, { type CheckInRequest } from './BoardingCheckInPanel';
 import BoardingCheckOutPanel from './BoardingCheckOutPanel';
-import BoardingNewStayPanel from './BoardingNewStayPanel';
 import BoardingHandoffPanel from './BoardingHandoffPanel';
 import BoardingGroupActivityPanel from './BoardingGroupActivityPanel';
 import '../clinica/clinica-page.css';
@@ -88,7 +87,6 @@ const HubBoardingPage: React.FC = () => {
   const [stayTarget, setStayTarget] = useState<BoardingStayTarget | null>(null);
   const [checkInRequest, setCheckInRequest] = useState<CheckInRequest | null>(null);
   const [checkOutId, setCheckOutId] = useState<string | null>(null);
-  const [newStayOpen, setNewStayOpen] = useState(false);
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [groupActivity, setGroupActivity] = useState<{
     kind: 'recreation' | 'walk' | 'custom';
@@ -340,15 +338,6 @@ const HubBoardingPage: React.FC = () => {
         >
           Passagem de turno
         </button>
-        {canWrite ? (
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-            onClick={() => setNewStayOpen(true)}
-          >
-            Nova hospedagem
-          </button>
-        ) : null}
       </div>
 
       <div
@@ -511,16 +500,13 @@ const HubBoardingPage: React.FC = () => {
           <p className="hub-clientes__muted">
             {stays.length
               ? 'Nenhum pet para este filtro.'
-              : 'Nenhum pet em Hotel & Creche neste dia. Reservas feitas aqui ou na Agenda aparecem automaticamente.'}
+              : 'Nenhum pet em Hotel & Creche neste dia. Crie a reserva na Agenda — ela aparece aqui automaticamente.'}
           </p>
-          {canWrite && !stays.length ? (
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-              onClick={() => setNewStayOpen(true)}
-            >
-              Nova hospedagem
-            </button>
+          {!stays.length ? (
+            <Link to="/hub/appointments" className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm">
+              <CalendarDays size={16} aria-hidden />
+              Ir para a Agenda
+            </Link>
           ) : null}
         </div>
       ) : (
@@ -579,18 +565,6 @@ const HubBoardingPage: React.FC = () => {
             reservationId={checkOutId}
             onClose={() => setCheckOutId(null)}
             onDone={refresh}
-          />
-          <BoardingNewStayPanel
-            open={newStayOpen}
-            clinicId={clinicId ?? ''}
-            unitId={unitIdParam}
-            settings={board?.settings}
-            onClose={() => setNewStayOpen(false)}
-            onCreated={(rid) => {
-              setNewStayOpen(false);
-              refresh();
-              setStayTarget({ reservationId: rid, initialTab: 'care' });
-            }}
           />
         </>
       ) : null}

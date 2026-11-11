@@ -18,7 +18,7 @@ Este diretório documenta a estratégia oficial para evoluir o monorepo **PetiMi
 | [HUB_EPIC1_MANUAL_QA.md](./HUB_EPIC1_MANUAL_QA.md) | Checklist de QA manual do Epic 1 (tutores / `hub_guardians`) |
 | [HUB_SIGNUP_FIRST_ADMIN_AND_UNIT.md](./HUB_SIGNUP_FIRST_ADMIN_AND_UNIT.md) | **Backlog:** visão de cadastro no Hub — pessoa como admin, depois primeira unidade (vs. signup Vet centrado na empresa) |
 | [HUB_QUOTES_AND_PROSPECTS.md](./HUB_QUOTES_AND_PROSPECTS.md) | Orçamentos e contatos (prospects) sem «falso cliente»; API `/api/hub/prospects` e `/api/hub/quotes` + UI Hub em `/hub/orcamentos` |
-| [HUB_FINANCIAL_MODEL.md](./HUB_FINANCIAL_MODEL.md) | Modelo financeiro Hub: recebíveis, fluxo único «Gerar cobrança», sem cobrança, orçamentos, caixa, evolução (Payment Intent, comissões) |
+| [HUB_FINANCIAL_MODEL.md](./HUB_FINANCIAL_MODEL.md) | Modelo financeiro Hub: recebíveis, fluxo «Gerar cobrança», sem cobrança, orçamentos, caixa; `payment_link` = baixa manual; Payment Intent (cobrança ao tutor) fora do escopo atual; comissões |
 | [HUB_FINANCIAL_IMPLEMENTATION_PLAN.md](./HUB_FINANCIAL_IMPLEMENTATION_PLAN.md) | Plano por fases (Fase 1–4) e checklist de entrega do módulo Financeiro e Caixa |
 | [HUB_NOTES_AND_HANDOFF_BACKLOG.md](./HUB_NOTES_AND_HANDOFF_BACKLOG.md) | **Backlog pós-MVP:** notas internas, herança orçamento/agenda → comanda, congelamento de histórico |
 | [HUB_GROOMING_OPERATIONAL_PLAN.md](./HUB_GROOMING_OPERATIONAL_PLAN.md) | Plano em fases da tela operacional Banho & Tosa (Fases 0–3 concluídas) |

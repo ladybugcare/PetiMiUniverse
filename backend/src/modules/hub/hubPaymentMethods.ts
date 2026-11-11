@@ -20,7 +20,7 @@ export const HUB_PAYMENT_METHOD_LABELS: Record<HubPaymentMethod, string> = {
   credit_card: 'Cartão de crédito',
   debit_card: 'Cartão de débito',
   transfer: 'Transferência',
-  payment_link: 'Link de pagamento',
+  payment_link: 'Link externo (baixa manual)',
   customer_credit: 'Crédito do tutor',
 };
 
