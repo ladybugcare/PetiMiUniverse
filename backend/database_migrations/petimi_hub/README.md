@@ -282,3 +282,15 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 132. **`132_alter_boarding_reception_handoff.sql`** — Status `checkout_preparing` / `ready_for_handoff` e `handoff_ready_*` em `hub_boarding_reservations`; kind `saida_prevista` em `hub_reception_handoffs`; `block_exit_if_charge_pending` nas settings da unidade. Hotel/creche libera o pet; a recepção confirma a entrega e fecha o check-out. Executar depois dos itens 51, 52 e 121.
 
 133. **`133_alter_hub_hospitalizations_billing.sql`** — `billing_waived_at` / `billing_waive_reason` em `hub_hospitalizations` (waive na fila sem cobrança do Caixa). Cobrança continua na comanda do encounter/appointment. Executar depois dos itens 25k/110.
+
+134. **`134_alter_hub_payments_reversal_status.sql`** — Soft-reverse: `status` posted|reversed e metadados de estorno em `hub_payments`. Executar depois do item 35.
+
+135. **`135_alter_hub_financial_adjustments_payment_link.sql`** — `payment_id`, `payment_reversal` vs `refund`, campos de reembolso efetivo. Executar depois do item 134.
+
+136. **`136_alter_hub_payments_posting_kind.sql`** — Correção histórica (`posting_kind`, `correction_reason`, `idempotency_key`). Executar depois do item 134.
+
+137. **`137_create_hub_cash_session_post_close_adjustments.sql`** — Ajustes pós-fechamento sem mutar snapshot da sessão. Executar depois dos itens 134–135.
+
+138. **`138_alter_hub_receivables_competence_date.sql`** — `competence_date` nullable (sem backfill de `created_at`). Executar depois do item 35.
+
+139. **`139_create_hub_finance_ledger_rpcs.sql`** — RPCs atômicos `hub_recalc_receivable_status` / `hub_reverse_payment`. Executar depois dos itens 134–138.

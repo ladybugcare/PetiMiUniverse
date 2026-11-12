@@ -120,6 +120,10 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
   const [cashSessionId, setCashSessionId] = useState<string | null>(null);
   const [reversePaymentId, setReversePaymentId] = useState<string | null>(null);
   const [reverseReason, setReverseReason] = useState('');
+  const [historicalOpen, setHistoricalOpen] = useState(false);
+  const [historicalAmount, setHistoricalAmount] = useState('');
+  const [historicalDate, setHistoricalDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [historicalReason, setHistoricalReason] = useState('');
   const [lineServiceTypes, setLineServiceTypes] = useState<HubServiceType[]>([]);
   const [comandaPetNames, setComandaPetNames] = useState<string[]>([]);
   const [showHighlight, setShowHighlight] = useState(false);
@@ -254,7 +258,12 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
 
   const canRegisterPayment = Boolean(
     detail &&
-      hasPermission('hub.financial.write') &&
+      hasPermission('hub.cash.receive') &&
+      !['cancelled', 'refunded', 'paid'].includes(detail.status),
+  );
+  const canHistoricalCash = Boolean(
+    detail &&
+      hasPermission('hub.financial.adjust') &&
       !['cancelled', 'refunded', 'paid'].includes(detail.status),
   );
 
@@ -289,7 +298,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
 
   const onCreatePayment = useCallback(async () => {
     if (!clinicId || !unitId || !detail) return;
-    if (!hasPermission('hub.financial.write')) {
+    if (!hasPermission('hub.cash.receive')) {
       showError('Sem permissão para registrar pagamentos.');
       return;
     }
@@ -393,9 +402,58 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     onConfirmBilling,
   ]);
 
+  const onHistoricalCash = useCallback(async () => {
+    if (!clinicId || !detail) return;
+    if (!canHistoricalCash) {
+      showError('Sem permissão para correção histórica.');
+      return;
+    }
+    const amount = Number(String(historicalAmount).replace(',', '.'));
+    if (Number.isNaN(amount) || amount <= 0) {
+      showError('Informe um valor válido.');
+      return;
+    }
+    if (historicalReason.trim().length < 3) {
+      showError('Justificativa obrigatória (mín. 3 caracteres).');
+      return;
+    }
+    setPaymentLoading(true);
+    try {
+      await hubFinancialApi.createHistoricalCashPayment(detail.id, {
+        clinic_id: clinicId,
+        amount,
+        effective_payment_date: historicalDate,
+        reason: historicalReason.trim(),
+        idempotency_key:
+          typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : undefined,
+      });
+      showSuccess('Correção histórica registrada.');
+      setHistoricalOpen(false);
+      setHistoricalAmount('');
+      setHistoricalReason('');
+      await loadDetail();
+      onRefreshComanda?.();
+    } catch (e) {
+      showError((e as Error)?.message || 'Erro na correção histórica');
+    } finally {
+      setPaymentLoading(false);
+    }
+  }, [
+    clinicId,
+    detail,
+    canHistoricalCash,
+    historicalAmount,
+    historicalDate,
+    historicalReason,
+    showError,
+    showSuccess,
+    loadDetail,
+    onRefreshComanda,
+  ]);
+
   const onReversePayment = async () => {
     if (!clinicId || !reversePaymentId) return;
-    if (!hasPermission('hub.financial.write')) {
+    if (!hasPermission('hub.payments.reverse')) {
       showError('Sem permissão para estornar pagamentos.');
       return;
     }
@@ -407,8 +465,9 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       await hubFinancialApi.reversePayment(reversePaymentId, {
         clinic_id: clinicId,
         reason: reverseReason.trim(),
+        mode: 'payment_reversal',
       });
-      showSuccess('Pagamento estornado.');
+      showSuccess('Lançamento anulado.');
       setReversePaymentId(null);
       setReverseReason('');
       await loadDetail();
@@ -442,11 +501,11 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       <p className="hub-clientes__muted">
         {cashSessionId
           ? `Caixa aberto (sessão ${cashSessionId.slice(0, 8)}…)`
-          : 'Não há caixa aberto — abra no módulo Caixa.'}
+          : 'Não há caixa aberto — abra no módulo Caixa para receber em dinheiro.'}
       </p>
-    ) : cashSessionId ? (
-      <p className="hub-clientes__muted">Sessão de caixa aberta — recebimento será registrado no histórico do dia.</p>
-    ) : null;
+    ) : (
+      <p className="hub-clientes__muted">PIX, cartão e transferências não dependem de sessão de caixa.</p>
+    );
 
   const receivableSelector =
     receivableIds.length > 1 ? (
@@ -561,6 +620,109 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
           {paymentLoading ? 'Registrando…' : 'Registrar pagamento'}
         </button>
       ) : null}
+      {canHistoricalCash ? (
+        <div style={{ marginTop: 16 }}>
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--ghost"
+            onClick={() => setHistoricalOpen((v) => !v)}
+          >
+            {historicalOpen ? 'Ocultar correção histórica' : 'Correção histórica em dinheiro'}
+          </button>
+          {historicalOpen ? (
+            <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+              <p className="hub-clientes__muted">
+                Não abre caixa nem altera sessão fechada. Exige justificativa e fica auditado.
+              </p>
+              <label className="hub-clientes__label">
+                Valor
+                <input
+                  className="hub-clientes__input"
+                  value={historicalAmount}
+                  onChange={(e) => setHistoricalAmount(e.target.value)}
+                />
+              </label>
+              <label className="hub-clientes__label">
+                Data efetiva
+                <input
+                  type="date"
+                  className="hub-clientes__input"
+                  value={historicalDate}
+                  onChange={(e) => setHistoricalDate(e.target.value)}
+                />
+              </label>
+              <label className="hub-clientes__label">
+                Justificativa
+                <textarea
+                  className="hub-clientes__input"
+                  rows={2}
+                  value={historicalReason}
+                  onChange={(e) => setHistoricalReason(e.target.value)}
+                />
+              </label>
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary"
+                disabled={paymentLoading}
+                onClick={() => void onHistoricalCash()}
+              >
+                Registrar correção histórica
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  ) : !drawerLayout && canHistoricalCash ? (
+    <div style={{ marginTop: 12 }}>
+      <button
+        type="button"
+        className="hub-clientes__btn hub-clientes__btn--ghost"
+        onClick={() => setHistoricalOpen((v) => !v)}
+      >
+        {historicalOpen ? 'Ocultar correção histórica' : 'Correção histórica em dinheiro'}
+      </button>
+      {historicalOpen ? (
+        <div style={{ marginTop: 10, display: 'grid', gap: 8 }}>
+          <p className="hub-clientes__muted">
+            Não abre caixa nem altera sessão fechada. Exige justificativa e fica auditado.
+          </p>
+          <label className="hub-clientes__label">
+            Valor
+            <input
+              className="hub-clientes__input"
+              value={historicalAmount}
+              onChange={(e) => setHistoricalAmount(e.target.value)}
+            />
+          </label>
+          <label className="hub-clientes__label">
+            Data efetiva
+            <input
+              type="date"
+              className="hub-clientes__input"
+              value={historicalDate}
+              onChange={(e) => setHistoricalDate(e.target.value)}
+            />
+          </label>
+          <label className="hub-clientes__label">
+            Justificativa
+            <textarea
+              className="hub-clientes__input"
+              rows={2}
+              value={historicalReason}
+              onChange={(e) => setHistoricalReason(e.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--primary"
+            disabled={paymentLoading}
+            onClick={() => void onHistoricalCash()}
+          >
+            Registrar correção histórica
+          </button>
+        </div>
+      ) : null}
     </div>
   ) : null;
 
@@ -626,27 +788,33 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
             </tr>
           </thead>
           <tbody>
-            {selectedPayments.map((payment) => (
-              <tr key={payment.id}>
+            {selectedPayments.map((payment) => {
+              const isReversed = String(payment.status ?? 'posted') === 'reversed';
+              return (
+              <tr key={payment.id} style={isReversed ? { opacity: 0.65 } : undefined}>
                 <td>{formatDateTime(payment.payment_date)}</td>
                 <td className="hub-checkout-drawer__cell-muted">
                   {HUB_PAYMENT_METHOD_LABELS[payment.payment_method as HubPaymentMethod] ?? payment.payment_method}
+                  {isReversed ? ' · anulado/reembolsado' : null}
+                  {payment.posting_kind === 'historical_correction' ? ' · correção histórica' : null}
                 </td>
                 <td>
                   <strong>{formatBrl(Number(payment.amount ?? 0))}</strong>
                 </td>
                 <td className="hub-clientes__td-actions">
                   <div className="hub-clientes__td-actions-inner hub-checkout-drawer__row-actions">
-                    <button
-                      type="button"
-                      className="hub-dayboard__action-btn"
-                      title="Gerar comprovante"
-                      aria-label="Gerar comprovante"
-                      onClick={() => void openHubPaymentReceiptPdf(payment.id, clinicId!)}
-                    >
-                      <Receipt size={15} strokeWidth={2} />
-                    </button>
-                    {hasPermission('hub.financial.write') ? (
+                    {!isReversed ? (
+                      <button
+                        type="button"
+                        className="hub-dayboard__action-btn"
+                        title="Gerar comprovante"
+                        aria-label="Gerar comprovante"
+                        onClick={() => void openHubPaymentReceiptPdf(payment.id, clinicId!)}
+                      >
+                        <Receipt size={15} strokeWidth={2} />
+                      </button>
+                    ) : null}
+                    {!isReversed && hasPermission('hub.payments.reverse') ? (
                       <button
                         type="button"
                         className="hub-dayboard__action-btn hub-dayboard__action-btn--danger"
@@ -663,7 +831,8 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
                   </div>
                 </td>
               </tr>
-            ))}
+            );
+            })}
           </tbody>
         </table>
       </div>

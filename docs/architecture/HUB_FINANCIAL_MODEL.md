@@ -65,6 +65,21 @@ Saídas no dashboard / fluxo de caixa = `hub_expenses` + payables com `status = 
 
 Sessão por unidade; movimentos `withdrawal` (sangria), `deposit` (suprimento), etc.
 
+**Independência do Financeiro:** PIX/cartão/transferência/link/crédito **não** exigem sessão aberta. Dinheiro operacional do balcão exige. Correção histórica em dinheiro usa `posting_kind = historical_correction` sem sessão. Sessões fechadas têm snapshot imutável; impactos posteriores vão em `hub_cash_session_post_close_adjustments`.
+
+### Datas e relatórios
+
+- Pagamentos persistem `payment_date` (efetivo) e `created_at` (registro); recebíveis aceitam `competence_date` opcional (sem fallback silencioso para `created_at`).
+- Relatórios de fluxo de caixa e faturamento aceitam `date_basis=payment_date|created_at`.
+- Totais de reembolso usam só `adjustment_type = refund`; anulações entram em acertos (`payment_reversal`).
+
+### Estorno vs reembolso
+
+- `hub_payments.status`: `posted` | `reversed` (nunca DELETE no estorno).
+- Anulação de lançamento → `hub_financial_adjustments.adjustment_type = payment_reversal`.
+- Reembolso efetivo ao cliente → `adjustment_type = refund` + `refund_method` / `refund_effective_date`.
+- Saldos ativos somam só pagamentos `posted`.
+
 ## Atendimentos sem cobrança
 
 Episódios **concluídos na operação** sem recebível ativo e sem **waive** de faturação.
@@ -113,10 +128,12 @@ Regras por **`hub_service_type_id`**, não por rótulos genéricos “Banho / Co
 ## Permissões (alvo)
 
 - `hub.financial.read` — listagens, dashboard, “sem cobrança”, pré-visualização de comissões.
-- `hub.financial.write` — despesas, ajustes, waive, **regras de comissão** (criar/editar/remover).
-- `hub.receivables.create` — gerar cobrança (pode coincidir com `hub.financial.write` no MVP).
-- `hub.cash.session` — abrir/fechar caixa, sangria/suprimento.
-- `hub.cash.receive` — registar pagamento na recepção.
+- `hub.financial.write` — despesas, waive, **regras de comissão** (criar/editar/remover).
+- `hub.receivables.create` — gerar cobrança.
+- `hub.cash.session` — abrir/fechar caixa, sangria/suprimento (operador de gaveta; `CFINANCE` **não** tem).
+- `hub.cash.receive` — registrar pagamento operacional.
+- `hub.payments.reverse` — anulação de lançamento e reembolso efetivo.
+- `hub.financial.adjust` — correção histórica em dinheiro.
 
 ## Integração multi-unidade
 

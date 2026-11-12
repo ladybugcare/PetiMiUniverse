@@ -14,10 +14,10 @@ Permissões reais em `backend/src/utils/permissions.ts`. `CADMIN` tem acesso irr
 |------|----------------------|
 | `CADMIN` | Tudo |
 | `CMANAGER` | Quase tudo (sem delete de org) — guardians/pets/serviços/agenda/clínica/financeiro/caixa write |
-| `CASSISTANT` | Leitura ampla + `appointments.write`; **sem** `guardians.write`, **sem** financeiro/caixa write |
-| `CVET_INTERNAL` | `clinic.read/write`, `appointments.read`, `financial.read`; **sem** guardians/pets write |
+| `CASSISTANT` | Recepção + caixa: `appointments.write`, `financial.read`, `cash.*`, `receivables.create`; **sem** `guardians.write` / `financial.write` |
+| `CVET_INTERNAL` | `clinic.read/write`, `appointments.read`; **sem** guardians/pets write; **sem** caixa/`financial.*` |
 | `CGROOMER` | `grooming.queue.read/manage`, leitura de guardians/pets/serviços/agenda |
-| `CFINANCE` | `financial.*`, `cash.*`, `receivables.create`, `inventory.write`; leitura de guardians/pets |
+| `CFINANCE` | `financial.*`, `cash.*`, `receivables.create`, `inventory.write`; leitura de guardians/pets; **sem** `clinic.write` / `appointments.write` |
 
 ---
 
@@ -98,15 +98,15 @@ Permissões reais em `backend/src/utils/permissions.ts`. `CADMIN` tem acesso irr
 | Ver lista de tutores | Vê | `GET /guardians` 200 |
 | Criar/editar tutor | **Sem** botão | `POST /guardians` → **403** |
 | Criar/editar agendamento | Vê e consegue | `POST /appointments` 200 |
-| Abrir caixa | **Sem** acesso | `POST /finance/cash-sessions/open` → **403** |
-| Registrar pagamento | **Sem** acesso | `POST /finance/receivables/:id/payments` → **403** |
+| Abrir caixa / receber | Vê e consegue (recepção + caixa) | `POST /finance/cash-sessions/open` 201; `hub.cash.*` + `receivables.create` |
+| Lançar despesa / financial.write | **Sem** acesso | `POST /finance/expenses` → **403** |
 
 ### 3.2 CVET_INTERNAL
 | Ação | Esperado |
 |------|----------|
 | Atender (encounters) | `clinic.write` → consegue criar/editar atendimento |
 | Criar tutor/pet | **403** (sem `pets.write`/`guardians.write`) |
-| Ver financeiro | `financial.read` → vê leitura; **sem** write (`POST /finance/expenses` → **403**) |
+| Ver financeiro / caixa | **Sem** acesso (`hub.financial.*` / `hub.cash.*` ausentes) |
 
 ### 3.3 CGROOMER
 | Ação | Esperado |
@@ -206,13 +206,15 @@ Permissões reais em `backend/src/utils/permissions.ts`. `CADMIN` tem acesso irr
 
 | Data | Ambiente | Versão/commit | Bloco | Resultado | Notas / issues |
 |------|----------|---------------|-------|-----------|----------------|
-|      |          |               |       |           |                |
+| 2026-11-11 | Jest (mocks API Hub) | `a3f0f452` | 5 (+ perms 3.1/3.4) | ✅ | `hubEpic7Bloco5Finance` + suíte financeira: **88** testes OK. Sem backend live (porta 3000 sem Hub API / sem `HUB_SEED_PASSWORD`). |
+| 2026-11-11 | Unitário | `a3f0f452` | 3.1/3.4 perms | ✅ | `permissions.test.ts`: CASSISTANT tem caixa; CFINANCE tem cash/financial; CVET sem caixa. QA doc alinhado ao código. |
 
 ### Resumo da rodada
-- Total ✅ / ❌ / ⚠️:
-- Bloqueadores para release:
-- Itens de limpeza de dados de teste (prod):
+- Total ✅ / ❌ / ⚠️: **Bloco 5 + perms relacionadas: ✅** (automatizado). UI live staging ainda pendente se quiser validação visual.
+- Bloqueadores para release: nenhum no Epic 7 / Bloco 5 nesta rodada.
+- Itens de limpeza de dados de teste (prod): N/A (só mocks).
+- Epic 7 aceite: checkboxes fechados em [HUB_MVP_EPICS.md](./HUB_MVP_EPICS.md).
 
 ---
 
-*Última atualização: jun/2026. Manter alinhado a `permissions.ts` e às rotas em `backend/src/modules/hub/routes/index.ts`.*
+*Última atualização: 2026-11-11. Manter alinhado a `permissions.ts` e às rotas em `backend/src/modules/hub/routes/index.ts`.*

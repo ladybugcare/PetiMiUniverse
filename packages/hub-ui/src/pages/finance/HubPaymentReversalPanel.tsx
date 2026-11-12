@@ -91,9 +91,12 @@ export const HubPaymentReversalPanel: React.FC = () => {
   const [manualId, setManualId] = useState<string | null>(null);
   const [manualDraft, setManualDraft] = useState('');
   const [reason, setReason] = useState('');
+  const [reversalMode, setReversalMode] = useState<'payment_reversal' | 'refund'>('payment_reversal');
+  const [refundMethod, setRefundMethod] = useState('pix');
+  const [refundDate, setRefundDate] = useState(() => todayIsoLocal());
   const [saving, setSaving] = useState(false);
 
-  const canReverse = hasPermission('hub.financial.write') || hasPermission('hub.cash.receive');
+  const canReverse = hasPermission('hub.payments.reverse');
 
   const load = useCallback(async () => {
     if (!clinicId || !unitId) {
@@ -150,6 +153,9 @@ export const HubPaymentReversalPanel: React.FC = () => {
     setManualId(null);
     setManualDraft('');
     setReason('');
+    setReversalMode('payment_reversal');
+    setRefundMethod('pix');
+    setRefundDate(todayIsoLocal());
   };
 
   const closePanel = () => {
@@ -186,14 +192,22 @@ export const HubPaymentReversalPanel: React.FC = () => {
       showError('Informe o motivo do estorno (mín. 3 caracteres).');
       return;
     }
+    if (reversalMode === 'refund' && !refundDate) {
+      showError('Informe a data efetiva do reembolso.');
+      return;
+    }
     setSaving(true);
     try {
       const res = await hubFinancialApi.reversePayment(paymentId, {
         clinic_id: clinicId,
         reason: reason.trim(),
+        mode: reversalMode,
+        refund_method: reversalMode === 'refund' ? (refundMethod as 'pix') : null,
+        refund_effective_date: reversalMode === 'refund' ? refundDate : null,
       });
       const status = RECEIVABLE_STATUS_LABELS[res.receivable_status] ?? res.receivable_status;
-      showSuccess(res.warning || `Pagamento estornado. A cobrança ficou ${status.toLowerCase()}.`);
+      const actionLabel = reversalMode === 'refund' ? 'Reembolso registrado' : 'Lançamento anulado';
+      showSuccess(res.warning || `${actionLabel}. A cobrança ficou ${status.toLowerCase()}.`);
       resetPanel();
       await load();
     } catch (e) {
@@ -437,7 +451,11 @@ export const HubPaymentReversalPanel: React.FC = () => {
               disabled={saving || reason.trim().length < 3}
               onClick={() => void onConfirm()}
             >
-              {saving ? 'Estornando…' : 'Confirmar estorno'}
+              {saving
+                ? 'Salvando…'
+                : reversalMode === 'refund'
+                  ? 'Confirmar reembolso'
+                  : 'Confirmar anulação'}
             </button>
           </div>
         }
@@ -483,13 +501,69 @@ export const HubPaymentReversalPanel: React.FC = () => {
 
         {cashClosed ? (
           <p className="hub-adjustments__warning" role="status">
-            Este dinheiro entrou em um caixa que já foi fechado. Depois do estorno, confira o fechamento da sessão.
+            Este dinheiro entrou em um caixa que já foi fechado. O snapshot da sessão permanece; o impacto fica em
+            ajustes pós-fechamento.
           </p>
+        ) : null}
+
+        <div className="hub-clientes__field" role="group" aria-label="Tipo de operação">
+          <span className="hub-clientes__label">Tipo</span>
+          <div className="hub-payables__filters" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button
+              type="button"
+              className={`hub-dayboard__toggle-btn${reversalMode === 'payment_reversal' ? ' hub-dayboard__toggle-btn--active' : ''}`}
+              onClick={() => setReversalMode('payment_reversal')}
+            >
+              Anular lançamento
+            </button>
+            <button
+              type="button"
+              className={`hub-dayboard__toggle-btn${reversalMode === 'refund' ? ' hub-dayboard__toggle-btn--active' : ''}`}
+              onClick={() => setReversalMode('refund')}
+            >
+              Reembolso efetivo
+            </button>
+          </div>
+          <p className="hub-clientes__muted" style={{ marginTop: 6 }}>
+            {reversalMode === 'refund'
+              ? 'Use quando houve devolução real de dinheiro ou crédito ao cliente.'
+              : 'Use para corrigir lançamento incorreto (duplicidade, método ou valor errado).'}
+          </p>
+        </div>
+
+        {reversalMode === 'refund' ? (
+          <>
+            <div className="hub-clientes__field">
+              <label className="hub-clientes__label" htmlFor="fin-refund-method">
+                Forma do reembolso
+              </label>
+              <select
+                id="fin-refund-method"
+                className="hub-clientes__input"
+                value={refundMethod}
+                onChange={(e) => setRefundMethod(e.target.value)}
+              >
+                <option value="pix">Pix</option>
+                <option value="cash">Dinheiro</option>
+                <option value="transfer">Transferência</option>
+                <option value="customer_credit">Crédito do tutor</option>
+                <option value="credit_card">Cartão de crédito</option>
+                <option value="debit_card">Cartão de débito</option>
+                <option value="other">Outro</option>
+              </select>
+            </div>
+            <HubDateField
+              id="fin-refund-date"
+              label="Data efetiva do reembolso"
+              value={refundDate}
+              onChange={setRefundDate}
+            />
+          </>
         ) : null}
 
         <div className="hub-clientes__field">
           <label className="hub-clientes__label" htmlFor="fin-reverse-reason">
-            Motivo do estorno
+            Motivo
           </label>
           <textarea
             id="fin-reverse-reason"

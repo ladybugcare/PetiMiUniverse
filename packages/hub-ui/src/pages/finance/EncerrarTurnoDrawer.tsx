@@ -3,7 +3,7 @@ import { AlertCircle, ArrowRight, CheckCircle, Coins, X } from 'lucide-react';
 import type { HubCashSession, HubCashSessionSummary, HubFinanceDayBoardItem } from '../../api/hubFinancialApi';
 import { hubFinancialApi } from '../../api/hubFinancialApi';
 import { HubLoading } from '../../components/HubLoading';
-import { enviarComandasAbertasAoFinanceiro, contarComandasAbertasEditaveis } from './caixaHandoffUtils';
+import { enviarPendentesAoFinanceiro, contarComandasAbertasEditaveis } from './caixaHandoffUtils';
 import { sumDayBoardPendingAmount, sumOpenComandasPendingAmount } from './hubCaixaSessionHistory';
 
 function formatBrl(n: number): string {
@@ -75,11 +75,17 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
       ? Math.round((closeInformedNum - expectedBalance + Number.EPSILON) * 100) / 100
       : null;
 
+  const unitId = String(cashSession.unit_id ?? '');
+
   const handleHandoff = async () => {
+    if (!unitId) {
+      setErrorMsg('Unidade da sessão de caixa não encontrada.');
+      return;
+    }
     setBusy(true);
     setErrorMsg(null);
     try {
-      const result = await enviarComandasAbertasAoFinanceiro(openComandas, clinicId);
+      const result = await enviarPendentesAoFinanceiro(clinicId, unitId);
       if (!result.success) {
         setErrorMsg(`Falha em ${result.errors.length} item(ns):\n${result.errors.join('\n')}`);
         return;
@@ -103,7 +109,12 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
     setErrorMsg(null);
     try {
       if (openComandasCount > 0 && !handoffDone) {
-        const result = await enviarComandasAbertasAoFinanceiro(openComandas, clinicId);
+        if (!unitId) {
+          setErrorMsg('Unidade da sessão de caixa não encontrada.');
+          setBusy(false);
+          return;
+        }
+        const result = await enviarPendentesAoFinanceiro(clinicId, unitId);
         if (!result.success) {
           setErrorMsg(`Falha ao enviar ${result.errors.length} comanda(s):\n${result.errors.join('\n')}`);
           setBusy(false);

@@ -2,7 +2,6 @@ import type { Request, Response } from 'express';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
-import { resolvePaymentCashSessionId } from './hubFinancialController';
 import { resolveServiceLinePricing, type PetPricingFields } from './hubPricingResolve';
 import { quoteDiscountAmount } from './hubQuoteDiscount';
 import { createAuditLog, extractRequestMetadata } from '../../utils/auditLog';
@@ -22,7 +21,11 @@ import {
   recordComandaEvent,
   itemSnapshotFromRow,
 } from './comandaEvents';
-import { canHandoffExistingReceivables } from './comandaFinanceHandoff';
+import {
+  canHandoffExistingReceivables,
+  isSkippableLeavePendingHandoffError,
+} from './comandaFinanceHandoff';
+export { isSkippableLeavePendingHandoffError } from './comandaFinanceHandoff';
 import { notifyHubCancellationPending } from './hubNotifyEvents';
 import { isMissingPostgrestRelation } from '../../utils/supabaseSchemaErrors.js';
 import { comandaProductOriginAlreadyStockedOut } from './comandaStockOut';
@@ -401,7 +404,11 @@ async function sumPaymentsForComandaReceivables(comandaId: string, clinicId: str
   if (rErr) throw new Error(rErr.message);
   const ids = (recs ?? []).map((r) => r.id as string);
   if (ids.length === 0) return 0;
-  const { data: pays, error: pErr } = await supabaseAdmin.from('hub_payments').select('amount').in('receivable_id', ids);
+  const { data: pays, error: pErr } = await supabaseAdmin
+    .from('hub_payments')
+    .select('amount')
+    .in('receivable_id', ids)
+    .eq('status', 'posted');
   if (pErr) throw new Error(pErr.message);
   return round2((pays ?? []).reduce((s, row) => s + Number(row.amount ?? 0), 0));
 }
@@ -466,7 +473,11 @@ async function computeComandaBalancePayload(
   for (const r of recs ?? []) {
     const rid = r.id as string;
     const fa = Number(r.final_amount ?? 0);
-    const { data: pays } = await supabaseAdmin.from('hub_payments').select('amount').eq('receivable_id', rid);
+    const { data: pays } = await supabaseAdmin
+      .from('hub_payments')
+      .select('amount')
+      .eq('receivable_id', rid)
+      .eq('status', 'posted');
     const paidRec = round2((pays ?? []).reduce((a, row) => a + Number(row.amount ?? 0), 0));
     receivableResidual += round2(Math.max(0, fa - paidRec));
   }
@@ -512,7 +523,8 @@ async function applyFinanceHandoffOnly(
   return activeRecIds;
 }
 
-async function refreshComandaFinancialStatus(
+/** Atualiza financial_status pelo saldo real — inclusive comanda fechada (não reabre). */
+export async function refreshComandaFinancialStatus(
   comandaId: string,
   clinicId: string,
   comandaRow: Record<string, unknown>
@@ -3045,53 +3057,19 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
         const { data: recRow } = await supabaseAdmin.from('hub_receivables').select('final_amount, unit_id').eq('id', rid).single();
         const finalAmt = Number(recRow?.final_amount ?? 0);
 
-        let validatedCashSessionId: string | null = null;
         const recUnit = recRow?.unit_id as string | null;
-        if (pay.payment_method === 'cash') {
-          if (!pay.cash_session_id) {
-            await rollbackReceivables();
-            return res.status(409).json({ error: 'Abra o caixa para receber em dinheiro.' });
-          }
-          const { data: cashSession, error: cashErr } = await supabaseAdmin
-            .from('hub_cash_sessions')
-            .select('id, clinic_id, unit_id, status')
-            .eq('id', pay.cash_session_id)
-            .maybeSingle();
-          if (
-            cashErr ||
-            !cashSession ||
-            cashSession.clinic_id !== clinic_id ||
-            cashSession.status !== 'open' ||
-            (recUnit && cashSession.unit_id !== recUnit)
-          ) {
-            await rollbackReceivables();
-            return res.status(409).json({ error: 'Sessão de caixa inválida ou fechada.' });
-          }
-          validatedCashSessionId = cashSession.id as string;
-        } else if (pay.cash_session_id) {
-          const { data: cashSession, error: cashErr } = await supabaseAdmin
-            .from('hub_cash_sessions')
-            .select('id, clinic_id, unit_id, status')
-            .eq('id', pay.cash_session_id)
-            .maybeSingle();
-          if (
-            cashErr ||
-            !cashSession ||
-            cashSession.clinic_id !== clinic_id ||
-            cashSession.status !== 'open' ||
-            (recUnit && cashSession.unit_id !== recUnit)
-          ) {
-            await rollbackReceivables();
-            return res.status(409).json({ error: 'Sessão de caixa inválida ou fechada.' });
-          }
-          validatedCashSessionId = cashSession.id as string;
-        } else {
-          validatedCashSessionId = await resolvePaymentCashSessionId(
-            clinic_id,
-            recUnit,
-            unitId,
-          );
+        const { validatePaymentCashSession } = await import('./hubFinanceLedger.js');
+        const cashCheck = await validatePaymentCashSession({
+          clinicId: clinic_id,
+          paymentMethod: pay.payment_method,
+          cashSessionId: pay.cash_session_id ?? null,
+          receivableUnitId: recUnit,
+        });
+        if (!cashCheck.ok) {
+          await rollbackReceivables();
+          return res.status(cashCheck.status).json({ error: cashCheck.error });
         }
+        const validatedCashSessionId = cashCheck.cash_session_id;
 
         if (pay.payment_method === 'customer_credit') {
           if (!guardianId) {
@@ -3133,13 +3111,19 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
           notes: null,
           created_by_user_id: userId,
           payment_timing: payment_timing,
+          status: 'posted',
+          posting_kind: 'operational',
         });
         if (pErr) {
           await rollbackReceivables();
           return res.status(500).json({ error: pErr.message });
         }
 
-        const { data: sumRows } = await supabaseAdmin.from('hub_payments').select('amount').eq('receivable_id', rid);
+        const { data: sumRows } = await supabaseAdmin
+          .from('hub_payments')
+          .select('amount')
+          .eq('receivable_id', rid)
+          .eq('status', 'posted');
         const paid = round2((sumRows ?? []).reduce((a, r) => a + Number(r.amount ?? 0), 0));
         let nextStatus = 'partially_paid';
         if (paid >= finalAmt - 0.009) nextStatus = 'paid';
@@ -3189,6 +3173,289 @@ async function maybeSyncEmptyComandaForHandoff(
   } catch {
     return detail;
   }
+}
+
+export type LeavePendingHandoffResult = {
+  comanda_id: string;
+  receivable_ids: string[];
+  /** Comanda sem valor a faturar / já enviada — não é falha dura. */
+  skipped?: boolean;
+  error?: string;
+};
+
+/**
+ * Handoff leave_pending de uma comanda: recebível + linhas + finance_handoff_at.
+ * Nunca cria recebível sem linhas (exceto handoff só de saldo já faturado).
+ */
+export async function leavePendingHandoffComanda(
+  comandaId: string,
+  clinicId: string,
+  opts: { dueDate: string; userId?: string | null },
+): Promise<LeavePendingHandoffResult> {
+  const userId = opts.userId ?? null;
+  const dueDate = opts.dueDate;
+  const receivableIds: string[] = [];
+  const stockMovementIds: string[] = [];
+
+  const rollback = async () => {
+    for (const mid of stockMovementIds) {
+      await supabaseAdmin.from('hub_stock_movements').delete().eq('id', mid);
+    }
+    stockMovementIds.length = 0;
+    for (const rid of receivableIds.splice(0)) {
+      await supabaseAdmin.from('hub_receivable_lines').delete().eq('receivable_id', rid);
+      await supabaseAdmin.from('hub_receivables').delete().eq('id', rid);
+    }
+  };
+
+  try {
+    let detail = await getHubComandaDetailPayload(comandaId, clinicId);
+    let comanda = detail.comanda as Record<string, unknown>;
+    if (String(comanda.status) !== 'aberta') {
+      return { comanda_id: comandaId, receivable_ids: [], error: 'Comanda não está aberta' };
+    }
+    if (comanda.finance_handoff_at) {
+      return {
+        comanda_id: comandaId,
+        receivable_ids: (detail.active_receivable_ids as string[]) ?? [],
+        skipped: true,
+      };
+    }
+
+    detail = await maybeSyncEmptyComandaForHandoff(comandaId, clinicId, detail, userId);
+    comanda = detail.comanda as Record<string, unknown>;
+
+    const items = (detail.items as Record<string, unknown>[]).filter((it) =>
+      (detail.open_item_ids as string[]).includes(it.id as string),
+    );
+
+    if (items.length === 0) {
+      if (canHandoffExistingReceivables(detail)) {
+        const ids = await applyFinanceHandoffOnly(comandaId, clinicId, detail, dueDate);
+        return { comanda_id: comandaId, receivable_ids: ids };
+      }
+      return {
+        comanda_id: comandaId,
+        receivable_ids: [],
+        skipped: true,
+        error: 'Não há itens em aberto para enviar ao financeiro',
+      };
+    }
+
+    let unitId = (comanda.unit_id as string | null) ?? null;
+    if (!unitId) unitId = await resolveClinicDefaultUnitId(clinicId);
+    const guardianId = comanda.guardian_id as string;
+    const subtotal = round2(items.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+
+    if (subtotal <= 0.009) {
+      const hasPackageCoverage = items.some((it) => it.package_balance_id);
+      if (hasPackageCoverage) {
+        await redeemPackageBalancesOnCheckout({
+          clinicId,
+          comandaId,
+          staffUserId: userId,
+        });
+        await supabaseAdmin
+          .from('hub_comandas')
+          .update({ finance_handoff_at: new Date().toISOString() })
+          .eq('id', comandaId)
+          .eq('clinic_id', clinicId);
+        await tryAutoCloseComanda(comandaId, clinicId);
+        return { comanda_id: comandaId, receivable_ids: [] };
+      }
+      return {
+        comanda_id: comandaId,
+        receivable_ids: [],
+        skipped: true,
+        error: 'Nenhum recebível gerado (valores zerados)',
+      };
+    }
+
+    const manualSourceId = randomUUID();
+    const { data: rec, error: rErr } = await supabaseAdmin
+      .from('hub_receivables')
+      .insert({
+        clinic_id: clinicId,
+        unit_id: unitId,
+        guardian_id: guardianId,
+        source_type: 'manual',
+        source_id: manualSourceId,
+        comanda_id: comandaId,
+        original_amount: subtotal,
+        final_amount: subtotal,
+        status: 'pending',
+        due_date: dueDate,
+        notes: null,
+      })
+      .select('id')
+      .single();
+    if (rErr || !rec) {
+      return {
+        comanda_id: comandaId,
+        receivable_ids: [],
+        error: rErr?.message ?? 'Erro ao criar recebível',
+      };
+    }
+    const receivableId = rec.id as string;
+    receivableIds.push(receivableId);
+
+    let sort = 0;
+    for (const it of items) {
+      const lineKind =
+        String(it.item_kind ?? '') === 'product'
+          ? 'product'
+          : mapItemToReceivableLineKind((it.origin_type as string | null) ?? null);
+      const { error: lnErr } = await supabaseAdmin.from('hub_receivable_lines').insert({
+        clinic_id: clinicId,
+        receivable_id: receivableId,
+        comanda_id: comandaId,
+        comanda_item_id: it.id as string,
+        pet_id: (it.pet_id as string | null) ?? null,
+        line_kind: lineKind,
+        source_line_id: (it.origin_id as string | null) ?? null,
+        hub_service_type_id: (it.hub_service_type_id as string | null) ?? null,
+        hub_inventory_item_id: (it.hub_inventory_item_id as string | null) ?? null,
+        hub_inventory_lot_id: (it.hub_inventory_lot_id as string | null) ?? null,
+        description: String(it.description),
+        quantity: Number(it.quantity ?? 1),
+        unit_sale_amount: Number(it.unit_amount ?? 0),
+        line_total: Number(it.line_total ?? 0),
+        sort_order: sort++,
+      });
+      if (lnErr) {
+        await rollback();
+        return { comanda_id: comandaId, receivable_ids: [], error: lnErr.message };
+      }
+    }
+
+    for (const it of items) {
+      if (String(it.item_kind ?? '') !== 'product') continue;
+      if (comandaProductOriginAlreadyStockedOut((it.origin_type as string | null) ?? null)) continue;
+      const invItemId = (it.hub_inventory_item_id as string | null) ?? null;
+      const invLotId = (it.hub_inventory_lot_id as string | null) ?? null;
+      if (!invItemId || !invLotId) continue;
+      const qty = Number(it.quantity ?? 1);
+      if (!(qty > 0)) continue;
+      const stockResult = await createSaleStockOut({
+        clinicId,
+        itemId: invItemId,
+        lotId: invLotId,
+        qty,
+        notes: `Venda na comanda ${comandaId}: ${String(it.description ?? 'Produto')}`,
+        referenceType: 'hub_comanda_item',
+        referenceId: it.id as string,
+        createdBy: userId,
+      });
+      if ('error' in stockResult) {
+        await rollback();
+        return { comanda_id: comandaId, receivable_ids: [], error: stockResult.error };
+      }
+      if (!stockResult.skipped) {
+        stockMovementIds.push(stockResult.id);
+      }
+    }
+
+    await supabaseAdmin
+      .from('hub_comandas')
+      .update({ finance_handoff_at: new Date().toISOString() })
+      .eq('id', comandaId)
+      .eq('clinic_id', clinicId);
+
+    if (String(comanda.origin_type) === 'quote' && comanda.origin_id) {
+      await supabaseAdmin
+        .from('hub_quotes')
+        .update({ billing_state: 'receivable_created' })
+        .eq('id', comanda.origin_id as string)
+        .eq('clinic_id', clinicId);
+    }
+
+    if (String(comanda.origin_type) === 'package' && comanda.origin_id) {
+      const packagePurchaseLines = items
+        .filter((it) => String(it.origin_type) === 'package_purchase' && it.origin_id)
+        .map((it) => ({
+          packageId: String(it.origin_id),
+          petId: (it.pet_id as string | null) ?? null,
+        }));
+      if (packagePurchaseLines.length) {
+        await fulfillPackagePurchasesOnComandaCheckout({
+          clinicId,
+          comandaId,
+          purchaseGroupId: comanda.origin_id as string,
+          guardianId,
+          packagePurchaseLines,
+          purchasedReceivableId: receivableId,
+        });
+      }
+    }
+
+    const hasServicePackageCoverage = items.some((it) => it.package_balance_id);
+    if (hasServicePackageCoverage && String(comanda.origin_type) !== 'package') {
+      await redeemPackageBalancesOnCheckout({
+        clinicId,
+        comandaId,
+        staffUserId: userId,
+      });
+    }
+
+    return { comanda_id: comandaId, receivable_ids: [receivableId] };
+  } catch (e: unknown) {
+    await rollback().catch(() => undefined);
+    return {
+      comanda_id: comandaId,
+      receivable_ids: [],
+      error: (e as Error)?.message ?? 'Erro ao processar comanda',
+    };
+  }
+}
+
+/** Handoff leave_pending de todas as comandas abertas da unidade (sem finance_handoff_at). */
+export async function leavePendingHandoffOpenComandasForUnit(
+  clinicId: string,
+  unitId: string,
+  opts: { dueDate: string; userId?: string | null },
+): Promise<{
+  handoff_count: number;
+  skipped_count: number;
+  results: LeavePendingHandoffResult[];
+  errors: string[];
+}> {
+  const { data: openComandas, error } = await supabaseAdmin
+    .from('hub_comandas')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('unit_id', unitId)
+    .eq('status', 'aberta')
+    .is('finance_handoff_at', null)
+    .is('deleted_at', null);
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  const results: LeavePendingHandoffResult[] = [];
+  const errors: string[] = [];
+  let handoffCount = 0;
+  let skippedCount = 0;
+
+  for (const row of openComandas ?? []) {
+    const comandaId = row.id as string;
+    const result = await leavePendingHandoffComanda(comandaId, clinicId, opts);
+    results.push(result);
+    if (result.skipped) {
+      skippedCount++;
+      continue;
+    }
+    if (result.error) {
+      if (isSkippableLeavePendingHandoffError(result.error)) {
+        skippedCount++;
+        continue;
+      }
+      errors.push(`${comandaId.slice(0, 8)}: ${result.error}`);
+      continue;
+    }
+    handoffCount++;
+  }
+
+  return { handoff_count: handoffCount, skipped_count: skippedCount, results, errors };
 }
 
 async function applySyncComandaFromOrigin(
@@ -3584,29 +3851,8 @@ export type FinancialAdjustmentFlag = {
 type CancellationOperationalType = 'appointment' | 'grooming_session' | 'encounter' | 'quote';
 
 async function recalculateReceivableStatusLocal(receivableId: string): Promise<string> {
-  const { data: rec, error: rErr } = await supabaseAdmin
-    .from('hub_receivables')
-    .select('id, clinic_id, final_amount, status')
-    .eq('id', receivableId)
-    .maybeSingle();
-  if (rErr || !rec) throw new Error(rErr?.message || 'Recebível não encontrado');
-  if (['cancelled', 'refunded'].includes(String(rec.status))) return String(rec.status);
-  const { data: payments, error: pErr } = await supabaseAdmin
-    .from('hub_payments')
-    .select('amount')
-    .eq('receivable_id', receivableId);
-  if (pErr) throw new Error(pErr.message);
-  const paid = round2((payments ?? []).reduce((sum, row) => sum + Number(row.amount ?? 0), 0));
-  const finalAmount = Number(rec.final_amount ?? 0);
-  const nextStatus = paid <= 0.009 ? 'pending' : paid >= finalAmount - 0.009 ? 'paid' : 'partially_paid';
-  await supabaseAdmin.from('hub_receivables').update({ status: nextStatus }).eq('id', receivableId);
-  if (rec.clinic_id) {
-    await syncHubAppointmentPaidFromReceivable({
-      clinicId: rec.clinic_id as string,
-      receivableId,
-    });
-  }
-  return nextStatus;
+  const { recalculateReceivableFromPosted } = await import('./hubFinanceLedger.js');
+  return recalculateReceivableFromPosted(receivableId);
 }
 
 async function resolveOpenComandaIdForCancellation(
@@ -3803,6 +4049,7 @@ async function reverseAllComandaPayments(
   reason: string,
   userId: string | null
 ): Promise<{ totalReversed: number; restoredCustomerCredit: number }> {
+  const { reversePaymentSoft, FinanceLedgerError } = await import('./hubFinanceLedger.js');
   const { data: recs, error: rErr } = await supabaseAdmin
     .from('hub_receivables')
     .select('id, final_amount, status')
@@ -3816,52 +4063,41 @@ async function reverseAllComandaPayments(
   const recIds = recRows.map((r) => r.id as string);
   const { data: payments, error: pErr } = await supabaseAdmin
     .from('hub_payments')
-    .select('id, clinic_id, receivable_id, amount, payment_method, cash_session_id')
-    .in('receivable_id', recIds);
+    .select('id, clinic_id, receivable_id, amount, payment_method, cash_session_id, status')
+    .in('receivable_id', recIds)
+    .eq('status', 'posted');
   if (pErr) throw new Error(pErr.message);
 
   let totalReversed = 0;
   let restoredCustomerCredit = 0;
   for (const payment of payments ?? []) {
     if (payment.clinic_id !== clinicId) continue;
-    let warning: string | null = null;
-    if (payment.payment_method === 'cash' && payment.cash_session_id) {
-      const { data: session } = await supabaseAdmin
-        .from('hub_cash_sessions')
-        .select('id, status')
-        .eq('id', payment.cash_session_id as string)
-        .eq('clinic_id', clinicId)
-        .maybeSingle();
-      if (session?.status === 'closed') {
-        warning = 'Pagamento em dinheiro estornado de caixa já fechado; revise a conferência da sessão.';
-      }
+    try {
+      await reversePaymentSoft({
+        paymentId: payment.id as string,
+        clinicId,
+        userId,
+        reason,
+        mode: 'payment_reversal',
+      });
+    } catch (e) {
+      if (e instanceof FinanceLedgerError && e.status === 409) continue;
+      throw e;
     }
-    const restored = await restoreCustomerCreditIfNeeded({
-      clinicId,
-      paymentMethod: payment.payment_method as string | null,
-      amount: Number(payment.amount ?? 0),
-      receivableId: payment.receivable_id as string,
-      reason,
-      createdByUserId: userId,
-    });
-    restoredCustomerCredit = round2(restoredCustomerCredit + restored);
-    await supabaseAdmin.from('hub_financial_adjustments').insert({
-      clinic_id: clinicId,
-      receivable_id: payment.receivable_id,
-      adjustment_type: 'refund',
-      amount: payment.amount,
-      reason: warning ? `${reason} (${warning})` : reason,
-      created_by_user_id: userId,
-    });
-    const { error: delErr } = await supabaseAdmin.from('hub_payments').delete().eq('id', payment.id);
-    if (delErr) throw new Error(delErr.message);
+    if (payment.payment_method === 'customer_credit') {
+      restoredCustomerCredit = round2(restoredCustomerCredit + Number(payment.amount ?? 0));
+    }
     totalReversed = round2(totalReversed + Number(payment.amount ?? 0));
-    await recalculateReceivableStatusLocal(payment.receivable_id as string);
   }
 
   for (const rec of recRows) {
     const rid = rec.id as string;
-    const { data: paysLeft } = await supabaseAdmin.from('hub_payments').select('id').eq('receivable_id', rid).limit(1);
+    const { data: paysLeft } = await supabaseAdmin
+      .from('hub_payments')
+      .select('id')
+      .eq('receivable_id', rid)
+      .eq('status', 'posted')
+      .limit(1);
     if ((paysLeft ?? []).length > 0) continue;
     if (String(rec.status) === 'cancelled') continue;
     const finalAmt = Number(rec.final_amount ?? 0);
@@ -3877,6 +4113,16 @@ async function reverseAllComandaPayments(
     }
     await supabaseAdmin.from('hub_receivables').update({ status: 'cancelled' }).eq('id', rid);
     await syncHubAppointmentPaidFromReceivable({ clinicId, receivableId: rid });
+  }
+
+  const { data: comandaRow } = await supabaseAdmin
+    .from('hub_comandas')
+    .select('*')
+    .eq('id', comandaId)
+    .eq('clinic_id', clinicId)
+    .maybeSingle();
+  if (comandaRow) {
+    await refreshComandaFinancialStatus(comandaId, clinicId, comandaRow as Record<string, unknown>);
   }
 
   return { totalReversed, restoredCustomerCredit };
@@ -4709,6 +4955,10 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
     const { clinic_id, comanda_ids, action, due_date, payment_timing, payment_method, cash_session_id } = parsed.data;
     const userId = req.user?.id ?? null;
 
+    if (action === 'leave_pending' && !due_date) {
+      return res.status(400).json({ error: 'due_date obrigatório para deixar pendente' });
+    }
+
     if (action === 'receive_now' && payment_method) {
       const clinicSettings = await getOrCreateHubClinicSettings(clinic_id);
       try {
@@ -4735,6 +4985,43 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
     const notOpen = (comandas ?? []).filter((c) => String(c.status) !== 'aberta');
     if (notOpen.length > 0) {
       return res.status(409).json({ error: `Comanda(s) não abertas: ${notOpen.map((c) => c.id).join(', ')}` });
+    }
+
+    // leave_pending: caminho único (recebível + linhas + finance_handoff_at)
+    if (action === 'leave_pending') {
+      const results: { comanda_id: string; receivable_ids: string[]; error?: string }[] = [];
+      for (const comanda of comandas ?? []) {
+        const row = await leavePendingHandoffComanda(comanda.id as string, clinic_id, {
+          dueDate: due_date as string,
+          userId,
+        });
+        if (row.skipped && (!row.error || isSkippableLeavePendingHandoffError(row.error))) {
+          results.push({
+            comanda_id: row.comanda_id,
+            receivable_ids: row.receivable_ids,
+            error: row.error,
+          });
+          continue;
+        }
+        results.push({
+          comanda_id: row.comanda_id,
+          receivable_ids: row.receivable_ids,
+          error: row.error,
+        });
+      }
+      const meta = extractRequestMetadata(req);
+      void createAuditLog({
+        user_id: userId ?? '',
+        clinic_id,
+        action: 'comanda_checkout_bulk',
+        entity_type: 'hub_comandas',
+        new_values: { comanda_ids, action, results },
+        ...meta,
+      });
+      const hasErrors = results.some(
+        (r) => r.error && !isSkippableLeavePendingHandoffError(r.error),
+      );
+      return res.status(hasErrors ? 207 : 201).json({ results, partial_errors: hasErrors });
     }
 
     // Processa cada comanda individualmente reaproveitando o checkout existente
@@ -4764,31 +5051,15 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
           ];
         }
 
-        // Chamada interna ao core do checkout (reutiliza a lógica existente via supabase direto)
-        // Para simplificar, usa o endpoint internamente construindo um fake request/response
-        // Na prática: chamamos a lógica diretamente replicando o essencial do postHubComandaCheckout
-        let detail = await getHubComandaDetailPayload(comandaId, clinic_id);
-        if (action === 'leave_pending') {
-          detail = await maybeSyncEmptyComandaForHandoff(comandaId, clinic_id, detail, userId);
-        }
+        // receive_now / cancel — leave_pending já foi tratado acima
+        const detail = await getHubComandaDetailPayload(comandaId, clinic_id);
         const items = (detail.items as Record<string, unknown>[]).filter(
           (it) => (detail.open_item_ids as string[]).includes(it.id as string)
         );
         const unitId = (detail.comanda as Record<string, unknown>).unit_id as string | null;
 
         if (items.length === 0) {
-          if (action === 'leave_pending' && canHandoffExistingReceivables(detail)) {
-            try {
-              const receivableIds = await applyFinanceHandoffOnly(comandaId, clinic_id, detail, due_date ?? null);
-              results.push({ comanda_id: comandaId, receivable_ids: receivableIds });
-            } catch (handoffErr: unknown) {
-              results.push({
-                comanda_id: comandaId,
-                receivable_ids: [],
-                error: (handoffErr as Error).message ?? 'Erro ao enviar ao financeiro',
-              });
-            }
-          } else if (action === 'receive_now') {
+          if (action === 'receive_now') {
             const bal = Number((detail as { balance_due?: number }).balance_due ?? 0);
             const activeRecIds = (detail.active_receivable_ids as string[] | undefined) ?? [];
             if (bal <= 0.02) {
@@ -4805,25 +5076,27 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
                   .eq('id', rid)
                   .maybeSingle();
                 if (!rec || rec.status === 'cancelled' || rec.status === 'paid') continue;
-                const { data: pays } = await supabaseAdmin.from('hub_payments').select('amount').eq('receivable_id', rid);
+                const { data: pays } = await supabaseAdmin
+                  .from('hub_payments')
+                  .select('amount')
+                  .eq('receivable_id', rid)
+                  .eq('status', 'posted');
                 const paidSoFar = round2((pays ?? []).reduce((a, row) => a + Number(row.amount ?? 0), 0));
                 const due = round2(Math.max(0, Number(rec.final_amount ?? 0) - paidSoFar));
                 if (due <= 0.009) continue;
 
-                let validatedCashSessionId: string | null = null;
-                if (payment_method === 'cash') {
-                  if (!cash_session_id) {
-                    payError = 'Abra o caixa para receber em dinheiro.';
-                    break;
-                  }
-                  validatedCashSessionId = cash_session_id;
-                } else {
-                  validatedCashSessionId = await resolvePaymentCashSessionId(
-                    clinic_id,
-                    (rec.unit_id as string | null) ?? null,
-                    unitId,
-                  );
+                const { validatePaymentCashSession } = await import('./hubFinanceLedger.js');
+                const cashCheck = await validatePaymentCashSession({
+                  clinicId: clinic_id,
+                  paymentMethod: payment_method,
+                  cashSessionId: cash_session_id ?? null,
+                  receivableUnitId: (rec.unit_id as string | null) ?? null,
+                });
+                if (!cashCheck.ok) {
+                  payError = cashCheck.error;
+                  break;
                 }
+                const validatedCashSessionId = cashCheck.cash_session_id;
 
                 if (payment_method === 'customer_credit') {
                   const creditGuardianId =
@@ -4863,6 +5136,8 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
                   notes: null,
                   created_by_user_id: userId,
                   payment_timing,
+                  status: 'posted',
+                  posting_kind: 'operational',
                 });
                 if (payInsErr) {
                   payError = payInsErr.message;
@@ -4895,7 +5170,6 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
             results.push({
               comanda_id: comandaId,
               receivable_ids: [],
-              error: action === 'leave_pending' ? 'Não há itens em aberto para enviar ao financeiro' : undefined,
             });
           }
           continue;
@@ -4917,7 +5191,7 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
             original_amount: subtotal,
             final_amount: subtotal,
             status: 'pending',
-            due_date: action === 'leave_pending' ? due_date : null,
+            due_date: null,
             notes: null,
           })
           .select('id')
@@ -4966,7 +5240,8 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
             }
             validatedCashSessionId = cash_session_id;
           } else {
-            validatedCashSessionId = await resolvePaymentCashSessionId(clinic_id, unitId, unitId);
+            // Não-dinheiro: sem vínculo automático à sessão de caixa.
+            validatedCashSessionId = cash_session_id ?? null;
           }
 
           if (payment_method === 'customer_credit') {
@@ -5016,22 +5291,14 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
             notes: null,
             created_by_user_id: userId,
             payment_timing,
+            status: 'posted',
+            posting_kind: 'operational',
           });
           await supabaseAdmin.from('hub_receivables').update({ status: 'paid' }).eq('id', receivableId);
           void markHubAppointmentPaidFromReceivable({ clinicId: clinic_id, receivableId });
         }
 
-        if (action === 'leave_pending') {
-          await supabaseAdmin
-            .from('hub_comandas')
-            .update({ finance_handoff_at: new Date().toISOString() })
-            .eq('id', comandaId)
-            .eq('clinic_id', clinic_id);
-          // leave_pending mantém saldo em aberto — auto-close seria no-op após outro
-          // getHubComandaDetailPayload completo (custo alto em lote).
-        } else {
-          await tryAutoCloseComanda(comandaId, clinic_id);
-        }
+        await tryAutoCloseComanda(comandaId, clinic_id);
 
         results.push({ comanda_id: comandaId, receivable_ids: [receivableId] });
       } catch (itemErr: unknown) {

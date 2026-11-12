@@ -116,6 +116,12 @@ export type HubFinancePayment = {
   notes?: string | null;
   created_by_user_id?: string | null;
   created_at?: string;
+  status?: 'posted' | 'reversed';
+  posting_kind?: 'operational' | 'historical_correction';
+  reversal_mode?: 'payment_reversal' | 'refund' | null;
+  reversal_reason?: string | null;
+  correction_reason?: string | null;
+  effective_payment_date?: string | null;
 };
 
 export type HubFinancePaymentListItem = {
@@ -126,6 +132,7 @@ export type HubFinancePaymentListItem = {
   payment_date: string;
   notes: string | null;
   cash_session_status: 'open' | 'closed' | null;
+  status?: 'posted' | 'reversed';
   receivable: {
     id: string;
     status: string;
@@ -335,6 +342,19 @@ export type HubCashSession = {
   } | null;
 };
 
+export type HubCashSessionPostCloseAdjustment = {
+  id: string;
+  cash_session_id: string;
+  payment_id?: string | null;
+  adjustment_id?: string | null;
+  adjustment_type: 'reversal_impact' | 'refund_impact' | 'manual_correction';
+  amount: number;
+  reason: string;
+  effective_date: string;
+  created_by_user_id?: string | null;
+  created_at: string;
+};
+
 export type HubCashSessionSummary = {
   cash_session: HubCashSession;
   payments: Array<HubFinancePayment & { receivable?: Partial<HubFinanceReceivable> | null }>;
@@ -347,6 +367,7 @@ export type HubCashSessionSummary = {
     notes?: string | null;
     created_at: string;
   }>;
+  post_close_adjustments?: HubCashSessionPostCloseAdjustment[];
   summary: {
     opening_balance: number;
     cash_payments_total: number;
@@ -355,6 +376,9 @@ export type HubCashSessionSummary = {
     deposits_total: number;
     withdrawals_total: number;
     expected_balance: number;
+    closing_balance?: number | null;
+    difference_amount?: number | null;
+    snapshot_frozen?: boolean;
     /** Totais por método de pagamento (pix, credit_card, etc.) — informativo, não entra no saldo da gaveta. */
     totals_by_method?: Record<string, number>;
   };
@@ -397,6 +421,7 @@ export type HubCommissionPreviewResponse = {
 
 export type HubFinanceRevenueReport = {
   period: { from: string; to: string };
+  date_basis?: 'payment_date' | 'created_at' | string;
   total: number;
   by_method: Record<string, number>;
 };
@@ -871,12 +896,33 @@ export const hubFinancialApi = {
       installments?: number;
       notes?: string | null;
       cash_session_id?: string | null;
+      payment_date?: string;
     }
   ): Promise<{ payment: Record<string, unknown>; receivable_status: string }> {
     return apiRequest(`${base}/receivables/${encodeURIComponent(receivableId)}/payments`, {
       method: 'POST',
       body: JSON.stringify(body),
     }) as Promise<{ payment: Record<string, unknown>; receivable_status: string }>;
+  },
+
+  async createHistoricalCashPayment(
+    receivableId: string,
+    body: {
+      clinic_id: string;
+      amount: number;
+      effective_payment_date: string;
+      reason: string;
+      notes?: string | null;
+      idempotency_key?: string | null;
+    },
+  ): Promise<{ payment: Record<string, unknown>; receivable_status: string }> {
+    return apiRequest(
+      `${base}/receivables/${encodeURIComponent(receivableId)}/payments/historical-cash`,
+      {
+        method: 'POST',
+        body: JSON.stringify(body),
+      },
+    ) as Promise<{ payment: Record<string, unknown>; receivable_status: string }>;
   },
 
   async listPayments(
@@ -893,11 +939,32 @@ export const hubFinancialApi = {
     return res.payments ?? [];
   },
 
-  async reversePayment(paymentId: string, body: { clinic_id: string; reason: string }): Promise<{ ok: boolean; receivable_status: string; warning?: string | null }> {
+  async reversePayment(
+    paymentId: string,
+    body: {
+      clinic_id: string;
+      reason: string;
+      mode?: 'payment_reversal' | 'refund';
+      refund_method?: HubPaymentMethod | null;
+      refund_effective_date?: string | null;
+    },
+  ): Promise<{
+    ok: boolean;
+    receivable_status: string;
+    reversal_mode?: string;
+    adjustment_id?: string;
+    warning?: string | null;
+  }> {
     return apiRequest(`${base}/payments/${encodeURIComponent(paymentId)}/reverse`, {
       method: 'POST',
       body: JSON.stringify(body),
-    }) as Promise<{ ok: boolean; receivable_status: string; warning?: string | null }>;
+    }) as Promise<{
+      ok: boolean;
+      receivable_status: string;
+      reversal_mode?: string;
+      adjustment_id?: string;
+      warning?: string | null;
+    }>;
   },
 
   async getCashSessionSummary(sessionId: string, clinicId: string): Promise<HubCashSessionSummary> {
@@ -954,13 +1021,48 @@ export const hubFinancialApi = {
   async closeCashSession(
     sessionId: string,
     body: { clinic_id: string; closing_balance: number; notes?: string | null }
-  ): Promise<{ cash_session: HubCashSession }> {
+  ): Promise<{
+    cash_session: HubCashSession;
+    auto_handoff_count?: number;
+    auto_handoff_errors?: string[];
+  }> {
     const result = (await apiRequest(`${base}/cash-sessions/${encodeURIComponent(sessionId)}/close`, {
       method: 'POST',
       body: JSON.stringify(body),
-    })) as { cash_session: HubCashSession };
+    })) as {
+      cash_session: HubCashSession;
+      auto_handoff_count?: number;
+      auto_handoff_errors?: string[];
+    };
     notifyHubCashSessionUpdated();
     return result;
+  },
+
+  /**
+   * Handoff leave_pending em lote no servidor (todas as comandas abertas da unidade).
+   * Preferir ao checkout-bulk fragmentado no Encerrar turno / exit guard.
+   */
+  async handoffPending(body: {
+    clinic_id: string;
+    unit_id: string;
+    due_date?: string | null;
+  }): Promise<{
+    handoff_count: number;
+    skipped_count: number;
+    results: Array<{ comanda_id: string; receivable_ids: string[]; skipped?: boolean; error?: string }>;
+    errors: string[];
+    partial_errors: boolean;
+  }> {
+    return apiRequest(`${base}/handoff-pending`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{
+      handoff_count: number;
+      skipped_count: number;
+      results: Array<{ comanda_id: string; receivable_ids: string[]; skipped?: boolean; error?: string }>;
+      errors: string[];
+      partial_errors: boolean;
+    }>;
   },
 
   async getDashboardSummary(
@@ -978,14 +1080,20 @@ export const hubFinancialApi = {
   async getCashFlow(
     clinicId: string,
     unitId: string,
-    opts?: { days?: number; from?: string; to?: string }
-  ): Promise<{ period: { from: string; to: string }; days: HubFinanceCashFlowDay[] }> {
+    opts?: { days?: number; from?: string; to?: string; date_basis?: 'payment_date' | 'created_at' }
+  ): Promise<{
+    period: { from: string; to: string };
+    date_basis?: string;
+    days: HubFinanceCashFlowDay[];
+  }> {
     const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
     if (opts?.days != null) q.set('days', String(opts.days));
     if (opts?.from) q.set('from', opts.from);
     if (opts?.to) q.set('to', opts.to);
+    if (opts?.date_basis) q.set('date_basis', opts.date_basis);
     return apiRequest(`${base}/cash-flow?${q}`) as Promise<{
       period: { from: string; to: string };
+      date_basis?: string;
       days: HubFinanceCashFlowDay[];
     }>;
   },
@@ -993,12 +1101,13 @@ export const hubFinancialApi = {
   async getRevenueReport(
     clinicId: string,
     unitId: string,
-    opts?: { days?: number; from?: string; to?: string }
+    opts?: { days?: number; from?: string; to?: string; date_basis?: 'payment_date' | 'created_at' }
   ): Promise<HubFinanceRevenueReport> {
     const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
     if (opts?.days != null) q.set('days', String(opts.days));
     if (opts?.from) q.set('from', opts.from);
     if (opts?.to) q.set('to', opts.to);
+    if (opts?.date_basis) q.set('date_basis', opts.date_basis);
     return apiRequest(`${base}/reports/revenue?${q}`) as Promise<HubFinanceRevenueReport>;
   },
 

@@ -1,12 +1,7 @@
-import { hubComandaApi } from '../../api/hubComandaApi';
+import { hubFinancialApi } from '../../api/hubFinancialApi';
 import { canCaixaEditOpenComanda } from './hubComandaEditUtils';
 
 const BALANCE_EPSILON = 0.02;
-/**
- * 1 comanda por request: o checkout-bulk processa em série no backend e o client
- * aborta em 30s — lotes grandes (ex.: 5+) estouravam timeout no Encerrar turno.
- */
-const CHECKOUT_BULK_CHUNK = 1;
 
 function ymdToday(): string {
   const d = new Date();
@@ -43,76 +38,58 @@ export function canHandoffOpenComandaInBatch(comanda: Record<string, unknown>): 
   return total - paid > BALANCE_EPSILON;
 }
 
-function chunkIds<T>(items: T[], size: number): T[][] {
-  const chunks: T[][] = [];
-  for (let i = 0; i < items.length; i += size) {
-    chunks.push(items.slice(i, i + size));
-  }
-  return chunks;
-}
-
 /**
- * Envia em lote as comandas abertas com valor a faturar para o financeiro
- * (`leave_pending`). Comandas vazias ou já faturadas são ignoradas.
- */
-export async function enviarComandasAbertasAoFinanceiro(
-  comandas: Array<Record<string, unknown>>,
-  clinicId: string,
-): Promise<HandoffResult> {
-  const abertas = comandas.filter(canHandoffOpenComandaInBatch);
-
-  if (abertas.length === 0) {
-    return { success: true, handoffCount: 0, errors: [] };
-  }
-
-  const errors: string[] = [];
-  let handoffCount = 0;
-
-  for (const chunk of chunkIds(abertas, CHECKOUT_BULK_CHUNK)) {
-    const chunkIdsList = chunk.map((c) => String(c.id));
-    try {
-      const res = await hubComandaApi.checkoutBulk({
-        clinic_id: clinicId,
-        comanda_ids: chunkIdsList,
-        action: 'leave_pending',
-        due_date: ymdToday(),
-        payment_timing: 'on_checkout',
-      });
-      for (const row of res.results ?? []) {
-        if (row.error) {
-          if (isSkippableFinanceHandoffError(row.error)) continue;
-          errors.push(`${String(row.comanda_id).slice(0, 8)}: ${row.error}`);
-          continue;
-        }
-        handoffCount++;
-      }
-    } catch (e: unknown) {
-      const message = (e as Error)?.message ?? 'Erro';
-      if (isSkippableFinanceHandoffError(message)) continue;
-      const prefix =
-        chunkIdsList.length === 1 ? `${chunkIdsList[0].slice(0, 8)}: ` : `${chunkIdsList.length} comandas: `;
-      errors.push(`${prefix}${message}`);
-    }
-  }
-
-  return { success: errors.length === 0, handoffCount, errors };
-}
-
-/**
- * Envia ao financeiro as comandas abertas da unidade.
- * Não percorre a fila de "sem cobrança" (consulta pesada) — só o que já está no caixa.
+ * Envia ao financeiro as comandas abertas da unidade em **uma** chamada server-side
+ * (`POST /finance/handoff-pending` → leave_pending com recebível + linhas).
  */
 export async function enviarPendentesAoFinanceiro(
   clinicId: string,
   unitId: string,
 ): Promise<HandoffResult> {
-  const listed = await hubComandaApi.listComandas({
-    clinic_id: clinicId,
-    unit_id: unitId,
-    status: 'aberta',
-    enrich: true,
-  });
-  return enviarComandasAbertasAoFinanceiro(listed.comandas ?? [], clinicId);
+  try {
+    const res = await hubFinancialApi.handoffPending({
+      clinic_id: clinicId,
+      unit_id: unitId,
+      due_date: ymdToday(),
+    });
+    const errors = (res.errors ?? []).filter((e) => !isSkippableFinanceHandoffError(e));
+    return {
+      success: errors.length === 0,
+      handoffCount: res.handoff_count ?? 0,
+      errors,
+    };
+  } catch (e: unknown) {
+    const message = (e as Error)?.message ?? 'Erro';
+    if (isSkippableFinanceHandoffError(message)) {
+      return { success: true, handoffCount: 0, errors: [] };
+    }
+    return { success: false, handoffCount: 0, errors: [message] };
+  }
+}
+
+/**
+ * @deprecated Preferir `enviarPendentesAoFinanceiro(clinicId, unitId)` (endpoint único).
+ * Mantido para chamadas que só têm a lista local — redireciona se `unitId` for passado.
+ */
+export async function enviarComandasAbertasAoFinanceiro(
+  comandas: Array<Record<string, unknown>>,
+  clinicId: string,
+  unitId?: string | null,
+): Promise<HandoffResult> {
+  if (unitId) {
+    return enviarPendentesAoFinanceiro(clinicId, unitId);
+  }
+  const abertas = comandas.filter(canHandoffOpenComandaInBatch);
+  if (abertas.length === 0) {
+    return { success: true, handoffCount: 0, errors: [] };
+  }
+  // Sem unitId: uma chamada server-side ainda é possível se todas as comandas
+  // forem da mesma unidade — mas o Encerrar turno deve passar unitId.
+  return {
+    success: false,
+    handoffCount: 0,
+    errors: ['unit_id obrigatório para enviar comandas ao financeiro em lote.'],
+  };
 }
 
 /** Conta comandas abertas editáveis no caixa (para exibir em modais de confirmação). */

@@ -215,9 +215,11 @@ Qualquer outro role (`VET`, `FREELANCER`, `ADMIN`) que tente fazer login no Hub 
 
 **Aceite**
 
-- [ ] Nenhum recebível é criado automaticamente ao concluir encounter ou sessão de grooming nem ao aceitar orçamento.
-- [ ] Operador vê atendimentos concluídos **sem cobrança** e consegue iniciar «Gerar cobrança» ou registar **waive** com motivo.
-- [ ] Vários pagamentos por recebível; soma do dia por unidade coerente com `hub_payments`.
+- [x] Nenhum recebível é criado automaticamente ao concluir encounter ou sessão de grooming nem ao aceitar orçamento.
+- [x] Operador vê atendimentos concluídos **sem cobrança** e consegue iniciar «Gerar cobrança» ou registar **waive** com motivo.
+- [x] Vários pagamentos por recebível; soma do dia por unidade coerente com `hub_payments`.
+
+> **Evidência (2026-11-11):** suíte `hubEpic7Bloco5Finance.integration.test.ts` + testes financeiros relacionados (88 casos OK). Registro no [HUB_MVP_MANUAL_QA.md](./HUB_MVP_MANUAL_QA.md) Bloco 5.
 
 ---
 

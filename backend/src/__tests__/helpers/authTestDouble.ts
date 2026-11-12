@@ -30,10 +30,12 @@ function resolveOptions(override?: AuthMockOptions): Required<Pick<AuthMockOptio
 }
 
 export function getAuthMiddlewareModule(options?: AuthMockOptions) {
-  const opts = resolveOptions(options);
+  /** Resolve a cada request para `configureAuthMock` valer nos testes. */
+  const live = () => resolveOptions(options);
 
   return {
     authenticateUser: (req: Request, res: Response, next: NextFunction) => {
+      const opts = live();
       if (!opts.authenticated) {
         return res.status(401).json({ error: 'Token de autenticação não fornecido' });
       }
@@ -41,6 +43,7 @@ export function getAuthMiddlewareModule(options?: AuthMockOptions) {
       next();
     },
     requirePermission: (permission: string) => async (req: Request, res: Response, next: NextFunction) => {
+      const opts = live();
       if (!opts.authenticated || !req.user?.id) {
         return res.status(401).json({ error: 'Usuário não autenticado' });
       }
@@ -57,6 +60,7 @@ export function getAuthMiddlewareModule(options?: AuthMockOptions) {
       next();
     },
     requireClinicAccess: async (req: Request, res: Response, next: NextFunction) => {
+      const opts = live();
       if (!opts.authenticated || !req.user?.id) {
         return res.status(401).json({ error: 'Usuário não autenticado' });
       }
@@ -73,18 +77,21 @@ export function getAuthMiddlewareModule(options?: AuthMockOptions) {
       next();
     },
     checkPermission: async (userId: string, clinicId: string, permission: string) => {
+      const opts = live();
       if (opts.checkPermission) {
         return opts.checkPermission(userId, clinicId, permission);
       }
       return true;
     },
     checkClinicAccess: async (userId: string, clinicId: string) => {
+      const opts = live();
       if (opts.checkClinicAccess) {
         return opts.checkClinicAccess(userId, clinicId);
       }
       return true;
     },
     verifyAdmin: (req: Request, res: Response, next: NextFunction) => {
+      const opts = live();
       if (!opts.authenticated || !req.user) {
         return res.status(401).json({ error: 'Usuário não autenticado' });
       }

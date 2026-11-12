@@ -51,7 +51,15 @@ export const OPERATIONAL_AREA_PERMISSIONS: Record<HubOperationalArea, readonly s
     'hub.receivables.create',
     'hub.reports.read',
   ],
-  financeiro: ['hub.financial.read', 'hub.financial.write', 'hub.reports.read'],
+  financeiro: [
+    'hub.financial.read',
+    'hub.financial.write',
+    'hub.reports.read',
+    'hub.receivables.create',
+    'hub.cash.receive',
+    'hub.payments.reverse',
+    'hub.financial.adjust',
+  ],
   clinica: [
     'hub.clinic.read',
     'hub.clinic.write',

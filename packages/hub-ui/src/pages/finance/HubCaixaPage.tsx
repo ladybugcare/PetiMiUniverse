@@ -122,6 +122,9 @@ const HubCaixaPage: React.FC = () => {
   const [showIniciarTurno, setShowIniciarTurno] = useState(false);
   const [closedSessions, setClosedSessions] = useState<HubCashSession[]>([]);
   const [showSessionHistory, setShowSessionHistory] = useState(false);
+  const [viewedClosedSessionId, setViewedClosedSessionId] = useState<string | null>(null);
+  const [closedSessionSummary, setClosedSessionSummary] = useState<HubCashSessionSummary | null>(null);
+  const [closedSessionBusy, setClosedSessionBusy] = useState(false);
 
   // Sessão de dia anterior aberta
   const isPreviousDaySession = cashOpen?.opened_at
@@ -164,11 +167,16 @@ const HubCaixaPage: React.FC = () => {
       setCashChecked(true);
       if (!open?.id) {
         setCashOpen(null);
-        setPending(0);
-        setOpenComandas([]);
-        setDayBoardItems([]);
-        setClosedSessions([]);
         setCashSummary(null);
+        const [c, dayBoard, closedRes] = await Promise.all([
+          hubFinancialApi.getPendingBillingCount(clinicId, unitId).catch(() => 0),
+          hubFinancialApi.getDayBoard(clinicId, unitId, dayBoardDate).catch(() => [] as HubFinanceDayBoardItem[]),
+          hubFinancialApi.listClosedCashSessions(clinicId, unitId, 10).catch(() => ({ sessions: [] })),
+        ]);
+        setPending(c);
+        setOpenComandas([]);
+        setDayBoardItems(dayBoard);
+        setClosedSessions(closedRes.sessions ?? []);
         setAcceptedPaymentMethods([]);
         succeed();
         return;
@@ -359,6 +367,129 @@ const HubCaixaPage: React.FC = () => {
       return shell(<HubLoading variant="block" label="Verificando o caixa…" />);
     }
 
+    const closedHistoryWhenNoOpen = closedSessions.length > 0 ? (
+      <section className="hub-finance-page__section" style={{ marginTop: 24 }}>
+        <button
+          type="button"
+          className="hub-clientes__form-title"
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: 0,
+            fontWeight: 700,
+            fontSize: 15,
+            color: '#1a1a1a',
+          }}
+          onClick={() => setShowSessionHistory((v) => !v)}
+        >
+          Sessões anteriores ({closedSessions.length})
+          {showSessionHistory ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
+        </button>
+        {showSessionHistory && (
+          <div style={{ marginTop: 12 }}>
+            <ul className="hub-clientes__muted" style={{ paddingLeft: 18, margin: 0 }}>
+              {closedSessions.map((sess) => {
+                const selected = viewedClosedSessionId === sess.id;
+                return (
+                  <li key={sess.id} style={{ marginBottom: 8 }}>
+                    <button
+                      type="button"
+                      className="hub-dayboard__action-btn"
+                      style={{ fontWeight: selected ? 700 : 500 }}
+                      onClick={() => {
+                        void (async () => {
+                          if (viewedClosedSessionId === sess.id) {
+                            setViewedClosedSessionId(null);
+                            setClosedSessionSummary(null);
+                            return;
+                          }
+                          setViewedClosedSessionId(sess.id);
+                          setClosedSessionBusy(true);
+                          try {
+                            const summary = await hubFinancialApi.getCashSessionSummary(sess.id, clinicId);
+                            setClosedSessionSummary(summary);
+                          } catch (e) {
+                            showError((e as Error)?.message || 'Erro ao carregar sessão fechada');
+                            setViewedClosedSessionId(null);
+                            setClosedSessionSummary(null);
+                          } finally {
+                            setClosedSessionBusy(false);
+                          }
+                        })();
+                      }}
+                    >
+                      {sess.closed_at
+                        ? new Date(sess.closed_at).toLocaleString('pt-BR', {
+                            day: '2-digit',
+                            month: '2-digit',
+                            year: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })
+                        : 'Sessão'}
+                      {' · esperado '}
+                      {sess.expected_balance != null ? formatBrl(Number(sess.expected_balance)) : '—'}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {closedSessionBusy ? (
+              <p className="hub-clientes__muted" style={{ marginTop: 12 }}>
+                Carregando snapshot da sessão…
+              </p>
+            ) : null}
+            {closedSessionSummary && viewedClosedSessionId ? (
+              <div style={{ marginTop: 16, padding: 12, border: '1px solid #e5e5e5', borderRadius: 8 }}>
+                <p className="hub-clientes__muted" style={{ marginBottom: 8 }}>
+                  Snapshot congelado no fechamento
+                  {closedSessionSummary.summary?.snapshot_frozen ? ' (imutável)' : ''}.
+                </p>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, fontSize: 13 }}>
+                  <span>
+                    Esperado:{' '}
+                    <strong>{formatBrl(Number(closedSessionSummary.summary?.expected_balance ?? 0))}</strong>
+                  </span>
+                  <span>
+                    Contado:{' '}
+                    <strong>{formatBrl(Number(closedSessionSummary.summary?.closing_balance ?? 0))}</strong>
+                  </span>
+                  <span>
+                    Diferença:{' '}
+                    <strong>{formatBrl(Number(closedSessionSummary.summary?.difference_amount ?? 0))}</strong>
+                  </span>
+                </div>
+                {(closedSessionSummary.post_close_adjustments ?? []).length > 0 ? (
+                  <div style={{ marginTop: 12 }}>
+                    <h3 className="hub-clientes__form-title" style={{ fontSize: 14 }}>
+                      Ajustes após fechamento
+                    </h3>
+                    <ul className="hub-clientes__muted" style={{ marginTop: 6, paddingLeft: 18 }}>
+                      {closedSessionSummary.post_close_adjustments!.map((adj) => (
+                        <li key={adj.id}>
+                          {adj.effective_date} · {adj.adjustment_type} · {formatBrl(Number(adj.amount))}
+                          {' — '}
+                          {adj.reason}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : (
+                  <p className="hub-clientes__muted" style={{ marginTop: 12 }}>
+                    Nenhum ajuste pós-fechamento nesta sessão.
+                  </p>
+                )}
+              </div>
+            ) : null}
+          </div>
+        )}
+      </section>
+    ) : null;
+
     return shell(
       <>
         <HubRefreshingBanner show={refreshing} label="Abrindo o caixa…" />
@@ -379,6 +510,7 @@ const HubCaixaPage: React.FC = () => {
             </button>
           )}
         </div>
+        {closedHistoryWhenNoOpen}
         <IniciarTurnoDrawer
           open={showIniciarTurno}
           onClose={() => setShowIniciarTurno(false)}
@@ -924,6 +1056,27 @@ const HubCaixaPage: React.FC = () => {
         )}
       </section>
 
+      {cashSummary?.summary?.snapshot_frozen &&
+      cashSummary?.post_close_adjustments &&
+      cashSummary.post_close_adjustments.length > 0 ? (
+        <section className="hub-finance-page__section">
+          <h2 className="hub-clientes__form-title">Ajustes após fechamento</h2>
+          <p className="hub-clientes__muted">
+            O saldo conferido na sessão permanece. Estes lançamentos registram impactos posteriores (anulações ou
+            reembolsos).
+          </p>
+          <ul className="hub-clientes__muted" style={{ marginTop: 8, paddingLeft: 18 }}>
+            {cashSummary.post_close_adjustments.map((adj) => (
+              <li key={adj.id}>
+                {adj.effective_date} · {adj.adjustment_type} · {formatBrl(Number(adj.amount))}
+                {' — '}
+                {adj.reason}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+
       {/* ── Histórico de sessões fechadas ── */}
       {closedSessions.length > 0 && (
         <section className="hub-finance-page__section">
@@ -972,10 +1125,37 @@ const HubCaixaPage: React.FC = () => {
                       (sess.opened_by_staff as { display_name?: string | null; full_name?: string | null } | null | undefined)?.display_name ??
                       (sess.opened_by_staff as { full_name?: string | null } | null | undefined)?.full_name ??
                       '—';
+                    const selected = viewedClosedSessionId === sess.id;
                     return (
                       <tr
                         key={sess.id}
-                        style={{ borderBottom: '1px solid #f0f0f0' }}
+                        style={{
+                          borderBottom: '1px solid #f0f0f0',
+                          cursor: 'pointer',
+                          background: selected ? '#f8fafc' : undefined,
+                        }}
+                        onClick={() => {
+                          void (async () => {
+                            if (!clinicId) return;
+                            if (viewedClosedSessionId === sess.id) {
+                              setViewedClosedSessionId(null);
+                              setClosedSessionSummary(null);
+                              return;
+                            }
+                            setViewedClosedSessionId(sess.id);
+                            setClosedSessionBusy(true);
+                            try {
+                              const summary = await hubFinancialApi.getCashSessionSummary(sess.id, clinicId);
+                              setClosedSessionSummary(summary);
+                            } catch (e) {
+                              showError((e as Error)?.message || 'Erro ao carregar sessão fechada');
+                              setViewedClosedSessionId(null);
+                              setClosedSessionSummary(null);
+                            } finally {
+                              setClosedSessionBusy(false);
+                            }
+                          })();
+                        }}
                       >
                         <td style={{ padding: '8px 10px' }}>
                           {sess.opened_at
@@ -1001,26 +1181,63 @@ const HubCaixaPage: React.FC = () => {
                         </td>
                         <td style={{ padding: '8px 10px', color: '#555' }}>{operadorName}</td>
                         <td style={{ padding: '8px 10px', textAlign: 'right' }}>
-                          {sess.expected_balance != null
-                            ? new Intl.NumberFormat('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL',
-                              }).format(Number(sess.expected_balance))
-                            : '—'}
+                          {sess.expected_balance != null ? formatBrl(Number(sess.expected_balance)) : '—'}
                         </td>
                         <td style={{ padding: '8px 10px', textAlign: 'right', color: diffColor, fontWeight: 600 }}>
-                          {diff != null
-                            ? new Intl.NumberFormat('pt-BR', {
-                                style: 'currency',
-                                currency: 'BRL',
-                              }).format(diff)
-                            : '—'}
+                          {diff != null ? formatBrl(diff) : '—'}
                         </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
+              {closedSessionBusy ? (
+                <p className="hub-clientes__muted" style={{ marginTop: 12 }}>
+                  Carregando snapshot da sessão…
+                </p>
+              ) : null}
+              {closedSessionSummary && viewedClosedSessionId ? (
+                <div style={{ marginTop: 16, padding: 12, border: '1px solid #e5e5e5', borderRadius: 8 }}>
+                  <p className="hub-clientes__muted" style={{ marginBottom: 8 }}>
+                    Snapshot congelado no fechamento
+                    {closedSessionSummary.summary?.snapshot_frozen ? ' (imutável)' : ''}.
+                  </p>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, fontSize: 13 }}>
+                    <span>
+                      Esperado:{' '}
+                      <strong>{formatBrl(Number(closedSessionSummary.summary?.expected_balance ?? 0))}</strong>
+                    </span>
+                    <span>
+                      Contado:{' '}
+                      <strong>{formatBrl(Number(closedSessionSummary.summary?.closing_balance ?? 0))}</strong>
+                    </span>
+                    <span>
+                      Diferença:{' '}
+                      <strong>{formatBrl(Number(closedSessionSummary.summary?.difference_amount ?? 0))}</strong>
+                    </span>
+                  </div>
+                  {(closedSessionSummary.post_close_adjustments ?? []).length > 0 ? (
+                    <div style={{ marginTop: 12 }}>
+                      <h3 className="hub-clientes__form-title" style={{ fontSize: 14 }}>
+                        Ajustes após fechamento
+                      </h3>
+                      <ul className="hub-clientes__muted" style={{ marginTop: 6, paddingLeft: 18 }}>
+                        {closedSessionSummary.post_close_adjustments!.map((adj) => (
+                          <li key={adj.id}>
+                            {adj.effective_date} · {adj.adjustment_type} · {formatBrl(Number(adj.amount))}
+                            {' — '}
+                            {adj.reason}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ) : (
+                    <p className="hub-clientes__muted" style={{ marginTop: 12 }}>
+                      Nenhum ajuste pós-fechamento nesta sessão.
+                    </p>
+                  )}
+                </div>
+              ) : null}
             </div>
           )}
         </section>

@@ -6,17 +6,15 @@ import {
   isSkippableFinanceHandoffError,
 } from './caixaHandoffUtils';
 
-vi.mock('../../api/hubComandaApi', () => ({
-  hubComandaApi: {
-    checkoutBulk: vi.fn(),
-    listComandas: vi.fn(),
+vi.mock('../../api/hubFinancialApi', () => ({
+  hubFinancialApi: {
+    handoffPending: vi.fn(),
   },
 }));
 
-import { hubComandaApi } from '../../api/hubComandaApi';
+import { hubFinancialApi } from '../../api/hubFinancialApi';
 
-const checkoutBulk = vi.mocked(hubComandaApi.checkoutBulk);
-const listComandas = vi.mocked(hubComandaApi.listComandas);
+const handoffPending = vi.mocked(hubFinancialApi.handoffPending);
 
 function openComandaRow(id: string, extra: Record<string, unknown> = {}): Record<string, unknown> {
   return {
@@ -68,97 +66,94 @@ describe('canHandoffOpenComandaInBatch', () => {
   });
 });
 
-describe('enviarComandasAbertasAoFinanceiro', () => {
+describe('enviarPendentesAoFinanceiro', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    checkoutBulk.mockResolvedValue({
-      results: [{ comanda_id: 'c1', receivable_ids: ['r1'] }],
+    handoffPending.mockResolvedValue({
+      handoff_count: 2,
+      skipped_count: 0,
+      results: [],
+      errors: [],
       partial_errors: false,
     });
   });
 
-  it('não chama checkout para comandas sem valor a faturar', async () => {
+  it('chama o endpoint único de handoff da unidade', async () => {
+    const result = await enviarPendentesAoFinanceiro('clinic-1', 'unit-1');
+    expect(handoffPending).toHaveBeenCalledTimes(1);
+    expect(handoffPending).toHaveBeenCalledWith(
+      expect.objectContaining({ clinic_id: 'clinic-1', unit_id: 'unit-1' }),
+    );
+    expect(result.success).toBe(true);
+    expect(result.handoffCount).toBe(2);
+  });
+
+  it('ignora erros skippable retornados pelo backend', async () => {
+    handoffPending.mockResolvedValueOnce({
+      handoff_count: 0,
+      skipped_count: 1,
+      results: [],
+      errors: ['47a6db27: Nenhum recebível gerado (valores zerados)'],
+      partial_errors: true,
+    });
+    const result = await enviarPendentesAoFinanceiro('clinic-1', 'unit-1');
+    expect(result.success).toBe(true);
+    expect(result.errors).toEqual([]);
+  });
+
+  it('reporta falhas reais', async () => {
+    handoffPending.mockResolvedValueOnce({
+      handoff_count: 0,
+      skipped_count: 0,
+      results: [],
+      errors: ['f29b572f: Comanda não está aberta'],
+      partial_errors: true,
+    });
+    const result = await enviarPendentesAoFinanceiro('clinic-1', 'unit-1');
+    expect(result.success).toBe(false);
+    expect(result.errors[0]).toContain('Comanda não está aberta');
+  });
+});
+
+describe('enviarComandasAbertasAoFinanceiro', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    handoffPending.mockResolvedValue({
+      handoff_count: 1,
+      skipped_count: 0,
+      results: [],
+      errors: [],
+      partial_errors: false,
+    });
+  });
+
+  it('com unitId usa o endpoint único', async () => {
+    const result = await enviarComandasAbertasAoFinanceiro(
+      [openComandaRow('aaaa1111-aaaa-bbbb-cccc-dddddddddddd')],
+      'clinic-1',
+      'unit-1',
+    );
+    expect(handoffPending).toHaveBeenCalledTimes(1);
+    expect(result.success).toBe(true);
+    expect(result.handoffCount).toBe(1);
+  });
+
+  it('sem unitId e sem comandas elegíveis retorna sucesso vazio', async () => {
     const result = await enviarComandasAbertasAoFinanceiro(
       [openComandaRow('31a6ac51-aaaa-bbbb-cccc-dddddddddddd', { balance_due: 0, total_amount: 0 })],
       'clinic-1',
     );
     expect(result.success).toBe(true);
     expect(result.handoffCount).toBe(0);
-    expect(checkoutBulk).not.toHaveBeenCalled();
+    expect(handoffPending).not.toHaveBeenCalled();
   });
 
-  it('envia uma comanda por checkout-bulk (evita timeout de lote)', async () => {
-    checkoutBulk
-      .mockResolvedValueOnce({
-        results: [{ comanda_id: 'aaaa1111-aaaa-bbbb-cccc-dddddddddddd', receivable_ids: ['r1'] }],
-        partial_errors: false,
-      })
-      .mockResolvedValueOnce({
-        results: [{ comanda_id: 'bbbb2222-aaaa-bbbb-cccc-dddddddddddd', receivable_ids: ['r2'] }],
-        partial_errors: false,
-      });
+  it('sem unitId e com comandas elegíveis exige unit_id', async () => {
     const result = await enviarComandasAbertasAoFinanceiro(
-      [
-        openComandaRow('aaaa1111-aaaa-bbbb-cccc-dddddddddddd'),
-        openComandaRow('bbbb2222-aaaa-bbbb-cccc-dddddddddddd', { balance_due: 50, total_amount: 50 }),
-      ],
-      'clinic-1',
-    );
-    expect(checkoutBulk).toHaveBeenCalledTimes(2);
-    expect(checkoutBulk.mock.calls[0][0].comanda_ids).toEqual(['aaaa1111-aaaa-bbbb-cccc-dddddddddddd']);
-    expect(checkoutBulk.mock.calls[1][0].comanda_ids).toEqual(['bbbb2222-aaaa-bbbb-cccc-dddddddddddd']);
-    expect(result.success).toBe(true);
-    expect(result.handoffCount).toBe(2);
-  });
-
-  it('ignora valores zerados retornados pelo backend', async () => {
-    checkoutBulk.mockResolvedValueOnce({
-      results: [
-        { comanda_id: '47a6db27-aaaa-bbbb-cccc-dddddddddddd', receivable_ids: [], error: 'Nenhum recebível gerado (valores zerados)' },
-      ],
-      partial_errors: true,
-    });
-    const result = await enviarComandasAbertasAoFinanceiro(
-      [openComandaRow('47a6db27-aaaa-bbbb-cccc-dddddddddddd')],
-      'clinic-1',
-    );
-    expect(result.success).toBe(true);
-    expect(result.errors).toEqual([]);
-  });
-
-  it('reporta falhas reais', async () => {
-    checkoutBulk.mockResolvedValueOnce({
-      results: [
-        { comanda_id: 'f29b572f-aaaa-bbbb-cccc-dddddddddddd', receivable_ids: [], error: 'Comanda não está aberta' },
-      ],
-      partial_errors: true,
-    });
-    const result = await enviarComandasAbertasAoFinanceiro(
-      [openComandaRow('f29b572f-aaaa-bbbb-cccc-dddddddddddd')],
+      [openComandaRow('aaaa1111-aaaa-bbbb-cccc-dddddddddddd')],
       'clinic-1',
     );
     expect(result.success).toBe(false);
-    expect(result.errors[0]).toContain('Comanda não está aberta');
-  });
-});
-
-describe('enviarPendentesAoFinanceiro', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    listComandas.mockResolvedValue({ comandas: [openComandaRow('cccc3333-aaaa-bbbb-cccc-dddddddddddd')] });
-    checkoutBulk.mockResolvedValue({
-      results: [{ comanda_id: 'cccc3333-aaaa-bbbb-cccc-dddddddddddd', receivable_ids: ['r1'] }],
-      partial_errors: false,
-    });
-  });
-
-  it('lista comandas abertas e envia em lote, sem fila de sem cobrança', async () => {
-    const result = await enviarPendentesAoFinanceiro('clinic-1', 'unit-1');
-    expect(listComandas).toHaveBeenCalledWith(
-      expect.objectContaining({ clinic_id: 'clinic-1', unit_id: 'unit-1', status: 'aberta' }),
-    );
-    expect(checkoutBulk).toHaveBeenCalledTimes(1);
-    expect(result.success).toBe(true);
-    expect(result.handoffCount).toBe(1);
+    expect(result.errors[0]).toMatch(/unit_id/i);
   });
 });

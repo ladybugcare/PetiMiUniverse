@@ -389,6 +389,7 @@ export const getHubDayOpsSummary = async (req: Request, res: Response) => {
                 .from('hub_payments')
                 .select('amount, payment_date, receivable_id')
                 .eq('clinic_id', clinic_id)
+                .eq('status', 'posted')
                 .gte('payment_date', fromUtc)
                 .lte('payment_date', toUtc),
             ]);
@@ -400,7 +401,8 @@ export const getHubDayOpsSummary = async (req: Request, res: Response) => {
             const { data: payRows } = await supabaseAdmin
               .from('hub_payments')
               .select('receivable_id, amount')
-              .in('receivable_id', recIds);
+              .in('receivable_id', recIds)
+              .eq('status', 'posted');
             const paidByRec = new Map<string, number>();
             for (const row of payRows ?? []) {
               const id = row.receivable_id as string;

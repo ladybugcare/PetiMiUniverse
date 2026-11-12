@@ -304,6 +304,7 @@ import {
   getHubFinancePaymentReceipt,
   postHubFinanceCashSessionOpen,
   postHubFinanceCashSessionClose,
+  postHubFinanceHandoffPending,
   getHubFinanceCashSessionOpen,
   getHubFinanceCashSessionStatus,
   listHubFinanceCashSessionsClosed,
@@ -338,6 +339,7 @@ import {
   postHubFinanceReceivableProductLine,
   deleteHubFinanceReceivableProductLine,
   postHubFinancePaymentReverse,
+  postHubFinanceReceivableHistoricalCash,
   postHubFinanceReceivableCancel,
   getHubFinanceDayBoard,
   getHubFinancePaymentMethodSettings,
@@ -1744,6 +1746,12 @@ router.post(
   postHubFinanceReceivablePayment
 );
 router.post(
+  '/finance/receivables/:id/payments/historical-cash',
+  authenticateUser,
+  requirePermission('hub.financial.adjust'),
+  postHubFinanceReceivableHistoricalCash
+);
+router.post(
   '/finance/charge-bundles',
   authenticateUser,
   requirePermission('hub.receivables.create'),
@@ -1782,7 +1790,7 @@ router.get(
 router.post(
   '/finance/payments/:id/reverse',
   authenticateUser,
-  requirePermission('hub.cash.receive'),
+  requirePermission('hub.payments.reverse'),
   postHubFinancePaymentReverse
 );
 router.get(
@@ -1820,6 +1828,12 @@ router.post(
   authenticateUser,
   requirePermission('hub.cash.session'),
   postHubFinanceCashSessionClose
+);
+router.post(
+  '/finance/handoff-pending',
+  authenticateUser,
+  requirePermission('hub.cash.session'),
+  postHubFinanceHandoffPending
 );
 router.get(
   '/finance/cash-sessions/:id/summary',

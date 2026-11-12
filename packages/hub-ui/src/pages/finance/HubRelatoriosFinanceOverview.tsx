@@ -61,7 +61,8 @@ export const HubRelatoriosFinanceOverview: React.FC<HubRelatoriosFinanceOverview
   period,
 }) => {
   const { showError } = useAlert();
-  const resourceKey = `${clinicId}:${unitId}:${period.mode === 'range' ? `${period.from}-${period.to}` : period.days}`;
+  const [dateBasis, setDateBasis] = useState<'payment_date' | 'created_at'>('payment_date');
+  const resourceKey = `${clinicId}:${unitId}:${period.mode === 'range' ? `${period.from}-${period.to}` : period.days}:rev:${dateBasis}`;
   const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(resourceKey);
   const [revenue, setRevenue] = useState<HubFinanceRevenueReport | null>(null);
   const [ticket, setTicket] = useState<HubFinanceTicketAverageReport | null>(null);
@@ -73,7 +74,7 @@ export const HubRelatoriosFinanceOverview: React.FC<HubRelatoriosFinanceOverview
     try {
       const opts = periodToApiOpts(period);
       const [rev, tic, top] = await Promise.all([
-        hubFinancialApi.getRevenueReport(clinicId, unitId, opts),
+        hubFinancialApi.getRevenueReport(clinicId, unitId, { ...opts, date_basis: dateBasis }),
         hubFinancialApi.getTicketAverageReport(clinicId, unitId, opts),
         hubFinancialApi.getTopServicesReport(clinicId, unitId, opts),
       ]);
@@ -88,7 +89,7 @@ export const HubRelatoriosFinanceOverview: React.FC<HubRelatoriosFinanceOverview
     } finally {
       finish();
     }
-  }, [clinicId, unitId, period, showError, begin, succeed, finish]);
+  }, [clinicId, unitId, period, dateBasis, showError, begin, succeed, finish]);
 
   useEffect(() => {
     void loadReports();
@@ -173,6 +174,22 @@ export const HubRelatoriosFinanceOverview: React.FC<HubRelatoriosFinanceOverview
         <p className="hub-relatorios__overview-period">
           Período analisado: <strong>{periodLabel}</strong>
         </p>
+        <div className="hub-payables__filters" role="group" aria-label="Base de data dos pagamentos">
+          <button
+            type="button"
+            className={`hub-dayboard__toggle-btn${dateBasis === 'payment_date' ? ' hub-dayboard__toggle-btn--active' : ''}`}
+            onClick={() => setDateBasis('payment_date')}
+          >
+            Data do pagamento
+          </button>
+          <button
+            type="button"
+            className={`hub-dayboard__toggle-btn${dateBasis === 'created_at' ? ' hub-dayboard__toggle-btn--active' : ''}`}
+            onClick={() => setDateBasis('created_at')}
+          >
+            Data de registro
+          </button>
+        </div>
         <HubRelatoriosExportButton onClick={onExport} />
       </div>
 

@@ -1,4 +1,7 @@
-import { canHandoffExistingReceivables } from '../comandaFinanceHandoff';
+import {
+  canHandoffExistingReceivables,
+  isSkippableLeavePendingHandoffError,
+} from '../comandaFinanceHandoff';
 
 describe('canHandoffExistingReceivables', () => {
   it('true quando itens já faturados e há saldo em recebível', () => {
@@ -29,5 +32,17 @@ describe('canHandoffExistingReceivables', () => {
         balance_due: 0,
       }),
     ).toBe(false);
+  });
+});
+
+describe('isSkippableLeavePendingHandoffError', () => {
+  it('reconhece erros sem valor a faturar', () => {
+    expect(isSkippableLeavePendingHandoffError('Não há itens em aberto para faturar')).toBe(true);
+    expect(isSkippableLeavePendingHandoffError('Não há itens em aberto para enviar ao financeiro')).toBe(true);
+    expect(isSkippableLeavePendingHandoffError('Nenhum recebível gerado (valores zerados)')).toBe(true);
+  });
+
+  it('não ignora falhas reais', () => {
+    expect(isSkippableLeavePendingHandoffError('Comanda não está aberta')).toBe(false);
   });
 });

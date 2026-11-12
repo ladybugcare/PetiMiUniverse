@@ -19,7 +19,8 @@ const ADJUSTMENT_LABELS: Record<string, string> = {
   discount: 'Desconto',
   credit: 'Crédito',
   write_off: 'Baixa',
-  refund: 'Estorno',
+  refund: 'Reembolso efetivo',
+  payment_reversal: 'Anulação de lançamento',
   manual_adjustment: 'Ajuste manual',
 };
 
@@ -44,6 +45,7 @@ const ADJUSTMENT_TONE: Record<string, string> = {
   credit: 'ok',
   write_off: 'muted',
   refund: 'critical',
+  payment_reversal: 'risk',
   manual_adjustment: 'risk',
 };
 

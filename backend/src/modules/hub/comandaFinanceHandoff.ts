@@ -14,3 +14,13 @@ export function canHandoffExistingReceivables(detail: ComandaHandoffDetail): boo
     Number(detail.balance_due ?? 0) > BALANCE_EPSILON
   );
 }
+
+/** Erros de leave_pending sem valor a faturar — não devem falhar o lote/encerrar turno. */
+export function isSkippableLeavePendingHandoffError(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('não há itens em aberto para faturar') ||
+    normalized.includes('não há itens em aberto para enviar ao financeiro') ||
+    normalized.includes('nenhum recebível gerado (valores zerados)')
+  );
+}
