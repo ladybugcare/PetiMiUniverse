@@ -1,10 +1,19 @@
 import { supabaseAdmin } from '../../config/supabase.js';
+import {
+  ALL_HUB_MODULES,
+  PAST_DUE_GRACE_DAYS,
+  defaultModulesForPlanSlug,
+  mergePaidLaunchCatalog,
+  parsePlanConfig,
+  type HubModuleSlug,
+  type HubPlanConfig,
+} from './hubPlanDefaults.js';
+
+export { ALL_HUB_MODULES, type HubModuleSlug };
+export { VET_SOLO_PLAN_SLUG, VET_SOLO_PLAN_ID } from './hubPlanDefaults.js';
 
 export const BETA_PLAN_SLUG = 'beta';
 export const BETA_PLAN_ID = 'a1000000-0000-4000-8000-000000000001';
-
-export const ALL_HUB_MODULES = ['hub_core', 'clinic', 'grooming', 'boarding'] as const;
-export type HubModuleSlug = (typeof ALL_HUB_MODULES)[number];
 
 export type HubSubscriptionStatus =
   | 'beta'
@@ -13,6 +22,8 @@ export type HubSubscriptionStatus =
   | 'past_due'
   | 'canceled'
   | 'pending_payment';
+
+export type HubAccessMode = 'full' | 'soft_lock' | 'read_history';
 
 export type ClinicHubSubscriptionRow = {
   id: string;
@@ -38,6 +49,7 @@ export type ClinicHubSubscriptionRow = {
     max_units: number | null;
     max_users: number | null;
     monthly_price_cents?: number | null;
+    plan_config?: unknown;
   } | null;
 };
 
@@ -47,6 +59,24 @@ export type HubSubscriptionSessionPayload = {
   base_plan_slug: string | null;
   enabled_modules: string[];
   beta_free_until: string | null;
+  disabled_operational_areas: string[];
+  max_units: number | null;
+  max_users: number | null;
+  usage: { units: number; users: number };
+  limits_exceeded: { units: boolean; users: boolean };
+  access_mode: HubAccessMode;
+  plan_config: HubPlanConfig | null;
+};
+
+export type HubEntitlementSnapshot = {
+  status: HubSubscriptionStatus;
+  is_beta: boolean;
+  base_plan_slug: string | null;
+  enabled_modules: string[];
+  disabled_operational_areas: string[];
+  max_units: number | null;
+  max_users: number | null;
+  access_mode: HubAccessMode;
 };
 
 export type HubPlatformPlanPublic = {
@@ -57,6 +87,7 @@ export type HubPlatformPlanPublic = {
   max_users: number | null;
   monthly_price_cents: number | null;
   sort_order: number;
+  plan_config?: HubPlanConfig | null;
 };
 
 export type HubPlatformModulePublic = {
@@ -77,7 +108,7 @@ const LEGACY_SUBSCRIPTION_SELECT =
   `id, clinic_id, base_plan_id, status, is_beta, beta_free_until, beta_discount_percent, override_monthly_cents, beta_notes, enabled_modules, started_at, canceled_at, created_at, updated_at, ${PLAN_EMBED}(slug, name, max_units, max_users)`;
 
 const SUBSCRIPTION_SELECT =
-  `id, clinic_id, base_plan_id, status, is_beta, beta_free_until, beta_discount_percent, override_monthly_cents, beta_notes, enabled_modules, started_at, canceled_at, created_at, updated_at, mp_preapproval_id, pending_plan_id, current_period_end, ${PLAN_EMBED}(slug, name, max_units, max_users, monthly_price_cents)`;
+  `id, clinic_id, base_plan_id, status, is_beta, beta_free_until, beta_discount_percent, override_monthly_cents, beta_notes, enabled_modules, started_at, canceled_at, created_at, updated_at, mp_preapproval_id, pending_plan_id, current_period_end, ${PLAN_EMBED}(slug, name, max_units, max_users, monthly_price_cents, plan_config)`;
 
 function missingMercadoPagoColumns(error: { message?: string } | null): boolean {
   const msg = error?.message || '';
@@ -87,6 +118,11 @@ function missingMercadoPagoColumns(error: { message?: string } | null): boolean 
     msg.includes('current_period_end') ||
     msg.includes('pending_payment')
   );
+}
+
+function missingPlanConfigColumn(error: { message?: string } | null): boolean {
+  const msg = error?.message || '';
+  return msg.includes('plan_config');
 }
 
 export class HubPlanError extends Error {
@@ -108,7 +144,11 @@ function normalizeModules(modules: string[] | null | undefined): string[] {
 }
 
 function normalizePlanJoin(
-  raw: ClinicHubSubscriptionRow['hub_platform_plans'] | ClinicHubSubscriptionRow['hub_platform_plans'][] | null | undefined,
+  raw:
+    | ClinicHubSubscriptionRow['hub_platform_plans']
+    | ClinicHubSubscriptionRow['hub_platform_plans'][]
+    | null
+    | undefined,
 ): ClinicHubSubscriptionRow['hub_platform_plans'] {
   if (!raw) return null;
   if (Array.isArray(raw)) return raw[0] ?? null;
@@ -124,6 +164,51 @@ function mapSubscriptionRow(data: Record<string, unknown>): ClinicHubSubscriptio
   };
 }
 
+export function resolvePlanConfig(sub: ClinicHubSubscriptionRow | null): HubPlanConfig {
+  const slug = sub?.hub_platform_plans?.slug ?? null;
+  return parsePlanConfig(slug, sub?.hub_platform_plans?.plan_config);
+}
+
+export function computeAccessMode(sub: ClinicHubSubscriptionRow): HubAccessMode {
+  if (sub.is_beta || ACTIVE_STATUSES.has(sub.status)) return 'full';
+  if (sub.status === 'pending_payment') return 'soft_lock';
+  if (sub.status === 'canceled') return 'read_history';
+  if (sub.status === 'past_due') {
+    const anchor = sub.current_period_end || sub.updated_at;
+    const start = new Date(anchor).getTime();
+    if (Number.isNaN(start)) return 'soft_lock';
+    const graceMs = PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000;
+    if (Date.now() <= start + graceMs) return 'soft_lock';
+    return 'read_history';
+  }
+  return 'soft_lock';
+}
+
+export async function countClinicUnits(clinicId: string): Promise<number> {
+  const { count, error } = await supabaseAdmin
+    .from('units')
+    .select('id', { count: 'exact', head: true })
+    .eq('clinic_id', clinicId);
+  if (error) {
+    console.error('[hubSubscription] countClinicUnits', error);
+    throw error;
+  }
+  return count ?? 0;
+}
+
+export async function countClinicActiveUsers(clinicId: string): Promise<number> {
+  const { count, error } = await supabaseAdmin
+    .from('clinic_users')
+    .select('id', { count: 'exact', head: true })
+    .eq('clinic_id', clinicId)
+    .eq('status', 'active');
+  if (error) {
+    console.error('[hubSubscription] countClinicActiveUsers', error);
+    throw error;
+  }
+  return count ?? 0;
+}
+
 export async function getClinicSubscription(
   clinicId: string,
 ): Promise<ClinicHubSubscriptionRow | null> {
@@ -133,7 +218,7 @@ export async function getClinicSubscription(
     .eq('clinic_id', clinicId)
     .maybeSingle();
 
-  if (error && missingMercadoPagoColumns(error)) {
+  if (error && (missingMercadoPagoColumns(error) || missingPlanConfigColumn(error))) {
     const legacy = await supabaseAdmin
       .from('clinic_hub_subscriptions')
       .select(LEGACY_SUBSCRIPTION_SELECT)
@@ -177,7 +262,6 @@ export async function createBetaSubscription(
     .single();
 
   if (error) {
-    // Corrida: outra requisição criou no meio
     if (error.code === '23505') {
       const again = await getClinicSubscription(clinicId);
       if (again) return again;
@@ -191,7 +275,12 @@ export async function createBetaSubscription(
 
 export async function getEnabledModules(clinicId: string): Promise<string[]> {
   const sub = await getClinicSubscription(clinicId);
-  if (!sub || !ACTIVE_STATUSES.has(sub.status)) return ['hub_core'];
+  if (!sub || !ACTIVE_STATUSES.has(sub.status)) {
+    if (sub && (sub.status === 'past_due' || sub.status === 'pending_payment')) {
+      return normalizeModules(sub.enabled_modules);
+    }
+    return ['hub_core'];
+  }
   return normalizeModules(sub.enabled_modules);
 }
 
@@ -208,35 +297,143 @@ export async function isSubscriptionActive(clinicId: string): Promise<boolean> {
   return Boolean(sub && ACTIVE_STATUSES.has(sub.status));
 }
 
-export function toSessionSubscriptionPayload(
-  sub: ClinicHubSubscriptionRow | null,
-): HubSubscriptionSessionPayload | null {
-  if (!sub) return null;
+export async function getClinicEntitlementSnapshot(
+  clinicId: string,
+): Promise<HubEntitlementSnapshot> {
+  const sub = await getClinicSubscription(clinicId);
+  if (!sub) {
+    return {
+      status: 'canceled',
+      is_beta: false,
+      base_plan_slug: null,
+      enabled_modules: ['hub_core'],
+      disabled_operational_areas: [],
+      max_units: null,
+      max_users: null,
+      access_mode: 'read_history',
+    };
+  }
+  const cfg = resolvePlanConfig(sub);
   const plan = sub.hub_platform_plans;
   return {
     status: sub.status,
     is_beta: sub.is_beta,
     base_plan_slug: plan?.slug ?? null,
     enabled_modules: normalizeModules(sub.enabled_modules),
+    disabled_operational_areas: cfg.disabled_operational_areas,
+    max_units: sub.is_beta ? null : (plan?.max_units ?? null),
+    max_users: sub.is_beta ? null : (plan?.max_users ?? null),
+    access_mode: computeAccessMode(sub),
+  };
+}
+
+export async function toSessionSubscriptionPayloadAsync(
+  sub: ClinicHubSubscriptionRow | null,
+): Promise<HubSubscriptionSessionPayload | null> {
+  if (!sub) return null;
+  const plan = sub.hub_platform_plans;
+  const cfg = resolvePlanConfig(sub);
+  const max_units = sub.is_beta ? null : (plan?.max_units ?? null);
+  const max_users = sub.is_beta ? null : (plan?.max_users ?? null);
+  const [units, users] = await Promise.all([
+    countClinicUnits(sub.clinic_id),
+    countClinicActiveUsers(sub.clinic_id),
+  ]);
+  return {
+    status: sub.status,
+    is_beta: sub.is_beta,
+    base_plan_slug: plan?.slug ?? null,
+    enabled_modules: normalizeModules(sub.enabled_modules),
     beta_free_until: sub.beta_free_until,
+    disabled_operational_areas: cfg.disabled_operational_areas,
+    max_units,
+    max_users,
+    usage: { units, users },
+    limits_exceeded: {
+      units: max_units != null && units > max_units,
+      users: max_users != null && users > max_users,
+    },
+    access_mode: computeAccessMode(sub),
+    plan_config: cfg,
+  };
+}
+
+/** @deprecated Prefer toSessionSubscriptionPayloadAsync for usage counts. */
+export function toSessionSubscriptionPayload(
+  sub: ClinicHubSubscriptionRow | null,
+): Omit<HubSubscriptionSessionPayload, 'usage' | 'limits_exceeded'> & {
+  usage?: { units: number; users: number };
+  limits_exceeded?: { units: boolean; users: boolean };
+} | null {
+  if (!sub) return null;
+  const plan = sub.hub_platform_plans;
+  const cfg = resolvePlanConfig(sub);
+  return {
+    status: sub.status,
+    is_beta: sub.is_beta,
+    base_plan_slug: plan?.slug ?? null,
+    enabled_modules: normalizeModules(sub.enabled_modules),
+    beta_free_until: sub.beta_free_until,
+    disabled_operational_areas: cfg.disabled_operational_areas,
+    max_units: sub.is_beta ? null : (plan?.max_units ?? null),
+    max_users: sub.is_beta ? null : (plan?.max_users ?? null),
+    access_mode: computeAccessMode(sub),
+    plan_config: cfg,
+  };
+}
+
+function mapPublicPlan(row: Record<string, unknown>): HubPlatformPlanPublic {
+  const slug = String(row.slug || '');
+  return {
+    slug,
+    name: String(row.name || ''),
+    description: (row.description as string | null) ?? null,
+    max_units: (row.max_units as number | null) ?? null,
+    max_users: (row.max_users as number | null) ?? null,
+    monthly_price_cents: (row.monthly_price_cents as number | null) ?? null,
+    sort_order: Number(row.sort_order || 0),
+    plan_config: parsePlanConfig(slug, row.plan_config),
   };
 }
 
 export async function listPaidLaunchPlans(): Promise<HubPlatformPlanPublic[]> {
-  const { data, error } = await supabaseAdmin
+  let { data, error } = await supabaseAdmin
     .from('hub_platform_plans')
-    .select('slug, name, description, max_units, max_users, monthly_price_cents, sort_order')
+    .select('slug, name, description, max_units, max_users, monthly_price_cents, sort_order, plan_config')
     .eq('active', true)
     .eq('is_public', true)
     .neq('slug', BETA_PLAN_SLUG)
     .not('monthly_price_cents', 'is', null)
     .order('sort_order', { ascending: true });
 
+  if (error && missingPlanConfigColumn(error)) {
+    const legacy = await supabaseAdmin
+      .from('hub_platform_plans')
+      .select('slug, name, description, max_units, max_users, monthly_price_cents, sort_order')
+      .eq('active', true)
+      .eq('is_public', true)
+      .neq('slug', BETA_PLAN_SLUG)
+      .not('monthly_price_cents', 'is', null)
+      .order('sort_order', { ascending: true });
+    data = legacy.data as typeof data;
+    error = legacy.error;
+  }
+
   if (error) {
     console.error('[hubSubscription] listPaidLaunchPlans', error);
     throw error;
   }
-  return (data || []) as HubPlatformPlanPublic[];
+  const fromDb = (data || []).map((r) => mapPublicPlan(r as Record<string, unknown>));
+  return mergePaidLaunchCatalog(fromDb).map((p) => ({
+    slug: p.slug,
+    name: p.name,
+    description: p.description,
+    max_units: p.max_units,
+    max_users: p.max_users,
+    monthly_price_cents: p.monthly_price_cents,
+    sort_order: p.sort_order,
+    plan_config: parsePlanConfig(p.slug, p.plan_config),
+  }));
 }
 
 export async function listPublicPlansAndModules(): Promise<{
@@ -247,9 +444,12 @@ export async function listPublicPlansAndModules(): Promise<{
 }> {
   const mode = getHubSubscriptionMode();
 
+  const selectCols =
+    'slug, name, description, max_units, max_users, monthly_price_cents, sort_order, plan_config';
+
   let plansQuery = supabaseAdmin
     .from('hub_platform_plans')
-    .select('slug, name, description, max_units, max_users, monthly_price_cents, sort_order')
+    .select(selectCols)
     .eq('active', true)
     .order('sort_order', { ascending: true });
 
@@ -259,18 +459,36 @@ export async function listPublicPlansAndModules(): Promise<{
     plansQuery = plansQuery.eq('is_public', true).neq('slug', BETA_PLAN_SLUG);
   }
 
-  const [{ data: plans, error: plansError }, { data: modules, error: modulesError }, paidPlans] =
-    await Promise.all([
-      plansQuery,
-      mode === 'beta_only'
-        ? Promise.resolve({ data: [] as HubPlatformModulePublic[], error: null })
-        : supabaseAdmin
-            .from('hub_platform_modules')
-            .select('slug, name, description, monthly_price_cents, maps_to_entitlement, sort_order')
-            .eq('active', true)
-            .order('sort_order', { ascending: true }),
-      listPaidLaunchPlans(),
-    ]);
+  let plansRows: Record<string, unknown>[] | null = null;
+  let plansError: { message?: string } | null = null;
+  {
+    const first = await plansQuery;
+    plansError = first.error;
+    plansRows = (first.data as Record<string, unknown>[] | null) ?? null;
+    if (plansError && missingPlanConfigColumn(plansError)) {
+      let legacyQ = supabaseAdmin
+        .from('hub_platform_plans')
+        .select('slug, name, description, max_units, max_users, monthly_price_cents, sort_order')
+        .eq('active', true)
+        .order('sort_order', { ascending: true });
+      if (mode === 'beta_only') legacyQ = legacyQ.eq('slug', BETA_PLAN_SLUG);
+      else legacyQ = legacyQ.eq('is_public', true).neq('slug', BETA_PLAN_SLUG);
+      const legacy = await legacyQ;
+      plansError = legacy.error;
+      plansRows = (legacy.data as Record<string, unknown>[] | null) ?? null;
+    }
+  }
+
+  const [{ data: modules, error: modulesError }, paidPlans] = await Promise.all([
+    mode === 'beta_only'
+      ? Promise.resolve({ data: [] as HubPlatformModulePublic[], error: null })
+      : supabaseAdmin
+          .from('hub_platform_modules')
+          .select('slug, name, description, monthly_price_cents, maps_to_entitlement, sort_order')
+          .eq('active', true)
+          .order('sort_order', { ascending: true }),
+    listPaidLaunchPlans(),
+  ]);
 
   if (plansError) {
     console.error('[hubSubscription] listPublicPlans', plansError);
@@ -283,7 +501,7 @@ export async function listPublicPlansAndModules(): Promise<{
 
   return {
     mode,
-    plans: (plans || []) as HubPlatformPlanPublic[],
+    plans: (plansRows || []).map((r) => mapPublicPlan(r)),
     modules: (modules || []) as HubPlatformModulePublic[],
     paid_plans: paidPlans,
   };
@@ -337,7 +555,7 @@ export async function createPendingPlanSubscription(
       status: 'pending_payment',
       is_beta: false,
       beta_notes: `Aguardando Mercado Pago — ${plan.name}`,
-      enabled_modules: [...ALL_HUB_MODULES],
+      enabled_modules: defaultModulesForPlanSlug(plan.slug),
       started_at: now,
       created_at: now,
       updated_at: now,
@@ -383,6 +601,7 @@ export async function stagePlanCheckout(
     updates.pending_plan_id = null;
     updates.status = 'pending_payment';
     updates.is_beta = false;
+    updates.enabled_modules = defaultModulesForPlanSlug(plan.slug);
   }
 
   const { error } = await supabaseAdmin
@@ -410,6 +629,16 @@ function addOneMonth(from: Date): string {
   const d = new Date(from.getTime());
   d.setMonth(d.getMonth() + 1);
   return d.toISOString();
+}
+
+async function planSlugById(planId: string): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('hub_platform_plans')
+    .select('slug')
+    .eq('id', planId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as { slug?: string } | null)?.slug ?? null;
 }
 
 /** Aplica o estado vindo do Mercado Pago (webhook ou consulta na volta do checkout). */
@@ -451,15 +680,18 @@ export async function applyMercadoPagoPreapproval(input: {
   const mpStatus = input.status.toLowerCase();
 
   if (mpStatus === 'authorized') {
+    const nextPlanId = row.pending_plan_id || row.base_plan_id;
+    const slug = await planSlugById(nextPlanId);
     const { error } = await supabaseAdmin
       .from('clinic_hub_subscriptions')
       .update({
         status: 'active',
         is_beta: false,
-        base_plan_id: row.pending_plan_id || row.base_plan_id,
+        base_plan_id: nextPlanId,
         pending_plan_id: null,
         mp_preapproval_id: input.preapprovalId,
         current_period_end: input.nextPaymentDate || addOneMonth(new Date()),
+        enabled_modules: defaultModulesForPlanSlug(slug),
         canceled_at: null,
         updated_at: now,
       })

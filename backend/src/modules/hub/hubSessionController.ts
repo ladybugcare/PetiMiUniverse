@@ -3,7 +3,7 @@ import { supabaseAdmin } from '../../config/supabase.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import {
   getClinicSubscription,
-  toSessionSubscriptionPayload,
+  toSessionSubscriptionPayloadAsync,
 } from './hubSubscriptionService.js';
 
 const ALLOWED_CLINIC_ROLES = new Set([
@@ -153,7 +153,7 @@ export const getHubSessionContext = asyncHandler(async (req: Request, res: Respo
   if (resolvedClinicId && !needsOnboarding) {
     try {
       const sub = await getClinicSubscription(resolvedClinicId);
-      subscription = toSessionSubscriptionPayload(sub);
+      subscription = await toSessionSubscriptionPayloadAsync(sub);
     } catch (subErr) {
       console.warn('[hub_session] subscription', subErr);
     }

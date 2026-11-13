@@ -670,7 +670,7 @@ const AdminClinicsPage: React.FC = () => {
                       }}
                     >
                       <CreditCard size={16} />
-                      Gerenciar Beta
+                      Gerenciar Fundador
                     </button>
                   </>
                 ) : (
@@ -687,7 +687,7 @@ const AdminClinicsPage: React.FC = () => {
           <div style={styles.modalOverlay} onClick={() => setShowBetaModal(false)}>
             <div style={{ ...styles.modal, maxWidth: 520 }} onClick={(e) => e.stopPropagation()}>
               <div style={styles.modalHeader}>
-                <h3 style={styles.modalTitle}>Programa Beta — {selectedClinic.name}</h3>
+                <h3 style={styles.modalTitle}>Programa Fundador — {selectedClinic.name}</h3>
                 <button onClick={() => setShowBetaModal(false)} style={styles.closeButton}>
                   ✕
                 </button>
@@ -718,7 +718,7 @@ const AdminClinicsPage: React.FC = () => {
                 </div>
 
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>Desconto beta (%)</label>
+                  <label style={styles.label}>Desconto beta (%) — legado, não entra no Mercado Pago</label>
                   <input
                     type="number"
                     min={0}
@@ -730,10 +730,13 @@ const AdminClinicsPage: React.FC = () => {
                     }
                     placeholder="0–100"
                   />
+                  <span style={{ fontSize: 12, color: '#6b7280' }}>
+                    Preferir preço override abaixo. O percentual não é aplicado no checkout.
+                  </span>
                 </div>
 
                 <div style={styles.formGroup}>
-                  <label style={styles.label}>Preço override (centavos/mês)</label>
+                  <label style={styles.label}>Preço especial Fundador (centavos/mês)</label>
                   <input
                     type="number"
                     min={0}
@@ -742,8 +745,12 @@ const AdminClinicsPage: React.FC = () => {
                     onChange={(e) =>
                       setBetaForm({ ...betaForm, override_monthly_cents: e.target.value })
                     }
-                    placeholder="Ex.: 0 = grátis"
+                    placeholder="Ex.: 9900 = R$ 99"
                   />
+                  <span style={{ fontSize: 12, color: '#6b7280' }}>
+                    Usado no checkout quando o CADMIN autorizar a assinatura. Não dispara cobrança sozinho ao
+                    vencer &quot;Grátis até&quot;.
+                  </span>
                 </div>
 
                 <div style={styles.formGroup}>

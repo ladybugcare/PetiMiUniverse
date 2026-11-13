@@ -368,6 +368,99 @@ export type HubSurgery = {
 
 export type HubHospitalizationEventKind = 'vital' | 'medication' | 'feeding' | 'fluid' | 'nursing' | 'note';
 
+export type HubHospMedScheduleKind = 'fixed_times' | 'interval';
+export type HubHospMedOrderStatus = 'active' | 'suspended' | 'completed' | 'cancelled';
+export type HubHospMedDoseStatus = 'pending' | 'administered' | 'not_administered' | 'cancelled';
+export type HubHospMedNotAdminReason =
+  | 'recusou'
+  | 'vomito'
+  | 'via_indisponivel'
+  | 'medicamento_indisponivel'
+  | 'prescritor_suspendeu'
+  | 'outro';
+
+export type HubHospMedOrderVersion = {
+  id: string;
+  order_id: string;
+  version_no: number;
+  medication_name: string;
+  presentation: string | null;
+  concentration: string | null;
+  dose_value: number;
+  dose_unit: string;
+  dose_label?: string;
+  route: string | null;
+  schedule_kind: HubHospMedScheduleKind;
+  times: string[];
+  interval_hours: number | null;
+  starts_at: string;
+  ends_at: string | null;
+  instructions: string | null;
+  billing_mode: HubClinicalBillingMode;
+  hub_service_type_id: string | null;
+  unit_amount: number | null;
+  prescribed_by_staff_id: string | null;
+  prescribed_at: string;
+  change_reason: string | null;
+  prescribed_by?: { id: string; full_name: string; job_title?: string } | null;
+};
+
+export type HubHospMedOrder = {
+  id: string;
+  clinic_id: string;
+  hospitalization_id: string;
+  status: HubHospMedOrderStatus;
+  current_version_id: string | null;
+  prescribed_by_staff_id: string | null;
+  sort_order: number;
+};
+
+export type HubHospMedOrderBundle = {
+  order: HubHospMedOrder;
+  current_version: HubHospMedOrderVersion | null;
+  versions?: HubHospMedOrderVersion[];
+};
+
+export type HubHospMedDose = {
+  id: string;
+  clinic_id: string;
+  hospitalization_id: string;
+  order_id: string;
+  order_version_id: string;
+  task_date: string;
+  scheduled_for: string;
+  plan_key: string;
+  status: HubHospMedDoseStatus;
+  not_administered_reason_code: HubHospMedNotAdminReason | null;
+  not_administered_notes: string | null;
+  administered_at: string | null;
+  notes: string | null;
+  overdue?: boolean;
+  dose_label?: string | null;
+  version?: Partial<HubHospMedOrderVersion> | null;
+  order?: { id: string; status: HubHospMedOrderStatus } | null;
+};
+
+export type HubHospMedVersionInput = {
+  medication_name: string;
+  presentation?: string | null;
+  concentration?: string | null;
+  dose_value: number;
+  dose_unit: string;
+  route?: string | null;
+  schedule_kind: HubHospMedScheduleKind;
+  times?: string[];
+  interval_hours?: number | null;
+  starts_at: string;
+  ends_at?: string | null;
+  instructions?: string | null;
+  billing_mode?: HubClinicalBillingMode;
+  hub_service_type_id?: string | null;
+  unit_amount?: number | null;
+  prescribed_by_staff_id?: string | null;
+  change_reason?: string | null;
+};
+
 export type HubHospitalizationEvent = {
   id: string;
   hospitalization_id: string;
@@ -987,6 +1080,85 @@ export const hubClinicalApi = {
       method: 'POST',
       body: JSON.stringify({ ...payload, clinic_id }),
     }) as Promise<{ event: HubHospitalizationEvent }>;
+  },
+  listHospMedOrders(hospitalizationId: string, clinicId: string, includeHistory = false) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (includeHistory) q.set('include_history', '1');
+    return apiRequest(
+      `${clinicalBase}/hospitalizations/${hospitalizationId}/medication-orders?${q}`,
+    ) as Promise<{ orders: HubHospMedOrderBundle[] }>;
+  },
+  createHospMedOrder(hospitalizationId: string, payload: HubHospMedVersionInput & { clinic_id: string }) {
+    return apiRequest(`${clinicalBase}/hospitalizations/${hospitalizationId}/medication-orders`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<HubHospMedOrderBundle>;
+  },
+  createHospMedOrderVersion(
+    hospitalizationId: string,
+    orderId: string,
+    payload: HubHospMedVersionInput & { clinic_id: string },
+  ) {
+    return apiRequest(
+      `${clinicalBase}/hospitalizations/${hospitalizationId}/medication-orders/${orderId}/versions`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    ) as Promise<HubHospMedOrderBundle>;
+  },
+  suspendHospMedOrder(hospitalizationId: string, orderId: string, clinicId: string) {
+    return apiRequest(
+      `${clinicalBase}/hospitalizations/${hospitalizationId}/medication-orders/${orderId}/suspend`,
+      { method: 'POST', body: JSON.stringify({ clinic_id: clinicId }) },
+    ) as Promise<HubHospMedOrderBundle>;
+  },
+  resumeHospMedOrder(hospitalizationId: string, orderId: string, clinicId: string) {
+    return apiRequest(
+      `${clinicalBase}/hospitalizations/${hospitalizationId}/medication-orders/${orderId}/resume`,
+      { method: 'POST', body: JSON.stringify({ clinic_id: clinicId }) },
+    ) as Promise<HubHospMedOrderBundle>;
+  },
+  listHospMedDoses(hospitalizationId: string, clinicId: string, dateYmd?: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (dateYmd) q.set('date', dateYmd);
+    return apiRequest(
+      `${clinicalBase}/hospitalizations/${hospitalizationId}/medication-doses?${q}`,
+    ) as Promise<{ date: string; doses: HubHospMedDose[] }>;
+  },
+  completeHospMedDose(
+    hospitalizationId: string,
+    doseId: string,
+    payload: {
+      clinic_id: string;
+      outcome: 'administered' | 'not_administered';
+      administered_at?: string | null;
+      notes?: string | null;
+      reason_code?: HubHospMedNotAdminReason | null;
+      reason_notes?: string | null;
+      hub_staff_member_id?: string | null;
+      idempotency_key?: string | null;
+    },
+  ) {
+    return apiRequest(
+      `${clinicalBase}/hospitalizations/${hospitalizationId}/medication-doses/${doseId}/complete`,
+      { method: 'POST', body: JSON.stringify(payload) },
+    ) as Promise<{
+      dose: HubHospMedDose;
+      idempotent?: boolean;
+      event_id?: string | null;
+      charge_id?: string | null;
+    }>;
+  },
+  getHospMedPrintModel(hospitalizationId: string, clinicId: string, dateYmd?: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (dateYmd) q.set('date', dateYmd);
+    return apiRequest(
+      `${clinicalBase}/hospitalizations/${hospitalizationId}/medication-plan/print-model?${q}`,
+    ) as Promise<{
+      issued_at: string;
+      date: string;
+      hospitalization: HubHospitalization;
+      active_orders: Array<Record<string, unknown>>;
+      doses: HubHospMedDose[];
+    }>;
   },
   listSurgeries(clinicId: string, status?: string, hubCaseId?: string, petId?: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });

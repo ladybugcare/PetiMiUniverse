@@ -11,6 +11,15 @@ export interface HubNotification {
   created_at: string;
 }
 
+export type HubNotificationPrefCategory = 'acoes' | 'operacao' | 'alertas';
+
+export type HubNotificationPrefsMap = Record<HubNotificationPrefCategory, boolean>;
+
+export interface HubNotificationPrefsResponse {
+  clinic_id: string;
+  categories: HubNotificationPrefsMap;
+}
+
 interface NotificationsResponse {
   notifications: HubNotification[];
 }
@@ -49,4 +58,29 @@ export async function hubMarkAllNotificationsRead(userId: string): Promise<void>
     method: 'PUT',
     body: JSON.stringify({ user_id: userId }),
   });
+}
+
+export async function hubGetNotificationPrefs(clinicId: string): Promise<HubNotificationPrefsMap> {
+  const qs = new URLSearchParams({ clinic_id: clinicId });
+  const data = (await apiRequest(`/notifications/prefs?${qs}`)) as HubNotificationPrefsResponse;
+  return {
+    acoes: data?.categories?.acoes !== false,
+    operacao: data?.categories?.operacao !== false,
+    alertas: data?.categories?.alertas !== false,
+  };
+}
+
+export async function hubUpdateNotificationPrefs(
+  clinicId: string,
+  categories: HubNotificationPrefsMap,
+): Promise<HubNotificationPrefsMap> {
+  const data = (await apiRequest('/notifications/prefs', {
+    method: 'PUT',
+    body: JSON.stringify({ clinic_id: clinicId, categories }),
+  })) as HubNotificationPrefsResponse;
+  return {
+    acoes: data?.categories?.acoes !== false,
+    operacao: data?.categories?.operacao !== false,
+    alertas: data?.categories?.alertas !== false,
+  };
 }

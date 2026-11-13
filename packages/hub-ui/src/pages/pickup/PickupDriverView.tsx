@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { CheckCircle, ExternalLink, Loader, MapPin, Navigation, Phone } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { CheckCircle, ExternalLink, Loader, MapPin, Navigation, Phone, Printer } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
 import {
   hubPickupApi,
@@ -23,6 +24,7 @@ import {
   stopToMapPoint,
   type MapPoint,
 } from './pickupMapsLinks';
+import '../clientes/clientes.css';
 import './pickup-page.css';
 
 /** Retorna o próximo status e o label do botão, considerando o sentido da parada. */
@@ -323,9 +325,19 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
     <div className="hub-pickup-driver-view">
       <div className="hub-pickup-driver-view__header">
         <span className="hub-pickup-driver-view__title">{routeTitle}</span>
-        <span className="hub-pickup-driver-view__progress">
-          {completedCount}/{total} concluídas
-        </span>
+        <div className="hub-pickup-driver-view__header-actions">
+          <span className="hub-pickup-driver-view__progress">
+            {completedCount}/{total} concluídas
+          </span>
+          <Link
+            to={`/hub/impressoes/leva-e-traz/rota/${encodeURIComponent(routeId)}`}
+            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+            title="Imprimir esta rota"
+          >
+            <Printer size={14} aria-hidden />
+            Imprimir
+          </Link>
+        </div>
       </div>
 
       {batchMaps || nextStopMaps ? (

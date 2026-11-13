@@ -10,7 +10,7 @@ import {
   listPublicPlansAndModules,
   savePreapprovalId,
   stagePlanCheckout,
-  toSessionSubscriptionPayload,
+  toSessionSubscriptionPayloadAsync,
 } from './hubSubscriptionService.js';
 import {
   createMercadoPagoPreapproval,
@@ -52,20 +52,19 @@ export const getHubSubscriptionMe = asyncHandler(async (req: Request, res: Respo
   if (!clinic) throw new ValidationError('Nenhuma clínica vinculada a esta conta.');
   const sub = await getClinicSubscription(clinic.clinicId);
   const catalog = await listPublicPlansAndModules();
+  const sessionSub = await toSessionSubscriptionPayloadAsync(sub);
   res.json({
     mercado_pago_configured: mercadoPagoConfigured(),
     can_checkout: clinic.role === 'CADMIN',
     mode: catalog.mode,
     paid_plans: catalog.paid_plans,
-    subscription: sub
+    subscription: sessionSub
       ? {
-          ...toSessionSubscriptionPayload(sub),
-          plan_name: sub.hub_platform_plans?.name ?? null,
-          monthly_price_cents: sub.hub_platform_plans?.monthly_price_cents ?? null,
-          max_units: sub.hub_platform_plans?.max_units ?? null,
-          max_users: sub.hub_platform_plans?.max_users ?? null,
-          current_period_end: sub.current_period_end ?? null,
-          mp_preapproval_id: sub.mp_preapproval_id ?? null,
+          ...sessionSub,
+          plan_name: sub?.hub_platform_plans?.name ?? null,
+          monthly_price_cents: sub?.hub_platform_plans?.monthly_price_cents ?? null,
+          current_period_end: sub?.current_period_end ?? null,
+          mp_preapproval_id: sub?.mp_preapproval_id ?? null,
         }
       : null,
   });
@@ -132,13 +131,13 @@ export const postHubSubscriptionSync = asyncHandler(async (req: Request, res: Re
   const sub = await getClinicSubscription(clinic.clinicId);
   if (!sub?.mp_preapproval_id) {
     res.json({
-      subscription: sub ? toSessionSubscriptionPayload(sub) : null,
+      subscription: await toSessionSubscriptionPayloadAsync(sub),
       synced: false,
     });
     return;
   }
   if (!mercadoPagoConfigured()) {
-    res.json({ subscription: toSessionSubscriptionPayload(sub), synced: false });
+    res.json({ subscription: await toSessionSubscriptionPayloadAsync(sub), synced: false });
     return;
   }
 
@@ -156,7 +155,7 @@ export const postHubSubscriptionSync = asyncHandler(async (req: Request, res: Re
 
   const fresh = await getClinicSubscription(clinic.clinicId);
   res.json({
-    subscription: fresh ? toSessionSubscriptionPayload(fresh) : null,
+    subscription: await toSessionSubscriptionPayloadAsync(fresh),
     synced: true,
   });
 });

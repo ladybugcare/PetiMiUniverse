@@ -1,0 +1,104 @@
+.hub-impressoes {
+  --hc-brand: #c86a4d;
+  --hc-brand-hover: #a85a40;
+  --hc-text: #4a3b3a;
+  --hc-text-muted: #8e6e67;
+  --hc-border: #e5dcd6;
+  --hc-card: #ffffff;
+  width: 100%;
+  max-width: none;
+  color: var(--hc-text);
+}
+
+.hub-impressoes__intro {
+  margin: 0 0 18px;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.hub-impressoes__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.hub-impressoes__field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 180px;
+}
+
+.hub-impressoes__field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.hub-impressoes__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+  width: 100%;
+}
+
+@media (min-width: 1100px) {
+  .hub-impressoes__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1500px) {
+  .hub-impressoes__grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.hub-impressoes__card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 16px 14px;
+  border: 1px solid rgba(15, 23, 42, 0.12);
+  border-radius: 12px;
+  background: #fff;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.hub-impressoes__card:hover {
+  border-color: rgba(15, 23, 42, 0.28);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.06);
+}
+
+.hub-impressoes__card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hub-impressoes__card-label {
+  font-weight: 650;
+  font-size: 15px;
+}
+
+.hub-impressoes__card-desc {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: #64748b;
+}
+
+.hub-impressoes__card-cta {
+  margin-top: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+}

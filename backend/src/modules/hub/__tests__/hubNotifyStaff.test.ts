@@ -1,3 +1,7 @@
+import {
+  filterTargetsByPrefOptOut,
+  hubNotificationCategoryForType,
+} from '../hubNotificationPrefs';
 import { resolveNotificationTargets, type HubNotifyCandidate } from '../hubNotifyStaff';
 
 const recepcao: HubNotifyCandidate = {
@@ -111,5 +115,38 @@ describe('resolveNotificationTargets', () => {
 
   it('sem áreas nem papéis e sem gestores, ninguém recebe', () => {
     expect(resolveNotificationTargets(equipe, { includeManagers: false })).toEqual([]);
+  });
+});
+
+describe('hubNotificationPrefs', () => {
+  it('mapeia tipos operacionais para as categorias do Meu perfil', () => {
+    expect(hubNotificationCategoryForType('hub_grooming_extra_request')).toBe('acoes');
+    expect(hubNotificationCategoryForType('hub_payment_due')).toBe('acoes');
+    expect(hubNotificationCategoryForType('hub_cancellation_pending')).toBe('acoes');
+    expect(hubNotificationCategoryForType('hub_pet_ready')).toBe('operacao');
+    expect(hubNotificationCategoryForType('hub_pet_arrived')).toBe('operacao');
+    expect(hubNotificationCategoryForType('hub_boarding_checkout')).toBe('operacao');
+    expect(hubNotificationCategoryForType('hub_stock_alert')).toBe('alertas');
+  });
+
+  it('remove destinatários com a categoria desligada (opt-out)', () => {
+    const resolved = resolveNotificationTargets(equipe, {
+      areas: ['recepcao', 'caixa'],
+      includeManagers: false,
+    });
+    const filtered = filterTargetsByPrefOptOut(
+      resolved,
+      'acoes',
+      new Set(['u-recepcao']),
+    );
+
+    expect(resolved.sort()).toEqual(['u-caixa', 'u-finance', 'u-recepcao']);
+    expect(filtered.sort()).toEqual(['u-caixa', 'u-finance']);
+  });
+
+  it('sem prefs desligadas, mantém todos os targets', () => {
+    expect(
+      filterTargetsByPrefOptOut(['u-a', 'u-b'], 'alertas', new Set()),
+    ).toEqual(['u-a', 'u-b']);
   });
 });

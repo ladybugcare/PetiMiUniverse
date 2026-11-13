@@ -8,6 +8,11 @@
 import { supabaseAdmin } from '../../config/supabase';
 import { createNotification } from '../../controllers/notificationsController';
 import { sanitizeOperationalAreas, type HubOperationalArea } from '../../utils/operationalAreas';
+import {
+  filterTargetsByPrefOptOut,
+  hubNotificationCategoryForType,
+  loadDisabledPrefUserIds,
+} from './hubNotificationPrefs';
 
 /** Tipos de notificação interna do Hub (equipe, nunca o tutor). */
 export type HubStaffNotificationType =
@@ -152,12 +157,17 @@ export async function hubNotifyStaff(opts: HubNotifyStaffOptions): Promise<numbe
     if (!opts.clinicId) return 0;
 
     const candidates = await fetchHubStaffCandidates(opts.clinicId, opts.unitId);
-    const targets = resolveNotificationTargets(candidates, {
+    const resolved = resolveNotificationTargets(candidates, {
       areas: opts.areas,
       roles: opts.roles,
       includeManagers: opts.includeManagers,
       excludeUserIds: opts.excludeUserIds,
     });
+    if (!resolved.length) return 0;
+
+    const category = hubNotificationCategoryForType(opts.type);
+    const disabled = await loadDisabledPrefUserIds(opts.clinicId, category, resolved);
+    const targets = filterTargetsByPrefOptOut(resolved, category, disabled);
     if (!targets.length) return 0;
 
     await Promise.all(

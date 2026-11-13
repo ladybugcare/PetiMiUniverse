@@ -25,6 +25,7 @@ import {
   HubReceptionPage,
   HubBoardingRoutes,
   HubPickupRoutes,
+  HubImpressoesRoutes,
   HubCaixaPage,
   HubComandaPage,
   HubComandaFinancePage,
@@ -138,6 +139,7 @@ const router = createBrowserRouter(
         <Route path="banho-tosa/*" element={<HubGroomingRoutes />} />
         <Route path="recepcao" element={<HubReceptionPage />} />
         <Route path="leva-e-traz/*" element={<HubPickupRoutes />} />
+        <Route path="impressoes/*" element={<HubImpressoesRoutes />} />
         <Route path="estoque/*" element={<HubEstoqueRoutes />} />
         <Route path="equipe" element={<HubStaffPage />} />
         <Route path="relatorios" element={<HubRelatoriosPage />} />

@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase.js';
 import { checkClinicAccess, checkPermission } from '../../middleware/authMiddleware.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-import { ValidationError } from '../../utils/errors.js';
+import { PlanEntitlementError, ValidationError } from '../../utils/errors.js';
+import { assertCanCreateUnit } from './hubEntitlements.js';
 
 const uuidStr = z.string().uuid();
 
@@ -80,6 +81,15 @@ export const postHubUnit = asyncHandler(async (req: Request, res: Response) => {
   const canCreate = await userCanCreateClinicUnit(userId, clinicId);
   if (!canCreate) {
     return res.status(403).json({ error: 'Sem permissão para criar unidades.' });
+  }
+
+  try {
+    await assertCanCreateUnit(clinicId);
+  } catch (e) {
+    if (e instanceof PlanEntitlementError) {
+      return res.status(403).json({ error: e.message, code: e.code, details: e.details });
+    }
+    throw e;
   }
 
   const payload = bodyParsed.data;

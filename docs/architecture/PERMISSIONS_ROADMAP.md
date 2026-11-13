@@ -78,6 +78,13 @@ Exemplos:
 | `clinic.vaccines.manage` | Cartão de vacina |
 | `clinic.exams.manage` | Pedidos/resultados de exames |
 
+**Já em uso no Hub (prefixo `hub.`):**
+
+| Permissão | Descrição |
+|-----------|-----------|
+| `hub.clinic.med_orders.manage` | Criar/alterar/suspender **prescrição ativa de internação** (≠ receita). CADMIN / CMANAGER / CVET_INTERNAL; também vet com `hub.clinic.write` via cargo. |
+| `hub.clinic.med_admin.write` | Registrar administração / não-administração de doses do plano. Área `clinica` + roles com clínica. |
+
 Dados clínicos devem exigir **consentimento** registrado (ver `petmi_id` + políticas futuras).
 
 ---

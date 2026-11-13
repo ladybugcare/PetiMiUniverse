@@ -16,6 +16,7 @@ import {
 import HospEventForm from './hospital/HospEventForm';
 import HospEventList from './hospital/HospEventList';
 import HospBedAssignPanel from './hospital/HospBedAssignPanel';
+import HospMedPlanPanel from './hospital/HospMedPlanPanel';
 import { formatHospDate, HOSP_STATUS_LABEL } from './hospital/hospDisplay';
 
 const HubClinicHospitalizationPage: React.FC = () => {
@@ -214,11 +215,22 @@ const HubClinicHospitalizationPage: React.FC = () => {
         ) : null}
       </header>
 
+      {clinicId && hospitalizationId ? (
+        <HospMedPlanPanel
+          clinicId={clinicId}
+          hospitalizationId={hospitalizationId}
+          isActive={isActive}
+          defaultIncludesMedication={Boolean(hosp.daily_includes_medication)}
+          canCreateLookups={canWrite}
+        />
+      ) : null}
+
       {canWrite && isActive ? (
         <section className="hub-hosp-detail__block">
           <h2 className="hub-hosp-detail__block-title">Registrar evento</h2>
           <p className="hub-hosp-detail__block-lead">
-            Anote vitais, medicação, alimentação ou evolução sem sair da internação.
+            Anote vitais, medicação avulsa, alimentação ou evolução. Medicações do plano ficam na
+            administração de hoje.
           </p>
           <HospEventForm
             clinicId={clinicId ?? ''}

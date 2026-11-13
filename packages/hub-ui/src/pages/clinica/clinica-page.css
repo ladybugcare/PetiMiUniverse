@@ -1041,6 +1041,201 @@
   color: var(--hc-text-muted, #8e6e67);
 }
 
+.hub-hosp-detail__block-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.hub-hosp-detail__block-head .hub-hosp-detail__block-title {
+  margin-bottom: 4px;
+}
+
+.hub-hosp-detail__block-head .hub-hosp-detail__block-lead {
+  margin-bottom: 0;
+}
+
+.hub-hosp-med-orders,
+.hub-hosp-med-doses {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hub-hosp-med-order,
+.hub-hosp-med-dose {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--hc-border, #e8ddd8);
+  border-radius: 12px;
+  background: #faf7f5;
+}
+
+.hub-hosp-med-order--suspended {
+  opacity: 0.72;
+}
+
+.hub-hosp-med-order__main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 200px;
+  font-size: 13px;
+}
+
+.hub-hosp-med-order__actions,
+.hub-hosp-med-dose__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hub-hosp-med-dose__time {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  min-width: 3.2rem;
+}
+
+.hub-hosp-med-dose__body {
+  flex: 1 1 160px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13px;
+}
+
+.hub-hosp-med-dose__status {
+  font-size: 12px;
+  color: var(--hc-text-muted, #8e6e67);
+}
+
+.hub-hosp-med-dose--overdue {
+  border-color: #d97706;
+  background: #fffbeb;
+}
+
+.hub-hosp-med-dose__status--overdue {
+  color: #b45309;
+  font-weight: 600;
+}
+
+.hub-hosp-med-dose--administered .hub-hosp-med-dose__status {
+  color: #15803d;
+}
+
+.hub-hosp-med-dose--not_administered .hub-hosp-med-dose__status {
+  color: #b91c1c;
+}
+
+.hub-hosp-med-freq {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hub-hosp-med-freq__schedule {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px 16px;
+  align-items: start;
+}
+
+.hub-hosp-med-freq__start {
+  width: 8.75rem;
+  flex: 0 0 auto;
+}
+
+.hub-hosp-med-freq__start .hub-time-field {
+  width: 100%;
+}
+
+.hub-hosp-med-freq__start .hub-time-field__control {
+  flex: 0 1 auto;
+}
+
+.hub-hosp-med-freq__preview {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.hub-hosp-med-freq__hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.hub-hosp-med-freq__hint--alone {
+  align-self: end;
+  padding-bottom: 8px;
+}
+
+.hub-hosp-med-freq__fixed {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hub-hosp-med-times {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hub-hosp-med-time-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #f3ebe7;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hub-hosp-med-time-chip--calc {
+  background: #fff;
+  border: 1px solid var(--hc-border, #e8ddd8);
+}
+
+.hub-hosp-med-time-chip__x {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  line-height: 0;
+  color: #8e6e67;
+}
+
+.hub-hosp-med-times-add {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+@media (max-width: 520px) {
+  .hub-hosp-med-freq__schedule {
+    grid-template-columns: 1fr;
+  }
+
+  .hub-hosp-med-freq__hint--alone {
+    align-self: start;
+    padding-bottom: 0;
+  }
+}
+
 .hub-hosp-detail__block .nam-quick-card {
   background: transparent;
   border: none;

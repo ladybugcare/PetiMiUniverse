@@ -51,8 +51,11 @@ function serializeSubscription(sub: Awaited<ReturnType<typeof getClinicSubscript
           name: sub.hub_platform_plans.name,
           max_units: sub.hub_platform_plans.max_units,
           max_users: sub.hub_platform_plans.max_users,
+          plan_config: sub.hub_platform_plans.plan_config ?? null,
         }
       : null,
+    founder_billing_note:
+      'Preço especial = override_monthly_cents. beta_discount_percent não entra no Mercado Pago. Sem cobrança automática ao expirar beta_free_until.',
   };
 }
 

@@ -1556,6 +1556,7 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
   }
   const closingHospitalization =
     patch.status === 'discharged' || patch.status === 'death' || patch.status === 'transferred';
+  const cancellingHospitalization = patch.status === 'cancelled';
   if (closingHospitalization) {
     // death/transferred também precisam de discharged_at para diárias e fila do Caixa.
     update.discharged_at =
@@ -1570,6 +1571,23 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
     .select('*, hub_hospital_beds(code, label), hub_pets(name, species), hub_guardians(full_name)')
     .maybeSingle();
   if (error) return res.status(500).json({ error: error.message });
+
+  if (closingHospitalization || cancellingHospitalization) {
+    try {
+      const { closeHospitalizationMedPlan } = await import('./hospitalizationMedPlanService');
+      await closeHospitalizationMedPlan({
+        clinicId: clinic_id,
+        hospitalizationId: id.data,
+        hospitalizationStatus: (patch.status ?? 'discharged') as
+          | 'discharged'
+          | 'death'
+          | 'transferred'
+          | 'cancelled',
+      });
+    } catch (e) {
+      console.error('closeHospitalizationMedPlan', e);
+    }
+  }
 
   const discharged = closingHospitalization;
   const linkedAppointmentId = (existing as { hub_appointment_id?: string | null }).hub_appointment_id ?? null;

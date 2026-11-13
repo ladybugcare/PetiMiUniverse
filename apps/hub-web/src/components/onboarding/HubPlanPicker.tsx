@@ -1,5 +1,10 @@
 import React from 'react';
 import { formatPlanPrice, type HubPaidPlan } from '../../services/hubSubscriptionApi';
+import {
+  hubPlanPeopleLine,
+  hubPlanUnitLine,
+  mergeLaunchPaidPlans,
+} from '../../constants/hubLaunchPlans';
 
 type Props = {
   plans: HubPaidPlan[];
@@ -9,14 +14,12 @@ type Props = {
 };
 
 const HubPlanPicker: React.FC<Props> = ({ plans, selectedSlug, onSelect, disabled }) => {
+  const catalog = mergeLaunchPaidPlans(plans);
   return (
     <div className="hub-plan-picker" role="radiogroup" aria-label="Planos do PetMi Hub">
-      {plans.map((plan) => {
+      {catalog.map((plan) => {
         const selected = selectedSlug === plan.slug;
-        const limits = [
-          plan.max_units == null ? 'Unidades sem teto' : `Até ${plan.max_units} unidade${plan.max_units === 1 ? '' : 's'}`,
-          plan.max_users == null ? 'Equipe sem teto' : `Até ${plan.max_users} pessoas`,
-        ];
+        const limits = [hubPlanUnitLine(plan), hubPlanPeopleLine(plan)];
         return (
           <button
             key={plan.slug}

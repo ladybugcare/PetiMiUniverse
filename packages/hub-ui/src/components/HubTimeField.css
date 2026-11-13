@@ -98,8 +98,9 @@
 }
 
 .hub-time-field__input {
-  flex: 1;
-  min-width: 0;
+  flex: 1 1 auto;
+  /* Evita cortar HH:mm quando o campo fica estreito (dois ícones no controle) */
+  min-width: 5.5ch;
   height: 38px;
   padding: 0;
   border: none;

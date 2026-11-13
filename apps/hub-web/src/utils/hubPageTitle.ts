@@ -83,6 +83,35 @@ const ROUTES: RouteTitle[] = [
     crumbs: [{ label: 'Leva e Traz', to: '/hub/leva-e-traz' }, { label: 'Minha rota' }],
   },
   { path: '/hub/leva-e-traz', crumbs: [{ label: 'Leva e Traz' }] },
+  {
+    path: '/hub/impressoes/agenda',
+    crumbs: [{ label: 'Impressões do dia', to: '/hub/impressoes' }, { label: 'Agenda' }],
+  },
+  {
+    path: '/hub/impressoes/clinica',
+    crumbs: [{ label: 'Impressões do dia', to: '/hub/impressoes' }, { label: 'Clínica' }],
+  },
+  {
+    path: '/hub/impressoes/hotel-creche',
+    crumbs: [{ label: 'Impressões do dia', to: '/hub/impressoes' }, { label: 'Hotel & Creche' }],
+  },
+  {
+    path: '/hub/impressoes/leva-e-traz',
+    crumbs: [{ label: 'Impressões do dia', to: '/hub/impressoes' }, { label: 'Leva e Traz' }],
+  },
+  {
+    path: '/hub/impressoes/internacoes/:hospitalizationId/plano-medicacao',
+    crumbs: [
+      { label: 'Impressões do dia', to: '/hub/impressoes' },
+      { label: 'Internações', to: '/hub/impressoes/internacoes' },
+      { label: 'Plano de medicação' },
+    ],
+  },
+  {
+    path: '/hub/impressoes/internacoes',
+    crumbs: [{ label: 'Impressões do dia', to: '/hub/impressoes' }, { label: 'Internações' }],
+  },
+  { path: '/hub/impressoes', crumbs: [{ label: 'Impressões do dia' }] },
   { path: '/hub/caixa', crumbs: [{ label: 'Caixa' }] },
   {
     path: '/hub/hotel-creche/minha-fila',
@@ -147,6 +176,9 @@ function matchDynamicCrumbs(pathname: string): HubPageCrumb[] | null {
   }
   if (/^\/hub\/clinica\/cirurgias\/[^/]+$/.test(pathname)) {
     return [{ label: 'Clínica', to: '/hub/clinica' }, { label: 'Cirurgia' }];
+  }
+  if (/^\/hub\/impressoes\/leva-e-traz\/rota\/[^/]+$/.test(pathname)) {
+    return [{ label: 'Impressões do dia', to: '/hub/impressoes' }, { label: 'Rota' }];
   }
   if (/^\/hub\/clientes\/[^/]+$/.test(pathname)) {
     return [{ label: 'Clientes', to: '/hub/clientes' }, { label: 'Detalhe' }];

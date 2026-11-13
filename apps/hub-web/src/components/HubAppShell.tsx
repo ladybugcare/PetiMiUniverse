@@ -3,9 +3,9 @@ import { Outlet, useLocation } from 'react-router-dom';
 import { HubCaixaExitGuard } from './HubCaixaExitGuard';
 import HubSidebar from './HubSidebar';
 import HubTopHeader from './HubTopHeader';
-import HubUnitIncompleteBanner from './HubUnitIncompleteBanner';
 import HubCashOpenBanner from './HubCashOpenBanner';
 import HubSubscriptionBanner from './HubSubscriptionBanner';
+import HubEntitlementGuard from '../routes/HubEntitlementGuard';
 
 const MOBILE_MQ = '(max-width: 900px)';
 const COLLAPSED_KEY = 'hub.sidebar.collapsed';
@@ -100,10 +100,11 @@ const HubAppShell: React.FC = () => {
           showMenuButton={isMobile}
         />
         <div className="hub-app-shell__outlet">
-          <HubUnitIncompleteBanner />
           <HubSubscriptionBanner />
           <HubCashOpenBanner />
-          <Outlet />
+          <HubEntitlementGuard>
+            <Outlet />
+          </HubEntitlementGuard>
         </div>
       </div>
     </div>

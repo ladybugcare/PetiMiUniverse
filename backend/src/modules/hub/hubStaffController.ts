@@ -17,6 +17,8 @@ import {
   sanitizeStaffSpecialtiesInput,
   STAFF_SPECIALTIES_MAX_ITEMS,
 } from './hubStaffSpecialties';
+import { PlanEntitlementError } from '../../utils/errors.js';
+import { assertCanInviteUser } from './hubEntitlements.js';
 
 const uuidStr = z.string().uuid();
 
@@ -732,6 +734,15 @@ export const inviteHubStaff = async (req: Request, res: Response) => {
     const canUserInvite = await checkPermission(invited_by, clinic_id, 'user.invite');
     if (!canStaff || !canUserInvite) {
       return res.status(403).json({ error: 'Sem permissão para enviar convite (requer convite de usuários e convite de equipe)' });
+    }
+
+    try {
+      await assertCanInviteUser(clinic_id);
+    } catch (e) {
+      if (e instanceof PlanEntitlementError) {
+        return res.status(403).json({ error: e.message, code: e.code, details: e.details });
+      }
+      throw e;
     }
 
     const { data: row, error: loadErr } = await supabaseAdmin

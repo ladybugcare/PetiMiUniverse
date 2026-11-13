@@ -483,8 +483,12 @@
   gap: 14px;
 }
 
-.hub-assinatura__plans--with-beta {
+.hub-assinatura__plans--four {
   grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.hub-assinatura__plans--with-beta {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .hub-assinatura__choices {
@@ -496,6 +500,44 @@
 
 .hub-assinatura__plans--with-beta .hub-assinatura__choices {
   grid-column: 2 / -1;
+}
+
+.hub-plan-offer__kicker {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #a85a40;
+}
+
+.hub-plan-offer--emphasis {
+  border-color: rgba(200, 106, 77, 0.45);
+}
+
+.hub-plan-offer__compare-link {
+  margin-top: 4px;
+  font-size: 12px;
+  font-weight: 650;
+  color: #a85a40;
+  text-decoration: none;
+}
+
+.hub-plan-offer__compare-link:hover {
+  text-decoration: underline;
+}
+
+.hub-assinatura__compare {
+  margin-top: 28px;
+  max-width: 100%;
+}
+
+.hub-assinatura .hub-plans-compare h2 {
+  font-size: 20px;
+}
+
+.hub-assinatura .hub-plans-compare__scroll {
+  background: #fff;
 }
 
 .hub-plan-offer {
@@ -646,6 +688,7 @@
 
 @media (max-width: 1100px) {
   .hub-assinatura__plans,
+  .hub-assinatura__plans--four,
   .hub-assinatura__plans--with-beta {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -658,6 +701,7 @@
 
 @media (max-width: 700px) {
   .hub-assinatura__plans,
+  .hub-assinatura__plans--four,
   .hub-assinatura__plans--with-beta {
     grid-template-columns: 1fr;
   }

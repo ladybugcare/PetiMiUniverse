@@ -5,8 +5,9 @@ import { supabaseAdmin } from '../../config/supabase.js';
 import { checkPermission } from '../../middleware/authMiddleware.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { createAuditLog, extractRequestMetadata } from '../../utils/auditLog.js';
-import { ValidationError } from '../../utils/errors.js';
+import { PlanEntitlementError, ValidationError } from '../../utils/errors.js';
 import { getRoleDisplayName, type Role } from '../../utils/permissions.js';
+import { assertCanInviteUser } from './hubEntitlements.js';
 import {
   authUserExistsForEmail,
   buildInvitationShareMessage,
@@ -338,6 +339,18 @@ export const acceptHubInvitation = asyncHandler(async (req: Request, res: Respon
   const sameClinic = rows.find(
     (r) => r.clinic_id != null && String(r.clinic_id) === String(clinicId),
   );
+  const alreadyActiveHere =
+    sameClinic && String(sameClinic.status || '').toLowerCase() === 'active';
+  if (!alreadyActiveHere) {
+    try {
+      await assertCanInviteUser(clinicId);
+    } catch (e) {
+      if (e instanceof PlanEntitlementError) {
+        return res.status(403).json({ error: e.message, code: e.code, details: e.details });
+      }
+      throw e;
+    }
+  }
   const pendingOwner = rows.find(
     (r) =>
       (r.clinic_id == null || String(r.clinic_id).trim() === '') &&

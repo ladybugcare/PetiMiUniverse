@@ -226,6 +226,20 @@ export const HUB_REPORT_LINKS: HubReportLinkDefinition[] = [
     to: '/hub/estoque/alertas',
     permission: 'hub.inventory.read',
   },
+  {
+    id: 'day-prints',
+    category: 'operacional',
+    title: 'Impressões do dia',
+    description:
+      'Agenda, clínica, hotel/creche, leva e traz e internações em papel — plano B com filtros por serviço.',
+    to: '/hub/impressoes',
+    permission: [
+      'hub.appointments.read',
+      'pickup.routes.read',
+      'hub.clinic.read',
+      'boarding.reservations.read',
+    ],
+  },
 ];
 
 const VALID_REPORT_IDS = new Set<string>(HUB_REPORTS.map((r) => r.id));

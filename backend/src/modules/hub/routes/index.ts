@@ -1,7 +1,23 @@
 import { Router } from 'express';
 import { authenticateUser, requirePermission } from '../../../middleware/authMiddleware';
 import { authLimiter, hubApiLimiter } from '../../../middleware/rateLimiter.js';
+import { requireHubEntitlement } from '../hubEntitlements.js';
 import { postHubSignup, postHubOnboardingClinic } from '../hubSignupController.js';
+
+const requireClinicModule = requireHubEntitlement({ module: 'clinic' });
+const requireGroomingModule = requireHubEntitlement({ module: 'grooming' });
+const requireBoardingModule = requireHubEntitlement({ module: 'boarding' });
+const requirePickupArea = requireHubEntitlement({ planArea: 'leva_traz' });
+const requireReceptionArea = requireHubEntitlement({ planArea: 'recepcao' });
+const requireGroomingWrite = requireHubEntitlement({ module: 'grooming', mutating: true });
+const requireBoardingWrite = requireHubEntitlement({ module: 'boarding', mutating: true });
+const requirePickupWrite = requireHubEntitlement({ planArea: 'leva_traz', mutating: true });
+const requireReceptionWrite = requireHubEntitlement({ planArea: 'recepcao', mutating: true });
+const requireClinicWrite = requireHubEntitlement({
+  module: 'clinic',
+  mutating: true,
+  allowSoftLockWrite: true,
+});
 import { getHubDayOpsSummary } from '../hubDayOpsSummaryController';
 import {
   previewHubInvitation,
@@ -271,6 +287,16 @@ import {
   deleteHubHospitalizationCharge,
   approveHubHospitalizationChargePrice,
 } from '../hubClinicalBillableServicesController';
+import {
+  listHubHospitalizationMedOrders,
+  createHubHospitalizationMedOrder,
+  createHubHospitalizationMedOrderVersion,
+  suspendHubHospitalizationMedOrder,
+  resumeHubHospitalizationMedOrder,
+  listHubHospitalizationMedDoses,
+  completeHubHospitalizationMedDose,
+  getHubHospitalizationMedPrintModel,
+} from '../hubHospitalizationMedPlanController';
 import {
   listHubPrescriptionLookups,
   createHubPrescriptionLookup,
@@ -596,25 +622,25 @@ router.post(
 router.get(
   '/partner-clinics',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   listHubPartnerClinics,
 );
 router.post(
   '/partner-clinics',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   createHubPartnerClinic,
 );
 router.patch(
   '/partner-clinics/:id',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   patchHubPartnerClinic,
 );
 router.delete(
   '/partner-clinics/:id',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   deleteHubPartnerClinic,
 );
 
@@ -864,7 +890,7 @@ router.get(
 router.get(
   '/reports/boarding-occupancy',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingOccupancySeriesReport
 );
 router.get(
@@ -882,13 +908,13 @@ router.get(
 router.get(
   '/reports/grooming-productivity',
   authenticateUser,
-  requirePermission('grooming.queue.read'),
+  requirePermission('grooming.queue.read'), requireGroomingModule,
   getHubGroomingProductivityReport
 );
 router.get(
   '/reports/vaccines-due',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   getHubVaccinesDueReport
 );
 router.post(
@@ -1016,31 +1042,31 @@ router.post('/quotes/:id/public-token', authenticateUser, requirePermission('hub
 router.get(
   '/encounters/day-board',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   getHubEncountersDayBoard
 );
-router.get('/encounters', authenticateUser, requirePermission('hub.clinic.read'), listHubEncounters);
-router.get('/encounters/:id', authenticateUser, requirePermission('hub.clinic.read'), getHubEncounter);
+router.get('/encounters', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, listHubEncounters);
+router.get('/encounters/:id', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, getHubEncounter);
 router.post(
   '/encounters/check-in',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   checkInHubClinicalWalkIn
 );
-router.post('/encounters', authenticateUser, requirePermission('hub.clinic.write'), createHubEncounter);
+router.post('/encounters', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, createHubEncounter);
 router.post(
   '/encounters/open-from-appointment',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   openHubEncounterFromAppointment
 );
-router.patch('/encounters/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubEncounter);
-router.patch('/encounters/:id/amend', authenticateUser, requirePermission('hub.clinic.write'), amendHubEncounter);
-router.get('/encounters/:id/versions', authenticateUser, requirePermission('hub.clinic.read'), getHubEncounterVersions);
+router.patch('/encounters/:id', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, patchHubEncounter);
+router.patch('/encounters/:id/amend', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, amendHubEncounter);
+router.get('/encounters/:id/versions', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, getHubEncounterVersions);
 router.post(
   '/encounters/:id/complete',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   completeHubEncounter
 );
 
@@ -1048,91 +1074,91 @@ router.post(
 router.get(
   '/pickup/day-board',
   authenticateUser,
-  requirePermission('pickup.routes.read'),
+  requirePermission('pickup.routes.read'), requirePickupArea,
   getHubPickupDayBoard,
 );
 router.get(
   '/pickup/driver-day',
   authenticateUser,
-  requirePermission('pickup.routes.read'),
+  requirePermission('pickup.routes.read'), requirePickupArea,
   getHubPickupDriverDay,
 );
 router.post(
   '/pickup/routes/suggest-batches',
   authenticateUser,
-  requirePermission('pickup.routes.manage'),
+  requirePermission('pickup.routes.manage'), requirePickupWrite,
   suggestHubPickupBatches,
 );
 router.get(
   '/pickup/routes',
   authenticateUser,
-  requirePermission('pickup.routes.read'),
+  requirePermission('pickup.routes.read'), requirePickupArea,
   listHubPickupRoutes,
 );
 router.post(
   '/pickup/routes',
   authenticateUser,
-  requirePermission('pickup.routes.manage'),
+  requirePermission('pickup.routes.manage'), requirePickupWrite,
   createHubPickupRoute,
 );
 router.get(
   '/pickup/routes/:id',
   authenticateUser,
-  requirePermission('pickup.routes.read'),
+  requirePermission('pickup.routes.read'), requirePickupArea,
   getHubPickupRoute,
 );
 router.patch(
   '/pickup/routes/:id',
   authenticateUser,
-  requirePermission('pickup.routes.manage'),
+  requirePermission('pickup.routes.manage'), requirePickupWrite,
   patchHubPickupRoute,
 );
 router.post(
   '/pickup/routes/:id/stops',
   authenticateUser,
-  requirePermission('pickup.routes.manage'),
+  requirePermission('pickup.routes.manage'), requirePickupWrite,
   addHubPickupStops,
 );
 router.post(
   '/pickup/routes/:id/split',
   authenticateUser,
-  requirePermission('pickup.routes.manage'),
+  requirePermission('pickup.routes.manage'), requirePickupWrite,
   splitHubPickupRoute,
 );
 router.post(
   '/pickup/routes/:id/clinic-return',
   authenticateUser,
-  requirePermission('pickup.routes.manage'),
+  requirePermission('pickup.routes.manage'), requirePickupWrite,
   addClinicReturnStop,
 );
 router.patch(
   '/pickup/stops/:id',
   authenticateUser,
-  requirePermission('pickup.stops.update'),
+  requirePermission('pickup.stops.update'), requirePickupWrite,
   patchHubPickupStop,
 );
 router.post(
   '/pickup/stops',
   authenticateUser,
-  requirePermission('pickup.stops.update'),
+  requirePermission('pickup.stops.update'), requirePickupWrite,
   createOrUpdateLooseStop,
 );
 router.get(
   '/pickup/my-route',
   authenticateUser,
-  requirePermission('pickup.routes.read'),
+  requirePermission('pickup.routes.read'), requirePickupArea,
   getMyPickupRoute,
 );
 router.get(
   '/pickup/my-routes',
   authenticateUser,
-  requirePermission('pickup.routes.read'),
+  requirePermission('pickup.routes.read'), requirePickupArea,
   getMyPickupRoutes,
 );
 router.post(
   '/pickup/routes/:id/claim',
   authenticateUser,
-  requirePermission('pickup.routes.read'),
+  requirePermission('pickup.routes.read'), requirePickupArea,
   claimHubPickupRoute,
 );
 
@@ -1140,37 +1166,37 @@ router.post(
 router.get(
   '/pickup/vehicles',
   authenticateUser,
-  requirePermission('pickup.routes.read'),
+  requirePermission('pickup.routes.read'), requirePickupArea,
   listPickupVehicles,
 );
 router.post(
   '/pickup/vehicles',
   authenticateUser,
-  requirePermission('pickup.routes.manage'),
+  requirePermission('pickup.routes.manage'), requirePickupWrite,
   createPickupVehicle,
 );
 router.patch(
   '/pickup/vehicles/:id',
   authenticateUser,
-  requirePermission('pickup.routes.manage'),
+  requirePermission('pickup.routes.manage'), requirePickupWrite,
   patchPickupVehicle,
 );
 router.post(
   '/pickup/vehicles/:vehicleId/cages',
   authenticateUser,
-  requirePermission('pickup.routes.manage'),
+  requirePermission('pickup.routes.manage'), requirePickupWrite,
   createTransportCage,
 );
 router.patch(
   '/pickup/cages/:id',
   authenticateUser,
-  requirePermission('pickup.routes.manage'),
+  requirePermission('pickup.routes.manage'), requirePickupWrite,
   patchTransportCage,
 );
 router.delete(
   '/pickup/cages/:id',
   authenticateUser,
-  requirePermission('pickup.routes.manage'),
+  requirePermission('pickup.routes.manage'), requirePickupWrite,
   deleteTransportCage,
 );
 
@@ -1178,61 +1204,61 @@ router.delete(
 router.get(
   '/grooming/day-board',
   authenticateUser,
-  requirePermission('grooming.queue.read'),
+  requirePermission('grooming.queue.read'), requireGroomingModule,
   getHubGroomingDayBoard
 );
 router.post(
   '/grooming/sessions/open-from-appointment',
   authenticateUser,
-  requirePermission('grooming.queue.manage'),
+  requirePermission('grooming.queue.manage'), requireGroomingWrite,
   openHubGroomingSessionFromAppointment
 );
 router.post(
   '/grooming/sessions',
   authenticateUser,
-  requirePermission('grooming.queue.manage'),
+  requirePermission('grooming.queue.manage'), requireGroomingWrite,
   createHubGroomingSession
 );
 router.patch(
   '/grooming/sessions/:id',
   authenticateUser,
-  requirePermission('grooming.queue.manage'),
+  requirePermission('grooming.queue.manage'), requireGroomingWrite,
   patchHubGroomingSession
 );
 router.post(
   '/grooming/sessions/:id/advance',
   authenticateUser,
-  requirePermission('grooming.queue.manage'),
+  requirePermission('grooming.queue.manage'), requireGroomingWrite,
   advanceHubGroomingSession
 );
 router.get(
   '/grooming/sessions/:id/events',
   authenticateUser,
-  requirePermission('grooming.queue.read'),
+  requirePermission('grooming.queue.read'), requireGroomingModule,
   listHubGroomingSessionEvents
 );
 router.post(
   '/grooming/sessions/:id/events',
   authenticateUser,
-  requirePermission('grooming.queue.manage'),
+  requirePermission('grooming.queue.manage'), requireGroomingWrite,
   postHubGroomingSessionEvent
 );
 router.get(
   '/grooming/sessions/:id/drawer',
   authenticateUser,
-  requirePermission('grooming.queue.read'),
+  requirePermission('grooming.queue.read'), requireGroomingModule,
   getHubGroomingSessionDrawer
 );
 router.post(
   '/grooming/sessions/:id/extras',
   authenticateUser,
-  requirePermission('grooming.queue.manage'),
+  requirePermission('grooming.queue.manage'), requireGroomingWrite,
   postHubGroomingSessionExtra
 );
 router.patch(
   '/grooming/appointment-service-lines/:lineId',
   authenticateUser,
-  requirePermission('grooming.queue.manage'),
+  requirePermission('grooming.queue.manage'), requireGroomingWrite,
   patchHubGroomingAppointmentServiceLine
 );
 
@@ -1240,64 +1266,64 @@ router.patch(
 router.get(
   '/reception/board',
   authenticateUser,
-  requirePermission('reception.ops.read'),
+  requirePermission('reception.ops.read'), requireReceptionArea,
   getHubReceptionBoard,
 );
 router.get(
   '/reception/handoffs/:id',
   authenticateUser,
-  requirePermission('reception.ops.read'),
+  requirePermission('reception.ops.read'), requireReceptionArea,
   getHubReceptionHandoffDetail,
 );
 router.post(
   '/reception/handoffs/:id/resolve',
   authenticateUser,
-  requirePermission('reception.ops.manage'),
+  requirePermission('reception.ops.manage'), requireReceptionWrite,
   postHubReceptionResolve,
 );
 
 /* --- Casos clínicos --- */
-router.get('/clinical/timeline', authenticateUser, requirePermission('hub.clinic.read'), listHubClinicalTimeline);
-router.post('/clinical/timeline/notes', authenticateUser, requirePermission('hub.clinic.write'), createHubClinicalTimelineNote);
+router.get('/clinical/timeline', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, listHubClinicalTimeline);
+router.post('/clinical/timeline/notes', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, createHubClinicalTimelineNote);
 
 /* --- Exames clínicos --- */
-router.get('/clinical/exams', authenticateUser, requirePermission('hub.clinic.read'), listHubClinicalExams);
+router.get('/clinical/exams', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, listHubClinicalExams);
 router.get(
   '/clinical/exams/export.csv',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   exportHubClinicalExamsCsv,
 );
-router.get('/clinical/exams/:id', authenticateUser, requirePermission('hub.clinic.read'), getHubClinicalExam);
-router.post('/clinical/exams', authenticateUser, requirePermission('hub.clinic.write'), createHubClinicalExam);
-router.patch('/clinical/exams/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubClinicalExam);
-router.delete('/clinical/exams/:id', authenticateUser, requirePermission('hub.clinic.write'), deleteHubClinicalExam);
-router.post('/clinical/exams/orders/issue', authenticateUser, requirePermission('hub.clinic.write'), issueExamOrderDocumentHandler);
-router.get('/clinical/exams/encounter/:encounterId/order-documents', authenticateUser, requirePermission('hub.clinic.read'), listExamOrderDocumentsByEncounter);
-router.get('/clinical/exams/:id/order-documents', authenticateUser, requirePermission('hub.clinic.read'), listExamOrderDocuments);
-router.post('/clinical/exams/order-documents/:docId/revoke', authenticateUser, requirePermission('hub.clinic.write'), revokeExamOrderDocument);
-router.get('/clinical/exams/:id/pdf', authenticateUser, requirePermission('hub.clinic.read'), getHubExamOrderPdf);
+router.get('/clinical/exams/:id', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, getHubClinicalExam);
+router.post('/clinical/exams', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, createHubClinicalExam);
+router.patch('/clinical/exams/:id', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, patchHubClinicalExam);
+router.delete('/clinical/exams/:id', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, deleteHubClinicalExam);
+router.post('/clinical/exams/orders/issue', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, issueExamOrderDocumentHandler);
+router.get('/clinical/exams/encounter/:encounterId/order-documents', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, listExamOrderDocumentsByEncounter);
+router.get('/clinical/exams/:id/order-documents', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, listExamOrderDocuments);
+router.post('/clinical/exams/order-documents/:docId/revoke', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, revokeExamOrderDocument);
+router.get('/clinical/exams/:id/pdf', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, getHubExamOrderPdf);
 
-router.get('/clinical/specialist-referrals', authenticateUser, requirePermission('hub.clinic.read'), listHubSpecialistReferrals);
-router.post('/clinical/specialist-referrals', authenticateUser, requirePermission('hub.clinic.write'), createHubSpecialistReferral);
-router.patch('/clinical/specialist-referrals/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubSpecialistReferral);
-router.delete('/clinical/specialist-referrals/:id', authenticateUser, requirePermission('hub.clinic.write'), deleteHubSpecialistReferral);
-router.post('/clinical/specialist-referrals/orders/issue', authenticateUser, requirePermission('hub.clinic.write'), issueSpecialistReferralBundleHandler);
-router.get('/clinical/specialist-referrals/encounter/:encounterId/documents', authenticateUser, requirePermission('hub.clinic.read'), listSpecialistReferralDocumentsByEncounter);
-router.post('/clinical/specialist-referrals/:id/documents', authenticateUser, requirePermission('hub.clinic.write'), issueSpecialistReferralDocumentHandler);
-router.post('/clinical/specialist-referrals/:id/documents/:docId/revoke', authenticateUser, requirePermission('hub.clinic.write'), revokeSpecialistReferralDocument);
-router.get('/clinical/specialist-referrals/:id/pdf', authenticateUser, requirePermission('hub.clinic.read'), getHubSpecialistReferralPdf);
+router.get('/clinical/specialist-referrals', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, listHubSpecialistReferrals);
+router.post('/clinical/specialist-referrals', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, createHubSpecialistReferral);
+router.patch('/clinical/specialist-referrals/:id', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, patchHubSpecialistReferral);
+router.delete('/clinical/specialist-referrals/:id', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, deleteHubSpecialistReferral);
+router.post('/clinical/specialist-referrals/orders/issue', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, issueSpecialistReferralBundleHandler);
+router.get('/clinical/specialist-referrals/encounter/:encounterId/documents', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, listSpecialistReferralDocumentsByEncounter);
+router.post('/clinical/specialist-referrals/:id/documents', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, issueSpecialistReferralDocumentHandler);
+router.post('/clinical/specialist-referrals/:id/documents/:docId/revoke', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, revokeSpecialistReferralDocument);
+router.get('/clinical/specialist-referrals/:id/pdf', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, getHubSpecialistReferralPdf);
 
-router.get('/clinical/cases', authenticateUser, requirePermission('hub.clinic.read'), listHubClinicalCases);
-router.get('/clinical/cases/:id', authenticateUser, requirePermission('hub.clinic.read'), getHubClinicalCase);
-router.post('/clinical/cases', authenticateUser, requirePermission('hub.clinic.write'), createHubClinicalCase);
-router.patch('/clinical/cases/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubClinicalCase);
-router.delete('/clinical/cases/:id', authenticateUser, requirePermission('hub.clinic.write'), deleteHubClinicalCase);
+router.get('/clinical/cases', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, listHubClinicalCases);
+router.get('/clinical/cases/:id', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, getHubClinicalCase);
+router.post('/clinical/cases', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, createHubClinicalCase);
+router.patch('/clinical/cases/:id', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, patchHubClinicalCase);
+router.delete('/clinical/cases/:id', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, deleteHubClinicalCase);
 
 router.get(
   '/clinical/cockpit/patient-context',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   getHubVetCockpitPatientContext,
 );
 
@@ -1321,195 +1347,195 @@ router.post(
 router.get(
   '/clinical/encounter-events',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   listHubEncounterEvents
 );
 router.post(
   '/clinical/encounter-events',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   createHubEncounterEvent
 );
 router.get(
   '/clinical/alerts',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   getHubClinicalAlerts
 );
 
 router.get(
   '/clinical/prescriptions',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   listHubPrescriptions
 );
 router.get(
   '/clinical/prescription-lookups',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   listHubPrescriptionLookups
 );
 router.post(
   '/clinical/prescription-lookups',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   createHubPrescriptionLookup
 );
 router.get(
   '/clinical/prescriptions/:id/pdf',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   getHubPrescriptionPdf
 );
 router.get(
   '/clinical/prescriptions/:id/documents',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   listPrescriptionDocuments
 );
 router.post(
   '/clinical/prescriptions/:id/documents',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   issuePrescriptionDocument
 );
 router.post(
   '/clinical/prescriptions/:id/documents/:docId/revoke',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   revokePrescriptionDocument
 );
 router.post(
   '/clinical/prescriptions',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   createHubPrescription
 );
 router.patch(
   '/clinical/prescriptions/:id',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   patchHubPrescription
 );
 router.get(
   '/clinical/vaccinations',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   listHubVaccinations
 );
 router.post(
   '/clinical/vaccinations',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   createHubVaccination
 );
 router.get(
   '/clinical/medication-administrations',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   listHubMedicationAdministrations
 );
 router.post(
   '/clinical/medication-administrations',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   createHubMedicationAdministration
 );
 router.get(
   '/clinical/attachments',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   listHubClinicalAttachments
 );
 router.post(
   '/clinical/attachments',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   createHubClinicalAttachment
 );
 router.post(
   '/clinical/attachments/upload',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   uploadHubClinicalAttachment
 );
 
 router.get(
   '/clinical/hospital-beds',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   listHubHospitalBeds
 );
 router.post(
   '/clinical/hospital-beds',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   createHubHospitalBed
 );
 router.get(
   '/clinical/hospitalizations',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   listHubHospitalizations
 );
 router.post(
   '/clinical/hospitalizations',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   createHubHospitalization
 );
 router.get(
   '/clinical/hospitalizations/:id',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   getHubHospitalization
 );
 router.patch(
   '/clinical/hospitalizations/:id',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   patchHubHospitalization
 );
 router.post(
   '/clinical/hospitalizations/:id/daily-notes',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   addHubHospitalizationDailyNote
 );
 router.get(
   '/clinical/hospitalizations/:id/events',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   listHubHospitalizationEvents
 );
 router.post(
   '/clinical/hospitalizations/:id/events',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   createHubHospitalizationEvent
 );
 router.get(
   '/clinical/hospitalizations/:id/charges',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   listHubHospitalizationCharges
 );
 router.post(
   '/clinical/hospitalizations/:id/charges',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   createHubHospitalizationCharge
 );
 router.patch(
   '/clinical/hospitalizations/:id/charges/:chargeId',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   patchHubHospitalizationCharge
 );
 router.delete(
   '/clinical/hospitalizations/:id/charges/:chargeId',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   deleteHubHospitalizationCharge
 );
 router.post(
@@ -1519,32 +1545,89 @@ router.post(
   approveHubHospitalizationChargePrice
 );
 
-router.get('/clinical/surgeries', authenticateUser, requirePermission('hub.clinic.read'), listHubSurgeries);
-router.post('/clinical/surgeries', authenticateUser, requirePermission('hub.clinic.write'), createHubSurgery);
-router.get('/clinical/surgeries/:id', authenticateUser, requirePermission('hub.clinic.read'), getHubSurgery);
-router.patch('/clinical/surgeries/:id', authenticateUser, requirePermission('hub.clinic.write'), patchHubSurgery);
+router.get(
+  '/clinical/hospitalizations/:id/medication-orders',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  requireClinicModule,
+  listHubHospitalizationMedOrders,
+);
+router.post(
+  '/clinical/hospitalizations/:id/medication-orders',
+  authenticateUser,
+  requirePermission(['hub.clinic.med_orders.manage', 'hub.clinic.write']),
+  requireClinicWrite,
+  createHubHospitalizationMedOrder,
+);
+router.post(
+  '/clinical/hospitalizations/:id/medication-orders/:orderId/versions',
+  authenticateUser,
+  requirePermission(['hub.clinic.med_orders.manage', 'hub.clinic.write']),
+  requireClinicWrite,
+  createHubHospitalizationMedOrderVersion,
+);
+router.post(
+  '/clinical/hospitalizations/:id/medication-orders/:orderId/suspend',
+  authenticateUser,
+  requirePermission(['hub.clinic.med_orders.manage', 'hub.clinic.write']),
+  requireClinicWrite,
+  suspendHubHospitalizationMedOrder,
+);
+router.post(
+  '/clinical/hospitalizations/:id/medication-orders/:orderId/resume',
+  authenticateUser,
+  requirePermission(['hub.clinic.med_orders.manage', 'hub.clinic.write']),
+  requireClinicWrite,
+  resumeHubHospitalizationMedOrder,
+);
+router.get(
+  '/clinical/hospitalizations/:id/medication-doses',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  requireClinicModule,
+  listHubHospitalizationMedDoses,
+);
+router.post(
+  '/clinical/hospitalizations/:id/medication-doses/:doseId/complete',
+  authenticateUser,
+  requirePermission(['hub.clinic.med_admin.write', 'hub.clinic.write']),
+  requireClinicWrite,
+  completeHubHospitalizationMedDose,
+);
+router.get(
+  '/clinical/hospitalizations/:id/medication-plan/print-model',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  requireClinicModule,
+  getHubHospitalizationMedPrintModel,
+);
+
+router.get('/clinical/surgeries', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, listHubSurgeries);
+router.post('/clinical/surgeries', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, createHubSurgery);
+router.get('/clinical/surgeries/:id', authenticateUser, requirePermission('hub.clinic.read'), requireClinicModule, getHubSurgery);
+router.patch('/clinical/surgeries/:id', authenticateUser, requirePermission('hub.clinic.write'), requireClinicWrite, patchHubSurgery);
 router.get(
   '/clinical/surgeries/:id/services',
   authenticateUser,
-  requirePermission('hub.clinic.read'),
+  requirePermission('hub.clinic.read'), requireClinicModule,
   listHubSurgeryServices
 );
 router.post(
   '/clinical/surgeries/:id/services',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   createHubSurgeryService
 );
 router.patch(
   '/clinical/surgeries/:id/services/:serviceId',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   patchHubSurgeryService
 );
 router.delete(
   '/clinical/surgeries/:id/services/:serviceId',
   authenticateUser,
-  requirePermission('hub.clinic.write'),
+  requirePermission('hub.clinic.write'), requireClinicWrite,
   deleteHubSurgeryService
 );
 router.post(
@@ -2093,277 +2176,277 @@ router.delete(
 router.get(
   '/boarding/day-board',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingDayBoard
 );
 router.post(
   '/boarding/reservations/open-from-appointment',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   openHubBoardingReservationFromAppointment
 );
 router.post(
   '/boarding/reservations',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   createHubBoardingReservation
 );
 router.patch(
   '/boarding/reservations/:id',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   patchHubBoardingReservation
 );
 router.post(
   '/boarding/reservations/:id/start-checkout-prep',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   postHubBoardingStartCheckoutPrep
 );
 router.post(
   '/boarding/reservations/:id/release-for-handoff',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   postHubBoardingReleaseForHandoff
 );
 router.post(
   '/boarding/reservations/:id/revert-handoff-ready',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   postHubBoardingRevertHandoffReady
 );
 router.get(
   '/boarding/reservations/:id/drawer',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingReservationDrawer
 );
 router.post(
   '/boarding/reservations/:id/daily-logs',
   authenticateUser,
-  requirePermission('boarding.daily_report.write'),
+  requirePermission('boarding.daily_report.write'), requireBoardingWrite,
   postHubBoardingDailyLog
 );
 router.get(
   '/boarding/unit-settings',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingUnitSettings
 );
 router.patch(
   '/boarding/unit-settings',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   patchHubBoardingUnitSettings
 );
 router.get(
   '/boarding/occupancy',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingOccupancy
 );
 router.get(
   '/boarding/calendar',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingCalendar
 );
 router.get(
   '/boarding/ops-board',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingOpsBoard
 );
 router.get(
   '/boarding/reservations/:id/timeline',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingReservationTimeline
 );
 router.get(
   '/boarding/pets/:petId/care-profile',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubPetCareProfile
 );
 router.put(
   '/boarding/pets/:petId/care-profile',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   putHubPetCareProfile
 );
 router.get(
   '/boarding/reservations/:id/care-plan',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingCarePlan
 );
 router.put(
   '/boarding/reservations/:id/care-plan',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   putHubBoardingCarePlan
 );
 router.post(
   '/boarding/reservations/:id/care-plan/tutor-link',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   postHubBoardingCareTutorLink
 );
 router.get(
   '/boarding/tasks',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingTasks
 );
 router.post(
   '/boarding/tasks/batch-activity',
   authenticateUser,
-  requirePermission('boarding.daily_report.write'),
+  requirePermission('boarding.daily_report.write'), requireBoardingWrite,
   postHubBoardingBatchActivity
 );
 router.post(
   '/boarding/tasks/:id/execute',
   authenticateUser,
-  requirePermission('boarding.daily_report.write'),
+  requirePermission('boarding.daily_report.write'), requireBoardingWrite,
   postHubBoardingTaskExecute
 );
 router.post(
   '/boarding/reservations/:id/tasks',
   authenticateUser,
-  requirePermission('boarding.daily_report.write'),
+  requirePermission('boarding.daily_report.write'), requireBoardingWrite,
   postHubBoardingTask
 );
 router.get(
   '/boarding/reservations/:id/incidents',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingIncidents
 );
 router.post(
   '/boarding/reservations/:id/incidents',
   authenticateUser,
-  requirePermission('boarding.daily_report.write'),
+  requirePermission('boarding.daily_report.write'), requireBoardingWrite,
   postHubBoardingIncident
 );
 router.patch(
   '/boarding/incidents/:id',
   authenticateUser,
-  requirePermission('boarding.daily_report.write'),
+  requirePermission('boarding.daily_report.write'), requireBoardingWrite,
   patchHubBoardingIncident
 );
 router.get(
   '/boarding/reservations/:id/belongings',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingBelongings
 );
 router.post(
   '/boarding/reservations/:id/belongings',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   postHubBoardingBelonging
 );
 router.patch(
   '/boarding/belongings/:id',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   patchHubBoardingBelonging
 );
 router.delete(
   '/boarding/belongings/:id',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   deleteHubBoardingBelonging
 );
 router.get(
   '/boarding/reservations/:id/extras',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingExtras
 );
 router.post(
   '/boarding/reservations/:id/extras',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   postHubBoardingExtra
 );
 router.delete(
   '/boarding/extras/:id',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   deleteHubBoardingExtra
 );
 router.get(
   '/boarding/reservations/:id/media',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingMedia
 );
 router.post(
   '/boarding/reservations/:id/media',
   authenticateUser,
-  requirePermission('boarding.daily_report.write'),
+  requirePermission('boarding.daily_report.write'), requireBoardingWrite,
   uploadHubBoardingMedia
 );
 router.delete(
   '/boarding/media/:id',
   authenticateUser,
-  requirePermission('boarding.daily_report.write'),
+  requirePermission('boarding.daily_report.write'), requireBoardingWrite,
   deleteHubBoardingMedia
 );
 router.get(
   '/boarding/spaces',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingSpaces
 );
 router.post(
   '/boarding/spaces',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   postHubBoardingSpace
 );
 router.patch(
   '/boarding/spaces/:id',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   patchHubBoardingSpace
 );
 router.delete(
   '/boarding/spaces/:id',
   authenticateUser,
-  requirePermission('boarding.reservations.manage'),
+  requirePermission('boarding.reservations.manage'), requireBoardingWrite,
   deleteHubBoardingSpace
 );
 router.get(
   '/boarding/handoffs',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingHandoffs
 );
 router.post(
   '/boarding/handoffs',
   authenticateUser,
-  requirePermission('boarding.daily_report.write'),
+  requirePermission('boarding.daily_report.write'), requireBoardingWrite,
   postHubBoardingHandoff
 );
 router.post(
   '/boarding/handoffs/:id/acknowledge',
   authenticateUser,
-  requirePermission('boarding.daily_report.write'),
+  requirePermission('boarding.daily_report.write'), requireBoardingWrite,
   postHubBoardingHandoffAcknowledge
 );
 router.get(
   '/boarding/reservations/:id/tutor-report',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   getHubBoardingTutorReport
 );
 router.post(
   '/boarding/reservations/:id/tutor-reports',
   authenticateUser,
-  requirePermission('boarding.reservations.read'),
+  requirePermission('boarding.reservations.read'), requireBoardingModule,
   postHubBoardingTutorReport
 );
 

@@ -543,6 +543,15 @@ const HubTodayDashboardPage: React.FC = () => {
               Catálogo de relatórios
               <ArrowRight size={14} aria-hidden />
             </Link>
+            {hasPermission('hub.appointments.read') ||
+            hasPermission('pickup.routes.read') ||
+            hasPermission('hub.clinic.read') ||
+            hasPermission('boarding.reservations.read') ? (
+              <Link className="hub-dash__shortcut" to="/hub/impressoes">
+                Impressões do dia
+                <ArrowRight size={14} aria-hidden />
+              </Link>
+            ) : null}
           </div>
         </section>
       </div>

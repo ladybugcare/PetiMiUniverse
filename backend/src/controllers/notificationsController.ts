@@ -1,5 +1,14 @@
 import type { Request, Response } from 'express';
 import { supabaseAdmin } from '../config/supabase';
+import {
+  defaultHubNotificationPrefs,
+  getHubNotificationPrefsForUser,
+  HUB_NOTIFICATION_PREF_CATEGORIES,
+  isHubNotificationPrefCategory,
+  upsertHubNotificationPrefs,
+  userBelongsToClinic,
+  type HubNotificationPrefsMap,
+} from '../modules/hub/hubNotificationPrefs';
 
 // O banco é compartilhado por todos os produtos e `notifications` é acessada com service role:
 // cada rota só pode ler/alterar notificações do próprio usuário autenticado.
@@ -287,6 +296,75 @@ export const clearReadNotifications = async (req: Request, res: Response) => {
   } catch (error: any) {
     console.error('Error clearing read notifications:', error);
     res.status(500).json({ error: error.message || 'Failed to clear read notifications' });
+  }
+};
+
+// ========================================
+// GET /notifications/prefs — Preferências Hub (Meu perfil)
+// ========================================
+
+export const getNotificationPrefs = async (req: Request, res: Response) => {
+  const clinicId = String(req.query.clinic_id ?? '').trim();
+  const userId = req.user?.id;
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Não autenticado' });
+  }
+  if (!clinicId) {
+    return res.status(400).json({ error: 'clinic_id is required' });
+  }
+
+  try {
+    const allowed = await userBelongsToClinic(userId, clinicId);
+    if (!allowed) {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
+
+    const categories = await getHubNotificationPrefsForUser(userId, clinicId);
+    res.json({ clinic_id: clinicId, categories });
+  } catch (error: any) {
+    console.error('Error getting notification prefs:', error);
+    res.status(500).json({ error: error.message || 'Failed to get notification prefs' });
+  }
+};
+
+// ========================================
+// PUT /notifications/prefs — Salvar preferências Hub
+// ========================================
+
+export const updateNotificationPrefs = async (req: Request, res: Response) => {
+  const userId = req.user?.id;
+  const clinicId = String(req.body?.clinic_id ?? '').trim();
+  const rawCategories = req.body?.categories;
+
+  if (!userId) {
+    return res.status(401).json({ error: 'Não autenticado' });
+  }
+  if (!clinicId) {
+    return res.status(400).json({ error: 'clinic_id is required' });
+  }
+  if (!rawCategories || typeof rawCategories !== 'object') {
+    return res.status(400).json({ error: 'categories is required' });
+  }
+
+  try {
+    const allowed = await userBelongsToClinic(userId, clinicId);
+    if (!allowed) {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
+
+    const next: HubNotificationPrefsMap = defaultHubNotificationPrefs();
+    for (const key of HUB_NOTIFICATION_PREF_CATEGORIES) {
+      if (!Object.prototype.hasOwnProperty.call(rawCategories, key)) continue;
+      if (!isHubNotificationPrefCategory(key)) continue;
+      next[key] = Boolean(rawCategories[key]);
+    }
+
+    const categories = await upsertHubNotificationPrefs(userId, clinicId, next);
+    res.json({ clinic_id: clinicId, categories });
+  } catch (error: any) {
+    console.error('Error updating notification prefs:', error);
+    res.status(500).json({ error: error.message || 'Failed to update notification prefs' });
   }
 };
 

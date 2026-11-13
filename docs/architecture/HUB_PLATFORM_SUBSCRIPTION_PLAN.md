@@ -54,19 +54,23 @@ Migration `082_create_hub_platform_subscriptions.sql`:
 
 | Tabela | Propósito |
 |--------|-----------|
-| `hub_platform_plans` | Catálogo base (`beta`, `solo`, `growth`, `network`) |
+| `hub_platform_plans` | Catálogo base (`beta`, `vet_solo`, `solo`, `growth`, `network`) + `plan_config` |
 | `hub_platform_modules` | Adicionais (`hub_core`, `clinic`, `grooming`, `boarding`) |
 | `clinic_hub_subscriptions` | Assinatura ativa por clínica |
 
 Campos beta em `clinic_hub_subscriptions`: `is_beta`, `beta_free_until`, `beta_discount_percent`, `override_monthly_cents`, `beta_notes`, `enabled_modules`.
 
+Migration adicional: `140_alter_hub_platform_plans_vet_solo_config.sql` (Vet Solo R$ 69, Rede 10/50, `plan_config`).
+
 ### Backend
 
-- `hubSubscriptionService.ts` — criar/ler assinatura, `organizationHasModule`
+- `hubSubscriptionService.ts` — criar/ler assinatura, `organizationHasModule`, entitlements/session enriquecida
+- `hubEntitlements.ts` / `requireHubEntitlement` — módulos, áreas do plano, limites, soft-lock
 - Hook em `postHubOnboardingClinic` → `createBetaSubscription(clinicId)`
-- `getHubSessionContext` retorna `subscription` no payload
-- `HUB_SUBSCRIPTION_MODE=beta_only` (default) | `catalog` (pós-MVP)
+- `getHubSessionContext` retorna `subscription` no payload (módulos, áreas, usage, `access_mode`)
+- `HUB_SUBSCRIPTION_MODE=beta_only` (default) | `catalog` (lançamento comercial)
 - `GET /api/hub/subscription/plans`
+- Runbook Fundador: [HUB_FOUNDER_BILLING_RUNBOOK.md](./HUB_FOUNDER_BILLING_RUNBOOK.md)
 
 ### Frontend Hub
 
@@ -76,54 +80,48 @@ Wizard de onboarding: Organização → Unidade → **Plano Beta** (card único,
 
 `PATCH /api/admin/clinics/:clinicId/subscription` — editar beta, data limite, módulos, notas.
 
-### Enforcement pré-MVP
-
-Nenhum bloqueio de funcionalidade. Apenas garantir registro de assinatura + backfill de clínicas existentes.
-
----
-
-## Fase 2 — Pós-MVP
-
-Ativar com `HUB_SUBSCRIPTION_MODE=catalog`.
-
-### Catálogo no onboarding
-
-- **Plano base:** Solo / Crescimento / Rede
-- **Módulos:** Clínica, Banho & Tosa, Hotel & Creche (checkboxes)
-- Pacotes sugeridos como atalhos UI (Petshop, Clínica, Completo)
-
 ### Enforcement
 
-| Ação | Checagem |
-|------|----------|
-| Criar unidade | `count(units) < max_units` |
-| Convidar staff | `count(clinic_users) < max_users` |
-| Rotas/menus de módulo | `organizationHasModule(clinic, module)` |
+Implementado: limites de unidade/usuário (exceto `is_beta`), módulos SaaS e áreas desabilitadas do plano (`vet_solo`), soft-lock por status. Backend é autoridade; frontend espelha (sidebar + `HubEntitlementGuard`).
 
-Regra: `hasPermission(user, perm) AND organizationHasModule(org, module)`.
+Regra: `hasPermission(user, perm) AND organizationHasModule/planArea(org) AND capacity OK`.
+
+### Matriz comercial (lançamento)
+
+| Slug | Nome | Preço | Units | Users | Módulos |
+|------|------|-------|-------|-------|---------|
+| `vet_solo` | Vet Solo | R$ 69 | 1 | 2 | hub_core + clinic |
+| `solo` | Essencial | R$ 149 | 1 | 5 | todos |
+| `growth` | Expansão | R$ 297 | 3 | 20 | todos |
+| `network` | Rede | R$ 497 | 10 | 50 | todos |
+| `beta` | Fundador | R$ 0 | sem teto | sem teto | todos |
+
+Pickup / recepção: não são SKUs; desligados no Vet Solo via `plan_config.disabled_operational_areas`. Estoque permanece no core.
 
 ### Migração Beta → pago
 
-Grace period, notificação, cobrança manual inicial (sem gateway no primeiro release pós-MVP).
+Ver [HUB_FOUNDER_BILLING_RUNBOOK.md](./HUB_FOUNDER_BILLING_RUNBOOK.md). Sem cobrança automática. Checkout Mercado Pago + `override_monthly_cents`.
 
-### UI clínica (read-only)
+### UI
 
-CADMIN vê plano e módulos ativos; upgrade via contato.
+- Pública: `/planos` — cards + tabela comparativa
+- Autenticada: `/hub/assinatura`
+- Admin: Gerenciar Fundador (`beta_free_until` + override)
 
-### Cobrança (fase posterior)
-
-Asaas/Iugu/Stripe + webhooks para `status`.
+Ativar catálogo comercial com `HUB_SUBSCRIPTION_MODE=catalog` após validar enforce.
 
 ---
 
 ## Mapeamento módulo → produto
 
-| Módulo | Entitlement | Sidebar |
-|--------|-------------|---------|
-| `hub_core` | `module.hub_core` | Agenda, Clientes, Caixa |
+| Módulo / área | Entitlement | Sidebar |
+|---------------|-------------|---------|
+| `hub_core` | `module.hub_core` | Agenda, Clientes, Caixa, Estoque |
 | `clinic` | `module.clinic` | Clínica |
 | `grooming` | `module.grooming` | Banho & Tosa |
 | `boarding` | `module.boarding` | Hotel & Creche |
+| área `leva_traz` | plan_config | Leva e Traz |
+| área `recepcao` | plan_config | Recepção |
 
 ---
 

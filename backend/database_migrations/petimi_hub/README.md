@@ -294,3 +294,9 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 138. **`138_alter_hub_receivables_competence_date.sql`** — `competence_date` nullable (sem backfill de `created_at`). Executar depois do item 35.
 
 139. **`139_create_hub_finance_ledger_rpcs.sql`** — RPCs atômicos `hub_recalc_receivable_status` / `hub_reverse_payment`. Executar depois dos itens 134–138.
+
+140. **`140_alter_hub_platform_plans_vet_solo_config.sql`** — Plano `vet_solo` (R$ 69, 1 área / 2 users), `plan_config` jsonb, Rede limitada a 10 unidades / 50 users. Executar depois do item 119. Não altera assinaturas beta existentes.
+
+141. **`141_create_hub_hospitalization_med_plan.sql`** — Plano de medicação da internação: `hub_hospitalization_med_orders`, `hub_hospitalization_med_order_versions`, `hub_hospitalization_med_doses` + RPC `hub_complete_hospitalization_med_dose`. Executar depois dos itens 25k/25r/107. Domínio ≠ receita (`hub_prescriptions`).
+
+142. **`142_create_hub_notification_prefs.sql`** — Preferências in-app por usuário/clínica (`hub_notification_prefs`: categorias `acoes` | `operacao` | `alertas`). Opt-out (sem linha = ligado). Usado em Meu perfil e filtrado por `hubNotifyStaff`. Executar depois do item 53 (tipos Hub em `notifications`).

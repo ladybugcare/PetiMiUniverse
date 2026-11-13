@@ -19,6 +19,18 @@ export type HubSubscriptionSession = {
   base_plan_slug: string | null;
   enabled_modules: string[];
   beta_free_until: string | null;
+  disabled_operational_areas?: string[];
+  max_units?: number | null;
+  max_users?: number | null;
+  usage?: { units: number; users: number };
+  limits_exceeded?: { units: boolean; users: boolean };
+  access_mode?: 'full' | 'soft_lock' | 'read_history';
+  plan_config?: {
+    default_modules?: string[];
+    locked_modules?: boolean;
+    disabled_operational_areas?: string[];
+    unit_label?: string;
+  } | null;
 };
 
 export type HubSessionContext = {

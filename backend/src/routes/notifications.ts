@@ -3,6 +3,8 @@ import { authenticateUser } from '../middleware/authMiddleware';
 import {
   getNotifications,
   getUnreadCount,
+  getNotificationPrefs,
+  updateNotificationPrefs,
   markAsRead,
   markAllAsRead,
   deleteNotification,
@@ -20,6 +22,10 @@ router.get('/', getNotifications);
 // GET /api/notifications/unread-count - Contar notificações não lidas
 // Query params: user_id (required)
 router.get('/unread-count', getUnreadCount);
+
+// Preferências Hub (Meu perfil) — antes de /:id para não colidir
+router.get('/prefs', getNotificationPrefs);
+router.put('/prefs', updateNotificationPrefs);
 
 // PUT /api/notifications/:id/read - Marcar notificação como lida
 router.put('/:id/read', markAsRead);

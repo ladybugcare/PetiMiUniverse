@@ -33,6 +33,8 @@ export { HubModal } from './components/HubModal';
 export type { HubModalProps, HubModalSize } from './components/HubModal';
 export { HubSidePanel } from './components/HubSidePanel';
 export type { HubSidePanelProps } from './components/HubSidePanel';
+export { HubBottomSheet } from './components/HubBottomSheet';
+export type { HubBottomSheetProps } from './components/HubBottomSheet';
 export { setHubUiConfig, getVetWebUrl } from './config';
 export { hubAgendaApi } from './api/hubAgendaApi';
 export { hubAppointmentsApi } from './api/hubAppointmentsApi';
@@ -112,6 +114,7 @@ export { default as HubPickupRoutes } from './pages/pickup/HubPickupRoutes';
 export { default as HubPickupPage } from './pages/pickup/HubPickupPage';
 export { default as PickupMyRoutePage } from './pages/pickup/PickupMyRoutePage';
 export { default as PickupRouteMonitorPage } from './pages/pickup/PickupRouteMonitorPage';
+export { default as HubImpressoesRoutes } from './pages/impressoes/HubImpressoesRoutes';
 export { hubPickupApi } from './api/hubPickupApi';
 export type {
   PickupDayBoardItem,

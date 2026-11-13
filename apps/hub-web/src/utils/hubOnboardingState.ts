@@ -66,27 +66,4 @@ export function markHubOnboardingComplete(clinicUser: Record<string, unknown>, u
   } catch {
     /* ignore */
   }
-  try {
-    sessionStorage.setItem('hub_show_unit_incomplete_hint', '1');
-  } catch {
-    /* ignore */
-  }
-}
-
-export function shouldShowUnitIncompleteHint(): boolean {
-  try {
-    return sessionStorage.getItem('hub_show_unit_incomplete_hint') === '1';
-  } catch {
-    return false;
-  }
-}
-
-/** Remove o lembrete pós-onboarding (ex.: após abrir o perfil da clínica com sucesso). */
-export function clearHubUnitIncompleteHint(): void {
-  try {
-    sessionStorage.removeItem('hub_show_unit_incomplete_hint');
-    window.dispatchEvent(new Event('petimi:hub-unit-hint-updated'));
-  } catch {
-    /* ignore */
-  }
 }

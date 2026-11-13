@@ -20,7 +20,8 @@ const HubCashOpenBanner: React.FC = () => {
     canOperateCaixa &&
     isOpen &&
     (isPreviousDay || pendingBillingCount > 0) &&
-    !pathname.startsWith('/hub/caixa');
+    !pathname.startsWith('/hub/caixa') &&
+    !pathname.startsWith('/hub/impressoes');
 
   if (!showBanner) return null;
 
@@ -36,6 +37,7 @@ const HubCashOpenBanner: React.FC = () => {
   return (
     <div
       role="status"
+      className="hub-cash-open-banner hub-print-no-print"
       style={{
         display: 'flex',
         alignItems: 'center',

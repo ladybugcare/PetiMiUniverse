@@ -63,6 +63,7 @@ export const OPERATIONAL_AREA_PERMISSIONS: Record<HubOperationalArea, readonly s
   clinica: [
     'hub.clinic.read',
     'hub.clinic.write',
+    'hub.clinic.med_admin.write',
     'hub.appointments.read',
     'hub.inventory.read',
     'hub.staff.read',

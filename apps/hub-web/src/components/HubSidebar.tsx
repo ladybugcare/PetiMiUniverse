@@ -30,6 +30,7 @@ import HubSidebarFooter from './HubSidebarFooter';
 import { useHubCashSession } from '../contexts/HubCashSessionContext';
 import { getHubSupportWhatsappHref } from '../constants/hubSupportWhatsapp';
 import { useHubSupportUnread } from '../hooks/useHubSupportUnread';
+import { useHubEntitlements } from '../hooks/useHubEntitlements';
 
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
 const logoSrc = `${baseUrl}petmi-hub.svg`;
@@ -241,6 +242,7 @@ const HubSidebar: React.FC<HubSidebarProps> = ({
 }) => {
   const { pathname } = useLocation();
   const { hasPermission, loading: permLoading } = usePermissions();
+  const { navItemAllowed } = useHubEntitlements();
   const { isOpen: caixaOpen, pendingBillingCount } = useHubCashSession();
   const supportUnread = useHubSupportUnread();
 
@@ -251,10 +253,14 @@ const HubSidebar: React.FC<HubSidebarProps> = ({
     return allSections
       .map((section) => ({
         ...section,
-        items: section.items.filter((item) => itemAllowed(hasPermission, item.permission)),
+        items: section.items.filter(
+          (item) =>
+            itemAllowed(hasPermission, item.permission) &&
+            (!isInternalNavItem(item) || navItemAllowed(item.to)),
+        ),
       }))
       .filter((section) => section.items.length > 0);
-  }, [allSections, hasPermission, permLoading]);
+  }, [allSections, hasPermission, permLoading, navItemAllowed]);
 
   const sectionIds = useMemo(() => visibleSections.map((s) => s.id), [visibleSections]);
 

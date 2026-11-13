@@ -57,8 +57,15 @@ export class UnauthorizedError extends AppError {
  * Usado quando o usuário não tem permissão para a ação
  */
 export class ForbiddenError extends AppError {
-  constructor(message: string = 'Acesso negado', details?: any) {
-    super(message, 403, true, 'FORBIDDEN', details);
+  constructor(message: string = 'Acesso negado', details?: any, code: string = 'FORBIDDEN') {
+    super(message, 403, true, code, details);
+  }
+}
+
+/** Limites de plano, módulos desabilitados ou soft-lock de assinatura (403). */
+export class PlanEntitlementError extends AppError {
+  constructor(message: string, code: string, details?: any) {
+    super(message, 403, true, code, details);
   }
 }
 

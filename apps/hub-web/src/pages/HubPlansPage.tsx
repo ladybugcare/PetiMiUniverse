@@ -1,45 +1,58 @@
 import React, { useEffect } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import { ArrowRight, Network, User, Users } from 'lucide-react';
+import { ArrowRight, Network, Stethoscope, User, Users } from 'lucide-react';
 import { useAuth } from '@petimi/web-core';
 import { signupLinkState } from '../utils/signupReturn';
 import HubLandingFooter from '../components/landing/HubLandingFooter';
 import HubLandingHeader from '../components/landing/HubLandingHeader';
 import { useLandingMeta } from '../components/landing/useLandingMeta';
+import HubPlanCompareTable from '../components/HubPlanCompareTable';
 
 const PAGE_TITLE = 'Planos — PetMi Hub';
 const PAGE_DESCRIPTION =
-  'Os planos do PetMi Hub mudam conforme o porte do negócio. Clínica, banho e tosa, hotel, creche e leva e traz entram em todos.';
+  'Compare Vet Solo, Essencial, Expansão e Rede. Capacidade e operação pet conforme o porte do negócio.';
 
-/**
- * Valores públicos previstos do catálogo de lançamento (migration 119),
- * os mesmos exibidos na tela de plano como referência — não são a condição de fundador.
- */
 const PLANS = [
   {
+    slug: 'vet_solo' as const,
+    name: 'Vet Solo',
+    icon: Stethoscope,
+    audience: 'Veterinário autônomo ou volante — clínica sem operação pet.',
+    units: '1 área de atendimento',
+    people: 'Até 2 usuários',
+    priceCents: 6900,
+    highlight: 'Clínica',
+  },
+  {
+    slug: 'solo' as const,
     name: 'Essencial',
     icon: User,
-    audience: 'Para quem está começando ou tem uma operação compacta.',
+    audience: 'Consultório ou pet shop compacto em uma unidade.',
     units: '1 unidade',
     people: 'Até 5 pessoas na equipe',
     priceCents: 14900,
+    highlight: 'Operação completa',
   },
   {
+    slug: 'growth' as const,
     name: 'Expansão',
     icon: Users,
-    audience: 'Para empresas com equipes maiores ou mais unidades.',
+    audience: 'Empresas com filial ou equipe maior.',
     units: 'Até 3 unidades',
     people: 'Até 20 pessoas na equipe',
     priceCents: 29700,
+    highlight: 'Multiunidade',
     emphasis: true,
   },
   {
+    slug: 'network' as const,
     name: 'Rede',
     icon: Network,
-    audience: 'Para operações com múltiplas unidades e equipes amplas.',
-    units: 'Várias unidades',
-    people: 'Sem limite de equipe',
+    audience: 'Operações com várias unidades. Acima disso, sob consulta.',
+    units: 'Até 10 unidades',
+    people: 'Até 50 pessoas na equipe',
     priceCents: 49700,
+    highlight: 'Rede',
   },
 ] as const;
 
@@ -108,25 +121,35 @@ const HubPlansPage: React.FC = () => {
       <HubLandingHeader />
       <main className="hub-landing-main">
         <section className="hub-landing-band hub-landing-band--hero" aria-labelledby="hub-plans-title">
-          <div className="hub-landing-wrap hub-plans">
+          <div className="hub-landing-wrap hub-plans hub-plans--wide">
             <p className="hub-landing-badge">
               <span className="hub-landing-badge__dot" aria-hidden />
               Planos do PetMi Hub
             </p>
             <h1 id="hub-plans-title" className="hub-landing-hero__title">
-              O mesmo sistema. O porte que cabe no seu negócio.
+              O sistema certo para o porte da sua operação
             </h1>
             <p className="hub-landing-hero__subtitle">
-              Clínica, banho e tosa, hotel e creche e leva e traz entram em todos os planos. O que muda é a
-              capacidade: unidades e pessoas na equipe.
+              De Vet Solo ao Rede — mesma base de agenda, clientes e clínica. O que muda é a capacidade e a
+              operação pet (banho e tosa, hotel, leva e traz).
             </p>
 
-            <ul className="hub-plans__grid">
+            <div className="hub-landing-hero__actions hub-plans__hero-actions">
+              <Link to="/signup" state={signupLinkState(location)} className="hub-landing-btn hub-landing-btn--primary">
+                Criar minha conta
+                <ArrowRight size={18} strokeWidth={2.25} aria-hidden />
+              </Link>
+              <a href="#fundadores" className="hub-landing-btn hub-landing-btn--outline">
+                Programa Fundador
+              </a>
+            </div>
+
+            <ul className="hub-plans__grid hub-plans__grid--4">
               {PLANS.map((plan) => {
                 const Icon = plan.icon;
                 return (
                   <li
-                    key={plan.name}
+                    key={plan.slug}
                     className={
                       'emphasis' in plan && plan.emphasis
                         ? 'hub-plans__card hub-plans__card--emphasis'
@@ -136,6 +159,7 @@ const HubPlansPage: React.FC = () => {
                     <span className="hub-plans__icon" aria-hidden>
                       <Icon size={18} strokeWidth={2} />
                     </span>
+                    <p className="hub-plans__kicker">{plan.highlight}</p>
                     <h2>{plan.name}</h2>
                     <p className="hub-plans__audience">{plan.audience}</p>
                     <ul className="hub-plans__limits">
@@ -147,17 +171,26 @@ const HubPlansPage: React.FC = () => {
                       {formatLaunchPrice(plan.priceCents)}
                       <span>/mês</span>
                     </p>
+                    <a href="#comparativo" className="hub-plans__compare-link">
+                      Ver comparativo
+                    </a>
                   </li>
                 );
               })}
             </ul>
 
-            <div id="condicoes" className="hub-plans__conditions">
-              <h2>Condições especiais para quem chega primeiro.</h2>
+            <HubPlanCompareTable title="Comparativo completo" />
+
+            <div id="fundadores" className="hub-plans__conditions">
+              <h2>Programa Fundador</h2>
+              <ul className="hub-plans__founder-list">
+                <li>Acesso gratuito durante o período beta, sem cartão no cadastro.</li>
+                <li>Condições comerciais diferenciadas comunicadas antes de qualquer cobrança.</li>
+                <li>Preço especial configurável por clínica no lançamento — a cobrança só começa com autorização.</li>
+              </ul>
               <p>
-                Os primeiros participantes poderão conhecer uma proposta comercial diferenciada antes de
-                contratar. Os valores acima são a referência pública prevista para o lançamento, não a condição
-                de fundador.
+                Os valores dos cards são a referência pública prevista. A condição de fundador é tratada à parte e
+                nunca inicia cobrança automática sem comunicação prévia.
               </p>
             </div>
 
@@ -178,6 +211,7 @@ const HubPlansPage: React.FC = () => {
               <li>O cadastro não pede cartão e não gera cobrança.</li>
               <li>A participação no programa é confirmada ao configurar a organização.</li>
               <li>O plano pago só é escolhido depois, se fizer sentido para a operação.</li>
+              <li>Operações acima de 10 unidades ou 50 usuários: sob consulta.</li>
             </ul>
 
             <div className="hub-landing-hero__actions">
@@ -185,9 +219,9 @@ const HubPlansPage: React.FC = () => {
                 Criar minha conta
                 <ArrowRight size={18} strokeWidth={2.25} aria-hidden />
               </Link>
-              <Link to={{ pathname: '/', hash: 'fundadores' }} className="hub-landing-btn hub-landing-btn--outline">
+              <a href="#fundadores" className="hub-landing-btn hub-landing-btn--outline">
                 Ver o Programa de Fundadores
-              </Link>
+              </a>
             </div>
           </div>
         </section>

@@ -1,5 +1,6 @@
-import React from 'react';
-import { Lock, Mail, Pencil, Phone } from 'lucide-react';
+import React, { useCallback, useEffect, useState } from 'react';
+import { Bell, History, Lock, Mail, Pencil, Phone } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth, usePermissions } from '@petimi/web-core';
 import { useAlert, formatBrPhoneDisplay } from '@petimi/hub-ui';
 import HubProfilePhotoPicker from '../components/HubProfilePhotoPicker';
@@ -12,6 +13,13 @@ import {
   formatProfileDate,
   formatProfileDateTime,
 } from '../components/profile';
+import { useHubUnit } from '../contexts/HubUnitContext';
+import {
+  hubGetNotificationPrefs,
+  hubUpdateNotificationPrefs,
+  type HubNotificationPrefCategory,
+  type HubNotificationPrefsMap,
+} from '../services/hubNotificationsApi';
 import {
   getHubUserDisplayName,
   getHubUserPhotoUrl,
@@ -37,10 +45,44 @@ function localeLabel(code?: string): string {
   return code;
 }
 
+const DEFAULT_PREFS: HubNotificationPrefsMap = {
+  acoes: true,
+  operacao: true,
+  alertas: true,
+};
+
+const PREF_ROWS: Array<{
+  key: HubNotificationPrefCategory;
+  title: string;
+  subtitle: string;
+}> = [
+  {
+    key: 'acoes',
+    title: 'Ações necessárias',
+    subtitle: 'Autorização de serviço no salão, cobranças e cancelamentos pendentes.',
+  },
+  {
+    key: 'operacao',
+    title: 'Operação do dia',
+    subtitle: 'Pet pronto, a caminho ou chegou, check-in e check-out de hotel/creche.',
+  },
+  {
+    key: 'alertas',
+    title: 'Alertas',
+    subtitle: 'Estoque baixo, validade próxima e avisos semelhantes.',
+  },
+];
+
 const HubMeuPerfilPage: React.FC = () => {
+  const navigate = useNavigate();
   const { user, role: authRole } = useAuth();
   const { role: clinicRole } = usePermissions();
-  const { showInfo } = useAlert();
+  const { clinicId } = useHubUnit();
+  const { showInfo, showError, showSuccess } = useAlert();
+
+  const [prefs, setPrefs] = useState<HubNotificationPrefsMap>(DEFAULT_PREFS);
+  const [prefsLoading, setPrefsLoading] = useState(false);
+  const [prefsSaving, setPrefsSaving] = useState<HubNotificationPrefCategory | null>(null);
 
   const u = user as HubUserLike;
   const displayName = getHubUserDisplayName(user);
@@ -56,6 +98,44 @@ const HubMeuPerfilPage: React.FC = () => {
   const memberSince = formatProfileDate(u?.created_at);
 
   const emBreve = () => showInfo('Esta ação estará disponível em breve.', 'PetMi Hub');
+
+  const loadPrefs = useCallback(async () => {
+    if (!clinicId) {
+      setPrefs(DEFAULT_PREFS);
+      return;
+    }
+    setPrefsLoading(true);
+    try {
+      const next = await hubGetNotificationPrefs(clinicId);
+      setPrefs(next);
+    } catch {
+      setPrefs(DEFAULT_PREFS);
+      showError('Não foi possível carregar as preferências de notificação.', 'PetMi Hub');
+    } finally {
+      setPrefsLoading(false);
+    }
+  }, [clinicId, showError]);
+
+  useEffect(() => {
+    void loadPrefs();
+  }, [loadPrefs]);
+
+  const togglePref = async (key: HubNotificationPrefCategory) => {
+    if (!clinicId || prefsSaving) return;
+    const next = { ...prefs, [key]: !prefs[key] };
+    setPrefs(next);
+    setPrefsSaving(key);
+    try {
+      const saved = await hubUpdateNotificationPrefs(clinicId, next);
+      setPrefs(saved);
+      showSuccess('Preferências atualizadas.', 'PetMi Hub');
+    } catch {
+      setPrefs(prefs);
+      showError('Não foi possível salvar a preferência.', 'PetMi Hub');
+    } finally {
+      setPrefsSaving(null);
+    }
+  };
 
   return (
     <HubAccountProfileShell>
@@ -96,6 +176,58 @@ const HubMeuPerfilPage: React.FC = () => {
             { label: 'Idioma', value: idioma },
           ]}
         />
+      </HubAccountProfileCard>
+
+      <HubAccountProfileCard
+        title="Notificações"
+        subtitle="Avisos in-app do dia a dia. Quem recebe cada tipo também depende da área operacional na Equipe."
+        actions={
+          <button
+            type="button"
+            className="hub-ap__btn hub-ap__btn--outline"
+            onClick={() => navigate('/hub/notificacoes')}
+          >
+            <History size={16} aria-hidden />
+            Ver histórico
+          </button>
+        }
+      >
+        {!clinicId ? (
+          <p className="hub-ap__prefs-hint">
+            Vincule-se a uma clínica para configurar as preferências de notificação.
+          </p>
+        ) : (
+          <div className="hub-ap__prefs" aria-busy={prefsLoading}>
+            {PREF_ROWS.map((row) => {
+              const on = prefs[row.key];
+              const busy = prefsSaving === row.key || prefsLoading;
+              return (
+                <HubAccountProfileActionRow
+                  key={row.key}
+                  title={row.title}
+                  subtitle={row.subtitle}
+                  action={
+                    <button
+                      type="button"
+                      className={`hub-ap__switch${on ? ' hub-ap__switch--on' : ''}`}
+                      role="switch"
+                      aria-checked={on}
+                      aria-label={row.title}
+                      disabled={busy}
+                      onClick={() => void togglePref(row.key)}
+                    >
+                      <span className="hub-ap__switch-thumb" aria-hidden />
+                    </button>
+                  }
+                />
+              );
+            })}
+            <p className="hub-ap__prefs-hint">
+              <Bell size={14} aria-hidden />
+              Os avisos aparecem no sino do topo. Sem área na Equipe, só gestores recebem por padrão.
+            </p>
+          </div>
+        )}
       </HubAccountProfileCard>
 
       <HubAccountProfileCard title="Acesso e segurança" subtitle="Credenciais da sua conta PetMi Hub.">

@@ -28,6 +28,7 @@ import {
   Boxes,
   Users,
   Activity,
+  Printer,
 } from 'lucide-react';
 import {
   HUB_REPORT_CATEGORIES,
@@ -64,6 +65,7 @@ const REPORT_ICONS: Record<HubReportId, React.ElementType> = {
 
 const LINK_ICONS: Record<string, React.ElementType> = {
   'stock-alerts': AlertTriangle,
+  'day-prints': Printer,
 };
 
 const CATEGORY_ICONS: Record<HubReportCategoryId, React.ElementType> = {

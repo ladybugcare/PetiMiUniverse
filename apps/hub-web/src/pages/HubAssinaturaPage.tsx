@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useAlert } from '@petimi/hub-ui';
 import '@petimi/hub-ui/pages/clientes/clientes.css';
@@ -9,17 +9,13 @@ import {
   type HubPaidPlan,
   type HubSubscriptionMe,
 } from '../services/hubSubscriptionApi';
-
-function unitLine(maxUnits: number | null): string {
-  if (maxUnits == null) return 'Unidades sem teto';
-  if (maxUnits === 1) return '1 unidade';
-  return `Até ${maxUnits} unidades`;
-}
-
-function peopleLine(maxUsers: number | null): string {
-  if (maxUsers == null) return 'Equipe sem teto';
-  return maxUsers === 1 ? '1 pessoa' : `Até ${maxUsers} pessoas`;
-}
+import {
+  HUB_PLAN_HIGHLIGHT,
+  hubPlanPeopleLine,
+  hubPlanUnitLine,
+  mergeLaunchPaidPlans,
+} from '../constants/hubLaunchPlans';
+import HubPlanCompareTable from '../components/HubPlanCompareTable';
 
 const HubAssinaturaPage: React.FC = () => {
   const { showError } = useAlert();
@@ -29,13 +25,19 @@ const HubAssinaturaPage: React.FC = () => {
   const [data, setData] = useState<HubSubscriptionMe | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
 
+  const paidPlans = useMemo(
+    () => mergeLaunchPaidPlans(data?.paid_plans ?? []),
+    [data?.paid_plans],
+  );
+
   const load = async () => {
     const me = await hubSubscriptionApi.me();
     setData(me);
+    const catalog = mergeLaunchPaidPlans(me.paid_plans ?? []);
     setSelected((current) => {
-      if (current && me.paid_plans.some((p) => p.slug === current)) return current;
+      if (current && catalog.some((p) => p.slug === current)) return current;
       const currentSlug = me.subscription?.base_plan_slug;
-      if (currentSlug && me.paid_plans.some((p) => p.slug === currentSlug)) return currentSlug;
+      if (currentSlug && catalog.some((p) => p.slug === currentSlug)) return currentSlug;
       return null;
     });
     return me;
@@ -82,7 +84,7 @@ const HubAssinaturaPage: React.FC = () => {
   const onBeta = Boolean(sub && (sub.is_beta || sub.status === 'beta' || sub.base_plan_slug === 'beta'));
   const checkoutOpen = Boolean(data?.mercado_pago_configured);
   const preview = Boolean(data && (onBeta || !checkoutOpen));
-  const selectedPlan = data?.paid_plans.find((plan) => plan.slug === selected) ?? null;
+  const selectedPlan = paidPlans.find((plan) => plan.slug === selected) ?? null;
   const selectedIsCurrent = Boolean(selected && selected === sub?.base_plan_slug && sub?.status === 'active');
   const notice = preview ? null : subscriptionNotice(sub);
 
@@ -90,10 +92,10 @@ const HubAssinaturaPage: React.FC = () => {
     <div className="hub-clientes hub-assinatura">
       <header className="hub-assinatura__head">
         <h1 className="hub-clientes__title">Plano do PetMi Hub</h1>
-        {!loading && !preview ? (
+        {!loading ? (
           <p className="hub-clientes__subtitle">
-            Clínica, banho e tosa, hotel e creche e leva e traz entram em todos. O que muda é o porte:
-            unidades e pessoas na equipe.
+            Vet Solo cobre clínica. Essencial, Expansão e Rede incluem a operação pet completa. O que muda
+            entre eles é o porte: unidades e pessoas na equipe.
           </p>
         ) : null}
       </header>
@@ -102,11 +104,7 @@ const HubAssinaturaPage: React.FC = () => {
 
       {!loading && notice ? <p className="hub-assinatura__notice">{notice}</p> : null}
 
-      {!loading && data && data.paid_plans.length === 0 ? (
-        <p>Nenhum plano pago está publicado. Rode a migration 119 no banco para liberar os preços.</p>
-      ) : null}
-
-      {!loading && data && data.paid_plans.length > 0 ? (
+      {!loading && data ? (
         <div className="hub-assinatura__catalog">
           {preview && onBeta ? <BetaHighlight /> : null}
           {preview ? (
@@ -123,6 +121,7 @@ const HubAssinaturaPage: React.FC = () => {
           <div
             className={[
               'hub-assinatura__plans',
+              'hub-assinatura__plans--four',
               !preview && onBeta ? 'hub-assinatura__plans--with-beta' : '',
             ]
               .filter(Boolean)
@@ -144,7 +143,7 @@ const HubAssinaturaPage: React.FC = () => {
               role={preview ? undefined : 'radiogroup'}
               aria-label="Planos pagos"
             >
-              {data.paid_plans.map((plan) => (
+              {paidPlans.map((plan) => (
                 <PaidPlanCard
                   key={plan.slug}
                   plan={plan}
@@ -159,36 +158,41 @@ const HubAssinaturaPage: React.FC = () => {
           </div>
 
           {preview ? null : (
-          <div className="hub-assinatura__actions">
-            {!data.can_checkout ? (
-              <p className="hub-assinatura__note">Só o administrador da clínica pode assinar.</p>
-            ) : (
-              <button
-                type="button"
-                className="pet-wizard__btn pet-wizard__btn--primary hub-assinatura__pay"
-                disabled={
-                  paying || !selectedPlan || selectedIsCurrent || !data.mercado_pago_configured
-                }
-                onClick={() => {
-                  void pay().catch(() => showError('Não foi possível abrir o Mercado Pago'));
-                }}
-              >
-                {paying
-                  ? 'Abrindo Mercado Pago…'
-                  : selectedIsCurrent
-                    ? 'Este já é o plano da clínica'
-                    : selectedPlan
-                      ? `Assinar ${selectedPlan.name}`
-                      : 'Escolha um plano pago'}
-              </button>
-            )}
-            {data.can_checkout && selectedPlan && sub?.status === 'active' && !selectedIsCurrent ? (
-              <p className="hub-assinatura__note">
-                O plano atual continua até o Mercado Pago autorizar esta troca.
-              </p>
-            ) : null}
-          </div>
+            <div className="hub-assinatura__actions">
+              {!data.can_checkout ? (
+                <p className="hub-assinatura__note">Só o administrador da clínica pode assinar.</p>
+              ) : (
+                <button
+                  type="button"
+                  className="pet-wizard__btn pet-wizard__btn--primary hub-assinatura__pay"
+                  disabled={
+                    paying || !selectedPlan || selectedIsCurrent || !data.mercado_pago_configured
+                  }
+                  onClick={() => {
+                    void pay().catch(() => showError('Não foi possível abrir o Mercado Pago'));
+                  }}
+                >
+                  {paying
+                    ? 'Abrindo Mercado Pago…'
+                    : selectedIsCurrent
+                      ? 'Este já é o plano da clínica'
+                      : selectedPlan
+                        ? `Assinar ${selectedPlan.name}`
+                        : 'Escolha um plano pago'}
+                </button>
+              )}
+              {data.can_checkout && selectedPlan && sub?.status === 'active' && !selectedIsCurrent ? (
+                <p className="hub-assinatura__note">
+                  O plano atual continua até o Mercado Pago autorizar esta troca.
+                </p>
+              ) : null}
+            </div>
           )}
+
+          <HubPlanCompareTable
+            className="hub-assinatura__compare"
+            title="Comparativo de funcionalidades"
+          />
         </div>
       ) : null}
     </div>
@@ -250,30 +254,58 @@ function PaidPlanCard({
   onSelect: (slug: string) => void;
 }) {
   const badge = current ? 'Plano atual' : selected ? 'Selecionado' : '\u00a0';
+  const highlight = HUB_PLAN_HIGHLIGHT[plan.slug];
   const className = [
     'hub-plan-offer',
     locked ? 'hub-plan-offer--quiet' : '',
     selected ? 'hub-plan-offer--selected' : '',
+    plan.slug === 'growth' ? 'hub-plan-offer--emphasis' : '',
   ]
     .filter(Boolean)
     .join(' ');
   const content = (
     <>
       {locked ? null : (
-        <span className={['hub-plan-offer__badge', !current && !selected ? 'hub-plan-offer__badge--empty' : ''].filter(Boolean).join(' ')}>
+        <span
+          className={[
+            'hub-plan-offer__badge',
+            !current && !selected ? 'hub-plan-offer__badge--empty' : '',
+          ]
+            .filter(Boolean)
+            .join(' ')}
+        >
           {badge}
         </span>
       )}
+      {highlight ? <span className="hub-plan-offer__kicker">{highlight}</span> : null}
       <span className="hub-plan-offer__name">{plan.name}</span>
       <span className="hub-plan-offer__price">
         {formatPlanPrice(plan.monthly_price_cents)}
         <span className="hub-plan-offer__period">/mês</span>
       </span>
       <ul className="hub-plan-offer__limits">
-        <li>{unitLine(plan.max_units)}</li>
-        <li>{peopleLine(plan.max_users)}</li>
+        <li>{hubPlanUnitLine(plan)}</li>
+        <li>{hubPlanPeopleLine(plan)}</li>
       </ul>
       {locked ? <span className="hub-plan-offer__public">Valor público previsto</span> : null}
+      <span
+        className="hub-plan-offer__compare-link"
+        role="link"
+        tabIndex={0}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          document.getElementById('comparativo')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }}
+        onKeyDown={(e) => {
+          if (e.key !== 'Enter' && e.key !== ' ') return;
+          e.preventDefault();
+          e.stopPropagation();
+          document.getElementById('comparativo')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }}
+      >
+        Ver comparativo
+      </span>
     </>
   );
 

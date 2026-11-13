@@ -206,21 +206,34 @@ Admissão (atendimento) → espelho do slot na agenda do dia → internação at
 
 ### 4.6 Permissões
 
-- Veterinário: decisões clínicas e alta.
-- Enfermagem: **evolução** e **eventos** de internação (secção Permissões).
+- Veterinário: decisões clínicas, alta e **prescrição ativa de internação** (`hub.clinic.med_orders.manage` ou cargo Médico(a) Veterinário(a) com `hub.clinic.write`).
+- Enfermagem: **evolução**, **eventos** e **administração de doses** do plano (`hub.clinic.med_admin.write` / `hub.clinic.write`).
 - Recepção: sem acesso a evolução diagnóstica detalhada.
+
+### 4.6.1 Plano de medicação (prescrição ativa ≠ receita)
+
+- A **prescrição ativa da internação** (`hub_hospitalization_med_orders` + versões) é o plano a seguir no leito. **Não** é `hub_prescriptions` (receita ambulatorial / PDF ao tutor).
+- Cada alteração material cria **nova versão** imutável; doses já `administered` / `not_administered` não são alteradas.
+- Doses do dia são materializadas (horários fixos ou intervalo, fuso `America/Sao_Paulo`). Status visual **atrasado** = pendente com `scheduled_for` no passado — **não** muda o resultado automaticamente.
+- **Administrado:** RPC atômico cria evento `medication` e lançamento em `hub_hospitalization_charges` (mesmo padrão charge/included da ficha).
+- **Não administrado:** motivo obrigatório; **não** cria evento nem cobrança.
+- **Alta / óbito / transferência / cancelamento:** para de gerar doses; pendentes → `cancelled` (`discharge`); executadas permanecem; ordens ativas/suspensas → `completed` (ou `cancelled` se a internação foi cancelada).
+- Eventos avulsos de medicação na ficha continuam válidos para fora do plano.
+- Baixa automática de estoque: **fora do MVP** (campos preparados na dose/ordem).
 
 ### 4.7 Impactos financeiros
 
 - A cobrança da internação entra na **comanda do atendimento** (`origin_type: encounter`), não em uma comanda separada.
 - Na admissão o veterinário escolhe o **serviço de diária** (grupo `internacao`); a comanda gera um item `hospitalization_daily` com `quantity` = número de diárias entre admissão e alta (ou até hoje, se ativa).
 - Lançamentos extras (`hub_hospitalization_charges`) usam `billing_mode`: `charge` (entra na comanda) ou `included` (só histórico clínico / estoque, sem valor).
+- Administração de dose do plano com `billing_mode=charge|included` gera charge na confirmação (RPC); não administrado não gera.
 - Preço variável fora da faixa (ou sem faixa) fica `pending_approval` até alguém com `hub.financial.write` aprovar — ver [HUB_CLINICAL_BILLABLE_SERVICES.md](architecture/HUB_CLINICAL_BILLABLE_SERVICES.md).
 
 ### 4.8 Impactos em estoque
 
 - Materiais e medicamentos da internação: **podem** baixar estoque conforme matriz.
 - Item `included` na diária **não** gera linha de comanda, mas **pode** baixar estoque se houver lote vinculado.
+- Plano de medicação: FKs de item/lote na dose/ordem reservadas; baixa automática ainda não implementada.
 
 ### 4.9 Impactos em timeline
 
@@ -229,6 +242,7 @@ Admissão (atendimento) → espelho do slot na agenda do dia → internação at
 ### 4.10 Perguntas futuras
 
 - Pacote de diárias; rateio multi-pet (raro).
+- Quadro multi-leito de enfermagem; sync ordem de internação ↔ receita ambulatorial; timezone por unidade.
 
 ---
 
