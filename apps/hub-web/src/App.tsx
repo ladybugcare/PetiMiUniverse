@@ -2,11 +2,13 @@ import React from 'react';
 import {
   Route,
   Navigate,
+  Outlet,
   createBrowserRouter,
   createRoutesFromElements,
   RouterProvider,
 } from 'react-router-dom';
 import { AuthProvider } from '@petimi/web-core';
+import HubAuthListener from './components/HubAuthListener';
 import {
   AlertProvider,
   HubGuardiansPage,
@@ -79,10 +81,20 @@ function HubAuthenticatedLayout() {
   );
 }
 
+/** Layout raiz: AuthListener precisa estar sob o data router. */
+function HubRootLayout() {
+  return (
+    <>
+      <HubAuthListener />
+      <Outlet />
+    </>
+  );
+}
+
 /** Data router — necessário para useBlocker (guard de saída do caixa). */
 const router = createBrowserRouter(
   createRoutesFromElements(
-    <>
+    <Route element={<HubRootLayout />}>
       <Route path="/meu-perfil" element={<Navigate to="/hub/meu-perfil" replace />} />
       <Route path="/login" element={<HubLoginPage />} />
       <Route path="/forgot-password" element={<HubForgotPasswordPage />} />
@@ -160,7 +172,7 @@ const router = createBrowserRouter(
       <Route path="/planos" element={<HubPlansPage />} />
       <Route path="/" element={<HubHomePage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
-    </>,
+    </Route>,
   ),
   {
     future: {

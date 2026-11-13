@@ -17,6 +17,22 @@ test.describe('páginas públicas', () => {
     await expect(page.getByRole('button', { name: 'Entrar' })).toBeVisible();
   });
 
+  test('forgot-password mostra o formulário', async ({ page }) => {
+    await page.goto('/forgot-password');
+    await expect(page.getByRole('heading', { name: /esqueceu a senha/i })).toBeVisible();
+    await expect(page.getByLabel('Email', { exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: /enviar link de recuperação/i })).toBeVisible();
+    await expect(page.getByRole('link', { name: /voltar ao login/i })).toBeVisible();
+  });
+
+  test('reset-password sem sessão mostra link inválido (não tela em branco)', async ({ page }) => {
+    await page.goto('/reset-password');
+    await expect(page.getByRole('heading', { name: /link inválido/i })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole('link', { name: /pedir novo link/i })).toBeVisible();
+  });
+
   test('signup mostra o formulário de cadastro da clínica', async ({ page }) => {
     await page.goto('/signup');
     await expect(page.getByRole('heading', { name: 'Criar conta da clínica' })).toBeVisible();

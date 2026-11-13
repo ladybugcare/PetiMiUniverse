@@ -80,8 +80,8 @@ const HubResetPasswordPage: React.FC = () => {
     e.preventDefault();
     setError(null);
 
-    if (password.length < 6) {
-      setError('A senha deve ter pelo menos 6 caracteres.');
+    if (password.length < 8) {
+      setError('A senha deve ter pelo menos 8 caracteres.');
       return;
     }
     if (password !== confirm) {
@@ -135,6 +135,9 @@ const HubResetPasswordPage: React.FC = () => {
               Pedir novo link
               <ArrowRight size={20} aria-hidden />
             </Link>
+            <p className="hub-login-page-footer">
+              <Link to="/login">← Voltar ao login</Link>
+            </p>
           </>
         ) : (
           <>
@@ -159,7 +162,7 @@ const HubResetPasswordPage: React.FC = () => {
                       onChange={(e) => setPassword(e.target.value)}
                       required
                       autoComplete="new-password"
-                      minLength={6}
+                      minLength={8}
                     />
                     <button
                       type="button"
@@ -189,7 +192,7 @@ const HubResetPasswordPage: React.FC = () => {
                     onChange={(e) => setConfirm(e.target.value)}
                     required
                     autoComplete="new-password"
-                    minLength={6}
+                    minLength={8}
                   />
                 </div>
               </div>

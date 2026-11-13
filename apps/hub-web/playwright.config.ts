@@ -6,6 +6,7 @@ import { loadDotEnvFile } from './e2e/helpers/dotenv';
 const appRoot = dirname(fileURLToPath(import.meta.url));
 
 loadDotEnvFile(join(appRoot, '.env.e2e.local'));
+loadDotEnvFile(join(appRoot, '.env.local'));
 loadDotEnvFile(join(appRoot, '../../backend/.env'));
 loadDotEnvFile(join(appRoot, '../../backend/.env.local'));
 
@@ -33,7 +34,7 @@ export default defineConfig({
     },
     {
       name: 'public',
-      testMatch: /smoke\.public\.spec\.ts/,
+      testMatch: /(?:smoke\.public|auth\.reset-password)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
     {

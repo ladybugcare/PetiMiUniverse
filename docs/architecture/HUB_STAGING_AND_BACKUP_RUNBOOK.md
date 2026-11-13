@@ -60,10 +60,12 @@ CORS / `HUB_WEB_URL` / redirect Auth devem usar a origem do **`petmi-hub`**, nã
    - Root Directory: `apps/hub-web`
    - `VITE_API_URL` = API staging
    - `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` = staging
-5. Auth Supabase → Authentication → URL Configuration:
-   - Site URL = origem do Hub staging (`petmi-hub`)
-   - Redirect URLs: `{HUB_ORIGIN}/login`, `{HUB_ORIGIN}/email-confirmed`, `{HUB_ORIGIN}/forgot-password`, `{HUB_ORIGIN}/reset-password`
+5. Auth Supabase → Authentication → URL Configuration (projeto **Preprod** apenas; não alterar produção sem aprovação):
+   - Site URL = `https://hub-staging.petmi.app`
+   - Redirect URLs: `https://hub-staging.petmi.app/**`, `/login`, `/email-confirmed`, `/forgot-password`, `/reset-password` (+ `http://localhost:3002/**` se dev local)
+   - Templates → Reset Password: link via `{{ .ConfirmationURL }}` (sem URL hardcoded do Vet)
    - Produção: `https://hub.petmi.app/...` (reset de senha é **nativo no Hub**, não no Vet)
+   - Verificação: Dashboard apenas (API/MCP não expõem Site URL / allowlist). Confirmar host do link no e-mail de teste.
 6. Seed mínimo QA: 2 clínicas, roles da matriz em [HUB_MVP_MANUAL_QA.md](./HUB_MVP_MANUAL_QA.md), ≥1 unidade extra na clínica A.
 7. Confirmar: login Hub staging **não** lista dados do projeto de produção.
 

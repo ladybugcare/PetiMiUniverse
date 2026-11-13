@@ -42,9 +42,18 @@ Marque após validar em **staging**. Fonte: auditoria de lançamento + [HUB_STAG
 
 ## Reset de senha
 
-- [ ] `/forgot-password` no Hub (sem depender do Vet) — código local; falta deploy
-- [ ] E-mail → `/reset-password` no domínio Hub → login com senha nova
-- [ ] Redirect URLs configuradas no Supabase (staging e prod) — Preprod: Site URL `https://hub-staging.petmi.app` + redirects `/**`
+- [x] Código Hub nativo: `/forgot-password` → `resetPasswordForEmail(redirectTo=origin/reset-password)` → `/reset-password` → login (sem Vet); `HubAuthListener` redireciona hash `type=recovery`; senha mínima alinhada ao signup (≥8)
+- [x] E2E Playwright com **mocks** Auth (`apps/hub-web/e2e/auth.reset-password.spec.ts` + smoke público) — PASS local
+- [ ] Deploy branch `staging` + validação real no browser (e-mail QA Preprod → nova senha → login)
+- [ ] Redirect URLs no Supabase **Preprod** confirmadas no Dashboard (Site URL `https://hub-staging.petmi.app` + `/**` / `/reset-password`) — **não inspecionável via MCP/API pública**; verificar manualmente
+- [ ] Produção (`PetiMiUniverse`): redirects Hub — **fora deste gate de staging**; não alterar sem aprovação
+
+### Deployment Protection (Vercel `petmi-hub`)
+
+- Evidência (2026-11-13): `ssoProtection.enabled=true`, `deploymentType=all_except_custom_domains`, domínio `hub-staging.petmi.app` (branch `staging`).
+- Na prática, `GET https://hub-staging.petmi.app/forgot-password` **sem** sessão Vercel → **302 SSO** (`vercel.com/sso-api`). Produção `hub.petmi.app` responde 200 sem SSO.
+- QA do reset: autenticar no time Vercel no browser **antes** de abrir o link do e-mail; abrir forgot apenas em `https://hub-staging.petmi.app` (não `*.vercel.app`).
+- Bypass de automação / share link: só com aprovação; **não** desligar proteção global.
 
 ## Observabilidade
 
