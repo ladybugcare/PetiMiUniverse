@@ -375,6 +375,314 @@ export async function buildComandaItemsFromPackagePurchase(input: {
   });
 }
 
+export type HubPackageBalanceStatus = 'pending' | 'active' | 'cancelled' | 'voided';
+
+async function resolvePackageBalanceStatusForReceivable(
+  purchasedReceivableId: string | null,
+): Promise<HubPackageBalanceStatus> {
+  if (!purchasedReceivableId) return 'pending';
+  const { data: rec, error } = await supabaseAdmin
+    .from('hub_receivables')
+    .select('status')
+    .eq('id', purchasedReceivableId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  const st = String(rec?.status ?? '');
+  if (st === 'paid') return 'active';
+  if (st === 'cancelled' || st === 'refunded') return 'voided';
+  return 'pending';
+}
+
+export class PackageBalanceError extends Error {
+  status: number;
+  constructor(message: string, status = 409) {
+    super(message);
+    this.name = 'PackageBalanceError';
+    this.status = status;
+  }
+}
+
+function round2Pkg(n: number): number {
+  return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+}
+
+/** Há redemption não-reversa em algum saldo comprado por este recebível? */
+export async function packageBalancesHaveOpenRedemptions(receivableId: string): Promise<boolean> {
+  const { data: balances, error } = await supabaseAdmin
+    .from('hub_customer_package_balances')
+    .select('id')
+    .eq('purchased_receivable_id', receivableId);
+  if (error) throw new Error(error.message);
+  if (!balances?.length) return false;
+  const ids = balances.map((b) => b.id as string);
+  const { data: openRedemptions, error: redErr } = await supabaseAdmin
+    .from('hub_package_redemptions')
+    .select('id')
+    .in('balance_id', ids)
+    .is('reversed_at', null)
+    .limit(1);
+  if (redErr) throw new Error(redErr.message);
+  return (openRedemptions?.length ?? 0) > 0;
+}
+
+/**
+ * Alinha status dos saldos ao recebível de compra.
+ * Usável (listActive) só com status=active.
+ * `cancelled` (cancel comercial) nunca é reativado pelo sync financeiro.
+ * `voided` só quando recebível cancelado/refunded **sem** redemption.
+ */
+export async function syncPackageBalancesForReceivable(receivableId: string): Promise<void> {
+  const { data: rec, error: rErr } = await supabaseAdmin
+    .from('hub_receivables')
+    .select('id, status, clinic_id')
+    .eq('id', receivableId)
+    .maybeSingle();
+  if (rErr || !rec) return;
+
+  const recStatus = String(rec.status ?? '');
+  const { data: balances, error: bErr } = await supabaseAdmin
+    .from('hub_customer_package_balances')
+    .select('id, status, clinic_id, sessions_remaining')
+    .eq('purchased_receivable_id', receivableId);
+  if (bErr) throw new Error(bErr.message);
+  if (!balances?.length) return;
+
+  for (const bal of balances) {
+    const current = String(bal.status ?? 'active') as HubPackageBalanceStatus;
+    // Cancel comercial é terminal para o sync financeiro (não reativa).
+    if (current === 'cancelled') continue;
+    if (current === 'voided' && recStatus !== 'paid') continue;
+
+    const { data: openRedemptions, error: redErr } = await supabaseAdmin
+      .from('hub_package_redemptions')
+      .select('id')
+      .eq('balance_id', bal.id as string)
+      .is('reversed_at', null)
+      .limit(1);
+    if (redErr) throw new Error(redErr.message);
+    const hasOpen = (openRedemptions?.length ?? 0) > 0;
+
+    let target: HubPackageBalanceStatus | null = null;
+    if (recStatus === 'paid') {
+      if (current === 'pending' || current === 'voided') target = 'active';
+    } else if (recStatus === 'cancelled' || recStatus === 'refunded') {
+      if (!hasOpen) target = 'voided';
+      // Com redemption: não força voided nem bloqueia — use cancel comercial.
+    } else {
+      // pending | partially_paid
+      if (current === 'active' && !hasOpen) target = 'pending';
+      // Com redemption: mantém active até cancel comercial explícito.
+    }
+
+    if (!target || target === current) continue;
+
+    const { error: uErr } = await supabaseAdmin
+      .from('hub_customer_package_balances')
+      .update({ status: target })
+      .eq('id', bal.id as string)
+      .eq('clinic_id', bal.clinic_id as string);
+    if (uErr) throw new Error(uErr.message);
+  }
+}
+
+/**
+ * Cancelamento comercial: restante inutilizável; redemptions intactas; não toca pagamentos.
+ */
+export async function cancelPackageBalanceCommercial(opts: {
+  balanceId: string;
+  clinicId: string;
+  userId: string | null;
+  reason: string;
+}): Promise<Record<string, unknown>> {
+  if (opts.reason.trim().length < 3) {
+    throw new PackageBalanceError('Motivo do cancelamento obrigatório (mín. 3 caracteres)', 400);
+  }
+  const { data: bal, error } = await supabaseAdmin
+    .from('hub_customer_package_balances')
+    .select('*')
+    .eq('id', opts.balanceId)
+    .eq('clinic_id', opts.clinicId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!bal) throw new PackageBalanceError('Saldo de pacote não encontrado', 404);
+  const status = String(bal.status ?? '');
+  if (status === 'cancelled') {
+    throw new PackageBalanceError('Pacote já cancelado comercialmente', 409);
+  }
+  if (status === 'voided') {
+    throw new PackageBalanceError('Pacote já anulado (voided)', 409);
+  }
+  if (status !== 'active' && status !== 'pending') {
+    throw new PackageBalanceError(`Status inválido para cancelar: ${status}`, 409);
+  }
+
+  const remaining = Math.max(0, Number(bal.sessions_remaining ?? 0));
+  const { data: updated, error: uErr } = await supabaseAdmin
+    .from('hub_customer_package_balances')
+    .update({
+      status: 'cancelled',
+      sessions_remaining: 0,
+      sessions_remaining_at_cancel: remaining,
+      cancelled_at: new Date().toISOString(),
+      cancelled_by_user_id: opts.userId,
+      cancel_reason: opts.reason.trim(),
+    })
+    .eq('id', opts.balanceId)
+    .eq('clinic_id', opts.clinicId)
+    .select('*')
+    .single();
+  if (uErr || !updated) throw new Error(uErr?.message || 'Erro ao cancelar pacote');
+  return updated as Record<string, unknown>;
+}
+
+export type PackageRefundPreview = {
+  balance_id: string;
+  status: string;
+  sessions_total: number;
+  sessions_consumed: number;
+  sessions_remaining: number;
+  sessions_remaining_at_cancel: number | null;
+  paid_total: number;
+  suggested_refund: number;
+  purchased_receivable_id: string | null;
+};
+
+export async function previewPackageBalanceRefund(opts: {
+  balanceId: string;
+  clinicId: string;
+}): Promise<PackageRefundPreview> {
+  const { data: bal, error } = await supabaseAdmin
+    .from('hub_customer_package_balances')
+    .select('*')
+    .eq('id', opts.balanceId)
+    .eq('clinic_id', opts.clinicId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!bal) throw new PackageBalanceError('Saldo de pacote não encontrado', 404);
+
+  const sessionsTotal = Math.max(0, Number(bal.sessions_total ?? 0));
+  const remainingLive = Math.max(0, Number(bal.sessions_remaining ?? 0));
+  const remainingAtCancel =
+    bal.sessions_remaining_at_cancel != null ? Number(bal.sessions_remaining_at_cancel) : null;
+  const remainingForFormula =
+    String(bal.status) === 'cancelled' && remainingAtCancel != null
+      ? Math.max(0, remainingAtCancel)
+      : remainingLive;
+  const consumed = Math.max(0, sessionsTotal - remainingForFormula);
+
+  const receivableId = (bal.purchased_receivable_id as string | null) ?? null;
+  let paidTotal = 0;
+  if (receivableId) {
+    const { data: pays, error: pErr } = await supabaseAdmin
+      .from('hub_payments')
+      .select('amount')
+      .eq('receivable_id', receivableId)
+      .eq('status', 'posted');
+    if (pErr) throw new Error(pErr.message);
+    paidTotal = round2Pkg((pays ?? []).reduce((s, p) => s + Number(p.amount ?? 0), 0));
+
+    const { data: refunds, error: rErr } = await supabaseAdmin
+      .from('hub_financial_adjustments')
+      .select('amount')
+      .eq('receivable_id', receivableId)
+      .eq('adjustment_type', 'refund');
+    if (rErr) throw new Error(rErr.message);
+    const alreadyRefunded = round2Pkg((refunds ?? []).reduce((s, a) => s + Number(a.amount ?? 0), 0));
+    paidTotal = round2Pkg(Math.max(0, paidTotal - alreadyRefunded));
+  }
+
+  const suggested =
+    sessionsTotal > 0
+      ? round2Pkg(paidTotal * (remainingForFormula / sessionsTotal))
+      : 0;
+
+  return {
+    balance_id: bal.id as string,
+    status: String(bal.status),
+    sessions_total: sessionsTotal,
+    sessions_consumed: consumed,
+    sessions_remaining: remainingLive,
+    sessions_remaining_at_cancel: remainingAtCancel,
+    paid_total: paidTotal,
+    suggested_refund: suggested,
+    purchased_receivable_id: receivableId,
+  };
+}
+
+/**
+ * Estorno financeiro autorizado (parcial/total) via adjustment `refund`.
+ * Não reverte redemptions. Exige saldo `cancelled` (ou `voided`).
+ */
+export async function authorizePackageBalanceRefund(opts: {
+  balanceId: string;
+  clinicId: string;
+  userId: string | null;
+  refundAmount: number;
+  reason: string;
+  refundMethod?: string | null;
+  refundEffectiveDate?: string | null;
+}): Promise<{
+  preview: PackageRefundPreview;
+  adjustment: Record<string, unknown>;
+  receivable_status: string | null;
+}> {
+  if (opts.reason.trim().length < 3) {
+    throw new PackageBalanceError('Motivo do estorno obrigatório (mín. 3 caracteres)', 400);
+  }
+  const amount = round2Pkg(opts.refundAmount);
+  if (!(amount > 0)) {
+    throw new PackageBalanceError('refund_amount deve ser positivo', 400);
+  }
+
+  const preview = await previewPackageBalanceRefund(opts);
+  if (preview.status !== 'cancelled' && preview.status !== 'voided') {
+    throw new PackageBalanceError(
+      'Cancele o pacote comercialmente antes de autorizar o estorno financeiro.',
+      409,
+    );
+  }
+  if (amount > preview.paid_total + 0.02) {
+    throw new PackageBalanceError(
+      `Valor autorizado (${amount.toFixed(2)}) excede o líquido quitado (${preview.paid_total.toFixed(2)}).`,
+      400,
+    );
+  }
+  if (!preview.purchased_receivable_id) {
+    throw new PackageBalanceError('Saldo sem recebível de compra — não há o que estornar.', 409);
+  }
+
+  const { data: adj, error: adjErr } = await supabaseAdmin
+    .from('hub_financial_adjustments')
+    .insert({
+      clinic_id: opts.clinicId,
+      receivable_id: preview.purchased_receivable_id,
+      payment_id: null,
+      adjustment_type: 'refund',
+      amount,
+      reason: opts.reason.trim(),
+      created_by_user_id: opts.userId,
+      refund_method: opts.refundMethod ?? null,
+      refund_effective_date: opts.refundEffectiveDate ?? null,
+    })
+    .select('*')
+    .single();
+  if (adjErr || !adj) throw new Error(adjErr?.message || 'Erro ao registrar estorno');
+
+  // Recebível permanece paid se o payment original não foi revertido;
+  // o adjustment documenta a saída parcial autorizada.
+  const { data: rec } = await supabaseAdmin
+    .from('hub_receivables')
+    .select('status')
+    .eq('id', preview.purchased_receivable_id)
+    .maybeSingle();
+
+  return {
+    preview: await previewPackageBalanceRefund(opts),
+    adjustment: adj as Record<string, unknown>,
+    receivable_status: rec?.status != null ? String(rec.status) : null,
+  };
+}
+
 export async function createPackageBalancesOnCheckout(input: {
   clinicId: string;
   comandaId: string;
@@ -394,6 +702,7 @@ export async function createPackageBalancesOnCheckout(input: {
     d.setDate(d.getDate() + pkg.validity_days);
     expiresAt = d.toISOString().slice(0, 10);
   }
+  const balanceStatus = await resolvePackageBalanceStatusForReceivable(input.purchasedReceivableId);
   const rows = items.map((it) => ({
     clinic_id: input.clinicId,
     guardian_id: input.guardianId,
@@ -409,6 +718,7 @@ export async function createPackageBalancesOnCheckout(input: {
     comanda_id: input.comandaId,
     purchased_at: now.toISOString(),
     expires_at: expiresAt,
+    status: balanceStatus,
   }));
   const { data, error } = await supabaseAdmin.from('hub_customer_package_balances').insert(rows).select('id');
   if (error) throw new Error(error.message);
@@ -420,19 +730,32 @@ export async function listActivePackageBalances(input: {
   guardianId?: string;
   petId?: string;
   hubServiceTypeId?: string;
+  /** Inclui cancelled (gestão / estorno). Redeem e checkout continuam só com active. */
+  includeCancelled?: boolean;
 }) {
   let q = supabaseAdmin
     .from('hub_customer_package_balances')
     .select(
-      'id, clinic_id, guardian_id, pet_id, package_id, hub_service_type_id, sessions_remaining, sessions_total, expires_at, purchased_at, purchase_group_id, pricing_variant, hub_packages(id, name), hub_service_types(id, name)'
+      'id, clinic_id, guardian_id, pet_id, package_id, hub_service_type_id, sessions_remaining, sessions_total, sessions_remaining_at_cancel, expires_at, purchased_at, purchase_group_id, pricing_variant, status, cancelled_at, cancel_reason, hub_packages(id, name), hub_service_types(id, name)'
     )
-    .eq('clinic_id', input.clinicId)
-    .gt('sessions_remaining', 0);
+    .eq('clinic_id', input.clinicId);
+  if (input.includeCancelled) {
+    q = q.in('status', ['active', 'cancelled']);
+  } else {
+    q = q.eq('status', 'active').gt('sessions_remaining', 0);
+  }
   if (input.guardianId) q = q.eq('guardian_id', input.guardianId);
   if (input.petId) q = q.or(`pet_id.eq.${input.petId},pet_id.is.null`);
   if (input.hubServiceTypeId) q = q.eq('hub_service_type_id', input.hubServiceTypeId);
   const { data, error } = await q.order('expires_at', { ascending: true, nullsFirst: false }).order('purchased_at', { ascending: true });
   if (error) throw new Error(error.message);
+  if (input.includeCancelled) {
+    return (data ?? []).filter(
+      (b) =>
+        String(b.status) === 'cancelled' ||
+        (String(b.status) === 'active' && Number(b.sessions_remaining ?? 0) > 0),
+    );
+  }
   const today = new Date().toISOString().slice(0, 10);
   return (data ?? []).filter((row) => {
     const exp = row.expires_at as string | null;
@@ -483,11 +806,12 @@ export async function redeemPackageBalancesOnCheckout(input: {
     const balanceId = it.package_balance_id as string;
     const { data: bal, error: bErr } = await supabaseAdmin
       .from('hub_customer_package_balances')
-      .select('id, sessions_remaining, clinic_id')
+      .select('id, sessions_remaining, clinic_id, status')
       .eq('id', balanceId)
       .eq('clinic_id', input.clinicId)
       .maybeSingle();
     if (bErr || !bal) throw new Error('PACKAGE_BALANCE_NOT_FOUND');
+    if (String(bal.status) !== 'active') throw new Error('PACKAGE_BALANCE_NOT_ACTIVE');
     if (Number(bal.sessions_remaining) <= 0) throw new Error('PACKAGE_BALANCE_EMPTY');
 
     const appointmentServiceId =

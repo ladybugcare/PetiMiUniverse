@@ -2,10 +2,14 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import {
+  authorizePackageBalanceRefund,
+  cancelPackageBalanceCommercial,
   computePackageCatalogSubtotal,
   computePackagePriceFromCatalog,
   loadPackageWithItems,
   listActivePackageBalances,
+  PackageBalanceError,
+  previewPackageBalanceRefund,
   type HubPackageItemInput,
 } from './hubPackagesService';
 
@@ -304,13 +308,108 @@ export const getHubPetPackageBalances = async (req: Request, res: Response) => {
     if (!petParsed.success || !clinicParsed.success) {
       return res.status(400).json({ error: 'petId e clinic_id obrigatórios' });
     }
+    const includeCancelled =
+      String(req.query.include_cancelled ?? '') === '1' ||
+      String(req.query.include_cancelled ?? '').toLowerCase() === 'true';
     const balances = await listActivePackageBalances({
       clinicId: clinicParsed.data,
       petId: petParsed.data,
+      includeCancelled,
     });
     return res.json({ balances });
   } catch (e: unknown) {
     console.error('getHubPetPackageBalances', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+const cancelPackageBalanceBodySchema = z
+  .object({
+    clinic_id: uuidStr,
+    reason: z.string().trim().min(3).max(2000),
+  })
+  .strict();
+
+export const postHubPackageBalanceCancel = async (req: Request, res: Response) => {
+  try {
+    const idParsed = uuidStr.safeParse(req.params.id);
+    const parsed = cancelPackageBalanceBodySchema.safeParse(req.body);
+    if (!idParsed.success || !parsed.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: parsed.success ? undefined : parsed.error.flatten() });
+    }
+    const balance = await cancelPackageBalanceCommercial({
+      balanceId: idParsed.data,
+      clinicId: parsed.data.clinic_id,
+      userId: req.user?.id ?? null,
+      reason: parsed.data.reason,
+    });
+    return res.status(200).json({ balance });
+  } catch (e: unknown) {
+    if (e instanceof PackageBalanceError) {
+      return res.status(e.status).json({ error: e.message });
+    }
+    console.error('postHubPackageBalanceCancel', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+export const getHubPackageBalanceRefundPreview = async (req: Request, res: Response) => {
+  try {
+    const idParsed = uuidStr.safeParse(req.params.id);
+    const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
+    if (!idParsed.success || !clinicParsed.success) {
+      return res.status(400).json({ error: 'id e clinic_id obrigatórios' });
+    }
+    const preview = await previewPackageBalanceRefund({
+      balanceId: idParsed.data,
+      clinicId: clinicParsed.data,
+    });
+    return res.json({ preview });
+  } catch (e: unknown) {
+    if (e instanceof PackageBalanceError) {
+      return res.status(e.status).json({ error: e.message });
+    }
+    console.error('getHubPackageBalanceRefundPreview', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+const authorizePackageRefundBodySchema = z
+  .object({
+    clinic_id: uuidStr,
+    refund_amount: z.number().positive(),
+    reason: z.string().trim().min(3).max(2000),
+    refund_method: z.string().trim().min(1).max(64).optional().nullable(),
+    refund_effective_date: z
+      .string()
+      .regex(/^\d{4}-\d{2}-\d{2}$/)
+      .optional()
+      .nullable(),
+  })
+  .strict();
+
+export const postHubPackageBalanceRefund = async (req: Request, res: Response) => {
+  try {
+    const idParsed = uuidStr.safeParse(req.params.id);
+    const parsed = authorizePackageRefundBodySchema.safeParse(req.body);
+    if (!idParsed.success || !parsed.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: parsed.success ? undefined : parsed.error.flatten() });
+    }
+    const result = await authorizePackageBalanceRefund({
+      balanceId: idParsed.data,
+      clinicId: parsed.data.clinic_id,
+      userId: req.user?.id ?? null,
+      refundAmount: parsed.data.refund_amount,
+      reason: parsed.data.reason,
+      refundMethod: parsed.data.refund_method ?? null,
+      refundEffectiveDate: parsed.data.refund_effective_date ?? null,
+    });
+    return res.status(201).json(result);
+  } catch (e: unknown) {
+    if (e instanceof PackageBalanceError) {
+      return res.status(e.status).json({ error: e.message });
+    }
+    console.error('postHubPackageBalanceRefund', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
   }
 };
