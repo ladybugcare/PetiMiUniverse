@@ -112,7 +112,6 @@ const HubLoginPage: React.FC = () => {
     }
   };
 
-  const vetForgot = vetBase ? `${vetBase}/forgot-password` : null;
   const vetLogin = vetBase ? `${vetBase}/login` : null;
 
   return (
@@ -196,11 +195,9 @@ const HubLoginPage: React.FC = () => {
             <HubCheckbox className="hub-login-page-remember" checked={rememberMe} onChange={setRememberMe}>
               Lembrar de mim
             </HubCheckbox>
-            {vetForgot ? (
-              <a href={vetForgot} className="hub-login-page-forgot">
-                Esqueci minha senha
-              </a>
-            ) : null}
+            <Link to="/forgot-password" className="hub-login-page-forgot">
+              Esqueci minha senha
+            </Link>
           </div>
 
           {passwordResetNotice && (

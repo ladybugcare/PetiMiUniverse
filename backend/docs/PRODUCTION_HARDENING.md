@@ -40,6 +40,12 @@ Checklist alinhado ao plano de deploy (Railway + Vercel + Supabase). Nada disto 
 
 - No painel Supabase: plano com **backups** e, se necessário, **PITR** (point-in-time recovery).
 - Testar restore em ambiente de staging antes de depender de PITR em incidente real.
+- Procedimento Hub (staging isolado, restore drill, smoke multi-tenant): [HUB_STAGING_AND_BACKUP_RUNBOOK.md](../../docs/architecture/HUB_STAGING_AND_BACKUP_RUNBOOK.md).
+
+## Observabilidade (Sentry)
+
+- Definir `SENTRY_DSN` na API (e opcionalmente no Hub web) para capturar erros **não operacionais** / 5xx.
+- Usar `SENTRY_ENVIRONMENT=staging|production`. Sem DSN, a aplicação sobe normalmente (no-op).
 
 ## Health checks
 

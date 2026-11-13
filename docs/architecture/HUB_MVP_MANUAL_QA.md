@@ -2,7 +2,7 @@
 
 Roteiro de **teste manual** para validar o MVP do PetMi Hub antes de cada release. Foco prioritário: **isolamento multi-tenant** (dados não vazam entre clínicas/unidades) e **permissões por role**. Complementa o [QA do Epic 1](./HUB_EPIC1_MANUAL_QA.md) (tutores) com os fluxos operacionais e financeiros.
 
-> Executar em **staging** quando possível. Como hoje o desenvolvimento ocorre direto em produção, ao testar em prod use dados claramente marcados (ex.: nome `QA TESTE …`) e **remova/arquive** ao final.
+> Executar **somente em staging**. QA em produção é **proibido** (Fase 0 — ver [HUB_STAGING_AND_BACKUP_RUNBOOK.md](./HUB_STAGING_AND_BACKUP_RUNBOOK.md)). Use nomes `QA STAGING …` e limpe após o ciclo.
 
 ---
 

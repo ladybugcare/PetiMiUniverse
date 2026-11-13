@@ -9,12 +9,37 @@ const requireGroomingModule = requireHubEntitlement({ module: 'grooming' });
 const requireBoardingModule = requireHubEntitlement({ module: 'boarding' });
 const requirePickupArea = requireHubEntitlement({ planArea: 'leva_traz' });
 const requireReceptionArea = requireHubEntitlement({ planArea: 'recepcao' });
-const requireGroomingWrite = requireHubEntitlement({ module: 'grooming', mutating: true });
-const requireBoardingWrite = requireHubEntitlement({ module: 'boarding', mutating: true });
-const requirePickupWrite = requireHubEntitlement({ planArea: 'leva_traz', mutating: true });
-const requireReceptionWrite = requireHubEntitlement({ planArea: 'recepcao', mutating: true });
+/** Ops do dia: permitidas em soft_lock; bloqueadas em read_history. */
+const requireGroomingWrite = requireHubEntitlement({
+  module: 'grooming',
+  mutating: true,
+  allowSoftLockWrite: true,
+});
+const requireBoardingWrite = requireHubEntitlement({
+  module: 'boarding',
+  mutating: true,
+  allowSoftLockWrite: true,
+});
+const requirePickupWrite = requireHubEntitlement({
+  planArea: 'leva_traz',
+  mutating: true,
+  allowSoftLockWrite: true,
+});
+const requireReceptionWrite = requireHubEntitlement({
+  planArea: 'recepcao',
+  mutating: true,
+  allowSoftLockWrite: true,
+});
 const requireClinicWrite = requireHubEntitlement({
   module: 'clinic',
+  mutating: true,
+  allowSoftLockWrite: true,
+});
+/** Catálogo admin (estoque itens/fornecedores, service-types): bloqueado em soft_lock e read_history. */
+const requireCoreCatalogWrite = requireHubEntitlement({ module: 'hub_core', mutating: true });
+/** Ops core (agenda, tutores, pets, movimentos de estoque, financeiro do dia). */
+const requireCoreOpsWrite = requireHubEntitlement({
+  module: 'hub_core',
   mutating: true,
   allowSoftLockWrite: true,
 });
@@ -407,6 +432,9 @@ import {
   postHubPackageSuggestPrice,
   getHubGuardianPackageBalances,
   getHubPetPackageBalances,
+  postHubPackageBalanceCancel,
+  getHubPackageBalanceRefundPreview,
+  postHubPackageBalanceRefund,
 } from '../hubPackagesController';
 import {
   postHubSeriesInvoiceIssue,
@@ -562,14 +590,14 @@ router.get(
 router.post(
   '/guardians',
   authenticateUser,
-  requirePermission('hub.guardians.write'),
+  requirePermission('hub.guardians.write'), requireCoreOpsWrite,
   createHubGuardian
 );
 
 router.patch(
   '/guardians/:id',
   authenticateUser,
-  requirePermission('hub.guardians.write'),
+  requirePermission('hub.guardians.write'), requireCoreOpsWrite,
   updateHubGuardian
 );
 
@@ -582,7 +610,7 @@ router.get(
 router.patch(
   '/clinic-settings',
   authenticateUser,
-  requirePermission('hub.appointments.write'),
+  requirePermission('hub.appointments.write'), requireCoreOpsWrite,
   patchHubClinicSettings
 );
 
@@ -602,19 +630,19 @@ router.get(
 router.post(
   '/special-prices',
   authenticateUser,
-  requirePermission(['hub.appointments.write', 'hub.financial.write', 'hub.pets.write']),
+  requirePermission(['hub.appointments.write', 'hub.financial.write', 'hub.pets.write']), requireCoreOpsWrite,
   createHubSpecialPrice
 );
 router.patch(
   '/special-prices/:id',
   authenticateUser,
-  requirePermission(['hub.appointments.write', 'hub.financial.write', 'hub.pets.write']),
+  requirePermission(['hub.appointments.write', 'hub.financial.write', 'hub.pets.write']), requireCoreOpsWrite,
   patchHubSpecialPrice
 );
 router.post(
   '/special-prices/:id/approve',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   approveHubSpecialPrice
 );
 
@@ -646,7 +674,7 @@ router.delete(
 
 router.get('/pets', authenticateUser, requirePermission('hub.pets.read'), listHubPets);
 
-router.post('/pets', authenticateUser, requirePermission('hub.pets.write'), createHubPet);
+router.post('/pets', authenticateUser, requirePermission('hub.pets.write'), requireCoreOpsWrite, createHubPet);
 
 router.get(
   '/pets/:id/profile-changes',
@@ -658,7 +686,7 @@ router.get(
 router.patch(
   '/pets/:id',
   authenticateUser,
-  requirePermission(['hub.pets.write', 'hub.clinic.write']),
+  requirePermission(['hub.pets.write', 'hub.clinic.write']), requireCoreOpsWrite,
   updateHubPet,
 );
 
@@ -672,21 +700,21 @@ router.get(
 router.post(
   '/service-types',
   authenticateUser,
-  requirePermission('hub.service_types.write'),
+  requirePermission('hub.service_types.write'), requireCoreCatalogWrite,
   createHubServiceType
 );
 
 router.patch(
   '/service-types/:id',
   authenticateUser,
-  requirePermission('hub.service_types.write'),
+  requirePermission('hub.service_types.write'), requireCoreCatalogWrite,
   updateHubServiceType
 );
 
 router.post(
   '/service-types/bootstrap',
   authenticateUser,
-  requirePermission('hub.service_types.write'),
+  requirePermission('hub.service_types.write'), requireCoreCatalogWrite,
   bootstrapHubServiceTypes
 );
 
@@ -705,7 +733,7 @@ router.get(
 router.put(
   '/service-types/:id/addon-availability',
   authenticateUser,
-  requirePermission('hub.service_types.write'),
+  requirePermission('hub.service_types.write'), requireCoreCatalogWrite,
   putHubServiceTypeAddonAvailability
 );
 router.get(
@@ -717,26 +745,26 @@ router.get(
 router.put(
   '/service-types/:id/addon-deployments',
   authenticateUser,
-  requirePermission('hub.service_types.write'),
+  requirePermission('hub.service_types.write'), requireCoreCatalogWrite,
   putHubAddonDeployments
 );
 
 const resourceRead = ['hub.appointments.read', 'grooming.queue.read', 'hub.service_types.read'] as const;
 
 router.get('/resource-kinds', authenticateUser, requirePermission([...resourceRead]), listHubResourceKinds);
-router.post('/resource-kinds', authenticateUser, requirePermission('hub.service_types.write'), createHubResourceKind);
-router.patch('/resource-kinds/:id', authenticateUser, requirePermission('hub.service_types.write'), patchHubResourceKind);
-router.delete('/resource-kinds/:id', authenticateUser, requirePermission('hub.service_types.write'), deleteHubResourceKind);
+router.post('/resource-kinds', authenticateUser, requirePermission('hub.service_types.write'), requireCoreCatalogWrite, createHubResourceKind);
+router.patch('/resource-kinds/:id', authenticateUser, requirePermission('hub.service_types.write'), requireCoreCatalogWrite, patchHubResourceKind);
+router.delete('/resource-kinds/:id', authenticateUser, requirePermission('hub.service_types.write'), requireCoreCatalogWrite, deleteHubResourceKind);
 router.put(
   '/resource-group-settings',
   authenticateUser,
-  requirePermission('hub.service_types.write'),
+  requirePermission('hub.service_types.write'), requireCoreCatalogWrite,
   putHubResourceGroupSetting,
 );
 router.get('/resources', authenticateUser, requirePermission([...resourceRead]), listHubResources);
-router.post('/resources', authenticateUser, requirePermission('hub.service_types.write'), createHubResource);
-router.patch('/resources/:id', authenticateUser, requirePermission('hub.service_types.write'), patchHubResource);
-router.delete('/resources/:id', authenticateUser, requirePermission('hub.service_types.write'), deleteHubResource);
+router.post('/resources', authenticateUser, requirePermission('hub.service_types.write'), requireCoreCatalogWrite, createHubResource);
+router.patch('/resources/:id', authenticateUser, requirePermission('hub.service_types.write'), requireCoreCatalogWrite, patchHubResource);
+router.delete('/resources/:id', authenticateUser, requirePermission('hub.service_types.write'), requireCoreCatalogWrite, deleteHubResource);
 router.get(
   '/resources/availability',
   authenticateUser,
@@ -752,7 +780,7 @@ router.get(
 router.put(
   '/service-types/:id/resource-kinds',
   authenticateUser,
-  requirePermission('hub.service_types.write'),
+  requirePermission('hub.service_types.write'), requireCoreCatalogWrite,
   putHubServiceTypeResourceKinds,
 );
 
@@ -771,13 +799,13 @@ router.get(
 router.put(
   '/service-groups/checklists/:slug',
   authenticateUser,
-  requirePermission('hub.service_types.write'),
+  requirePermission('hub.service_types.write'), requireCoreCatalogWrite,
   putHubServiceGroupChecklist
 );
 router.delete(
   '/service-groups/checklists/:slug',
   authenticateUser,
-  requirePermission('hub.service_types.write'),
+  requirePermission('hub.service_types.write'), requireCoreCatalogWrite,
   deleteHubServiceGroupChecklist
 );
 
@@ -790,7 +818,7 @@ router.get(
 router.put(
   '/service-groups/:id/addons',
   authenticateUser,
-  requirePermission('hub.service_types.write'),
+  requirePermission('hub.service_types.write'), requireCoreCatalogWrite,
   putHubServiceGroupAddons
 );
 
@@ -809,43 +837,43 @@ router.get(
 router.post(
   '/service-groups',
   authenticateUser,
-  requirePermission('hub.service_types.write'),
+  requirePermission('hub.service_types.write'), requireCoreCatalogWrite,
   createHubServiceGroup
 );
 router.patch(
   '/service-groups/:id',
   authenticateUser,
-  requirePermission('hub.service_types.write'),
+  requirePermission('hub.service_types.write'), requireCoreCatalogWrite,
   patchHubServiceGroup
 );
 router.patch(
   '/service-groups/:id/job-functions',
   authenticateUser,
-  requirePermission('hub.service_types.write'),
+  requirePermission('hub.service_types.write'), requireCoreCatalogWrite,
   patchHubServiceGroupJobFunctions
 );
 router.delete(
   '/service-groups/:id',
   authenticateUser,
-  requirePermission('hub.service_types.write'),
+  requirePermission('hub.service_types.write'), requireCoreCatalogWrite,
   deleteHubServiceGroup
 );
 
 /* --- Inventário / Estoque --- */
 router.get('/inventory/suppliers', authenticateUser, requirePermission(['hub.inventory.read', 'hub.financial.read']), listHubSuppliers);
-router.post('/inventory/suppliers', authenticateUser, requirePermission(['hub.inventory.write', 'hub.financial.write']), createHubSupplier);
-router.patch('/inventory/suppliers/:id', authenticateUser, requirePermission('hub.inventory.write'), patchHubSupplier);
+router.post('/inventory/suppliers', authenticateUser, requirePermission(['hub.inventory.write', 'hub.financial.write']), requireCoreCatalogWrite, createHubSupplier);
+router.patch('/inventory/suppliers/:id', authenticateUser, requirePermission('hub.inventory.write'), requireCoreCatalogWrite, patchHubSupplier);
 
 router.get('/inventory/manufacturers', authenticateUser, requirePermission('hub.inventory.read'), listHubManufacturers);
-router.post('/inventory/manufacturers', authenticateUser, requirePermission('hub.inventory.write'), createHubManufacturer);
-router.patch('/inventory/manufacturers/:id', authenticateUser, requirePermission('hub.inventory.write'), patchHubManufacturer);
+router.post('/inventory/manufacturers', authenticateUser, requirePermission('hub.inventory.write'), requireCoreCatalogWrite, createHubManufacturer);
+router.patch('/inventory/manufacturers/:id', authenticateUser, requirePermission('hub.inventory.write'), requireCoreCatalogWrite, patchHubManufacturer);
 
 router.get('/inventory/items', authenticateUser, requirePermission('hub.inventory.read'), listHubInventoryItems);
-router.post('/inventory/items', authenticateUser, requirePermission('hub.inventory.write'), createHubInventoryItem);
-router.patch('/inventory/items/:id', authenticateUser, requirePermission('hub.inventory.write'), patchHubInventoryItem);
+router.post('/inventory/items', authenticateUser, requirePermission('hub.inventory.write'), requireCoreCatalogWrite, createHubInventoryItem);
+router.patch('/inventory/items/:id', authenticateUser, requirePermission('hub.inventory.write'), requireCoreCatalogWrite, patchHubInventoryItem);
 
 router.get('/inventory/movements', authenticateUser, requirePermission('hub.inventory.read'), listHubStockMovements);
-router.post('/inventory/movements', authenticateUser, requirePermission('hub.inventory.write'), createHubStockMovement);
+router.post('/inventory/movements', authenticateUser, requirePermission('hub.inventory.write'), requireCoreOpsWrite, createHubStockMovement);
 
 router.get('/inventory/lots', authenticateUser, requirePermission('hub.inventory.read'), listHubInventoryLots);
 router.get('/inventory/lots/expiring', authenticateUser, requirePermission('hub.inventory.read'), listHubExpiringLots);
@@ -979,13 +1007,13 @@ router.get(
 router.post(
   '/appointments/calendar-blocks',
   authenticateUser,
-  requirePermission('hub.appointments.write'),
+  requirePermission('hub.appointments.write'), requireCoreOpsWrite,
   upsertHubAgendaCalendarBlock
 );
 router.delete(
   '/appointments/calendar-blocks/:id',
   authenticateUser,
-  requirePermission('hub.appointments.write'),
+  requirePermission('hub.appointments.write'), requireCoreOpsWrite,
   deleteHubAgendaCalendarBlock
 );
 router.get(
@@ -1001,42 +1029,42 @@ router.get(
   listHubSeriesEndingSoon
 );
 router.get('/appointments', authenticateUser, requirePermission('hub.appointments.read'), listHubAppointments);
-router.post('/appointments', authenticateUser, requirePermission('hub.appointments.write'), createHubAppointment);
-router.post('/appointments/batch', authenticateUser, requirePermission('hub.appointments.write'), createHubAppointmentBatch);
-router.patch('/appointments/:id', authenticateUser, requirePermission('hub.appointments.write'), patchHubAppointment);
+router.post('/appointments', authenticateUser, requirePermission('hub.appointments.write'), requireCoreOpsWrite, createHubAppointment);
+router.post('/appointments/batch', authenticateUser, requirePermission('hub.appointments.write'), requireCoreOpsWrite, createHubAppointmentBatch);
+router.patch('/appointments/:id', authenticateUser, requirePermission('hub.appointments.write'), requireCoreOpsWrite, patchHubAppointment);
 
 /* --- Orçamentos / prospects --- */
 router.get('/prospects', authenticateUser, requirePermission('hub.prospects.read'), listHubProspects);
 router.get('/prospects/:id', authenticateUser, requirePermission('hub.prospects.read'), getHubProspect);
-router.post('/prospects', authenticateUser, requirePermission('hub.prospects.write'), createHubProspect);
-router.patch('/prospects/:id', authenticateUser, requirePermission('hub.prospects.write'), patchHubProspect);
+router.post('/prospects', authenticateUser, requirePermission('hub.prospects.write'), requireCoreOpsWrite, createHubProspect);
+router.patch('/prospects/:id', authenticateUser, requirePermission('hub.prospects.write'), requireCoreOpsWrite, patchHubProspect);
 
 router.get('/quotes', authenticateUser, requirePermission('hub.quotes.read'), listHubQuotes);
 /** Rotas estáticas antes de `:id` (senão `suggest-price` é capturado como UUID). */
-router.post('/quotes/suggest-price', authenticateUser, requirePermission('hub.quotes.write'), suggestQuotePrice);
-router.post('/quotes', authenticateUser, requirePermission('hub.quotes.write'), createHubQuote);
+router.post('/quotes/suggest-price', authenticateUser, requirePermission('hub.quotes.write'), requireCoreOpsWrite, suggestQuotePrice);
+router.post('/quotes', authenticateUser, requirePermission('hub.quotes.write'), requireCoreOpsWrite, createHubQuote);
 router.get('/quotes/:id', authenticateUser, requirePermission('hub.quotes.read'), getHubQuote);
 router.get('/quotes/:id/pdf', authenticateUser, requirePermission('hub.quotes.read'), getHubQuotePdf);
-router.patch('/quotes/:id', authenticateUser, requirePermission('hub.quotes.write'), patchHubQuote);
-router.delete('/quotes/:id', authenticateUser, requirePermission('hub.quotes.write'), deleteHubQuote);
-router.post('/quotes/:id/send', authenticateUser, requirePermission('hub.quotes.write'), sendHubQuote);
-router.post('/quotes/:id/awaiting-return', authenticateUser, requirePermission('hub.quotes.write'), awaitingReturnHubQuote);
-router.post('/quotes/:id/cancel', authenticateUser, requirePermission('hub.quotes.write'), cancelHubQuote);
+router.patch('/quotes/:id', authenticateUser, requirePermission('hub.quotes.write'), requireCoreOpsWrite, patchHubQuote);
+router.delete('/quotes/:id', authenticateUser, requirePermission('hub.quotes.write'), requireCoreOpsWrite, deleteHubQuote);
+router.post('/quotes/:id/send', authenticateUser, requirePermission('hub.quotes.write'), requireCoreOpsWrite, sendHubQuote);
+router.post('/quotes/:id/awaiting-return', authenticateUser, requirePermission('hub.quotes.write'), requireCoreOpsWrite, awaitingReturnHubQuote);
+router.post('/quotes/:id/cancel', authenticateUser, requirePermission('hub.quotes.write'), requireCoreOpsWrite, cancelHubQuote);
 router.post(
   '/quotes/:id/finalize-manual-conversion',
   authenticateUser,
-  requirePermission('hub.quotes.write'),
+  requirePermission('hub.quotes.write'), requireCoreOpsWrite,
   finalizeManualConversionHubQuote
 );
-router.post('/quotes/:id/convert', authenticateUser, requirePermission('hub.quotes.write'), convertHubQuote);
-router.post('/quotes/:id/duplicate', authenticateUser, requirePermission('hub.quotes.write'), duplicateHubQuote);
+router.post('/quotes/:id/convert', authenticateUser, requirePermission('hub.quotes.write'), requireCoreOpsWrite, convertHubQuote);
+router.post('/quotes/:id/duplicate', authenticateUser, requirePermission('hub.quotes.write'), requireCoreOpsWrite, duplicateHubQuote);
 router.post(
   '/quotes/:id/reopen-draft',
   authenticateUser,
-  requirePermission('hub.quotes.write'),
+  requirePermission('hub.quotes.write'), requireCoreOpsWrite,
   reopenHubQuoteAsDraft
 );
-router.post('/quotes/:id/public-token', authenticateUser, requirePermission('hub.quotes.write'), ensurePublicToken);
+router.post('/quotes/:id/public-token', authenticateUser, requirePermission('hub.quotes.write'), requireCoreOpsWrite, ensurePublicToken);
 
 /* --- Clínica / Atendimentos --- */
 router.get(
@@ -1541,7 +1569,7 @@ router.delete(
 router.post(
   '/clinical/hospitalizations/:id/charges/:chargeId/approve-price',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   approveHubHospitalizationChargePrice
 );
 
@@ -1633,7 +1661,7 @@ router.delete(
 router.post(
   '/clinical/surgeries/:id/services/:serviceId/approve-price',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   approveHubSurgeryServicePrice
 );
 
@@ -1659,7 +1687,7 @@ router.get(
 router.post(
   '/comandas/open',
   authenticateUser,
-  requirePermission('hub.receivables.create'),
+  requirePermission('hub.receivables.create'), requireCoreOpsWrite,
   postHubComandaOpen
 );
 router.get(
@@ -1671,7 +1699,7 @@ router.get(
 router.post(
   '/comandas/:id/public-token',
   authenticateUser,
-  requirePermission('hub.receivables.create'),
+  requirePermission('hub.receivables.create'), requireCoreOpsWrite,
   ensureComandaPublicToken
 );
 router.get(
@@ -1683,61 +1711,61 @@ router.get(
 router.post(
   '/comandas/:id/sync-from-origin',
   authenticateUser,
-  requirePermission('hub.receivables.create'),
+  requirePermission('hub.receivables.create'), requireCoreOpsWrite,
   postHubComandaSyncFromOrigin
 );
 router.post(
   '/comandas/:id/apply-package',
   authenticateUser,
-  requirePermission('hub.receivables.create'),
+  requirePermission('hub.receivables.create'), requireCoreOpsWrite,
   postHubComandaApplyPackage
 );
 router.post(
   '/comandas/:id/checkout',
   authenticateUser,
-  requirePermission('hub.receivables.create'),
+  requirePermission('hub.receivables.create'), requireCoreOpsWrite,
   postHubComandaCheckout
 );
 router.post(
   '/comandas/:id/resolve-cancellation',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   postHubComandaResolveCancellation
 );
 router.post(
   '/comandas/suggest-item-price',
   authenticateUser,
-  requirePermission('hub.receivables.create'),
+  requirePermission('hub.receivables.create'), requireCoreOpsWrite,
   postHubComandaSuggestItemPrice
 );
 router.post(
   '/comandas/checkout-bulk',
   authenticateUser,
-  requirePermission('hub.receivables.create'),
+  requirePermission('hub.receivables.create'), requireCoreOpsWrite,
   postHubComandaCheckoutBulk
 );
 router.post(
   '/comandas/:id/items',
   authenticateUser,
-  requirePermission('hub.receivables.create'),
+  requirePermission('hub.receivables.create'), requireCoreOpsWrite,
   postHubComandaAddItems
 );
 router.patch(
   '/comandas/:id/items/:itemId',
   authenticateUser,
-  requirePermission('hub.receivables.create'),
+  requirePermission('hub.receivables.create'), requireCoreOpsWrite,
   patchHubComandaItem
 );
 router.delete(
   '/comandas/:id/items/:itemId',
   authenticateUser,
-  requirePermission('hub.receivables.create'),
+  requirePermission('hub.receivables.create'), requireCoreOpsWrite,
   deleteHubComandaItem
 );
 router.patch(
   '/comandas/:id',
   authenticateUser,
-  requirePermission('hub.receivables.create'),
+  requirePermission('hub.receivables.create'), requireCoreOpsWrite,
   patchHubComanda
 );
 
@@ -1751,7 +1779,7 @@ router.get(
 router.patch(
   '/finance/payment-method-settings',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   patchHubFinancePaymentMethodSettings
 );
 router.get(
@@ -1795,49 +1823,49 @@ router.get(
 router.post(
   '/finance/receivables',
   authenticateUser,
-  requirePermission('hub.receivables.create'),
+  requirePermission('hub.receivables.create'), requireCoreOpsWrite,
   postHubFinanceReceivable
 );
 router.post(
   '/finance/receivables/:id/product-lines',
   authenticateUser,
-  requirePermission('hub.inventory.write'),
+  requirePermission('hub.inventory.write'), requireCoreCatalogWrite,
   postHubFinanceReceivableProductLine
 );
 router.delete(
   '/finance/receivables/:id/product-lines/:lineId',
   authenticateUser,
-  requirePermission('hub.inventory.write'),
+  requirePermission('hub.inventory.write'), requireCoreCatalogWrite,
   deleteHubFinanceReceivableProductLine
 );
 router.post(
   '/finance/receivables/:id/cancel',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   postHubFinanceReceivableCancel
 );
 router.post(
   '/finance/waive-billing',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   postHubFinanceWaiveBilling
 );
 router.post(
   '/finance/receivables/:id/payments',
   authenticateUser,
-  requirePermission('hub.cash.receive'),
+  requirePermission('hub.cash.receive'), requireCoreOpsWrite,
   postHubFinanceReceivablePayment
 );
 router.post(
   '/finance/receivables/:id/payments/historical-cash',
   authenticateUser,
-  requirePermission('hub.financial.adjust'),
+  requirePermission('hub.financial.adjust'), requireCoreOpsWrite,
   postHubFinanceReceivableHistoricalCash
 );
 router.post(
   '/finance/charge-bundles',
   authenticateUser,
-  requirePermission('hub.receivables.create'),
+  requirePermission('hub.receivables.create'), requireCoreOpsWrite,
   postHubChargeBundle
 );
 router.get(
@@ -1855,7 +1883,7 @@ router.get(
 router.patch(
   '/finance/charge-bundles/:id/mark-sent',
   authenticateUser,
-  requirePermission('hub.receivables.create'),
+  requirePermission('hub.receivables.create'), requireCoreOpsWrite,
   patchHubChargeBundleMarkSent
 );
 router.get(
@@ -1903,19 +1931,19 @@ router.get(
 router.post(
   '/finance/cash-sessions/open',
   authenticateUser,
-  requirePermission('hub.cash.session'),
+  requirePermission('hub.cash.session'), requireCoreOpsWrite,
   postHubFinanceCashSessionOpen
 );
 router.post(
   '/finance/cash-sessions/:id/close',
   authenticateUser,
-  requirePermission('hub.cash.session'),
+  requirePermission('hub.cash.session'), requireCoreOpsWrite,
   postHubFinanceCashSessionClose
 );
 router.post(
   '/finance/handoff-pending',
   authenticateUser,
-  requirePermission('hub.cash.session'),
+  requirePermission('hub.cash.session'), requireCoreOpsWrite,
   postHubFinanceHandoffPending
 );
 router.get(
@@ -1999,19 +2027,19 @@ router.get(
 router.post(
   '/finance/expenses',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   postHubFinanceExpense
 );
 router.patch(
   '/finance/expenses/:id',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   patchHubFinanceExpense
 );
 router.delete(
   '/finance/expenses/:id',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   deleteHubFinanceExpense
 );
 router.get(
@@ -2023,25 +2051,25 @@ router.get(
 router.post(
   '/finance/payables',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   postHubFinancePayable
 );
 router.patch(
   '/finance/payables/:id',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   patchHubFinancePayable
 );
 router.post(
   '/finance/payables/:id/pay',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   postHubFinancePayablePay
 );
 router.post(
   '/finance/payables/:id/cancel',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   postHubFinancePayableCancel
 );
 router.get(
@@ -2053,31 +2081,31 @@ router.get(
 router.post(
   '/finance/payable-schedules',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   postHubFinancePayableSchedule
 );
 router.patch(
   '/finance/payable-schedules/:id',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   patchHubFinancePayableSchedule
 );
 router.post(
   '/finance/payable-schedules/:id/end',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   postHubFinancePayableScheduleEnd
 );
 router.post(
   '/finance/cash-sessions/:id/movements',
   authenticateUser,
-  requirePermission('hub.cash.session'),
+  requirePermission('hub.cash.session'), requireCoreOpsWrite,
   postHubFinanceCashMovement
 );
 router.post(
   '/finance/credit-movements',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   postHubCustomerCreditMovement
 );
 router.get(
@@ -2108,24 +2136,26 @@ router.post(
   '/finance/packages',
   authenticateUser,
   requirePermission('hub.financial.write'),
+  requireCoreCatalogWrite,
   postHubPackage
 );
 router.patch(
   '/finance/packages/:id',
   authenticateUser,
   requirePermission('hub.financial.write'),
+  requireCoreCatalogWrite,
   patchHubPackage
 );
 router.post(
   '/finance/series-invoices/issue',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   postHubSeriesInvoiceIssue
 );
 router.post(
   '/finance/series-invoices/run-job',
   authenticateUser,
-  requirePermission('hub.financial.write'),
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
   postHubSeriesInvoiceRunJob
 );
 router.get(
@@ -2139,6 +2169,26 @@ router.get(
   authenticateUser,
   requirePermission('hub.financial.read'),
   getHubPetPackageBalances
+);
+router.post(
+  '/finance/package-balances/:id/cancel',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  requireCoreOpsWrite,
+  postHubPackageBalanceCancel
+);
+router.get(
+  '/finance/package-balances/:id/refund-preview',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubPackageBalanceRefundPreview
+);
+router.post(
+  '/finance/package-balances/:id/refund',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  requireCoreOpsWrite,
+  postHubPackageBalanceRefund
 );
 
 router.get(
@@ -2157,18 +2207,21 @@ router.post(
   '/finance/commission-rules',
   authenticateUser,
   requirePermission('hub.financial.write'),
+  requireCoreCatalogWrite,
   postHubCommissionRule
 );
 router.patch(
   '/finance/commission-rules/:id',
   authenticateUser,
   requirePermission('hub.financial.write'),
+  requireCoreCatalogWrite,
   patchHubCommissionRule
 );
 router.delete(
   '/finance/commission-rules/:id',
   authenticateUser,
   requirePermission('hub.financial.write'),
+  requireCoreCatalogWrite,
   deleteHubCommissionRule
 );
 

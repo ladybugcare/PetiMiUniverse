@@ -1,6 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { logger } from '../utils/logger.js';
 import { AppError } from '../utils/errors.js';
+import { captureException } from '../utils/sentry.js';
 
 /**
  * Middleware de tratamento de erros global
@@ -54,6 +55,20 @@ export const errorHandler = (
     logger.error('System error', {
       ...logMetadata,
       stack: err.stack,
+    });
+  }
+
+  // Sentry: 5xx e erros não operacionais (não poluir com 4xx de negócio)
+  if (!isOperational || statusCode >= 500) {
+    void captureException(err, {
+      correlationId,
+      path: req.path,
+      method: req.method,
+      statusCode,
+      clinic_id:
+        (req.body as { clinic_id?: string } | undefined)?.clinic_id ||
+        (req.query as { clinic_id?: string } | undefined)?.clinic_id ||
+        undefined,
     });
   }
 

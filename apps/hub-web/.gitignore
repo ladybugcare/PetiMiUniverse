@@ -9,3 +9,6 @@ playwright-report/
 blob-report/
 playwright/.cache/
 e2e/.auth/
+.vercel
+.env.staging.local
+.env.preprod.local

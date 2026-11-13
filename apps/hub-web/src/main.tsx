@@ -8,6 +8,7 @@ import markerIcon from 'leaflet/dist/images/marker-icon.png';
 import markerShadow from 'leaflet/dist/images/marker-shadow.png';
 import App from './App';
 import './index.css';
+import { initHubSentry } from './sentry';
 
 // Fix para ícones padrão do Leaflet quebrados em bundlers como Vite
 delete (L.Icon.Default.prototype as unknown as Record<string, unknown>)._getIconUrl;
@@ -21,8 +22,10 @@ setHubUiConfig({
   vetWebUrl: import.meta.env.VITE_VET_WEB_URL || '',
 });
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-);
+void initHubSentry().finally(() => {
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+});

@@ -1,6 +1,7 @@
 // backend/src/server.ts
 import http from 'http';
 import app from './app';
+import { initSentry } from './utils/sentry.js';
 
 const explicitPort = process.env.PORT;
 const isProd = process.env.NODE_ENV === 'production';
@@ -62,4 +63,6 @@ function start(attemptIndex: number) {
   });
 }
 
-start(0);
+void initSentry().finally(() => {
+  start(0);
+});

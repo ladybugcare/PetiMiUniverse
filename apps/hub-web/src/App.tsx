@@ -38,8 +38,11 @@ import {
 } from '@petimi/hub-ui';
 import HubProtectedRoute from './routes/HubProtectedRoute';
 import HubLoginPage from './pages/HubLoginPage';
+import HubForgotPasswordPage from './pages/HubForgotPasswordPage';
+import HubResetPasswordPage from './pages/HubResetPasswordPage';
 import HubSignUpPage from './pages/HubSignUpPage';
 import HubEmailConfirmedPage from './pages/HubEmailConfirmedPage';
+import HubErrorBoundary from './components/HubErrorBoundary';
 import HubAcceptInvitationPage from './pages/HubAcceptInvitationPage';
 import HubInviteSignUpPage from './pages/HubInviteSignUpPage';
 import HubClinicOnboardingPage from './pages/HubClinicOnboardingPage';
@@ -82,6 +85,8 @@ const router = createBrowserRouter(
     <>
       <Route path="/meu-perfil" element={<Navigate to="/hub/meu-perfil" replace />} />
       <Route path="/login" element={<HubLoginPage />} />
+      <Route path="/forgot-password" element={<HubForgotPasswordPage />} />
+      <Route path="/reset-password" element={<HubResetPasswordPage />} />
       <Route path="/signup" element={<HubSignUpPage />} />
       <Route path="/accept-invitation" element={<HubAcceptInvitationPage />} />
       <Route path="/signup-convite" element={<HubInviteSignUpPage />} />
@@ -166,11 +171,13 @@ const router = createBrowserRouter(
 
 const App: React.FC = () => {
   return (
-    <AuthProvider>
-      <AlertProvider>
-        <RouterProvider router={router} />
-      </AlertProvider>
-    </AuthProvider>
+    <HubErrorBoundary>
+      <AuthProvider>
+        <AlertProvider>
+          <RouterProvider router={router} />
+        </AlertProvider>
+      </AuthProvider>
+    </HubErrorBoundary>
   );
 };
 

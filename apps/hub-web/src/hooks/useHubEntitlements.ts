@@ -134,6 +134,11 @@ export function useHubEntitlements() {
     subscription?.limits_exceeded?.units || subscription?.limits_exceeded?.users,
   );
 
+  /** Catálogo (estoque itens, serviços): só em access_mode full. */
+  const canMutateCatalog = accessMode === 'full';
+  /** Ops do dia: full ou soft_lock (graça); bloqueado em read_history. */
+  const canMutateOps = accessMode === 'full' || accessMode === 'soft_lock';
+
   return {
     subscription,
     hasModule,
@@ -142,6 +147,8 @@ export function useHubEntitlements() {
     pathAllowed,
     accessMode,
     limitsExceeded,
+    canMutateCatalog,
+    canMutateOps,
     isBeta: Boolean(subscription?.is_beta),
   };
 }

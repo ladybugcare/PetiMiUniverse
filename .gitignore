@@ -22,8 +22,14 @@
 .env.development.local
 .env.test.local
 .env.production.local
+.env.preprod.local
+.env.staging.local
 .env.staging
 .env.production
+**/.env.preprod.local
+**/.env.staging.local
+**/.env.smoke.preprod.local
+backend/.env.smoke.preprod.local
 
 # Credentials (NEVER commit!)
 **/STAGING_CREDENTIALS.md

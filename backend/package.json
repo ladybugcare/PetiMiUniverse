@@ -17,9 +17,12 @@
     "seed:hotel-creche": "tsx scripts/seed-boarding-hotel-creche.ts",
     "seed:leva-traz": "tsx scripts/seed-leva-traz.ts",
     "seed:clinica-cirurgia-internacao": "tsx scripts/seed-clinica-cirurgia-internacao.ts",
-    "seed:ops-demo": "npm run seed:banho-simultaneo && npm run seed:hotel-creche && npm run seed:leva-traz && npm run seed:clinica-cirurgia-internacao"
+    "seed:ops-demo": "npm run seed:banho-simultaneo && npm run seed:hotel-creche && npm run seed:leva-traz && npm run seed:clinica-cirurgia-internacao",
+    "seed:fase0-qa-staging": "tsx scripts/seed-fase0-qa-staging.ts",
+    "smoke:tenant-isolation": "tsx scripts/hub-tenant-isolation-smoke.ts"
   },
   "dependencies": {
+    "@sentry/node": "^9.47.2",
     "@supabase/supabase-js": "^2.76.1",
     "@types/pdfkit": "^0.17.6",
     "cors": "^2.8.5",

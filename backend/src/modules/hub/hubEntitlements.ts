@@ -109,11 +109,12 @@ export async function assertHubEntitlement(
   const snap = await loadEntitlements(clinicId);
 
   if (opts.mutating) {
-    const softOk =
-      opts.allowSoftLockWrite ||
-      opts.module === 'hub_core' ||
-      opts.module === 'clinic';
-    assertAccessAllowsMutation(snap, { allowSoftLockWrite: softOk && snap.access_mode === 'soft_lock' });
+    // Soft write só com flag explícita (não inferir por module).
+    // soft_lock + allowSoftLockWrite: ops do dia; sem flag: bloqueia (catálogo/capacidade).
+    // read_history / canceled: sempre bloqueia mutações.
+    assertAccessAllowsMutation(snap, {
+      allowSoftLockWrite: Boolean(opts.allowSoftLockWrite) && snap.access_mode === 'soft_lock',
+    });
   }
 
   if (opts.module) assertModuleEnabled(snap, opts.module);
