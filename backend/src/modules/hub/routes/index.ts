@@ -1,5 +1,9 @@
 import { Router } from 'express';
-import { authenticateUser, requirePermission } from '../../../middleware/authMiddleware';
+import {
+  authenticateUser,
+  requireClinicAccess,
+  requirePermission,
+} from '../../../middleware/authMiddleware';
 import { authLimiter, hubApiLimiter } from '../../../middleware/rateLimiter.js';
 import { requireHubEntitlement } from '../hubEntitlements.js';
 import { postHubSignup, postHubOnboardingClinic } from '../hubSignupController.js';
@@ -42,6 +46,18 @@ const requireCoreOpsWrite = requireHubEntitlement({
   module: 'hub_core',
   mutating: true,
   allowSoftLockWrite: true,
+});
+/** Capacidade de unidade: bloqueado em soft_lock/read_history (+ limite do plano). */
+const requireUnitCapacityWrite = requireHubEntitlement({
+  module: 'hub_core',
+  mutating: true,
+  capacity: 'unit',
+});
+/** Capacidade de usuário/convite: bloqueado em soft_lock/read_history (+ limite do plano). */
+const requireUserCapacityWrite = requireHubEntitlement({
+  module: 'hub_core',
+  mutating: true,
+  capacity: 'user',
 });
 import { getHubDayOpsSummary } from '../hubDayOpsSummaryController';
 import {
@@ -560,11 +576,14 @@ router.get(
   getHubDayOpsSummary,
 );
 
+/** Foto do usuário autenticado: disponível em qualquer access_mode (sem entitlement). */
 router.post('/profile/me/photo', authenticateUser, postHubUserProfilePhoto);
-router.post('/clinic/profile/photo', authenticateUser, postHubClinicProfilePhoto);
-router.patch('/clinic/profile', authenticateUser, patchHubClinicProfile);
-router.post('/units', authenticateUser, postHubUnit);
-router.patch('/units/:unitId', authenticateUser, patchHubUnitProfile);
+/** Perfil/logo da clínica: catálogo admin — bloqueado em soft_lock e read_history. */
+router.post('/clinic/profile/photo', authenticateUser, requireCoreCatalogWrite, postHubClinicProfilePhoto);
+router.patch('/clinic/profile', authenticateUser, requireCoreCatalogWrite, patchHubClinicProfile);
+/** Unidades: catálogo/capacidade — controller mantém assertCanCreateUnit. */
+router.post('/units', authenticateUser, requireUnitCapacityWrite, postHubUnit);
+router.patch('/units/:unitId', authenticateUser, requireCoreCatalogWrite, patchHubUnitProfile);
 
 router.get(
   '/guardians/stats',
@@ -961,24 +980,28 @@ router.post(
   '/reports/email-schedules',
   authenticateUser,
   requirePermission(['hub.reports.read', 'hub.financial.read']),
+  requireCoreCatalogWrite,
   createHubReportEmailSchedule
 );
 router.patch(
   '/reports/email-schedules/:id',
   authenticateUser,
   requirePermission(['hub.reports.read', 'hub.financial.read']),
+  requireCoreCatalogWrite,
   patchHubReportEmailSchedule
 );
 router.delete(
   '/reports/email-schedules/:id',
   authenticateUser,
   requirePermission(['hub.reports.read', 'hub.financial.read']),
+  requireCoreCatalogWrite,
   deleteHubReportEmailSchedule
 );
 router.post(
   '/reports/email-schedules/:id/run',
   authenticateUser,
   requirePermission(['hub.reports.read', 'hub.financial.read']),
+  requireCoreCatalogWrite,
   runHubReportEmailSchedule
 );
 
@@ -988,14 +1011,37 @@ router.post(
   '/staff/photo',
   authenticateUser,
   requirePermission('hub.staff.write'),
+  requireCoreOpsWrite,
   postHubStaffPhoto
 );
-router.post('/staff', authenticateUser, requirePermission('hub.staff.write'), createHubStaff);
+router.post(
+  '/staff',
+  authenticateUser,
+  requirePermission('hub.staff.write'),
+  requireCoreCatalogWrite,
+  createHubStaff
+);
 router.get('/staff/:id', authenticateUser, requirePermission('hub.staff.read'), getHubStaff);
+/**
+ * PATCH /staff/:id — soft-lock por campos no controller (ops vs catálogo/capacidade).
+ * Ver hubStaffPatchAccess.ts.
+ */
 router.patch('/staff/:id', authenticateUser, requirePermission('hub.staff.write'), patchHubStaff);
-router.post('/staff/:id/link-account', authenticateUser, requirePermission('hub.staff.write'), linkHubStaffAccount);
+router.post(
+  '/staff/:id/link-account',
+  authenticateUser,
+  requirePermission('hub.staff.write'),
+  requireUserCapacityWrite,
+  linkHubStaffAccount
+);
 router.get('/staff/:id/pending-invite', authenticateUser, requirePermission('hub.staff.invite'), getHubStaffPendingInvite);
-router.post('/staff/:id/invite', authenticateUser, requirePermission('hub.staff.invite'), inviteHubStaff);
+router.post(
+  '/staff/:id/invite',
+  authenticateUser,
+  requirePermission('hub.staff.invite'),
+  requireUserCapacityWrite,
+  inviteHubStaff
+);
 
 /* --- Agenda / Agendamentos --- */
 router.get(
@@ -1370,6 +1416,7 @@ router.post(
     'grooming.queue.manage',
     'boarding.reservations.manage',
   ]),
+  requireClinicWrite,
   upsertHubPetClinicalFlag
 );
 router.get(
@@ -1898,6 +1945,12 @@ router.get(
   requirePermission('hub.financial.read'),
   listHubFinancePayments
 );
+/**
+ * Estorno financeiro — exceção de produto:
+ * permitido em full, soft_lock e read_history (correção de ops preexistentes).
+ * NÃO usar requireCoreOpsWrite. Garantias atuais: RBAC hub.payments.reverse,
+ * reason obrigatória, soft-reverse auditável, payment.clinic_id === clinic_id.
+ */
 router.post(
   '/finance/payments/:id/reverse',
   authenticateUser,
@@ -2504,6 +2557,10 @@ router.post(
 );
 
 // ─── Comunicação — log de tentativas (click-to-chat / in-app) ──────────────
-router.post('/message-logs', authenticateUser, postHubMessageLog);
+/**
+ * Telemetria de comunicação: sem soft-lock (cat. 2), mas exige membro da clínica.
+ * Schema restrito (não é escrita arbitrária).
+ */
+router.post('/message-logs', authenticateUser, requireClinicAccess, postHubMessageLog);
 
 export default router;

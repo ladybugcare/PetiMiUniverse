@@ -17,8 +17,9 @@ import {
   sanitizeStaffSpecialtiesInput,
   STAFF_SPECIALTIES_MAX_ITEMS,
 } from './hubStaffSpecialties';
-import { PlanEntitlementError } from '../../utils/errors.js';
+import { PlanEntitlementError, ValidationError } from '../../utils/errors.js';
 import { assertCanInviteUser } from './hubEntitlements.js';
+import { assertStaffPatchAllowedByAccessMode } from './hubStaffPatchAccess.js';
 
 const uuidStr = z.string().uuid();
 
@@ -384,6 +385,18 @@ export const patchHubStaff = async (req: Request, res: Response) => {
 
     const d = body.data;
 
+    try {
+      await assertStaffPatchAllowedByAccessMode(clinic_id, d as Record<string, unknown>);
+    } catch (e) {
+      if (e instanceof ValidationError) {
+        return res.status(400).json({ error: e.message, code: e.code, details: e.details });
+      }
+      if (e instanceof PlanEntitlementError) {
+        return res.status(403).json({ error: e.message, code: e.code, details: e.details });
+      }
+      throw e;
+    }
+
     // Proteção contra auto-remoção de CADMIN: se o profissional sendo editado
     // é o próprio solicitante e tem role CADMIN, bloquear mudança de role/acesso.
     const isSensitiveChange = d.hub_access_role !== undefined || d.has_hub_access === false;
@@ -696,6 +709,15 @@ export const linkHubStaffAccount = async (req: Request, res: Response) => {
     const email = (row.hub_access_email as string | null)?.trim();
     if (!email) {
       return res.status(400).json({ error: 'Informe o e-mail de acesso antes de vincular.' });
+    }
+
+    try {
+      await assertCanInviteUser(clinic_id);
+    } catch (e) {
+      if (e instanceof PlanEntitlementError) {
+        return res.status(403).json({ error: e.message, code: e.code, details: e.details });
+      }
+      throw e;
     }
 
     const link = await applyStaffHubAccessLink(staffId, clinic_id, {
