@@ -90,6 +90,18 @@ function paymentSubtitle(
   payment: Record<string, unknown>,
 ): string {
   const receivable = payment.receivable as Record<string, unknown> | null | undefined;
+  const tendered = payment.tendered_amount != null ? Number(payment.tendered_amount) : null;
+  const change = payment.change_amount != null ? Number(payment.change_amount) : null;
+  if (
+    String(payment.payment_method) === 'cash' &&
+    tendered != null &&
+    Number.isFinite(tendered) &&
+    change != null &&
+    Number.isFinite(change) &&
+    change > 0.009
+  ) {
+    return `Troco R$ ${change.toFixed(2)} (recebido R$ ${tendered.toFixed(2)})`;
+  }
   const notes = String(payment.notes ?? '').trim();
   if (notes) return notes;
   if (receivable?.id) {

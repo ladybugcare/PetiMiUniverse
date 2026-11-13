@@ -43,9 +43,13 @@ export type HubPackageBalance = {
   hub_service_type_id: string;
   sessions_remaining: number;
   sessions_total: number | null;
+  sessions_remaining_at_cancel?: number | null;
   expires_at: string | null;
   purchased_at: string | null;
   purchase_group_id: string | null;
+  status?: string;
+  cancelled_at?: string | null;
+  cancel_reason?: string | null;
   hub_packages?: { id: string; name: string } | { id: string; name: string }[] | null;
 };
 
@@ -122,8 +126,13 @@ export const hubPackagesApi = {
     }) as Promise<{ package: HubPackage }>;
   },
 
-  async listPetBalances(clinicId: string, petId: string): Promise<{ balances: HubPackageBalance[] }> {
+  async listPetBalances(
+    clinicId: string,
+    petId: string,
+    opts?: { includeCancelled?: boolean },
+  ): Promise<{ balances: HubPackageBalance[] }> {
     const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.includeCancelled) q.set('include_cancelled', '1');
     return apiRequest(`/api/hub/pets/${encodeURIComponent(petId)}/package-balances?${q}`) as Promise<{
       balances: HubPackageBalance[];
     }>;
@@ -133,6 +142,74 @@ export const hubPackagesApi = {
     const q = new URLSearchParams({ clinic_id: clinicId });
     return apiRequest(`/api/hub/guardians/${encodeURIComponent(guardianId)}/package-balances?${q}`) as Promise<{
       balances: HubPackageBalance[];
+    }>;
+  },
+
+  async cancelBalance(
+    balanceId: string,
+    body: { clinic_id: string; reason: string },
+  ): Promise<{ balance: Record<string, unknown> }> {
+    return apiRequest(`/api/hub/finance/package-balances/${encodeURIComponent(balanceId)}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{ balance: Record<string, unknown> }>;
+  },
+
+  async refundPreview(
+    balanceId: string,
+    clinicId: string,
+  ): Promise<{
+    preview: {
+      balance_id: string;
+      status: string;
+      sessions_total: number;
+      sessions_consumed: number;
+      sessions_remaining: number;
+      sessions_remaining_at_cancel: number | null;
+      paid_total: number;
+      suggested_refund: number;
+      purchased_receivable_id: string | null;
+    };
+  }> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(
+      `/api/hub/finance/package-balances/${encodeURIComponent(balanceId)}/refund-preview?${q}`,
+    ) as Promise<{
+      preview: {
+        balance_id: string;
+        status: string;
+        sessions_total: number;
+        sessions_consumed: number;
+        sessions_remaining: number;
+        sessions_remaining_at_cancel: number | null;
+        paid_total: number;
+        suggested_refund: number;
+        purchased_receivable_id: string | null;
+      };
+    }>;
+  },
+
+  async authorizeRefund(
+    balanceId: string,
+    body: {
+      clinic_id: string;
+      refund_amount: number;
+      reason: string;
+      refund_method?: string | null;
+      refund_effective_date?: string | null;
+    },
+  ): Promise<{
+    preview: Record<string, unknown>;
+    adjustment: Record<string, unknown>;
+    receivable_status: string | null;
+  }> {
+    return apiRequest(`/api/hub/finance/package-balances/${encodeURIComponent(balanceId)}/refund`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{
+      preview: Record<string, unknown>;
+      adjustment: Record<string, unknown>;
+      receivable_status: string | null;
     }>;
   },
 };

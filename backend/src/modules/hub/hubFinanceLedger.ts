@@ -12,6 +12,7 @@ import {
   restoreHubCustomerCredit,
 } from './hubCustomerCredit';
 import { syncChargeBundleStatusForReceivable } from './hubChargeBundlesService';
+import { syncPackageBalancesForReceivable } from './hubPackagesService';
 
 export type PaymentReversalMode = 'payment_reversal' | 'refund';
 
@@ -61,7 +62,10 @@ export async function recalculateReceivableFromPosted(receivableId: string): Pro
     .eq('id', receivableId)
     .maybeSingle();
   if (rErr || !rec) throw new Error(rErr?.message || 'Recebível não encontrado');
-  if (['cancelled', 'refunded'].includes(String(rec.status))) return String(rec.status);
+  if (['cancelled', 'refunded'].includes(String(rec.status))) {
+    await syncPackageBalancesForReceivable(receivableId);
+    return String(rec.status);
+  }
 
   const paid = await sumPostedPaymentsForReceivable(receivableId);
   const finalAmount = Number(rec.final_amount ?? 0);
@@ -76,6 +80,9 @@ export async function recalculateReceivableFromPosted(receivableId: string): Pro
     });
     void syncChargeBundleStatusForReceivable(receivableId, rec.clinic_id as string);
   }
+
+  await syncPackageBalancesForReceivable(receivableId);
+
   return nextStatus;
 }
 
@@ -185,6 +192,37 @@ export async function reversePaymentSoft(opts: {
   }
   if (String(payment.status) === 'reversed') {
     throw new FinanceLedgerError('Pagamento já estornado', 409);
+  }
+
+  // Pré-checagem: se o estorno tirar o recebível de `paid`, saldos ainda active com restante
+  // exigem cancel comercial antes (não bloqueia por redemption — cancel ≠ reverse).
+  {
+    const receivableIdPre = payment.receivable_id as string;
+    const { data: recPre } = await supabaseAdmin
+      .from('hub_receivables')
+      .select('final_amount, status')
+      .eq('id', receivableIdPre)
+      .maybeSingle();
+    if (recPre && String(recPre.status) === 'paid') {
+      const paidNow = await sumPostedPaymentsForReceivable(receivableIdPre);
+      const after = round2Ledger(paidNow - Number(payment.amount ?? 0));
+      const finalAmt = Number(recPre.final_amount ?? 0);
+      if (after < finalAmt - 0.009) {
+        const { data: activeBalances } = await supabaseAdmin
+          .from('hub_customer_package_balances')
+          .select('id')
+          .eq('purchased_receivable_id', receivableIdPre)
+          .eq('status', 'active')
+          .gt('sessions_remaining', 0)
+          .limit(1);
+        if (activeBalances?.length) {
+          throw new FinanceLedgerError(
+            'Cancele o pacote comercialmente antes de estornar a quitação (cancel ≠ estorno).',
+            409,
+          );
+        }
+      }
+    }
   }
 
   const adjType = mode === 'refund' ? 'refund' : 'payment_reversal';
@@ -345,6 +383,19 @@ export async function reversePaymentSoft(opts: {
   // Sync appointment já feito no recalc; garantir se veio do RPC
   await syncHubAppointmentPaidFromReceivable({ clinicId, receivableId });
   void syncChargeBundleStatusForReceivable(receivableId, clinicId);
+  // RPC recalcula status sem passar pelo TS — alinhar saldos de pacote.
+  try {
+    await syncPackageBalancesForReceivable(receivableId);
+  } catch (e) {
+    const msg = (e as Error)?.message ?? '';
+    if (msg.startsWith('PACKAGE_BALANCE_HAS_REDEMPTIONS')) {
+      throw new FinanceLedgerError(
+        'Não é possível estornar: o pacote já teve sessões consumidas. Estorne os resgates antes.',
+        409,
+      );
+    }
+    throw e;
+  }
 
   return {
     ok: true,
@@ -506,6 +557,149 @@ export async function postHistoricalCashPayment(opts: {
 
   const nextStatus = await recalculateReceivableFromPosted(receivableId);
   return { payment: pay as Record<string, unknown>, receivable_status: nextStatus };
+}
+
+/**
+ * Insert de pagamento posted com idempotência (lookup → insert → race no unique).
+ * Não recalcula o recebível — o caller deve chamar recalculateReceivableFromPosted.
+ */
+function paymentsPayloadCompatible(
+  existing: Record<string, unknown>,
+  opts: {
+    receivableId: string;
+    amount: number;
+    paymentMethod: string;
+    tenderedAmount?: number | null;
+    changeAmount?: number | null;
+  },
+): boolean {
+  if (String(existing.receivable_id) !== opts.receivableId) return false;
+  if (String(existing.payment_method) !== opts.paymentMethod) return false;
+  if (Math.abs(Number(existing.amount ?? 0) - round2Ledger(opts.amount)) > 0.02) return false;
+  const exTend = existing.tendered_amount == null ? null : Number(existing.tendered_amount);
+  const exChange = existing.change_amount == null ? null : Number(existing.change_amount);
+  const wantTend = opts.tenderedAmount == null ? null : round2Ledger(opts.tenderedAmount);
+  const wantChange = opts.changeAmount == null ? null : round2Ledger(opts.changeAmount);
+  if (exTend == null && wantTend == null && exChange == null && wantChange == null) return true;
+  if (exTend == null || wantTend == null || exChange == null || wantChange == null) return false;
+  return Math.abs(exTend - wantTend) <= 0.02 && Math.abs(exChange - wantChange) <= 0.02;
+}
+
+export async function insertPostedPaymentWithIdempotency(opts: {
+  clinicId: string;
+  receivableId: string;
+  cashSessionId: string | null;
+  amount: number;
+  paymentMethod: string;
+  installments?: number;
+  paymentDate: string;
+  effectivePaymentDate?: string | null;
+  notes?: string | null;
+  createdByUserId: string | null;
+  paymentTiming?: string | null;
+  postingKind?: 'operational' | 'historical_correction';
+  correctionReason?: string | null;
+  correctedByUserId?: string | null;
+  idempotencyKey?: string | null;
+  tenderedAmount?: number | null;
+  changeAmount?: number | null;
+}): Promise<
+  | { ok: true; payment: Record<string, unknown>; replayed: boolean }
+  | { ok: false; error: string; status?: number; existing?: Record<string, unknown> }
+> {
+  const idempotencyKey = opts.idempotencyKey ?? null;
+  const tenderedAmount =
+    opts.paymentMethod === 'cash' && opts.tenderedAmount != null
+      ? round2Ledger(opts.tenderedAmount)
+      : null;
+  const changeAmount =
+    tenderedAmount != null
+      ? round2Ledger(opts.changeAmount ?? Math.max(0, tenderedAmount - opts.amount))
+      : null;
+
+  if (idempotencyKey) {
+    const { data: existing } = await supabaseAdmin
+      .from('hub_payments')
+      .select('*')
+      .eq('clinic_id', opts.clinicId)
+      .eq('idempotency_key', idempotencyKey)
+      .maybeSingle();
+    if (existing) {
+      if (
+        !paymentsPayloadCompatible(existing as Record<string, unknown>, {
+          receivableId: opts.receivableId,
+          amount: opts.amount,
+          paymentMethod: opts.paymentMethod,
+          tenderedAmount,
+          changeAmount,
+        })
+      ) {
+        return {
+          ok: false,
+          error: 'idempotency_key já usada com payload diferente',
+          status: 409,
+          existing: existing as Record<string, unknown>,
+        };
+      }
+      return { ok: true, payment: existing as Record<string, unknown>, replayed: true };
+    }
+  }
+
+  const row: Record<string, unknown> = {
+    clinic_id: opts.clinicId,
+    receivable_id: opts.receivableId,
+    cash_session_id: opts.cashSessionId,
+    amount: round2Ledger(opts.amount),
+    payment_method: opts.paymentMethod,
+    installments: opts.installments ?? 1,
+    payment_date: opts.paymentDate,
+    effective_payment_date: opts.effectivePaymentDate ?? opts.paymentDate,
+    notes: opts.notes ?? null,
+    created_by_user_id: opts.createdByUserId,
+    status: 'posted',
+    posting_kind: opts.postingKind ?? 'operational',
+    idempotency_key: idempotencyKey,
+    tendered_amount: tenderedAmount,
+    change_amount: changeAmount,
+  };
+  if (opts.paymentTiming) row.payment_timing = opts.paymentTiming;
+  if (opts.correctionReason) row.correction_reason = opts.correctionReason;
+  if (opts.correctedByUserId) row.corrected_by_user_id = opts.correctedByUserId;
+
+  const { data: pay, error: pErr } = await supabaseAdmin.from('hub_payments').insert(row).select('*').single();
+
+  if (pErr || !pay) {
+    if (idempotencyKey && String(pErr?.message ?? '').includes('uniq_hub_payments_clinic_idempotency')) {
+      const { data: again } = await supabaseAdmin
+        .from('hub_payments')
+        .select('*')
+        .eq('clinic_id', opts.clinicId)
+        .eq('idempotency_key', idempotencyKey)
+        .maybeSingle();
+      if (again) {
+        if (
+          !paymentsPayloadCompatible(again as Record<string, unknown>, {
+            receivableId: opts.receivableId,
+            amount: opts.amount,
+            paymentMethod: opts.paymentMethod,
+            tenderedAmount,
+            changeAmount,
+          })
+        ) {
+          return {
+            ok: false,
+            error: 'idempotency_key já usada com payload diferente',
+            status: 409,
+            existing: again as Record<string, unknown>,
+          };
+        }
+        return { ok: true, payment: again as Record<string, unknown>, replayed: true };
+      }
+    }
+    return { ok: false, error: pErr?.message || 'Erro ao registrar pagamento' };
+  }
+
+  return { ok: true, payment: pay as Record<string, unknown>, replayed: false };
 }
 
 /** Reexport tipado para consumo de crédito no post operacional. */

@@ -73,4 +73,36 @@ describe('buildCaixaSessionHistoryItems', () => {
     );
     expect(items).toEqual([]);
   });
+
+  it('exibe troco estruturado no subtítulo do pagamento cash', () => {
+    const items = buildCaixaSessionHistoryItems(
+      {
+        id: 'sess-1',
+        clinic_id: 'c1',
+        unit_id: 'u1',
+        status: 'open',
+        opened_at: '2026-09-04T08:00:00.000Z',
+        opening_balance: 0,
+        all_payments: [
+          {
+            id: 'pay-1',
+            amount: 70,
+            payment_method: 'cash',
+            payment_date: '2026-09-04T09:00:00.000Z',
+            tendered_amount: 100,
+            change_amount: 30,
+            notes: null,
+            receivable: { id: 'rec-1' },
+          },
+        ],
+        payments: [],
+        movements: [],
+      } as never,
+      [],
+      [],
+    );
+    const pay = items.find((i) => i.row_kind === 'payment');
+    expect(pay?.subtitle).toMatch(/Troco R\$ 30\.00/);
+    expect(pay?.subtitle).toMatch(/recebido R\$ 100\.00/);
+  });
 });

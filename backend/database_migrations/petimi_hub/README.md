@@ -300,3 +300,9 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 141. **`141_create_hub_hospitalization_med_plan.sql`** — Plano de medicação da internação: `hub_hospitalization_med_orders`, `hub_hospitalization_med_order_versions`, `hub_hospitalization_med_doses` + RPC `hub_complete_hospitalization_med_dose`. Executar depois dos itens 25k/25r/107. Domínio ≠ receita (`hub_prescriptions`).
 
 142. **`142_create_hub_notification_prefs.sql`** — Preferências in-app por usuário/clínica (`hub_notification_prefs`: categorias `acoes` | `operacao` | `alertas`). Opt-out (sem linha = ligado). Usado em Meu perfil e filtrado por `hubNotifyStaff`. Executar depois do item 53 (tipos Hub em `notifications`).
+
+143. **`143_alter_hub_customer_package_balances_status.sql`** — Coluna `status` (`pending` | `active` | `voided`) em `hub_customer_package_balances`. Sessões só usáveis com `active` (recebível de compra `paid`). Backfill de saldos com recebível aberto → `pending`. Executar depois do item 079 (balances).
+
+144. **`144_alter_hub_payments_tendered_change.sql`** — `tendered_amount` / `change_amount` em `hub_payments` (troco estruturado; `amount` = receita). Backfill best-effort a partir de notes. Fechamento de caixa continua somando só `amount`. Executar depois do item 136.
+
+145. **`145_alter_hub_package_balances_cancelled.sql`** — Status `cancelled` + colunas de auditoria do cancel comercial em `hub_customer_package_balances`. Cancel ≠ estorno. Executar depois do item 143.

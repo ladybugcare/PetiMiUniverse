@@ -390,16 +390,15 @@ const HubCaixaPage: React.FC = () => {
           {showSessionHistory ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
         </button>
         {showSessionHistory && (
-          <div style={{ marginTop: 12 }}>
-            <ul className="hub-clientes__muted" style={{ paddingLeft: 18, margin: 0 }}>
+          <div className="hub-caixa-page__session-history">
+            <ul className="hub-caixa-page__session-history-list">
               {closedSessions.map((sess) => {
                 const selected = viewedClosedSessionId === sess.id;
                 return (
-                  <li key={sess.id} style={{ marginBottom: 8 }}>
+                  <li key={sess.id}>
                     <button
                       type="button"
-                      className="hub-dayboard__action-btn"
-                      style={{ fontWeight: selected ? 700 : 500 }}
+                      className={`hub-caixa-page__session-history-btn${selected ? ' hub-caixa-page__session-history-btn--selected' : ''}`}
                       onClick={() => {
                         void (async () => {
                           if (viewedClosedSessionId === sess.id) {
@@ -422,17 +421,21 @@ const HubCaixaPage: React.FC = () => {
                         })();
                       }}
                     >
-                      {sess.closed_at
-                        ? new Date(sess.closed_at).toLocaleString('pt-BR', {
-                            day: '2-digit',
-                            month: '2-digit',
-                            year: '2-digit',
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })
-                        : 'Sessão'}
-                      {' · esperado '}
-                      {sess.expected_balance != null ? formatBrl(Number(sess.expected_balance)) : '—'}
+                      <span className="hub-caixa-page__session-history-date">
+                        {sess.closed_at
+                          ? new Date(sess.closed_at).toLocaleString('pt-BR', {
+                              day: '2-digit',
+                              month: '2-digit',
+                              year: '2-digit',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })
+                          : 'Sessão'}
+                      </span>
+                      <span className="hub-caixa-page__session-history-meta">
+                        esperado{' '}
+                        {sess.expected_balance != null ? formatBrl(Number(sess.expected_balance)) : '—'}
+                      </span>
                     </button>
                   </li>
                 );
@@ -1331,6 +1334,10 @@ const HubCaixaPage: React.FC = () => {
         onClose={() => setShowQuickSale(false)}
         onOpened={(comandaId) => {
           navigate(`/hub/caixa/comanda/${comandaId}`);
+        }}
+        onCheckout={(comandaId) => {
+          setCheckoutComandaId(comandaId);
+          setCheckoutScheduleContext(null);
         }}
       />
       {showEncerrarTurno && cashOpen && (

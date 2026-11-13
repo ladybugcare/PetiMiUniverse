@@ -177,7 +177,9 @@ export const TEST_HANDOFF_ID = 'b2b2b2b2-b2b2-4b2b-8b2b-b2b2b2b2b2b2';
 export const TEST_SPACE_ID = 'c3c3c3c3-c3c3-4c3c-8c3c-c3c3c3c3c3c3';
 
 export function emptyBoardingTables() {
+  const { betaClinicSubscription } = require('./hubSubscription') as typeof import('./hubSubscription');
   return {
+    clinic_hub_subscriptions: [betaClinicSubscription(TEST_CLINIC_ID)],
     hub_boarding_reservations: [] as Record<string, unknown>[],
     hub_comandas: [] as Record<string, unknown>[],
     hub_comanda_items: [] as Record<string, unknown>[],

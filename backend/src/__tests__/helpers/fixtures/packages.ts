@@ -118,7 +118,9 @@ export function hubPackageItemRow() {
 }
 
 export function emptyPackageTables() {
+  const { betaClinicSubscription } = require('./hubSubscription') as typeof import('./hubSubscription');
   return {
+    clinic_hub_subscriptions: [betaClinicSubscription(TEST_CLINIC_ID)],
     hub_service_types: [] as Record<string, unknown>[],
     hub_packages: [] as Record<string, unknown>[],
     hub_package_items: [] as Record<string, unknown>[],

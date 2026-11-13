@@ -23,12 +23,19 @@ import {
   CheckoutDrawerBillingShell,
   CheckoutDrawerCancelReasonField,
   CheckoutDrawerHero,
-  CheckoutDrawerPaymentFields,
   CheckoutDrawerSection,
   CheckoutDrawerSummaryCell,
   CheckoutDrawerSummaryGrid,
   type CheckoutDrawerBillingAction,
 } from './checkoutDrawerParts';
+import {
+  CheckoutPaymentLinesEditor,
+  createDefaultPaymentLine,
+  parseAmount,
+  sumPaymentLines,
+  totalChangeDue,
+  type CheckoutPaymentLine,
+} from './CheckoutPaymentLinesEditor';
 
 function formatBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
@@ -110,11 +117,10 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
   const { showError, showSuccess, showConfirm } = useAlert();
 
   const [detail, setDetail] = useState<HubFinanceReceivableDetail | null>(null);
-  const [paymentAmount, setPaymentAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<HubPaymentMethod>('pix');
+  const [paymentLines, setPaymentLines] = useState<CheckoutPaymentLine[]>([]);
   const [acceptedPaymentMethods, setAcceptedPaymentMethods] = useState<HubPaymentMethod[]>([]);
-  const [paymentNotes, setPaymentNotes] = useState('');
   const [paymentLoading, setPaymentLoading] = useState(false);
+  const paymentIdempotencyKeysRef = useRef<Record<string, string>>({});
   const [billingAction, setBillingAction] = useState<CheckoutDrawerBillingAction>('receive_now');
   const [cancelReason, setCancelReason] = useState('');
   const [cashSessionId, setCashSessionId] = useState<string | null>(null);
@@ -180,7 +186,6 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
         const methods = filterEnabledPaymentMethods(res.accepted_payment_methods ?? []);
         if (!cancelled) {
           setAcceptedPaymentMethods(methods);
-          setPaymentMethod((current) => (methods.includes(current) ? current : defaultPaymentMethod(methods)));
         }
       } catch {
         if (!cancelled) {
@@ -276,14 +281,19 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
   useEffect(() => {
     setBillingAction(canRegisterPayment ? 'receive_now' : 'cancel');
     setCancelReason('');
-    setPaymentAmount('');
-    setPaymentNotes('');
+    paymentIdempotencyKeysRef.current = {};
   }, [activeReceivableId, canRegisterPayment]);
 
   useEffect(() => {
-    if (!drawerLayout || billingAction !== 'receive_now' || selectedBalance <= 0.009) return;
-    setPaymentAmount(selectedBalance.toFixed(2).replace('.', ','));
-  }, [drawerLayout, billingAction, selectedBalance, activeReceivableId]);
+    if (!canRegisterPayment || !detail) return;
+    if (detail.id !== activeReceivableId) return;
+    const balance = Number(
+      detail.balance_amount ?? Math.max(0, Number(detail.final_amount ?? 0) - Number(detail.paid_amount ?? 0)),
+    );
+    const method = defaultPaymentMethod(acceptedPaymentMethods);
+    setPaymentLines([createDefaultPaymentLine(method, balance > 0.009 ? balance : 0)]);
+    paymentIdempotencyKeysRef.current = {};
+  }, [activeReceivableId, canRegisterPayment, acceptedPaymentMethods, detail?.id]);
 
   const lineTypeLabel = useCallback(
     (line: NonNullable<HubFinanceReceivableDetail['lines']>[number]) => {
@@ -302,32 +312,82 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       showError('Sem permissão para registrar pagamentos.');
       return;
     }
-    const amount = Number(String(paymentAmount).replace(',', '.'));
-    if (Number.isNaN(amount) || amount <= 0) {
-      showError('Informe um valor de pagamento válido.');
+    if (!paymentLines.length) {
+      showError('Informe ao menos uma forma de pagamento.');
       return;
     }
+
+    const validated: Array<{
+      method: HubPaymentMethod;
+      amount: number;
+      tendered: number | null;
+      lineId: string;
+    }> = [];
+    for (const line of paymentLines) {
+      const amount = parseAmount(line.amountStr);
+      if (Number.isNaN(amount) || amount <= 0) {
+        showError('Informe valores de pagamento válidos em todas as linhas.');
+        return;
+      }
+      let tendered: number | null = null;
+      if (line.method === 'cash' && line.tenderedStr.trim()) {
+        tendered = parseAmount(line.tenderedStr);
+        if (Number.isNaN(tendered) || tendered <= 0) {
+          showError('Valor recebido em dinheiro inválido.');
+          return;
+        }
+        if (amount > tendered + 0.02) {
+          showError('O valor do pagamento não pode ser maior que o valor recebido (troco).');
+          return;
+        }
+      }
+      validated.push({ method: line.method, amount: Math.round(amount * 100) / 100, tendered, lineId: line.id });
+    }
+    const totalPay = sumPaymentLines(paymentLines);
+    if (totalPay > selectedBalance + 0.02) {
+      showError(`Valor não pode ser maior que ${formatBrl(selectedBalance)}.`);
+      return;
+    }
+
     setPaymentLoading(true);
     try {
-      let sessionId: string | null = null;
-      if (paymentMethod === 'cash') {
+      let sessionId: string | null = cashSessionId;
+      if (validated.some((l) => l.method === 'cash')) {
         const cash = await hubFinancialApi.getCashSessionOpen(clinicId, unitId);
         sessionId = cash.cash_session?.id ?? null;
         if (!sessionId) {
           showError('Abra o caixa para receber em dinheiro.');
           return;
         }
+        setCashSessionId(sessionId);
       }
-      await hubFinancialApi.createReceivablePayment(detail.id, {
-        clinic_id: clinicId,
-        amount,
-        payment_method: paymentMethod,
-        notes: paymentNotes.trim() || null,
-        cash_session_id: sessionId,
-      });
-      showSuccess('Pagamento registrado.');
-      setPaymentAmount('');
-      setPaymentNotes('');
+      const ensureIdemKey = (lineId: string) => {
+        if (!paymentIdempotencyKeysRef.current[lineId]) {
+          paymentIdempotencyKeysRef.current[lineId] =
+            typeof crypto !== 'undefined' && crypto.randomUUID
+              ? crypto.randomUUID()
+              : `pay-${Date.now()}-${lineId}`;
+        }
+        return paymentIdempotencyKeysRef.current[lineId];
+      };
+      for (const line of validated) {
+        await hubFinancialApi.createReceivablePayment(detail.id, {
+          clinic_id: clinicId,
+          amount: line.amount,
+          payment_method: line.method,
+          cash_session_id: line.method === 'cash' ? sessionId : null,
+          idempotency_key: ensureIdemKey(line.lineId),
+          tendered_amount: line.tendered,
+        });
+      }
+      paymentIdempotencyKeysRef.current = {};
+      const change = totalChangeDue(paymentLines);
+      showSuccess(
+        change > 0.009
+          ? `Pagamento registrado. Troco: ${formatBrl(change)}.`
+          : 'Pagamento registrado.',
+      );
+      setPaymentLines([createDefaultPaymentLine(defaultPaymentMethod(acceptedPaymentMethods), 0)]);
       await loadDetail();
       onRefreshComanda?.();
     } catch (e) {
@@ -340,9 +400,10 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     unitId,
     detail,
     hasPermission,
-    paymentAmount,
-    paymentMethod,
-    paymentNotes,
+    paymentLines,
+    selectedBalance,
+    cashSessionId,
+    acceptedPaymentMethods,
     showError,
     showSuccess,
     loadDetail,
@@ -491,21 +552,23 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     });
   };
 
-  const paymentMethodOptions = (acceptedPaymentMethods.length > 0
-    ? acceptedPaymentMethods
-    : (Object.keys(HUB_PAYMENT_METHOD_LABELS) as HubPaymentMethod[])
-  ).map((method) => ({ value: method, label: HUB_PAYMENT_METHOD_LABELS[method] }));
+  const paymentEditorMethods =
+    acceptedPaymentMethods.length > 0
+      ? acceptedPaymentMethods
+      : (Object.keys(HUB_PAYMENT_METHOD_LABELS) as HubPaymentMethod[]);
 
-  const cashMethodHint =
-    paymentMethod === 'cash' ? (
-      <p className="hub-clientes__muted">
-        {cashSessionId
-          ? `Caixa aberto (sessão ${cashSessionId.slice(0, 8)}…)`
-          : 'Não há caixa aberto — abra no módulo Caixa para receber em dinheiro.'}
-      </p>
-    ) : (
-      <p className="hub-clientes__muted">PIX, cartão e transferências não dependem de sessão de caixa.</p>
-    );
+  const paymentLinesEditor =
+    canRegisterPayment && detail ? (
+      <CheckoutPaymentLinesEditor
+        due={selectedBalance > 0.009 ? selectedBalance : Number(detail.final_amount ?? 0)}
+        lines={paymentLines}
+        onChange={setPaymentLines}
+        acceptedMethods={paymentEditorMethods}
+        cashSessionOpen={Boolean(cashSessionId)}
+        allowMultiple
+        disabled={paymentLoading}
+      />
+    ) : null;
 
   const receivableSelector =
     receivableIds.length > 1 ? (
@@ -547,26 +610,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
           ]}
         />
 
-        {billingAction === 'receive_now' && canRegisterPayment ? (
-          <CheckoutDrawerPaymentFields
-            amountId="comanda-fin-payment-amount"
-            amountLabel="Valor a receber agora"
-            amount={paymentAmount}
-            onAmountChange={setPaymentAmount}
-            amountPlaceholder={formatBrl(selectedBalance > 0 ? selectedBalance : Number(detail.final_amount ?? 0))}
-            onFillTotal={
-              selectedBalance > 0.009
-                ? () => setPaymentAmount(selectedBalance.toFixed(2).replace('.', ','))
-                : undefined
-            }
-            methodId="comanda-fin-payment-method"
-            methodLabel="Forma de pagamento"
-            paymentMethod={paymentMethod}
-            onPaymentMethodChange={(value) => setPaymentMethod(value as HubPaymentMethod)}
-            paymentMethodOptions={paymentMethodOptions}
-            methodHint={cashMethodHint}
-          />
-        ) : null}
+        {billingAction === 'receive_now' && canRegisterPayment ? paymentLinesEditor : null}
 
         {billingAction === 'cancel' && canCancelReceivable ? (
           <CheckoutDrawerCancelReasonField
@@ -583,32 +627,12 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       ref={paymentSectionRef}
       className={showHighlight ? 'hub-finance-page__panel-section--highlight' : undefined}
     >
-      <CheckoutDrawerPaymentFields
-        amountId="comanda-fin-payment-amount"
-        amountLabel="Valor a receber agora"
-        amount={paymentAmount}
-        onAmountChange={setPaymentAmount}
-        amountPlaceholder={formatBrl(selectedBalance > 0 ? selectedBalance : Number(detail?.final_amount ?? 0))}
-        onFillTotal={
-          selectedBalance > 0.009
-            ? () => setPaymentAmount(selectedBalance.toFixed(2).replace('.', ','))
-            : undefined
-        }
-        balanceHint={
-          selectedBalance > 0.009
-            ? `Saldo pendente de ${formatBrl(selectedBalance)} — registre a baixa abaixo.`
-            : undefined
-        }
-        methodId="comanda-fin-payment-method"
-        methodLabel="Forma de pagamento"
-        paymentMethod={paymentMethod}
-        onPaymentMethodChange={(value) => setPaymentMethod(value as HubPaymentMethod)}
-        paymentMethodOptions={paymentMethodOptions}
-        methodHint={cashMethodHint}
-        notesId="comanda-fin-payment-notes"
-        notes={paymentNotes}
-        onNotesChange={setPaymentNotes}
-      />
+      {selectedBalance > 0.009 ? (
+        <p className="hub-clientes__muted" style={{ marginBottom: 8 }}>
+          Saldo pendente de {formatBrl(selectedBalance)} — registre a baixa abaixo (aceita misto + troco).
+        </p>
+      ) : null}
+      {paymentLinesEditor}
       {!drawerLayout ? (
         <button
           type="button"

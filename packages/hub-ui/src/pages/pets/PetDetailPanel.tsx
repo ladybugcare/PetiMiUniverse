@@ -256,10 +256,11 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
   canCreateReceivable = false,
 }) => {
   const navigate = useNavigate();
-  const { showError } = useAlert();
+  const { showError, showSuccess, showConfirm } = useAlert();
   const { hasPermission } = usePermissions();
   const canClinicWrite = hasPermission('hub.clinic.write');
   const canFinancialRead = hasPermission('hub.financial.read');
+  const canFinancialWrite = hasPermission('hub.financial.write');
   const canAppointmentsRead = hasPermission('hub.appointments.read');
   const isPage = layout === 'page';
   const [tab, setTab] = useState<PetDetailTab>('resumo');
@@ -407,7 +408,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
     if (!clinicId) return;
     setPackagesLoading(true);
     try {
-      const res = await hubPackagesApi.listPetBalances(clinicId, pet.id);
+      const res = await hubPackagesApi.listPetBalances(clinicId, pet.id, { includeCancelled: true });
       setPackageBalances(res.balances ?? []);
     } catch {
       setPackageBalances([]);
@@ -1611,9 +1612,105 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
             <li key={b.id} className="hub-clientes__contact-card" style={{ marginBottom: 8, padding: 12 }}>
               <strong>{pkg?.name ?? 'Pacote'}</strong>
               <p className="hub-clientes__muted" style={{ margin: '4px 0 0', fontSize: 13 }}>
-                {svcName ?? 'Serviço'} · {b.sessions_remaining} de {b.sessions_total ?? b.sessions_remaining} sessões
-                {b.expires_at ? ` · válido até ${new Date(`${b.expires_at}T12:00:00`).toLocaleDateString('pt-BR')}` : ''}
+                {svcName ?? 'Serviço'} ·{' '}
+                {b.status === 'cancelled'
+                  ? `cancelado · ${b.sessions_remaining_at_cancel ?? 0} sessões invalidadas`
+                  : `${b.sessions_remaining} de ${b.sessions_total ?? b.sessions_remaining} sessões`}
+                {b.expires_at && b.status !== 'cancelled'
+                  ? ` · válido até ${new Date(`${b.expires_at}T12:00:00`).toLocaleDateString('pt-BR')}`
+                  : ''}
               </p>
+              {canFinancialWrite && clinicId ? (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 10 }}>
+                  {b.status !== 'cancelled' ? (
+                    <button
+                      type="button"
+                      className="hub-clientes__btn hub-clientes__btn--sm hub-clientes__btn--outline"
+                      onClick={() => {
+                        showConfirm(
+                          'Isso invalida as sessões restantes. Os usos já feitos permanecem. Não estorna dinheiro automaticamente.',
+                          () => {
+                            const reason = window.prompt('Motivo do cancelamento comercial (mín. 3 caracteres):');
+                            if (!reason || reason.trim().length < 3) {
+                              showError('Informe o motivo do cancelamento.');
+                              return;
+                            }
+                            void (async () => {
+                              try {
+                                await hubPackagesApi.cancelBalance(b.id, {
+                                  clinic_id: clinicId,
+                                  reason: reason.trim(),
+                                });
+                                showSuccess('Pacote cancelado comercialmente.');
+                                await loadPackageBalances();
+                              } catch (e) {
+                                showError((e as Error)?.message || 'Erro ao cancelar pacote');
+                              }
+                            })();
+                          },
+                          'Cancelar pacote',
+                        );
+                      }}
+                    >
+                      Cancelar pacote
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    className="hub-clientes__btn hub-clientes__btn--sm hub-clientes__btn--ghost"
+                    onClick={() => {
+                      void (async () => {
+                        try {
+                          const { preview } = await hubPackagesApi.refundPreview(b.id, clinicId);
+                          if (preview.status !== 'cancelled' && preview.status !== 'voided') {
+                            showError('Cancele o pacote comercialmente antes de autorizar o estorno.');
+                            return;
+                          }
+                          const suggested = preview.suggested_refund.toFixed(2).replace('.', ',');
+                          const raw = window.prompt(
+                            `Estorno sugerido: R$ ${suggested} (${preview.sessions_remaining_at_cancel ?? preview.sessions_remaining} sessões restantes de ${preview.sessions_total}). Informe o valor autorizado:`,
+                            suggested,
+                          );
+                          if (raw == null) return;
+                          const amount = Number(String(raw).replace(/\./g, '').replace(',', '.'));
+                          if (!(amount > 0)) {
+                            showError('Valor de estorno inválido.');
+                            return;
+                          }
+                          const reason = window.prompt('Motivo do estorno financeiro (mín. 3 caracteres):');
+                          if (!reason || reason.trim().length < 3) {
+                            showError('Informe o motivo do estorno.');
+                            return;
+                          }
+                          showConfirm(
+                            `Confirma estorno de R$ ${amount.toFixed(2).replace('.', ',')}? Os resgates já feitos não serão revertidos.`,
+                            () => {
+                              void (async () => {
+                                try {
+                                  await hubPackagesApi.authorizeRefund(b.id, {
+                                    clinic_id: clinicId,
+                                    refund_amount: amount,
+                                    reason: reason.trim(),
+                                  });
+                                  showSuccess('Estorno autorizado e registrado.');
+                                  await loadPackageBalances();
+                                } catch (e) {
+                                  showError((e as Error)?.message || 'Erro ao autorizar estorno');
+                                }
+                              })();
+                            },
+                            'Autorizar estorno',
+                          );
+                        } catch (e) {
+                          showError((e as Error)?.message || 'Erro ao calcular preview de estorno');
+                        }
+                      })();
+                    }}
+                  >
+                    Estornar dinheiro
+                  </button>
+                </div>
+              ) : null}
             </li>
           );
         })}

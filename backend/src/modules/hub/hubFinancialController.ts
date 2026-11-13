@@ -1255,6 +1255,8 @@ const paymentBodySchema = z
     payment_date: z.string().datetime({ offset: true }).optional(),
     notes: z.string().trim().max(2000).optional().nullable(),
     cash_session_id: uuidStr.optional().nullable(),
+    idempotency_key: uuidStr.optional().nullable(),
+    tendered_amount: z.number().positive().optional().nullable(),
   })
   .strict();
 
@@ -1266,7 +1268,17 @@ export const postHubFinanceReceivablePayment = async (req: Request, res: Respons
       return res.status(400).json({ error: 'receivable id ou body inválidos' });
     }
     const receivableId = idParsed.data;
-    const { clinic_id, amount, payment_method, installments, payment_date, notes, cash_session_id } = parsed.data;
+    const {
+      clinic_id,
+      amount,
+      payment_method,
+      installments,
+      payment_date,
+      notes,
+      cash_session_id,
+      idempotency_key,
+      tendered_amount,
+    } = parsed.data;
     const userId = req.user?.id ?? null;
 
     const clinicSettings = await getOrCreateHubClinicSettings(clinic_id);
@@ -1307,6 +1319,15 @@ export const postHubFinanceReceivablePayment = async (req: Request, res: Respons
       return res.status(400).json({ error: `Valor excede o saldo em aberto (${remaining.toFixed(2)})` });
     }
 
+    if (payment_method === 'cash' && tendered_amount != null) {
+      const tendered = round2(Number(tendered_amount));
+      if (round2(amount) > tendered + 0.009) {
+        return res.status(400).json({
+          error: 'Valor do pagamento em dinheiro não pode exceder o valor recebido (tendered).',
+        });
+      }
+    }
+
     if (payment_method === 'customer_credit') {
       const guardianId = rec.guardian_id as string | null;
       if (!guardianId) {
@@ -1331,25 +1352,50 @@ export const postHubFinanceReceivablePayment = async (req: Request, res: Respons
     }
 
     const payAt = payment_date ?? new Date().toISOString();
-    const { data: pay, error: pErr } = await supabaseAdmin
-      .from('hub_payments')
-      .insert({
-        clinic_id,
-        receivable_id: receivableId,
-        cash_session_id: validatedCashSessionId,
-        amount: round2(amount),
-        payment_method,
-        installments: installments ?? 1,
-        payment_date: payAt,
-        effective_payment_date: payAt,
-        notes: notes ?? null,
-        created_by_user_id: userId,
-        status: 'posted',
-        posting_kind: 'operational',
-      })
-      .select('id')
-      .single();
-    if (pErr || !pay) return res.status(500).json({ error: pErr?.message || 'Erro ao registrar pagamento' });
+    let tenderedAmount: number | null = null;
+    let changeAmount: number | null = null;
+    let paymentNotes = notes ?? null;
+    if (payment_method === 'cash' && tendered_amount != null) {
+      tenderedAmount = round2(Number(tendered_amount));
+      const recorded = round2(amount);
+      changeAmount = round2(Math.max(0, tenderedAmount - recorded));
+      if (changeAmount > 0.009) {
+        const trocoNote = `Troco R$ ${changeAmount.toFixed(2)} (recebido R$ ${tenderedAmount.toFixed(2)})`;
+        paymentNotes = paymentNotes ? `${paymentNotes} | ${trocoNote}` : trocoNote;
+      }
+    }
+
+    const { insertPostedPaymentWithIdempotency } = await import('./hubFinanceLedger.js');
+    const inserted = await insertPostedPaymentWithIdempotency({
+      clinicId: clinic_id,
+      receivableId,
+      cashSessionId: validatedCashSessionId,
+      amount: round2(amount),
+      paymentMethod: payment_method,
+      installments: installments ?? 1,
+      paymentDate: payAt,
+      effectivePaymentDate: payAt,
+      notes: paymentNotes,
+      createdByUserId: userId,
+      idempotencyKey: idempotency_key ?? null,
+      tenderedAmount,
+      changeAmount,
+    });
+    if (!inserted.ok) {
+      return res.status(inserted.status ?? 500).json({
+        error: inserted.error,
+        ...(inserted.existing ? { existing_payment: inserted.existing } : {}),
+      });
+    }
+    if (inserted.replayed) {
+      const nextStatus = await recalculateReceivableFromPosted(receivableId);
+      return res.status(200).json({
+        payment: inserted.payment,
+        receivable_status: nextStatus,
+        replayed: true,
+      });
+    }
+    const pay = inserted.payment;
 
     const nextStatus = await recalculateReceivableFromPosted(receivableId);
     const paid = await sumPostedPaymentsForReceivable(receivableId);
@@ -1380,10 +1426,12 @@ export const postHubFinanceReceivablePayment = async (req: Request, res: Respons
       });
     }
 
-    const { data: paymentRow } = await supabaseAdmin.from('hub_payments').select('*').eq('id', pay.id).single();
-    return res.status(201).json({ payment: paymentRow, receivable_status: nextStatus });
+    return res.status(201).json({ payment: pay, receivable_status: nextStatus });
   } catch (e: unknown) {
     console.error('postHubFinanceReceivablePayment', e);
+    if (e instanceof FinanceLedgerError) {
+      return res.status(e.status).json({ error: e.message });
+    }
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
   }
 };
@@ -1939,6 +1987,23 @@ export const postHubFinanceReceivableCancel = async (req: Request, res: Response
       .select('*, lines:hub_receivable_lines(*)')
       .single();
     if (updErr) return res.status(500).json({ error: updErr.message });
+    try {
+      const { syncPackageBalancesForReceivable } = await import('./hubPackagesService.js');
+      await syncPackageBalancesForReceivable(receivableId.data);
+    } catch (syncErr) {
+      const msg = (syncErr as Error)?.message ?? '';
+      if (msg.startsWith('PACKAGE_BALANCE_HAS_REDEMPTIONS')) {
+        await supabaseAdmin
+          .from('hub_receivables')
+          .update({ status: rec.status })
+          .eq('id', receivableId.data);
+        return res.status(409).json({
+          error:
+            'Não é possível cancelar: o pacote já teve sessões consumidas. Estorne os resgates antes.',
+        });
+      }
+      throw syncErr;
+    }
     return res.json({ receivable: updated });
   } catch (e: unknown) {
     console.error('postHubFinanceReceivableCancel', e);

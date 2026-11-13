@@ -1,13 +1,24 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Dog, ShoppingBag, User, UserPlus } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
 import { hubGuardiansApi, type HubGuardian } from '../../api/hubGuardiansApi';
 import { hubPetsApi, type HubPet } from '../../api/hubPetsApi';
 import { hubComandaApi } from '../../api/hubComandaApi';
+import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
+import { hubInventoryApi, type HubInventoryItem, type HubInventoryLotRow } from '../../api/hubInventoryApi';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
+import { ComandaItemsSection } from './ComandaItemsSection';
+import {
+  computeLineTotal,
+  newProductDraft,
+  newServiceDraft,
+  NEW_ITEM_KEY_PREFIX,
+  parseMoney,
+  type ComandaItemDraft,
+} from './comandaItemDraft';
 import '../clientes/clientes.css';
 import './hub-finance-page.css';
 
@@ -15,14 +26,21 @@ type Props = {
   open: boolean;
   unitId: string | null;
   onClose: () => void;
+  /** Abre a página da comanda (fluxo secundário). */
   onOpened: (comandaId: string) => void;
+  /** Cobrar agora no mesmo fluxo (PDV). */
+  onCheckout?: (comandaId: string) => void;
 };
 
 function digitsOnly(s: string): string {
   return s.replace(/\D/g, '');
 }
 
-export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpened }) => {
+function formatBrl(n: number): string {
+  return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpened, onCheckout }) => {
   const clinicId = getStoredClinicId();
   const { showError } = useAlert();
   const [loading, setLoading] = useState(false);
@@ -37,6 +55,12 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
   const [taxId, setTaxId] = useState('');
   const [createError, setCreateError] = useState<string | null>(null);
   const [creatingGuardian, setCreatingGuardian] = useState(false);
+  const [items, setItems] = useState<ComandaItemDraft[]>([]);
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [serviceTypes, setServiceTypes] = useState<HubServiceType[]>([]);
+  const [inventoryItems, setInventoryItems] = useState<HubInventoryItem[]>([]);
+  const [inventoryLots, setInventoryLots] = useState<HubInventoryLotRow[]>([]);
+  const newItemCounterRef = useRef(0);
 
   const resetForm = useCallback(() => {
     setGuardianId('');
@@ -47,16 +71,31 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
     setPhone('');
     setTaxId('');
     setCreateError(null);
+    setItems([]);
+    setCatalogSearch('');
+    newItemCounterRef.current = 0;
   }, []);
 
   const load = useCallback(async () => {
     if (!clinicId || !open) return;
     setLoading(true);
     try {
-      const guRes = await hubGuardiansApi.list(clinicId, true, { status: 'active' });
+      const [guRes, svcRes, invRes] = await Promise.all([
+        hubGuardiansApi.list(clinicId, true, { status: 'active' }),
+        hubServiceTypesApi.list(clinicId, false),
+        hubInventoryApi.items.list(clinicId),
+      ]);
       setGuardians(guRes.guardians ?? []);
+      setServiceTypes(svcRes.service_types ?? []);
+      setInventoryItems(invRes.items ?? []);
+      try {
+        const lotsRes = await hubInventoryApi.lots.list(clinicId);
+        setInventoryLots(lotsRes.lots ?? []);
+      } catch {
+        setInventoryLots([]);
+      }
     } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao carregar tutores');
+      showError((e as Error)?.message || 'Erro ao carregar dados da venda rápida');
     } finally {
       setLoading(false);
     }
@@ -116,7 +155,76 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
     [pets],
   );
 
-  const canSubmit = Boolean(clinicId && guardianId && unitId && !submitting);
+  const cartTotal = useMemo(
+    () => items.reduce((s, it) => s + computeLineTotal(it), 0),
+    [items],
+  );
+
+  const readyItems = useMemo(
+    () =>
+      items.filter((it) => {
+        const desc = it.description.trim();
+        const hasCatalog =
+          it.item_kind === 'product'
+            ? Boolean(it.hub_inventory_item_id)
+            : Boolean(it.hub_service_type_id);
+        return desc && hasCatalog && parseMoney(it.quantity) > 0;
+      }),
+    [items],
+  );
+
+  const canSubmitBase = Boolean(clinicId && guardianId && unitId && !submitting);
+
+  const updateItem = (idx: number, patch: Partial<ComandaItemDraft>) => {
+    setItems((prev) =>
+      prev.map((it, i) => {
+        if (i !== idx) return it;
+        const next = { ...it, ...patch };
+        next.line_total = computeLineTotal(next);
+        return next;
+      }),
+    );
+  };
+
+  const addNewService = () => {
+    const key = `${NEW_ITEM_KEY_PREFIX}svc-${newItemCounterRef.current++}`;
+    setItems((prev) => [...prev, { ...newServiceDraft(), id: key }]);
+  };
+
+  const addNewProduct = () => {
+    const key = `${NEW_ITEM_KEY_PREFIX}prd-${newItemCounterRef.current++}`;
+    setItems((prev) => [...prev, { ...newProductDraft(), id: key }]);
+  };
+
+  const removeItem = (idx: number) => {
+    setItems((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const applyService = (idx: number, serviceTypeId: string) => {
+    const st = serviceTypes.find((s) => s.id === serviceTypeId);
+    if (!st) return;
+    updateItem(idx, {
+      hub_service_type_id: st.id,
+      description: st.name,
+      unit_amount: String(st.sale_amount ?? 0),
+      item_kind: 'service',
+    });
+  };
+
+  const applyProduct = (idx: number, inventoryItemId: string) => {
+    const inv = inventoryItems.find((i) => i.id === inventoryItemId);
+    if (!inv) return;
+    const lot =
+      inventoryLots.find((l) => l.item_id === inventoryItemId && Number(l.qty_on_hand ?? 0) > 0) ??
+      inventoryLots.find((l) => l.item_id === inventoryItemId);
+    updateItem(idx, {
+      hub_inventory_item_id: inv.id,
+      hub_inventory_lot_id: lot?.id ?? null,
+      description: inv.name,
+      unit_amount: String(inv.sale_amount ?? 0),
+      item_kind: 'product',
+    });
+  };
 
   const handleQuickCreate = async () => {
     if (!clinicId) return;
@@ -170,19 +278,73 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
     }
   };
 
-  const handleOpenComanda = async () => {
-    if (!clinicId || !guardianId || !unitId) return;
+  const openComandaWithItems = async (): Promise<string> => {
+    if (!clinicId || !guardianId || !unitId) throw new Error('Selecione tutor e unidade.');
+    if (readyItems.length === 0) throw new Error('Adicione ao menos um produto ou serviço.');
+
+    const detail = await hubComandaApi.openComanda({
+      clinic_id: clinicId,
+      origin_type: 'manual',
+      guardian_id: guardianId,
+      pet_id: petId || null,
+      unit_id: unitId,
+      manual_lines: [],
+    });
+    const comandaId = (detail.comanda as Record<string, unknown>).id as string;
+    await hubComandaApi.addItems(comandaId, {
+      clinic_id: clinicId,
+      edit_context: 'caixa',
+      items: readyItems.map((it) => ({
+        pet_id: petId || null,
+        hub_service_type_id: it.hub_service_type_id,
+        hub_inventory_item_id: it.hub_inventory_item_id,
+        hub_inventory_lot_id: it.hub_inventory_lot_id,
+        description: it.description.trim(),
+        quantity: parseMoney(it.quantity),
+        unit_amount: parseMoney(it.unit_amount),
+        discount_amount: parseMoney(it.discount_amount),
+        item_kind: it.item_kind,
+      })),
+    });
+    return comandaId;
+  };
+
+  const handleCheckout = async () => {
+    if (!canSubmitBase) return;
     setSubmitting(true);
     try {
-      const detail = await hubComandaApi.openComanda({
-        clinic_id: clinicId,
-        origin_type: 'manual',
-        guardian_id: guardianId,
-        pet_id: petId || null,
-        unit_id: unitId,
-        manual_lines: [],
-      });
-      const comandaId = (detail.comanda as Record<string, unknown>).id as string;
+      const comandaId = await openComandaWithItems();
+      if (onCheckout) {
+        onCheckout(comandaId);
+        onClose();
+      } else {
+        onOpened(comandaId);
+        onClose();
+      }
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao finalizar venda rápida');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const handleOpenOnly = async () => {
+    if (!canSubmitBase) return;
+    setSubmitting(true);
+    try {
+      const comandaId =
+        readyItems.length > 0
+          ? await openComandaWithItems()
+          : (
+              await hubComandaApi.openComanda({
+                clinic_id: clinicId!,
+                origin_type: 'manual',
+                guardian_id: guardianId,
+                pet_id: petId || null,
+                unit_id: unitId!,
+                manual_lines: [],
+              })
+            ).comanda.id as string;
       onOpened(comandaId);
       onClose();
     } catch (e: unknown) {
@@ -198,7 +360,7 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
       onClose={onClose}
       title="Venda rápida"
       titleIcon={<ShoppingBag size={20} strokeWidth={1.75} />}
-      subtitle="Abra uma comanda sem atendimento para vender produtos ou serviços no balcão."
+      subtitle="Monte a venda no balcão, escolha o pagamento e finalize sem sair desta tela."
       footer={
         <div className="hub-sell-package__footer">
           <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={onClose} disabled={submitting}>
@@ -206,18 +368,26 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
           </button>
           <button
             type="button"
+            className="hub-clientes__btn hub-clientes__btn--ghost"
+            disabled={!canSubmitBase}
+            onClick={() => void handleOpenOnly()}
+          >
+            Abrir comanda
+          </button>
+          <button
+            type="button"
             className="hub-clientes__btn hub-clientes__btn--primary"
-            disabled={!canSubmit}
-            onClick={() => void handleOpenComanda()}
+            disabled={!canSubmitBase || readyItems.length === 0}
+            onClick={() => void handleCheckout()}
           >
             <ShoppingBag size={16} aria-hidden />
-            {submitting ? 'Abrindo…' : 'Abrir comanda'}
+            {submitting ? 'Abrindo…' : `Cobrar ${formatBrl(cartTotal)}`}
           </button>
         </div>
       }
     >
       {loading ? (
-        <HubLoading variant="inline" label="Carregando tutores…" />
+        <HubLoading variant="inline" label="Carregando catálogo…" />
       ) : (
         <div className="hub-sell-package__form">
           <div className="hub-clientes__field">
@@ -335,14 +505,32 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
               disabled={!guardianId}
               triggerIcon={<Dog size={18} strokeWidth={2} aria-hidden />}
             />
-            {guardianId && pets.length === 0 ? (
-              <p className="hub-clientes__muted hub-sell-package__hint">Este tutor não tem pets — a comanda fica só no tutor.</p>
-            ) : null}
           </div>
 
-          <p className="hub-clientes__muted hub-sell-package__hint">
-            Na comanda você adiciona produtos do estoque e serviços, e faz o checkout.
-          </p>
+          <div className="hub-quick-sale__cart">
+            <div className="hub-sell-package__pets-head">
+              <h3 className="hub-clientes__section-title" style={{ margin: 0 }}>
+                Itens
+              </h3>
+              <strong>{formatBrl(cartTotal)}</strong>
+            </div>
+            <ComandaItemsSection
+              items={items}
+              canEdit
+              catalogSearch={catalogSearch}
+              onCatalogSearchChange={setCatalogSearch}
+              serviceTypes={serviceTypes}
+              inventoryItems={inventoryItems}
+              inventoryLots={inventoryLots}
+              computeLineTotal={computeLineTotal}
+              onAddService={addNewService}
+              onAddProduct={addNewProduct}
+              onUpdateItem={updateItem}
+              onRemoveItem={removeItem}
+              onApplyService={applyService}
+              onApplyProduct={applyProduct}
+            />
+          </div>
         </div>
       )}
     </HubSidePanel>

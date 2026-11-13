@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, Download, MessageCircle } from 'lucide-react';
 import { HubSidePanel } from '../../components/HubSidePanel';
@@ -26,7 +26,6 @@ import {
 import {
   defaultPaymentMethod,
   filterEnabledPaymentMethods,
-  HUB_PAYMENT_METHOD_LABELS,
   paymentMethodLabel,
 } from '../../utils/hubPaymentMethods';
 import {
@@ -38,6 +37,16 @@ import {
   CheckoutDrawerSummaryGrid,
   type CheckoutDrawerBillingAction,
 } from './checkoutDrawerParts';
+import {
+  CheckoutPaymentLinesEditor,
+  createDefaultPaymentLine,
+  formatBrl,
+  newPaymentLineId,
+  parseAmount,
+  sumPaymentLines,
+  totalChangeDue,
+  type CheckoutPaymentLine,
+} from './CheckoutPaymentLinesEditor';
 import '../clientes/clientes.css';
 import './hub-finance-page.css';
 import {
@@ -46,17 +55,14 @@ import {
   type PackageSaleScheduleContext,
 } from './packageSaleScheduleUtils';
 
-function formatBrl(n: number): string {
-  return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
-}
-
 function round2(n: number): number {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
-function parseAmount(raw: string): number {
-  const t = String(raw).trim().replace(/\./g, '').replace(',', '.');
-  return Number(t);
+function newIdempotencyKey(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID
+    ? crypto.randomUUID()
+    : newPaymentLineId();
 }
 
 const ORIGIN_LABELS: Record<string, string> = {
@@ -109,21 +115,23 @@ export function ComandaCheckoutDrawer({
   const [tutorGroupIdx, setTutorGroupIdx] = useState(0);
   const [action, setAction] = useState<CheckoutDrawerBillingAction>('receive_now');
   const [dueDate, setDueDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [paymentMethod, setPaymentMethod] = useState<HubPaymentMethod>('pix');
+  const [paymentLines, setPaymentLines] = useState<CheckoutPaymentLine[]>([]);
   const [acceptedPaymentMethods, setAcceptedPaymentMethods] = useState<HubPaymentMethod[]>([]);
   const [cashSessionId, setCashSessionId] = useState<string | null>(null);
   const [paymentTiming, setPaymentTiming] = useState<'on_checkout' | 'advance'>('on_checkout');
   const [waiveReason, setWaiveReason] = useState('');
-  const [paymentAmount, setPaymentAmount] = useState('');
   const [receivableDetail, setReceivableDetail] = useState<HubFinanceReceivableDetail | null>(null);
   const [successState, setSuccessState] = useState<{
     kind: 'leave_pending' | 'receive_now';
     comandaId: string;
     amount: number;
     paymentMethod?: HubPaymentMethod;
+    changeAmount?: number;
     receivableIds: string[];
   } | null>(null);
   const [shareBusy, setShareBusy] = useState(false);
+  /** Uma chave por linha de pagamento nesta abertura do drawer (retry ≠ nova intenção). */
+  const paymentIdempotencyKeysRef = useRef<Record<string, string>>({});
 
   const loadComanda = useCallback(async () => {
     setLoading(true);
@@ -186,7 +194,8 @@ export function ComandaCheckoutDrawer({
       setError(null);
       setSuccessState(null);
       setReceivableDetail(null);
-      setPaymentAmount('');
+      setPaymentLines([]);
+      paymentIdempotencyKeysRef.current = {};
       return;
     }
     void loadComanda();
@@ -217,7 +226,6 @@ export function ComandaCheckoutDrawer({
         const methods = filterEnabledPaymentMethods(res.accepted_payment_methods ?? []);
         if (!cancelled) {
           setAcceptedPaymentMethods(methods);
-          setPaymentMethod((current) => (methods.includes(current) ? current : defaultPaymentMethod(methods)));
         }
       } catch {
         if (!cancelled) {
@@ -346,11 +354,15 @@ export function ComandaCheckoutDrawer({
   }, [isReceivableOnlyMode, receivableBalance, groupTotals]);
 
   const canPartialPay = isReceivableOnlyMode || (grouping === 'all' && groupTotals.length <= 1);
+  const allowMixedPayments = canPartialPay;
 
   useEffect(() => {
     if (!open || action !== 'receive_now' || chargeableTotal <= 0) return;
-    setPaymentAmount(chargeableTotal.toFixed(2).replace('.', ','));
-  }, [open, action, chargeableTotal, grouping]);
+    const method = defaultPaymentMethod(acceptedPaymentMethods);
+    const line = createDefaultPaymentLine(method, chargeableTotal);
+    setPaymentLines([line]);
+    paymentIdempotencyKeysRef.current = { [line.id]: newIdempotencyKey() };
+  }, [open, action, chargeableTotal, grouping, acceptedPaymentMethods, isReceivableOnlyMode]);
 
   const petChips = useMemo(() => {
     const names = new Set<string>();
@@ -413,79 +425,131 @@ export function ComandaCheckoutDrawer({
         return;
       }
 
+      const ensureIdemKey = (lineId: string) => {
+        if (!paymentIdempotencyKeysRef.current[lineId]) {
+          paymentIdempotencyKeysRef.current[lineId] = newIdempotencyKey();
+        }
+        return paymentIdempotencyKeysRef.current[lineId];
+      };
+
+      const buildValidatedLines = ():
+        | { ok: true; lines: Array<{
+            method: HubPaymentMethod;
+            amount: number;
+            tendered: number | null;
+            lineId: string;
+          }> }
+        | { ok: false; error: string } => {
+        if (!paymentLines.length) {
+          return { ok: false, error: 'Informe ao menos uma forma de pagamento.' };
+        }
+        const out: Array<{
+          method: HubPaymentMethod;
+          amount: number;
+          tendered: number | null;
+          lineId: string;
+        }> = [];
+        for (const line of paymentLines) {
+          const amount = parseAmount(line.amountStr);
+          if (Number.isNaN(amount) || amount <= 0) {
+            return { ok: false, error: 'Informe valores de pagamento válidos em todas as linhas.' };
+          }
+          if (line.method === 'cash' && !cashSessionId) {
+            return { ok: false, error: 'Abra o caixa nesta unidade para receber em dinheiro.' };
+          }
+          let tendered: number | null = null;
+          if (line.method === 'cash' && line.tenderedStr.trim()) {
+            tendered = parseAmount(line.tenderedStr);
+            if (Number.isNaN(tendered) || tendered <= 0) {
+              return { ok: false, error: 'Valor recebido em dinheiro inválido.' };
+            }
+            if (amount > tendered + 0.02) {
+              return {
+                ok: false,
+                error: 'O valor do pagamento não pode ser maior que o valor recebido (troco).',
+              };
+            }
+          }
+          out.push({ method: line.method, amount: round2(amount), tendered, lineId: line.id });
+        }
+        const totalPay = round2(out.reduce((s, l) => s + l.amount, 0));
+        if (totalPay > chargeableTotal + 0.02) {
+          return { ok: false, error: `Valor não pode ser maior que ${formatBrl(chargeableTotal)}.` };
+        }
+        if (!allowMixedPayments && Math.abs(totalPay - chargeableTotal) > 0.02) {
+          return { ok: false, error: 'Com agrupamento por pet, receba o valor total de cada grupo.' };
+        }
+        if (!allowMixedPayments && out.length > 1) {
+          return { ok: false, error: 'Pagamento misto disponível apenas no agrupamento «tudo junto».' };
+        }
+        return { ok: true, lines: out };
+      };
+
+      const validated = buildValidatedLines();
+      if (!validated.ok) {
+        setError(validated.error);
+        setLoading(false);
+        return;
+      }
+      const payLines = validated.lines;
+      const amount = round2(payLines.reduce((s, l) => s + l.amount, 0));
+      const changeAmount = totalChangeDue(paymentLines);
+
       if (isReceivableOnlyMode) {
         if (!activeReceivableId) {
           setError('Nenhum recebível ativo encontrado para pagamento.');
           setLoading(false);
           return;
         }
-        const amount = parseAmount(paymentAmount);
-        if (Number.isNaN(amount) || amount <= 0) {
-          setError('Informe um valor de pagamento válido.');
-          setLoading(false);
-          return;
+        for (const line of payLines) {
+          await hubFinancialApi.createReceivablePayment(activeReceivableId, {
+            clinic_id: clinicId,
+            amount: line.amount,
+            payment_method: line.method,
+            cash_session_id: cashSessionId,
+            idempotency_key: ensureIdemKey(line.lineId),
+            tendered_amount: line.tendered,
+          });
         }
-        if (amount > receivableBalance + 0.02) {
-          setError(`Valor não pode ser maior que o saldo (${formatBrl(receivableBalance)}).`);
-          setLoading(false);
-          return;
-        }
-        if (paymentMethod === 'cash' && !cashSessionId) {
-          setError('Abra o caixa nesta unidade para receber em dinheiro.');
-          setLoading(false);
-          return;
-        }
-        await hubFinancialApi.createReceivablePayment(activeReceivableId, {
-          clinic_id: clinicId,
-          amount,
-          payment_method: paymentMethod,
-          cash_session_id: cashSessionId,
-        });
         notifyDataChanged();
         setSuccessState({
           kind: 'receive_now',
           comandaId,
           amount,
-          paymentMethod,
+          paymentMethod: payLines.length === 1 ? payLines[0].method : undefined,
+          changeAmount: changeAmount > 0.009 ? changeAmount : undefined,
           receivableIds: [activeReceivableId],
         });
         return;
       }
 
-      const amount = canPartialPay ? parseAmount(paymentAmount) : chargeableTotal;
-      if (Number.isNaN(amount) || amount <= 0) {
-        setError('Informe um valor de pagamento válido.');
-        setLoading(false);
-        return;
-      }
-      if (canPartialPay && amount > chargeableTotal + 0.02) {
-        setError(`Valor não pode ser maior que ${formatBrl(chargeableTotal)}.`);
-        setLoading(false);
-        return;
-      }
-      if (!canPartialPay && Math.abs(amount - chargeableTotal) > 0.02) {
-        setError('Com agrupamento por pet, receba o valor total de cada grupo.');
-        setLoading(false);
-        return;
-      }
-
-      const payments = groupTotals
-        .filter((g) => g.total > 0.009)
-        .map((g) => ({
-          group_index: g.groupIndex,
-          amount: canPartialPay && groupTotals.length === 1 ? amount : g.total,
-          payment_method: paymentMethod,
-          cash_session_id: cashSessionId,
-        }));
+      const payments =
+        allowMixedPayments && groupTotals.length <= 1
+          ? payLines.map((line) => ({
+              group_index: groupTotals[0]?.groupIndex ?? 0,
+              amount: line.amount,
+              payment_method: line.method,
+              cash_session_id: cashSessionId,
+              idempotency_key: ensureIdemKey(line.lineId),
+              tendered_amount: line.tendered,
+            }))
+          : groupTotals
+              .filter((g) => g.total > 0.009)
+              .map((g, idx) => {
+                const line = payLines[0];
+                const lineId = `${line.lineId}-g${idx}`;
+                return {
+                  group_index: g.groupIndex,
+                  amount: g.total,
+                  payment_method: line.method,
+                  cash_session_id: cashSessionId,
+                  idempotency_key: ensureIdemKey(lineId),
+                  tendered_amount: line.tendered,
+                };
+              });
 
       if (openItems.length > 0 && payments.length === 0) {
         setError('Não há valor por grupo para receber. Verifique os itens em aberto.');
-        setLoading(false);
-        return;
-      }
-
-      if (paymentMethod === 'cash' && payments.length > 0 && !cashSessionId) {
-        setError('Abra o caixa nesta unidade para receber em dinheiro.');
         setLoading(false);
         return;
       }
@@ -503,7 +567,8 @@ export function ComandaCheckoutDrawer({
         kind: 'receive_now',
         comandaId,
         amount,
-        paymentMethod,
+        paymentMethod: payLines.length === 1 ? payLines[0].method : undefined,
+        changeAmount: changeAmount > 0.009 ? changeAmount : undefined,
         receivableIds: res.receivable_ids,
       });
     } catch (e: unknown) {
@@ -544,7 +609,10 @@ export function ComandaCheckoutDrawer({
           : buildWhatsAppMessagePaymentReceipt(
               firstName,
               formatBrlLabel(successState.amount),
-              paymentMethodLabel(successState.paymentMethod ?? paymentMethod),
+              paymentMethodLabel(
+                successState.paymentMethod ??
+                  (paymentLines.length === 1 ? paymentLines[0].method : 'pix'),
+              ),
             );
       const wa = waMeUrlWithText(guardianPhone, msg);
       if (wa) window.open(wa, '_blank', 'noopener,noreferrer');
@@ -581,10 +649,10 @@ export function ComandaCheckoutDrawer({
     finishSuccess();
   };
 
-  const parsedPaymentAmount = parseAmount(paymentAmount);
+  const distributedPay = sumPaymentLines(paymentLines);
   const remainingAfterPay =
-    canPartialPay && parsedPaymentAmount > 0 && parsedPaymentAmount < chargeableTotal - 0.009
-      ? round2(chargeableTotal - parsedPaymentAmount)
+    allowMixedPayments && distributedPay > 0 && distributedPay < chargeableTotal - 0.009
+      ? round2(chargeableTotal - distributedPay)
       : null;
 
   return (
@@ -652,6 +720,11 @@ export function ComandaCheckoutDrawer({
                 ? 'Cobrança pendente criada. Avise o tutor pelo WhatsApp ou compartilhe a comanda.'
                 : 'Pagamento registrado. Envie a confirmação ao tutor se desejar.'}
             </p>
+            {successState.changeAmount != null && successState.changeAmount > 0.009 ? (
+              <p className="hub-clientes__muted">
+                Troco a devolver: <strong>{formatBrl(successState.changeAmount)}</strong>
+              </p>
+            ) : null}
             <div className="hub-checkout-drawer__success-actions">
               <button
                 type="button"
@@ -801,7 +874,7 @@ export function ComandaCheckoutDrawer({
                         {receivableDetail.payments.map((p) => (
                           <li key={p.id} className="hub-finance-page__item-list-row">
                             <span>
-                              {HUB_PAYMENT_METHOD_LABELS[p.payment_method as HubPaymentMethod] ?? p.payment_method}
+                              {paymentMethodLabel(p.payment_method as HubPaymentMethod)}
                             </span>
                             <span>{formatBrl(Number(p.amount ?? 0))}</span>
                           </li>
@@ -824,73 +897,39 @@ export function ComandaCheckoutDrawer({
 
                 {action === 'receive_now' && (
                   <section className="hub-checkout-drawer__payment-block">
-                    <div className="hub-clientes__field">
-                      <label className="hub-clientes__label" htmlFor="checkout-payment-amount">
-                        Valor a receber agora
-                      </label>
-                      <div className="hub-checkout-drawer__amount-row">
-                        <input
-                          id="checkout-payment-amount"
-                          type="text"
-                          inputMode="decimal"
-                          className="hub-clientes__input"
-                          value={paymentAmount}
-                          disabled={!canPartialPay}
-                          onChange={(e) => setPaymentAmount(e.target.value)}
-                        />
-                        {canPartialPay && (
-                          <button
-                            type="button"
-                            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                            onClick={() =>
-                              setPaymentAmount(chargeableTotal.toFixed(2).replace('.', ','))
-                            }
-                          >
-                            Receber total
-                          </button>
-                        )}
-                      </div>
-                      {!canPartialPay && groupTotals.length > 1 && (
-                        <p className="hub-clientes__muted">
-                          Com agrupamento por pet, o valor total de cada grupo será cobrado integralmente.
-                        </p>
-                      )}
-                      {remainingAfterPay != null && (
-                        <p className="hub-clientes__muted">
-                          Saldo restante após este pagamento: <strong>{formatBrl(remainingAfterPay)}</strong>
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="hub-clientes__field">
-                      <label className="hub-clientes__label" htmlFor="checkout-payment-method">
-                        Forma de pagamento
-                      </label>
-                      <select
-                        id="checkout-payment-method"
-                        className="hub-clientes__select-input"
-                        value={paymentMethod}
-                        onChange={(e) => setPaymentMethod(e.target.value as HubPaymentMethod)}
-                      >
-                        {acceptedPaymentMethods.map((value) => (
-                          <option key={value} value={value}>
-                            {HUB_PAYMENT_METHOD_LABELS[value]}
-                          </option>
-                        ))}
-                      </select>
-                      {paymentMethod === 'cash' && (
-                        <p className="hub-clientes__muted">
-                          {cashSessionId
-                            ? `Caixa aberto (sessão ${cashSessionId.slice(0, 8)}…)`
-                            : 'Não há caixa aberto — abra no módulo Caixa.'}
-                        </p>
-                      )}
-                      {paymentMethod !== 'cash' && cashSessionId && (
-                        <p className="hub-clientes__muted">
-                          Sessão de caixa aberta — recebimento será registrado no histórico do dia.
-                        </p>
-                      )}
-                    </div>
+                    {!allowMixedPayments && groupTotals.length > 1 ? (
+                      <p className="hub-clientes__muted">
+                        Com agrupamento por pet, o valor total de cada grupo será cobrado
+                        integralmente com a mesma forma de pagamento.
+                      </p>
+                    ) : null}
+                    <CheckoutPaymentLinesEditor
+                      due={chargeableTotal}
+                      lines={paymentLines}
+                      onChange={(next) => {
+                        setPaymentLines(next);
+                        for (const line of next) {
+                          if (!paymentIdempotencyKeysRef.current[line.id]) {
+                            paymentIdempotencyKeysRef.current[line.id] = newIdempotencyKey();
+                          }
+                        }
+                      }}
+                      acceptedMethods={acceptedPaymentMethods}
+                      cashSessionOpen={Boolean(cashSessionId)}
+                      allowMultiple={allowMixedPayments}
+                      disabled={loading}
+                    />
+                    {remainingAfterPay != null ? (
+                      <p className="hub-clientes__muted">
+                        Saldo restante após este pagamento:{' '}
+                        <strong>{formatBrl(remainingAfterPay)}</strong>
+                      </p>
+                    ) : null}
+                    {cashSessionId ? (
+                      <p className="hub-clientes__muted">
+                        Sessão de caixa aberta — recebimentos em dinheiro entram no histórico do dia.
+                      </p>
+                    ) : null}
                   </section>
                 )}
 

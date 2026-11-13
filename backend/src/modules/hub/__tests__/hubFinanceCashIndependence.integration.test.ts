@@ -11,6 +11,7 @@ import app from '../../../app';
 import { configureAuthMock, resetAuthMock } from '../../../__tests__/helpers/authTestDouble';
 import { configureSupabaseMock, getMockSupabaseClient } from '../../../__tests__/helpers/supabaseTestDouble';
 import { hasPermission, type Role } from '../../../utils/permissions';
+import { betaClinicSubscription } from '../../../__tests__/helpers/fixtures/hubSubscription';
 
 const TEST_CLINIC_ID = '11111111-1111-4111-8111-111111111101';
 const TEST_UNIT_ID = '22222222-2222-4222-8222-222222222201';
@@ -70,6 +71,7 @@ describe('Financeiro × Caixa — independência e ledger', () => {
   it('PIX sem sessão de caixa funciona', async () => {
     configureSupabaseMock({
       tables: {
+        clinic_hub_subscriptions: [betaClinicSubscription(TEST_CLINIC_ID)],
         hub_clinic_settings: [clinicSettings()],
         hub_receivables: [pendingReceivable(RECEIVABLE_ID, 100)],
         hub_payments: [],
@@ -78,6 +80,8 @@ describe('Financeiro × Caixa — independência e ledger', () => {
         hub_comandas: [],
         hub_charge_bundles: [],
         hub_charge_bundle_items: [],
+        hub_customer_package_balances: [],
+        hub_package_redemptions: [],
       },
     });
     authAsRole('CFINANCE');
@@ -95,10 +99,13 @@ describe('Financeiro × Caixa — independência e ledger', () => {
   it('cash sem sessão retorna 409', async () => {
     configureSupabaseMock({
       tables: {
+        clinic_hub_subscriptions: [betaClinicSubscription(TEST_CLINIC_ID)],
         hub_clinic_settings: [clinicSettings()],
         hub_receivables: [pendingReceivable(RECEIVABLE_ID, 100)],
         hub_payments: [],
         hub_cash_sessions: [],
+        hub_customer_package_balances: [],
+        hub_package_redemptions: [],
       },
     });
     authAsRole('CFINANCE');
@@ -113,6 +120,7 @@ describe('Financeiro × Caixa — independência e ledger', () => {
   it('anulação vs reembolso efetivo gravam adjustment_type distintos', async () => {
     configureSupabaseMock({
       tables: {
+        clinic_hub_subscriptions: [betaClinicSubscription(TEST_CLINIC_ID)],
         hub_clinic_settings: [clinicSettings()],
         hub_receivables: [pendingReceivable(RECEIVABLE_ID, 100, { status: 'paid' })],
         hub_payments: [
@@ -131,6 +139,8 @@ describe('Financeiro × Caixa — independência e ledger', () => {
         hub_cash_sessions: [],
         hub_charge_bundles: [],
         hub_charge_bundle_items: [],
+        hub_customer_package_balances: [],
+        hub_package_redemptions: [],
       },
     });
     authAsRole('CFINANCE');
@@ -156,6 +166,7 @@ describe('Financeiro × Caixa — independência e ledger', () => {
   it('estorno duplicado retorna 409', async () => {
     configureSupabaseMock({
       tables: {
+        clinic_hub_subscriptions: [betaClinicSubscription(TEST_CLINIC_ID)],
         hub_clinic_settings: [clinicSettings()],
         hub_receivables: [pendingReceivable(RECEIVABLE_ID, 50, { status: 'paid' })],
         hub_payments: [
@@ -174,6 +185,8 @@ describe('Financeiro × Caixa — independência e ledger', () => {
         hub_cash_sessions: [],
         hub_charge_bundles: [],
         hub_charge_bundle_items: [],
+        hub_customer_package_balances: [],
+        hub_package_redemptions: [],
       },
     });
     authAsRole('CFINANCE');
@@ -192,6 +205,7 @@ describe('Financeiro × Caixa — independência e ledger', () => {
   it('correção histórica em dinheiro sem sessão', async () => {
     configureSupabaseMock({
       tables: {
+        clinic_hub_subscriptions: [betaClinicSubscription(TEST_CLINIC_ID)],
         hub_clinic_settings: [clinicSettings()],
         hub_receivables: [pendingReceivable(RECEIVABLE_ID, 80)],
         hub_payments: [],
@@ -200,6 +214,8 @@ describe('Financeiro × Caixa — independência e ledger', () => {
         hub_comandas: [],
         hub_charge_bundles: [],
         hub_charge_bundle_items: [],
+        hub_customer_package_balances: [],
+        hub_package_redemptions: [],
       },
     });
     authAsRole('CFINANCE');
@@ -231,6 +247,7 @@ describe('Financeiro × Caixa — independência e ledger', () => {
   it('estorno parcial mantém outro pagamento posted', async () => {
     configureSupabaseMock({
       tables: {
+        clinic_hub_subscriptions: [betaClinicSubscription(TEST_CLINIC_ID)],
         hub_clinic_settings: [clinicSettings()],
         hub_receivables: [pendingReceivable(RECEIVABLE_ID, 100, { status: 'paid' })],
         hub_payments: [
@@ -260,6 +277,8 @@ describe('Financeiro × Caixa — independência e ledger', () => {
         hub_comandas: [],
         hub_charge_bundles: [],
         hub_charge_bundle_items: [],
+        hub_customer_package_balances: [],
+        hub_package_redemptions: [],
       },
     });
     authAsRole('CFINANCE');

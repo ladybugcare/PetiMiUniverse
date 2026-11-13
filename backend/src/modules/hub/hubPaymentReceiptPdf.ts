@@ -9,6 +9,9 @@ type PaymentReceipt = {
   payment_method: string;
   payment_date: string;
   created_by_user_id?: string | null;
+  tendered_amount?: number | null;
+  change_amount?: number | null;
+  notes?: string | null;
   receivable?: {
     id: string;
     original_amount: number;
@@ -100,9 +103,21 @@ export function streamPaymentReceiptPdf(res: Response, receipt: PaymentReceipt):
   doc.font('Helvetica-Bold').fontSize(12).text('Pagamento', x2, y);
   y = doc.y + 8;
 
+  const tendered =
+    receipt.tendered_amount != null && Number.isFinite(Number(receipt.tendered_amount))
+      ? Number(receipt.tendered_amount)
+      : null;
+  const change =
+    receipt.change_amount != null && Number.isFinite(Number(receipt.change_amount))
+      ? Number(receipt.change_amount)
+      : tendered != null
+        ? Math.max(0, tendered - Number(receipt.amount || 0))
+        : null;
+  const paymentBoxH = tendered != null && change != null && change > 0.009 ? 148 : 118;
+
   doc.save();
-  doc.roundedRect(margin, y, colW, 118, 6).fill(BEIGE);
-  doc.roundedRect(x2, y, colW, 118, 6).fill(BEIGE);
+  doc.roundedRect(margin, y, colW, paymentBoxH, 6).fill(BEIGE);
+  doc.roundedRect(x2, y, colW, paymentBoxH, 6).fill(BEIGE);
   doc.restore();
 
   let ly = y + 12;
@@ -112,10 +127,16 @@ export function streamPaymentReceiptPdf(res: Response, receipt: PaymentReceipt):
 
   let ry = y + 12;
   ry = valueRow(doc, 'Forma de pagamento', methodLabel(receipt.payment_method), x2 + 12, ry, colW - 24);
-  ry = valueRow(doc, 'Valor recebido', brl(receipt.amount), x2 + 12, ry, colW - 24);
+  ry = valueRow(doc, 'Valor aplicado', brl(receipt.amount), x2 + 12, ry, colW - 24);
+  if (tendered != null) {
+    ry = valueRow(doc, 'Valor entregue', brl(tendered), x2 + 12, ry, colW - 24);
+  }
+  if (change != null && change > 0.009) {
+    ry = valueRow(doc, 'Troco', brl(change), x2 + 12, ry, colW - 24);
+  }
   ry = valueRow(doc, 'Usuário responsável', receipt.created_by_user_id ? receipt.created_by_user_id.slice(0, 8) : '—', x2 + 12, ry, colW - 24);
 
-  y += 142;
+  y += paymentBoxH + 24;
   doc.font('Helvetica-Bold').fontSize(12).fillColor(TEXT_DARK).text('Valores', margin, y);
   y = doc.y + 8;
   doc.save();

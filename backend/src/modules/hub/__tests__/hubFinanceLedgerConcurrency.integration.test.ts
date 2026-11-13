@@ -11,6 +11,7 @@ import app from '../../../app';
 import { configureAuthMock, resetAuthMock } from '../../../__tests__/helpers/authTestDouble';
 import { configureSupabaseMock, getMockSupabaseClient } from '../../../__tests__/helpers/supabaseTestDouble';
 import { hasPermission } from '../../../utils/permissions';
+import { betaClinicSubscription } from '../../../__tests__/helpers/fixtures/hubSubscription';
 
 const TEST_CLINIC_ID = '11111111-1111-4111-8111-111111111101';
 const TEST_UNIT_ID = '22222222-2222-4222-8222-222222222201';
@@ -23,6 +24,7 @@ describe('Finance ledger concurrency', () => {
   it('dois reverse paralelos: um sucesso e um 409', async () => {
     configureSupabaseMock({
       tables: {
+        clinic_hub_subscriptions: [betaClinicSubscription(TEST_CLINIC_ID)],
         hub_clinic_settings: [
           {
             clinic_id: TEST_CLINIC_ID,
@@ -56,6 +58,8 @@ describe('Finance ledger concurrency', () => {
         hub_cash_sessions: [],
         hub_charge_bundles: [],
         hub_charge_bundle_items: [],
+        hub_customer_package_balances: [],
+        hub_package_redemptions: [],
       },
     });
     configureAuthMock({

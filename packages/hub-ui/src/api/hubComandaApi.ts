@@ -235,6 +235,8 @@ export const hubComandaApi = {
           | 'customer_credit';
         cash_session_id?: string | null;
         installments?: number;
+        idempotency_key?: string | null;
+        tendered_amount?: number | null;
       }>;
       waive_reason?: string;
     }
@@ -370,6 +372,8 @@ export const hubComandaApi = {
     payment_timing?: 'on_checkout' | 'advance';
     payment_method?: string | null;
     cash_session_id?: string | null;
+    /** Mapa comanda_id|receivable_id → uuid de idempotência por pagamento. */
+    idempotency_keys?: Record<string, string>;
   }): Promise<{
     results: Array<{ comanda_id: string; receivable_ids: string[]; error?: string }>;
     partial_errors: boolean;

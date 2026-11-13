@@ -897,8 +897,10 @@ export const hubFinancialApi = {
       notes?: string | null;
       cash_session_id?: string | null;
       payment_date?: string;
+      idempotency_key?: string | null;
+      tendered_amount?: number | null;
     }
-  ): Promise<{ payment: Record<string, unknown>; receivable_status: string }> {
+  ): Promise<{ payment: Record<string, unknown>; receivable_status: string; replayed?: boolean }> {
     return apiRequest(`${base}/receivables/${encodeURIComponent(receivableId)}/payments`, {
       method: 'POST',
       body: JSON.stringify(body),

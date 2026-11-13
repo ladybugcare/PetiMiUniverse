@@ -2613,6 +2613,10 @@ const checkoutBodySchema = z
             payment_method: hubPaymentMethodSchema,
             cash_session_id: uuidStr.optional().nullable(),
             installments: z.number().int().min(1).max(99).optional(),
+            /** UUID por intenção de pagamento — retry/duplo clique não duplica hub_payments. */
+            idempotency_key: uuidStr.optional().nullable(),
+            /** Valor entregue em dinheiro (UI); não grava coluna — só validação/notes. */
+            tendered_amount: z.number().positive().optional().nullable(),
           })
           .strict()
       )
@@ -3055,10 +3059,11 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
         const rid = receivableIdForGroupIndex(pay.group_index)!;
 
         const { data: recRow } = await supabaseAdmin.from('hub_receivables').select('final_amount, unit_id').eq('id', rid).single();
-        const finalAmt = Number(recRow?.final_amount ?? 0);
 
         const recUnit = recRow?.unit_id as string | null;
-        const { validatePaymentCashSession } = await import('./hubFinanceLedger.js');
+        const { insertPostedPaymentWithIdempotency, validatePaymentCashSession } = await import(
+          './hubFinanceLedger.js'
+        );
         const cashCheck = await validatePaymentCashSession({
           clinicId: clinic_id,
           paymentMethod: pay.payment_method,
@@ -3070,6 +3075,19 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
           return res.status(cashCheck.status).json({ error: cashCheck.error });
         }
         const validatedCashSessionId = cashCheck.cash_session_id;
+
+        if (pay.payment_method === 'cash' && pay.tendered_amount != null) {
+          const tendered = round2(Number(pay.tendered_amount));
+          const recorded = round2(pay.amount);
+          if (recorded > tendered + 0.009) {
+            await rollbackReceivables();
+            return res.status(400).json({
+              error: 'Valor do pagamento em dinheiro não pode exceder o valor recebido (tendered).',
+            });
+          }
+        }
+
+        const idempotencyKey = pay.idempotency_key ?? null;
 
         if (pay.payment_method === 'customer_credit') {
           if (!guardianId) {
@@ -3100,34 +3118,43 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
           }
         }
 
-        const { error: pErr } = await supabaseAdmin.from('hub_payments').insert({
-          clinic_id,
-          receivable_id: rid,
-          cash_session_id: validatedCashSessionId,
-          amount: round2(pay.amount),
-          payment_method: pay.payment_method,
-          installments: pay.installments ?? 1,
-          payment_date: new Date().toISOString(),
-          notes: null,
-          created_by_user_id: userId,
-          payment_timing: payment_timing,
-          status: 'posted',
-          posting_kind: 'operational',
-        });
-        if (pErr) {
-          await rollbackReceivables();
-          return res.status(500).json({ error: pErr.message });
+        let tenderedAmount: number | null = null;
+        let changeAmount: number | null = null;
+        let paymentNotes: string | null = null;
+        if (pay.payment_method === 'cash' && pay.tendered_amount != null) {
+          tenderedAmount = round2(Number(pay.tendered_amount));
+          const recorded = round2(pay.amount);
+          changeAmount = round2(Math.max(0, tenderedAmount - recorded));
+          if (changeAmount > 0.009) {
+            paymentNotes = `Troco R$ ${changeAmount.toFixed(2)} (recebido R$ ${tenderedAmount.toFixed(2)})`;
+          }
         }
 
-        const { data: sumRows } = await supabaseAdmin
-          .from('hub_payments')
-          .select('amount')
-          .eq('receivable_id', rid)
-          .eq('status', 'posted');
-        const paid = round2((sumRows ?? []).reduce((a, r) => a + Number(r.amount ?? 0), 0));
-        let nextStatus = 'partially_paid';
-        if (paid >= finalAmt - 0.009) nextStatus = 'paid';
-        await supabaseAdmin.from('hub_receivables').update({ status: nextStatus }).eq('id', rid);
+        const inserted = await insertPostedPaymentWithIdempotency({
+          clinicId: clinic_id,
+          receivableId: rid,
+          cashSessionId: validatedCashSessionId,
+          amount: round2(pay.amount),
+          paymentMethod: pay.payment_method,
+          installments: pay.installments ?? 1,
+          paymentDate: new Date().toISOString(),
+          notes: paymentNotes,
+          createdByUserId: userId,
+          paymentTiming: payment_timing,
+          idempotencyKey,
+          tenderedAmount,
+          changeAmount,
+        });
+        if (!inserted.ok) {
+          await rollbackReceivables();
+          return res.status(inserted.status ?? 500).json({
+            error: inserted.error,
+            ...(inserted.existing ? { existing_payment: inserted.existing } : {}),
+          });
+        }
+
+        const { recalculateReceivableFromPosted } = await import('./hubFinanceLedger.js');
+        const nextStatus = await recalculateReceivableFromPosted(rid);
         if (nextStatus === 'paid') {
           void markHubAppointmentPaidFromReceivable({ clinicId: clinic_id, receivableId: rid });
         }
@@ -4943,6 +4970,8 @@ const checkoutBulkBodySchema = z
     /** Para receive_now: método e valor (aplicado a cada comanda proporcionalmente, ou por grupo). */
     payment_method: z.string().optional().nullable(),
     cash_session_id: uuidStr.optional().nullable(),
+    /** Mapa opcional comanda_id|receivable_id → idempotency_key (uuid) por pagamento. */
+    idempotency_keys: z.record(z.string().uuid(), uuidStr).optional(),
   })
   .strict();
 
@@ -4952,7 +4981,16 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
     if (!parsed.success) {
       return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
     }
-    const { clinic_id, comanda_ids, action, due_date, payment_timing, payment_method, cash_session_id } = parsed.data;
+    const {
+      clinic_id,
+      comanda_ids,
+      action,
+      due_date,
+      payment_timing,
+      payment_method,
+      cash_session_id,
+      idempotency_keys: bulkIdempotencyKeys,
+    } = parsed.data;
     const userId = req.user?.id ?? null;
 
     if (action === 'leave_pending' && !due_date) {
@@ -5085,7 +5123,8 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
                 const due = round2(Math.max(0, Number(rec.final_amount ?? 0) - paidSoFar));
                 if (due <= 0.009) continue;
 
-                const { validatePaymentCashSession } = await import('./hubFinanceLedger.js');
+                const { insertPostedPaymentWithIdempotency, validatePaymentCashSession, recalculateReceivableFromPosted } =
+                  await import('./hubFinanceLedger.js');
                 const cashCheck = await validatePaymentCashSession({
                   clinicId: clinic_id,
                   paymentMethod: payment_method,
@@ -5125,27 +5164,29 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
                   }
                 }
 
-                const { error: payInsErr } = await supabaseAdmin.from('hub_payments').insert({
-                  clinic_id,
-                  receivable_id: rid,
-                  cash_session_id: validatedCashSessionId,
+                const lineKey = bulkIdempotencyKeys?.[rid] ?? bulkIdempotencyKeys?.[comandaId] ?? null;
+                const inserted = await insertPostedPaymentWithIdempotency({
+                  clinicId: clinic_id,
+                  receivableId: rid,
+                  cashSessionId: validatedCashSessionId,
                   amount: due,
-                  payment_method,
+                  paymentMethod: payment_method,
                   installments: 1,
-                  payment_date: new Date().toISOString(),
+                  paymentDate: new Date().toISOString(),
                   notes: null,
-                  created_by_user_id: userId,
-                  payment_timing,
-                  status: 'posted',
-                  posting_kind: 'operational',
+                  createdByUserId: userId,
+                  paymentTiming: payment_timing,
+                  idempotencyKey: lineKey,
                 });
-                if (payInsErr) {
-                  payError = payInsErr.message;
+                if (!inserted.ok) {
+                  payError = inserted.error;
                   break;
                 }
-                await supabaseAdmin.from('hub_receivables').update({ status: 'paid' }).eq('id', rid);
+                const nextStatus = await recalculateReceivableFromPosted(rid);
                 paidIds.push(rid);
-                void markHubAppointmentPaidFromReceivable({ clinicId: clinic_id, receivableId: rid });
+                if (nextStatus === 'paid') {
+                  void markHubAppointmentPaidFromReceivable({ clinicId: clinic_id, receivableId: rid });
+                }
               }
               if (payError) {
                 results.push({ comanda_id: comandaId, receivable_ids: paidIds, error: payError });
@@ -5230,19 +5271,21 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
         }
 
         if (action === 'receive_now' && payment_method) {
-          let validatedCashSessionId: string | null = null;
-          if (payment_method === 'cash') {
-            if (!cash_session_id) {
-              await supabaseAdmin.from('hub_receivable_lines').delete().eq('receivable_id', receivableId);
-              await supabaseAdmin.from('hub_receivables').delete().eq('id', receivableId);
-              results.push({ comanda_id: comandaId, receivable_ids: [], error: 'Abra o caixa para receber em dinheiro.' });
-              continue;
-            }
-            validatedCashSessionId = cash_session_id;
-          } else {
-            // Não-dinheiro: sem vínculo automático à sessão de caixa.
-            validatedCashSessionId = cash_session_id ?? null;
+          const { insertPostedPaymentWithIdempotency, validatePaymentCashSession, recalculateReceivableFromPosted } =
+            await import('./hubFinanceLedger.js');
+          const cashCheck = await validatePaymentCashSession({
+            clinicId: clinic_id,
+            paymentMethod: payment_method,
+            cashSessionId: cash_session_id ?? null,
+            receivableUnitId: unitId,
+          });
+          if (!cashCheck.ok) {
+            await supabaseAdmin.from('hub_receivable_lines').delete().eq('receivable_id', receivableId);
+            await supabaseAdmin.from('hub_receivables').delete().eq('id', receivableId);
+            results.push({ comanda_id: comandaId, receivable_ids: [], error: cashCheck.error });
+            continue;
           }
+          const validatedCashSessionId = cashCheck.cash_session_id;
 
           if (payment_method === 'customer_credit') {
             if (!guardianId) {
@@ -5280,22 +5323,30 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
             }
           }
 
-          await supabaseAdmin.from('hub_payments').insert({
-            clinic_id,
-            receivable_id: receivableId,
-            cash_session_id: validatedCashSessionId,
+          const lineKey = bulkIdempotencyKeys?.[comandaId] ?? null;
+          const inserted = await insertPostedPaymentWithIdempotency({
+            clinicId: clinic_id,
+            receivableId,
+            cashSessionId: validatedCashSessionId,
             amount: round2(subtotal),
-            payment_method,
+            paymentMethod: payment_method,
             installments: 1,
-            payment_date: new Date().toISOString(),
+            paymentDate: new Date().toISOString(),
             notes: null,
-            created_by_user_id: userId,
-            payment_timing,
-            status: 'posted',
-            posting_kind: 'operational',
+            createdByUserId: userId,
+            paymentTiming: payment_timing,
+            idempotencyKey: lineKey,
           });
-          await supabaseAdmin.from('hub_receivables').update({ status: 'paid' }).eq('id', receivableId);
-          void markHubAppointmentPaidFromReceivable({ clinicId: clinic_id, receivableId });
+          if (!inserted.ok) {
+            await supabaseAdmin.from('hub_receivable_lines').delete().eq('receivable_id', receivableId);
+            await supabaseAdmin.from('hub_receivables').delete().eq('id', receivableId);
+            results.push({ comanda_id: comandaId, receivable_ids: [], error: inserted.error });
+            continue;
+          }
+          const nextStatus = await recalculateReceivableFromPosted(receivableId);
+          if (nextStatus === 'paid') {
+            void markHubAppointmentPaidFromReceivable({ clinicId: clinic_id, receivableId });
+          }
         }
 
         await tryAutoCloseComanda(comandaId, clinic_id);

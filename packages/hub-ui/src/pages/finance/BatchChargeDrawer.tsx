@@ -280,6 +280,9 @@ export const BatchChargeDrawer: React.FC<BatchChargeDrawerProps> = ({
       } else {
         if (selectedComandas.length > 0) {
           const comandaIds = selectedComandas.map((i) => i.comandaId!).filter(Boolean);
+          const idempotency_keys = Object.fromEntries(
+            comandaIds.map((id) => [id, crypto.randomUUID()]),
+          );
           const res = await hubComandaApi.checkoutBulk({
             clinic_id: clinicId,
             unit_id: unitId,
@@ -287,6 +290,7 @@ export const BatchChargeDrawer: React.FC<BatchChargeDrawerProps> = ({
             action: 'receive_now',
             payment_method: paymentMethod,
             cash_session_id: cashSessionId,
+            idempotency_keys,
           });
           for (const r of res.results) {
             if (r.error) errors.push(`${r.comanda_id.slice(0, 8)}…: ${r.error}`);

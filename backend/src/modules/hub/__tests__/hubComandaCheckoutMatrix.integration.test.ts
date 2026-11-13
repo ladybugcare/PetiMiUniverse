@@ -107,6 +107,8 @@ function baseFinanceTables(extra: Record<string, unknown[]> = {}) {
     hub_quote_lines: [] as Record<string, unknown>[],
     hub_quote_pets: [] as Record<string, unknown>[],
     hub_quote_line_pets: [] as Record<string, unknown>[],
+    hub_customer_package_balances: [] as Record<string, unknown>[],
+    hub_package_redemptions: [] as Record<string, unknown>[],
     ...extra,
   };
 }
@@ -611,6 +613,178 @@ describe('Matriz Caixa — open → checkout por origem', () => {
 
       const balances = getMockSupabaseClient()._state.tables.hub_customer_package_balances ?? [];
       expect(balances.length).toBeGreaterThanOrEqual(1);
+      expect(balances.every((b) => b.status === 'active')).toBe(true);
+    });
+
+    it('leave_pending cria saldo pending (não usável)', async () => {
+      const open = await openComanda({
+        clinic_id: PKG_CLINIC_ID,
+        origin_type: 'package',
+        package_id: TEST_PACKAGE_ID,
+        guardian_id: PKG_GUARDIAN_ID,
+        pet_id: PKG_PET_ID,
+        unit_id: PKG_UNIT_ID,
+      });
+      expect(open.status).toBe(201);
+      const comandaId = open.body.comanda.id as string;
+
+      const handoff = await request(app)
+        .post(`/api/hub/comandas/${comandaId}/checkout`)
+        .send({
+          clinic_id: PKG_CLINIC_ID,
+          grouping: 'all',
+          action: 'leave_pending',
+          due_date: '2026-07-01',
+        });
+      expect(handoff.status).toBe(201);
+
+      const balances = getMockSupabaseClient()._state.tables.hub_customer_package_balances ?? [];
+      expect(balances.length).toBeGreaterThanOrEqual(1);
+      expect(balances.every((b) => b.status === 'pending')).toBe(true);
+
+      const list = await request(app)
+        .get(`/api/hub/guardians/${PKG_GUARDIAN_ID}/package-balances`)
+        .query({ clinic_id: PKG_CLINIC_ID });
+      expect(list.status).toBe(200);
+      const rows = Array.isArray(list.body) ? list.body : list.body.balances ?? [];
+      expect((rows as unknown[]).length).toBe(0);
+    });
+
+    it('pagamento parcial mantém saldo pending; quitação ativa', async () => {
+      const open = await openComanda({
+        clinic_id: PKG_CLINIC_ID,
+        origin_type: 'package',
+        package_id: TEST_PACKAGE_ID,
+        guardian_id: PKG_GUARDIAN_ID,
+        pet_id: PKG_PET_ID,
+        unit_id: PKG_UNIT_ID,
+      });
+      expect(open.status).toBe(201);
+      const comandaId = open.body.comanda.id as string;
+      const total = Number(open.body.comanda.total_amount ?? open.body.items?.[0]?.line_total ?? 500);
+      const half = Math.round((total / 2) * 100) / 100;
+
+      const partial = await request(app)
+        .post(`/api/hub/comandas/${comandaId}/checkout`)
+        .send({
+          clinic_id: PKG_CLINIC_ID,
+          grouping: 'all',
+          action: 'receive_now',
+          payments: [
+            {
+              group_index: 0,
+              amount: half,
+              payment_method: 'pix',
+            },
+          ],
+        });
+      expect(partial.status).toBe(201);
+      let balances = getMockSupabaseClient()._state.tables.hub_customer_package_balances ?? [];
+      expect(balances.every((b) => b.status === 'pending')).toBe(true);
+
+      const receivableId = partial.body.receivable_ids[0] as string;
+      const rest = Math.round((total - half) * 100) / 100;
+      const settle = await request(app)
+        .post(`/api/hub/finance/receivables/${receivableId}/payments`)
+        .send({
+          clinic_id: PKG_CLINIC_ID,
+          amount: rest,
+          payment_method: 'pix',
+        });
+      expect(settle.status).toBe(201);
+      expect(settle.body.receivable_status).toBe('paid');
+
+      balances = getMockSupabaseClient()._state.tables.hub_customer_package_balances ?? [];
+      expect(balances.every((b) => b.status === 'active')).toBe(true);
+    });
+  });
+
+  describe('pagamento misto + troco', () => {
+    it('receive_now aceita PIX + cartão no mesmo group_index', async () => {
+      configureSupabaseMock({
+        tables: baseFinanceTables({
+          hub_boarding_reservations: [hotelReservationCheckedOut()],
+        }),
+      });
+      const open = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'boarding_reservation',
+        origin_id: TEST_RESERVATION_ID,
+        unit_id: TEST_UNIT_ID,
+      });
+      expect(open.status).toBe(201);
+      const comandaId = open.body.comanda.id as string;
+      const total = Number(open.body.comanda.total_amount ?? 0);
+      expect(total).toBeGreaterThan(0);
+      const half = Math.round((total / 2) * 100) / 100;
+      const rest = Math.round((total - half) * 100) / 100;
+
+      const pay = await request(app)
+        .post(`/api/hub/comandas/${comandaId}/checkout`)
+        .send({
+          clinic_id: TEST_CLINIC_ID,
+          grouping: 'all',
+          action: 'receive_now',
+          payments: [
+            {
+              group_index: 0,
+              amount: half,
+              payment_method: 'pix',
+              idempotency_key: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0201',
+            },
+            {
+              group_index: 0,
+              amount: rest,
+              payment_method: 'credit_card',
+              idempotency_key: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0202',
+            },
+          ],
+        });
+      expect(pay.status).toBe(201);
+      const payments = getMockSupabaseClient()._state.tables.hub_payments ?? [];
+      expect(payments).toHaveLength(2);
+      expect(payments.map((p) => p.payment_method).sort()).toEqual(['credit_card', 'pix']);
+    });
+
+    it('cash com tendered grava colunas de troco e amount = valor aplicado', async () => {
+      configureSupabaseMock({
+        tables: baseFinanceTables({
+          hub_boarding_reservations: [hotelReservationCheckedOut()],
+        }),
+      });
+      const open = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'boarding_reservation',
+        origin_id: TEST_RESERVATION_ID,
+        unit_id: TEST_UNIT_ID,
+      });
+      expect(open.status).toBe(201);
+      const comandaId = open.body.comanda.id as string;
+      const total = Number(open.body.comanda.total_amount ?? 0);
+
+      const pay = await request(app)
+        .post(`/api/hub/comandas/${comandaId}/checkout`)
+        .send({
+          clinic_id: TEST_CLINIC_ID,
+          grouping: 'all',
+          action: 'receive_now',
+          payments: [
+            {
+              group_index: 0,
+              amount: total,
+              payment_method: 'cash',
+              cash_session_id: CASH_SESSION_ID,
+              tendered_amount: total + 50,
+              idempotency_key: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0203',
+            },
+          ],
+        });
+      expect(pay.status).toBe(201);
+      const payment = (getMockSupabaseClient()._state.tables.hub_payments ?? [])[0];
+      expect(Number(payment.amount)).toBe(total);
+      expect(Number(payment.tendered_amount)).toBe(total + 50);
+      expect(Number(payment.change_amount)).toBe(50);
+      expect(String(payment.notes ?? '')).toMatch(/Troco/i);
     });
   });
 
