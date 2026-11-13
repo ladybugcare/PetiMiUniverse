@@ -98,6 +98,24 @@ test.describe('recuperação de senha (mocks)', () => {
     await expect(page.getByText(/senha atualizada|redefinida|atualizada/i)).toBeVisible();
     expect(page.url()).not.toMatch(/vet|shift|petivet/i);
   });
+
+  test('reset com senha igual à atual mostra o erro em português', async ({ page }) => {
+    await seedMockAuthSession(page, e2eSupabaseUrl() || undefined);
+    await installSupabaseAuthMocks(page, { updateUser: 'same_password' });
+
+    await page.goto('/reset-password');
+    await expect(page.getByRole('heading', { name: /nova senha/i })).toBeVisible({
+      timeout: 15_000,
+    });
+
+    await page.locator('#hub-reset-password').fill('SenhaNova!1');
+    await page.locator('#hub-reset-confirm').fill('SenhaNova!1');
+    await page.getByRole('button', { name: /salvar nova senha/i }).click();
+
+    await expect(page.getByText('A nova senha precisa ser diferente da senha atual.')).toBeVisible();
+    await expect(page.getByText(/different from the old password/i)).toHaveCount(0);
+    await expect(page).toHaveURL(/\/reset-password/);
+  });
 });
 
 test.describe('recuperação de senha (Auth real — opcional)', () => {

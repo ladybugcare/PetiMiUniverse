@@ -61,6 +61,7 @@ export async function seedMockAuthSession(page: Page, supabaseUrl?: string) {
 }
 
 export type RecoverMockMode = 'ok' | 'error';
+export type UserUpdateMockMode = 'ok' | 'same_password';
 
 /**
  * Intercepta Auth do Supabase para testes de forgot/reset (sem Auth real).
@@ -68,9 +69,10 @@ export type RecoverMockMode = 'ok' | 'error';
  */
 export async function installSupabaseAuthMocks(
   page: Page,
-  options: { recover?: RecoverMockMode } = {},
+  options: { recover?: RecoverMockMode; updateUser?: UserUpdateMockMode } = {},
 ) {
   const recoverMode = options.recover ?? 'ok';
+  const updateUserMode = options.updateUser ?? 'ok';
   const recoverCalls: Array<{ email: string | null; redirectTo: string | null }> = [];
 
   await page.route(supabaseAuthPattern(), async (route: Route) => {
@@ -113,6 +115,21 @@ export async function installSupabaseAuthMocks(
     }
 
     if (path.endsWith('/user') && method === 'PUT') {
+      if (updateUserMode === 'same_password') {
+        await route.fulfill({
+          status: 422,
+          contentType: 'application/json',
+          headers: { 'X-Supabase-Api-Version': '2024-01-01' },
+          body: JSON.stringify({
+            code: 'same_password',
+            error_code: 'same_password',
+            msg: 'New password should be different from the old password.',
+            message: 'New password should be different from the old password.',
+          }),
+        });
+        return;
+      }
+
       await route.fulfill({
         status: 200,
         contentType: 'application/json',

@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
 import { getSupabase } from '@petimi/web-core';
+import { passwordUpdateErrorMessage } from '../utils/passwordUpdateError';
 
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
 const logoSrc = `${baseUrl}petmi-hub.svg`;
@@ -94,7 +95,7 @@ const HubResetPasswordPage: React.FC = () => {
       const supabase = getSupabase();
       const { error: updateError } = await supabase.auth.updateUser({ password });
       if (updateError) {
-        setError(updateError.message);
+        setError(passwordUpdateErrorMessage(updateError));
         return;
       }
       await supabase.auth.signOut({ scope: 'local' });
