@@ -162,7 +162,9 @@ export function dayBoardItemToBatchChargeItem(item: HubFinanceDayBoardItem): Bat
     item.services?.length > 0
       ? item.services.map((s) => s.name).join(', ')
       : item.origin_label || 'Sem itens';
-  const amount = Math.max(0, Number(item.estimated_amount ?? 0));
+  // Recebível direto (ex. grooming sem comanda) pode ter estimated_amount 0 no day board;
+  // o saldo cobrável vem em billing.receivable_amount.
+  const amount = Math.max(0, Number(billing.receivable_amount ?? item.estimated_amount ?? 0));
   const dueDate = billing.due_date ?? null;
   const tone = resolveDueDateTone(dueDate, { status: billing.receivable_status }).tone;
   const isReceivable =
