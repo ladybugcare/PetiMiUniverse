@@ -138,6 +138,21 @@ describe('resolveDayBoardCheckoutLabel', () => {
     ).toBe('Registrar pagamento');
   });
 
+  it('financeiro com recebível direto (sem comanda) permite Registrar pagamento', () => {
+    expect(
+      resolveDayBoardCheckoutLabel(
+        'financeiro',
+        dayBoardItem({
+          comanda_id: null,
+          comanda_status: null,
+          has_receivable: true,
+          receivable_status: 'pending',
+          active_receivable_id: 'recv-grooming',
+        }),
+      ),
+    ).toBe('Registrar pagamento');
+  });
+
   it('financeiro sem recebível usa Faturar itens', () => {
     expect(resolveDayBoardCheckoutLabel('financeiro', dayBoardItem({ has_receivable: false }))).toBe(
       'Faturar itens',

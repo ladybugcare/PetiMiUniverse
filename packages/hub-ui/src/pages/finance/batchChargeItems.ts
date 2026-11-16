@@ -141,11 +141,16 @@ export function assertSameGuardian(items: BatchChargeItem[]): string | null {
   return ids[0];
 }
 
-/** Linha do day board elegível para lote: tem comanda e cobrança pendente/parcial ou comanda aberta. */
+/** Linha do day board elegível para lote: cobrança pendente/parcial (com ou sem comanda) ou comanda aberta. */
 export function isDayBoardBatchSelectable(item: HubFinanceDayBoardItem): boolean {
   const { billing } = item;
+  if (
+    billing.active_receivable_id &&
+    (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid')
+  ) {
+    return true;
+  }
   if (!billing.comanda_id) return false;
-  if (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid') return true;
   if (billing.comanda_status === 'aberta' && !billing.has_receivable) return true;
   return false;
 }
@@ -161,12 +166,13 @@ export function dayBoardItemToBatchChargeItem(item: HubFinanceDayBoardItem): Bat
   const dueDate = billing.due_date ?? null;
   const tone = resolveDueDateTone(dueDate, { status: billing.receivable_status }).tone;
   const isReceivable =
-    billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid';
+    Boolean(billing.active_receivable_id) &&
+    (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid');
 
   return {
     kind: isReceivable ? 'receivable' : 'comanda',
     id: isReceivable && billing.active_receivable_id ? billing.active_receivable_id : String(billing.comanda_id),
-    comandaId: billing.comanda_id,
+    comandaId: billing.comanda_id ?? null,
     receivableId: isReceivable ? billing.active_receivable_id ?? null : null,
     title,
     amount,

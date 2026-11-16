@@ -75,8 +75,6 @@ export function resolveDayBoardCheckoutLabel(
   mode: 'caixa' | 'financeiro',
   item: HubFinanceDayBoardItem,
 ): string | null {
-  if (!item.billing.comanda_id) return null;
-
   const canCheckout =
     mode === 'caixa' ? canCaixaCheckoutDayBoardItem(item) : canFinanceiroCheckoutDayBoardItem(item);
   if (!canCheckout) return null;
@@ -90,6 +88,8 @@ export function resolveDayBoardCheckoutLabel(
   ) {
     return 'Registrar pagamento';
   }
+  // Sem comanda não há o que faturar pela UI de comanda — só pagamento de recebível direto.
+  if (!billing.comanda_id) return null;
   if (!billing.has_receivable) return 'Faturar itens';
   return null;
 }
@@ -179,9 +179,16 @@ export function canFinanceiroEditDayBoardItem(item: HubFinanceDayBoardItem): boo
 }
 
 export function canFinanceiroCheckoutDayBoardItem(item: HubFinanceDayBoardItem): boolean {
-  if (!canFinanceiroEditDayBoardItem(item)) return false;
   const { billing } = item;
   if (billing.receivable_status === 'paid') return false;
+  // Recebível direto (ex.: grooming_session com comanda_id null) — cobrança sem editar comanda.
+  if (
+    billing.active_receivable_id &&
+    (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid')
+  ) {
+    return true;
+  }
+  if (!canFinanceiroEditDayBoardItem(item)) return false;
   return true;
 }
 

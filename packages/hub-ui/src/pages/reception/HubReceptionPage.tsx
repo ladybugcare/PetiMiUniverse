@@ -129,7 +129,7 @@ function scheduleDestinationPath(item: ReceptionBoardItem, day: string): {
 
 const HubReceptionPage: React.FC = () => {
   const navigate = useNavigate();
-  const { hasPermission } = usePermissions();
+  const { hasPermission, loading: permLoading } = usePermissions();
   const canRead = hasPermission('reception.ops.read');
   const canManage = hasPermission('reception.ops.manage');
   const canSeeChargeHint = hasPermission('hub.financial.read') || hasPermission('hub.cash.receive');
@@ -253,6 +253,13 @@ const HubReceptionPage: React.FC = () => {
     }
   };
 
+  if (permLoading) {
+    return (
+      <div className="hub-clientes hub-clinic-page hub-reception">
+        <HubLoading variant="block" label="Carregando recepção…" />
+      </div>
+    );
+  }
   if (!canRead) {
     return (
       <div className="hub-clientes hub-clinic-page hub-reception">

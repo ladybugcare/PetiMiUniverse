@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Coins } from 'lucide-react';
 import { hubFinancialApi, type HubFinanceDayBoardItem } from '../../api/hubFinancialApi';
@@ -144,6 +144,10 @@ export function FinanceDayBoardSection({
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
   const [showBatchCharge, setShowBatchCharge] = useState(false);
   const [batchItems, setBatchItems] = useState<BatchChargeItem[]>([]);
+  // Evita loop: pai costuma passar `onLoaded={() => void loadSummary()}` (nova ref a cada render).
+  // Se `onLoaded` entrar nas deps de `loadDayBoard`, cada resumo dispara reload → busy eterno.
+  const onLoadedRef = useRef(onLoaded);
+  onLoadedRef.current = onLoaded;
 
   const itemKey = (item: HubFinanceDayBoardItem) => `${item.origin_type}:${item.origin_id}`;
 
@@ -168,14 +172,14 @@ export function FinanceDayBoardSection({
           });
           setDayBoardItems(mergeDayBoardItems([items]));
         }
-        onLoaded?.();
+        onLoadedRef.current?.();
       } catch {
         setDayBoardItems([]);
       } finally {
         setDayBoardBusy(false);
       }
     },
-    [clinicId, unitId, dayBoardDate, view, onLoaded],
+    [clinicId, unitId, dayBoardDate, view],
   );
 
   useEffect(() => {
@@ -228,12 +232,27 @@ export function FinanceDayBoardSection({
   };
 
   const onCheckout = (item: HubFinanceDayBoardItem) => {
-    const comandaId = item.billing.comanda_id;
-    if (!comandaId) return;
     const { billing } = item;
-    if (billing.has_receivable && (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid')) {
-      const rid = billing.active_receivable_id;
-      if (!rid) return;
+    const rid = billing.active_receivable_id;
+    const payable =
+      Boolean(rid) &&
+      (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid');
+
+    // Recebível direto (comanda_id null) — BatchCharge já registra pagamento sem comanda.
+    if (payable && !billing.comanda_id) {
+      const batch = dayBoardItemToBatchChargeItem(item);
+      if (!batch) {
+        showError('Não foi possível abrir a cobrança deste recebível.');
+        return;
+      }
+      setBatchItems([batch]);
+      setShowBatchCharge(true);
+      return;
+    }
+
+    const comandaId = billing.comanda_id;
+    if (!comandaId) return;
+    if (payable && rid) {
       setReceivableDrawer({
         comandaId,
         receivableIds: [rid],
@@ -346,6 +365,11 @@ export function FinanceDayBoardSection({
           receivableIds: [only.receivableId],
           selectedReceivableId: only.receivableId,
         });
+        return;
+      }
+      if (only.kind === 'receivable' && only.receivableId && !only.comandaId) {
+        setBatchItems(items);
+        setShowBatchCharge(true);
         return;
       }
       if (only.comandaId) {

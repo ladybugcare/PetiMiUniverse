@@ -318,7 +318,7 @@ export function FinanceDayBoardTable({
                         <Receipt size={15} strokeWidth={2} />
                       </button>
                     )}
-                    {hasComanda && hasReceivable && !isViewOnly && canCheckout && checkoutLabel && (
+                    {hasReceivable && !isViewOnly && canCheckout && checkoutLabel && (
                       <button
                         type="button"
                         className="hub-dayboard__action-btn"
