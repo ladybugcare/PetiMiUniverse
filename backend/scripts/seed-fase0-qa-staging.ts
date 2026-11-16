@@ -299,6 +299,7 @@ async function ensurePet(clinicId: string, guardianId: string): Promise<string> 
       name: petName,
       species: 'cão',
       sex: 'U',
+      size_tier: 'medio',
     })
     .select('id')
     .single();
