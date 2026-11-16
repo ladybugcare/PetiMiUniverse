@@ -29,9 +29,9 @@ Marque após validar em **staging**. Fonte: auditoria de lançamento + [HUB_STAG
 ## Isolamento multi-tenant
 
 - [x] Smoke tutores A↔B `hub-tenant-isolation-smoke.ts` PASS em staging (2026-11-13)
-- [ ] Smoke ampliado (listas multi-módulo + RBAC amostrado + FK cruzada) — reexecutar após deploy staging + `seed:fase0-qa-staging`. Ver [HUB_FASE0_TENANT_ISOLATION_AUDIT.md](./HUB_FASE0_TENANT_ISOLATION_AUDIT.md)
+- [x] Smoke ampliado (listas multi-módulo + RBAC amostrado + FK cruzada) PASS em staging (2026-11-16) — 27 checks. Ver [HUB_FASE0_TENANT_ISOLATION_AUDIT.md](./HUB_FASE0_TENANT_ISOLATION_AUDIT.md)
 - [ ] Matriz amostrada UI: CADMIN, CASSISTANT, CVET_INTERNAL, CFINANCE (acessos esperados)
-- [x] Correções de código H1–H6 + `hub.staff.roles.assign` (CADMIN) — implementadas 2026-11-16; validação staging pendente do smoke
+- [x] Correções H1–H6 + `hub.staff.roles.assign` (CADMIN) — código + deploy staging + smoke PASS (2026-11-16)
 
 ## Soft-lock / assinatura
 

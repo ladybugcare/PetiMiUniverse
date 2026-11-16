@@ -146,4 +146,4 @@ Fonte: `backend/src/utils/permissions.ts` + `operationalAreas.ts`. Seed: `npm ru
 | Anti-escalação de privilégio | **FAIL** — CMANAGER→CADMIN via staff PATCH |
 | Smoke staging guardians | **PASS** (2026-11-13); smoke ampliado pronto para reexecução pós-seed |
 
-**Conclusão (atualizada 2026-11-16):** H1–H6 e escalação staff foram corrigidos no código (`hubTenantAsserts` + gates). Isolamento multi-tenant fica **PARCIALMENTE VALIDADO** até o smoke ampliado e o RBAC rodarem com sucesso no staging pós-deploy. Itens médios da auditoria (M2–M5) e backup Pro permanecem residuais.
+**Conclusão (atualizada 2026-11-16):** H1–H6 e escalação staff corrigidos (`hubTenantAsserts` + `hub.staff.roles.assign`). Deploy Railway staging SUCCESS + smoke ampliado **PASS (27 checks)** incluindo FK cruzada e RBAC amostrado. Isolamento multi-tenant: **PARCIALMENTE VALIDADO** — P0 fechados; residuais M2–M5, matriz UI manual e backup Pro fora deste escopo. Sem **BLOQUEADORES P0** conhecidos nos itens H1–H6/staff.
