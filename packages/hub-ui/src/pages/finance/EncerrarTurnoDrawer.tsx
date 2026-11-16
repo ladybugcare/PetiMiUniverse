@@ -409,7 +409,8 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
                       {formatBrl(dayPendingTotal)} a receber no painel do dia
                     </div>
                     <p style={{ margin: 0, fontSize: 13, color: '#777', lineHeight: 1.5 }}>
-                      Recebíveis pendentes / parciais — ficam no Financeiro para cobrança posterior.
+                      O fechamento envia só comandas abertas ao Financeiro. Atendimentos sem comanda
+                      continuam no Caixa até alguém abrir a comanda (Cobrar ou Mandar para o Financeiro).
                     </p>
                   </div>
                 )}

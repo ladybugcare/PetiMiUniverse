@@ -3572,51 +3572,104 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       });
     }
 
-    // ── 2. Sessões B&T (walk-ins no período, ou IDs em aberto) ──
+    // ── 2. Sessões B&T (walk-ins do dia + encerradas do dia c/ agenda, ou IDs em aberto) ──
+    // Antes só entravam walk-ins (hub_appointment_id null): banho da agenda encerrado
+    // ficava só no relatório "Cobrança não gerada" e o Caixa via appointment com valor sem adicional.
     const openGroomingIds = openIdsByType.get('grooming_session') ?? [];
-    let groomRows: Array<Record<string, unknown>> | null = [];
-    if (!openMode || openGroomingIds.length > 0) {
-      let gq = supabaseAdmin
-        .from('hub_grooming_sessions')
-        .select(
-          `id, unit_id, created_at, grooming_stage, guardian_id, billing_waived_at, hub_appointment_id,
+    let groomRows: Array<Record<string, unknown>> = [];
+    if (openMode) {
+      if (openGroomingIds.length > 0) {
+        let gq = supabaseAdmin
+          .from('hub_grooming_sessions')
+          .select(
+            `id, unit_id, created_at, closed_at, grooming_stage, guardian_id, pet_id, billing_waived_at, hub_appointment_id,
+            pet:hub_pets(id, name),
+            guardian:hub_guardians(id, full_name)`
+          )
+          .eq('clinic_id', clinic_id)
+          .is('deleted_at', null)
+          .neq('grooming_stage', 'cancelled')
+          .in('id', openGroomingIds)
+          .order('created_at', { ascending: true });
+        if (unit_id) gq = gq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+        const groomRes = await gq;
+        if (groomRes.error) throw new Error(groomRes.error.message);
+        groomRows = (groomRes.data as Array<Record<string, unknown>> | null) ?? [];
+      }
+    } else {
+      const groomSelect = `id, unit_id, created_at, closed_at, grooming_stage, guardian_id, pet_id, billing_waived_at, hub_appointment_id,
           pet:hub_pets(id, name),
-          guardian:hub_guardians(id, full_name)`
-        )
+          guardian:hub_guardians(id, full_name)`;
+      let walkInQ = supabaseAdmin
+        .from('hub_grooming_sessions')
+        .select(groomSelect)
         .eq('clinic_id', clinic_id)
         .is('deleted_at', null)
         .neq('grooming_stage', 'cancelled')
+        .is('hub_appointment_id', null)
+        .gte('created_at', dayStart)
+        .lte('created_at', dayEnd)
         .order('created_at', { ascending: true });
-      if (openMode) {
-        gq = gq.in('id', openGroomingIds);
-      } else {
-        gq = gq.is('hub_appointment_id', null).gte('created_at', dayStart).lte('created_at', dayEnd);
+      let closedQ = supabaseAdmin
+        .from('hub_grooming_sessions')
+        .select(groomSelect)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .eq('grooming_stage', 'closed')
+        .gte('closed_at', dayStart)
+        .lte('closed_at', dayEnd)
+        .order('closed_at', { ascending: true });
+      if (unit_id) {
+        walkInQ = walkInQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+        closedQ = closedQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
       }
-      if (unit_id) gq = gq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
-      const groomRes = await gq;
-      if (groomRes.error) throw new Error(groomRes.error.message);
-      groomRows = (groomRes.data as Array<Record<string, unknown>> | null) ?? [];
+      const [walkInRes, closedRes] = await Promise.all([walkInQ, closedQ]);
+      if (walkInRes.error) throw new Error(walkInRes.error.message);
+      if (closedRes.error) throw new Error(closedRes.error.message);
+      const byId = new Map<string, Record<string, unknown>>();
+      for (const row of [...(walkInRes.data ?? []), ...(closedRes.data ?? [])]) {
+        byId.set(String(row.id), row as Record<string, unknown>);
+      }
+      groomRows = [...byId.values()];
     }
 
-    for (const row of groomRows ?? []) {
+    const groomingLinkedAppointmentIds = new Set<string>();
+    for (const row of groomRows) {
       if (row.billing_waived_at) continue;
       const id = row.id as string;
+      const apptId = (row.hub_appointment_id as string | null) ?? null;
+      if (apptId) groomingLinkedAppointmentIds.add(apptId);
       const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
+      const petObj = pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null;
       const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
+      let estimated = 0;
+      let services: Array<{ name: string; amount: number }> = [];
+      try {
+        const pv = await buildPreviewForGroomingSession(clinic_id, id);
+        estimated = pv.subtotal;
+        services = pv.lines.map((line) => ({
+          name: String(line.description ?? 'Serviço'),
+          amount: round2(Number(line.line_total ?? 0)),
+        }));
+      } catch {
+        // Mantém zero se a prévia falhar — billing/enrichment ainda aplica.
+      }
+      const startsAt =
+        (row.closed_at as string | null) ?? (row.created_at as string | null) ?? null;
       originKeys.push({ origin_type: 'grooming_session', origin_id: id });
       items.push({
         origin_type: 'grooming_session',
         origin_id: id,
-        origin_label: 'Banho & Tosa (walk-in)',
+        origin_label: apptId ? 'Banho & Tosa' : 'Banho & Tosa (walk-in)',
         service_group: 'banho_tosa',
-        starts_at: (row.created_at as string) ?? null,
+        starts_at: startsAt,
         guardian_id: (row.guardian_id as string) ?? null,
         guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
-        pet_id: null,
-        pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
+        pet_id: (row.pet_id as string | null) ?? petObj?.id ?? null,
+        pet: petObj,
         operational_status: String(row.grooming_stage),
-        estimated_amount: 0,
-        services: [],
+        estimated_amount: estimated,
+        services,
         billing: {
           comanda_id: null,
           comanda_status: null,
@@ -3627,6 +3680,22 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
           due_date: null,
         },
       });
+    }
+
+    // Preferir a sessão B&T (valor + adicional) ao appointment espelho na listagem do Caixa.
+    if (groomingLinkedAppointmentIds.size > 0) {
+      for (let i = items.length - 1; i >= 0; i--) {
+        const it = items[i];
+        if (it.origin_type === 'appointment' && groomingLinkedAppointmentIds.has(it.origin_id)) {
+          items.splice(i, 1);
+        }
+      }
+      for (let i = originKeys.length - 1; i >= 0; i--) {
+        const k = originKeys[i];
+        if (k.origin_type === 'appointment' && groomingLinkedAppointmentIds.has(k.origin_id)) {
+          originKeys.splice(i, 1);
+        }
+      }
     }
 
     // ── 3. Encounters walk-in (período ou IDs em aberto) ──
