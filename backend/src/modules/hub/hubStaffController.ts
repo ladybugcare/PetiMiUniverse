@@ -23,6 +23,34 @@ import { assertStaffPatchAllowedByAccessMode } from './hubStaffPatchAccess.js';
 
 const uuidStr = z.string().uuid();
 
+const STAFF_PRIVILEGE_FIELDS = [
+  'hub_access_role',
+  'has_hub_access',
+  'hub_access_email',
+  'operational_areas',
+] as const;
+
+function bodyTouchesStaffPrivileges(body: Record<string, unknown>): boolean {
+  return STAFF_PRIVILEGE_FIELDS.some((key) => body[key] !== undefined);
+}
+
+async function requireStaffRolesAssign(
+  req: Request,
+  clinicId: string,
+): Promise<{ ok: true } | { ok: false; status: 401 | 403; error: string }> {
+  const userId = req.user?.id;
+  if (!userId) return { ok: false, status: 401, error: 'Não autenticado' };
+  const allowed = await checkPermission(userId, clinicId, 'hub.staff.roles.assign');
+  if (!allowed) {
+    return {
+      ok: false,
+      status: 403,
+      error: 'Apenas administradores da clínica podem alterar papéis e permissões de acesso.',
+    };
+  }
+  return { ok: true };
+}
+
 const STAFF_SELECT =
   'id, clinic_id, full_name, display_name, photo_url, phone, whatsapp_phone, email, birth_date, job_title, professional_kind, specialties, crmv, crmv_uf, internal_notes, active, affiliation, has_hub_access, hub_access_email, hub_access_role, operational_areas, accepts_appointments, available_days, work_hours, break_minutes, default_unit_id, agenda_color, clinic_user_id, created_at, updated_at, deleted_at';
 
@@ -301,6 +329,10 @@ export const createHubStaff = async (req: Request, res: Response) => {
     const body = createStaffSchema.safeParse(req.body);
     if (!body.success) return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
     const d = body.data;
+    if (bodyTouchesStaffPrivileges(d as Record<string, unknown>)) {
+      const gate = await requireStaffRolesAssign(req, d.clinic_id);
+      if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+    }
     const emailNorm = d.email === '' || d.email === undefined ? null : d.email;
     const hubEmailNorm =
       d.hub_access_email === '' || d.hub_access_email === undefined ? null : d.hub_access_email;
@@ -384,6 +416,11 @@ export const patchHubStaff = async (req: Request, res: Response) => {
     if (!staff) return res.status(404).json({ error: 'Profissional não encontrado' });
 
     const d = body.data;
+
+    if (bodyTouchesStaffPrivileges(d as Record<string, unknown>)) {
+      const gate = await requireStaffRolesAssign(req, clinic_id);
+      if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
+    }
 
     try {
       await assertStaffPatchAllowedByAccessMode(clinic_id, d as Record<string, unknown>);
@@ -694,6 +731,9 @@ export const linkHubStaffAccount = async (req: Request, res: Response) => {
     }
     const clinic_id = body.data.clinic_id;
     const staffId = idParsed.data;
+
+    const gate = await requireStaffRolesAssign(req, clinic_id);
+    if (!gate.ok) return res.status(gate.status).json({ error: gate.error });
 
     const { data: row, error: loadErr } = await supabaseAdmin
       .from('hub_staff_members')

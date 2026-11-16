@@ -9,6 +9,13 @@ import {
   resolveCareLocation,
 } from './hubCareLocation';
 import { syncOpenComandasAfterEncounterChargeableChange } from './hubComandasController';
+import {
+  assertCaseInClinic,
+  assertEncounterInClinic,
+  assertGuardianInClinic,
+  assertGuardianLinkedToPet,
+  assertPetInClinic,
+} from './hubTenantAsserts';
 
 const uuidStr = z.string().uuid();
 
@@ -319,6 +326,22 @@ export const createHubClinicalExam = async (req: Request, res: Response) => {
     const parsed = createExamSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
+
+    if (!(await assertPetInClinic(b.clinic_id, b.pet_id))) {
+      return res.status(400).json({ error: 'Pet inválido' });
+    }
+    if (!(await assertGuardianInClinic(b.clinic_id, b.guardian_id))) {
+      return res.status(400).json({ error: 'Tutor inválido' });
+    }
+    if (b.guardian_id && !(await assertGuardianLinkedToPet(b.pet_id, b.guardian_id))) {
+      return res.status(400).json({ error: 'Tutor inválido' });
+    }
+    if (b.hub_encounter_id && !(await assertEncounterInClinic(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+      return res.status(400).json({ error: 'Referência inválida' });
+    }
+    if (!(await assertCaseInClinic(b.clinic_id, b.hub_case_id, b.pet_id))) {
+      return res.status(400).json({ error: 'Caso clínico inválido' });
+    }
 
     const inherited = await inheritCareLocationFromEncounter(b.clinic_id, b.hub_encounter_id);
     const careKind = b.care_location_kind ?? inherited?.care_location_kind ?? 'own_unit';

@@ -32,6 +32,12 @@ import {
   unitSettingsQuerySchema,
 } from './hubBoardingSchemas';
 import {
+  assertGuardianInClinic,
+  assertGuardianLinkedToPet,
+  assertPetInClinic,
+  assertUnitInClinic,
+} from './hubTenantAsserts';
+import {
   BoardingHttpError,
   assertCapacityAllowed,
   checkCapacityForCheckIn,
@@ -507,6 +513,23 @@ export const createHubBoardingReservation = async (req: Request, res: Response) 
     const { clinic_id, status: requestedStatus, ...rest } = parsed.data;
     const status = requestedStatus ?? 'checked_in';
     const nowIso = new Date().toISOString();
+
+    if (!(await assertPetInClinic(clinic_id, rest.pet_id))) {
+      return res.status(400).json({ error: 'Pet inválido' });
+    }
+    if (!(await assertGuardianInClinic(clinic_id, rest.guardian_id))) {
+      return res.status(400).json({ error: 'Tutor inválido' });
+    }
+    if (!(await assertUnitInClinic(clinic_id, rest.unit_id))) {
+      return res.status(400).json({ error: 'Unidade inválida' });
+    }
+    if (
+      rest.pet_id &&
+      rest.guardian_id &&
+      !(await assertGuardianLinkedToPet(rest.pet_id, rest.guardian_id))
+    ) {
+      return res.status(400).json({ error: 'Tutor inválido' });
+    }
 
     if (status === 'reserved' && !rest.expected_check_in) {
       return res.status(400).json({ error: 'Informe a entrada prevista da reserva' });

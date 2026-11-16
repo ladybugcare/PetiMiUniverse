@@ -36,6 +36,7 @@ export const PERMISSIONS: Record<ClinicStaffRole, string[]> = {
     'hub.staff.read',
     'hub.staff.write',
     'hub.staff.invite',
+    'hub.staff.roles.assign',
     'hub.appointments.read',
     'hub.appointments.write',
     'hub.prospects.read',

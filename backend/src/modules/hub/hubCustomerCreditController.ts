@@ -5,6 +5,11 @@ import {
   CustomerCreditError,
   getHubCustomerCreditBalance as computeCustomerCreditBalance,
 } from './hubCustomerCredit';
+import {
+  assertComandaInClinic,
+  assertGuardianInClinic,
+  assertReceivableInClinic,
+} from './hubTenantAsserts';
 
 const uuidStr = z.string().uuid();
 
@@ -35,6 +40,16 @@ export const postHubCustomerCreditMovement = async (req: Request, res: Response)
     }
     const body = parsed.data;
     const userId = req.user?.id ?? null;
+
+    if (!(await assertGuardianInClinic(body.clinic_id, body.guardian_id))) {
+      return res.status(400).json({ error: 'Tutor inválido' });
+    }
+    if (!(await assertComandaInClinic(body.clinic_id, body.comanda_id))) {
+      return res.status(400).json({ error: 'Referência inválida' });
+    }
+    if (!(await assertReceivableInClinic(body.clinic_id, body.receivable_id))) {
+      return res.status(400).json({ error: 'Referência inválida' });
+    }
 
     if (body.direction === 'in' && body.payment_method === 'cash' && !body.cash_session_id) {
       return res.status(409).json({ error: 'Informe a sessão de caixa para entrada em dinheiro.' });
@@ -87,6 +102,9 @@ export const getHubCustomerCreditBalance = async (req: Request, res: Response) =
     const guardianParsed = uuidStr.safeParse(req.query.guardian_id);
     if (!clinicParsed.success || !guardianParsed.success) {
       return res.status(400).json({ error: 'clinic_id e guardian_id obrigatórios' });
+    }
+    if (!(await assertGuardianInClinic(clinicParsed.data, guardianParsed.data))) {
+      return res.status(400).json({ error: 'Tutor inválido' });
     }
     try {
       const balance = await computeCustomerCreditBalance(clinicParsed.data, guardianParsed.data);

@@ -32,6 +32,13 @@ describe('permissions', () => {
       expect(hasPermission('CGROOMER', 'hub.financial.write')).toBe(false);
     });
 
+    it('só CADMIN tem hub.staff.roles.assign', () => {
+      expect(hasPermission('CADMIN', 'hub.staff.roles.assign')).toBe(true);
+      expect(hasPermission('CMANAGER', 'hub.staff.roles.assign')).toBe(false);
+      expect(hasPermission('CASSISTANT', 'hub.staff.roles.assign')).toBe(false);
+      expect(hasEffectivePermission('CSTAFF', 'hub.staff.roles.assign', ['equipe'])).toBe(false);
+    });
+
     it('role inválido retorna false', () => {
       expect(hasPermission('INVALID' as Role, 'hub.pets.read')).toBe(false);
     });

@@ -44,6 +44,16 @@ import {
   syncSurgeryTeamPayables,
 } from './hubPayablesService';
 import { roundMoney2 } from './hubVariablePrice';
+import {
+  assertCaseInClinic,
+  assertEncounterInClinic,
+  assertGuardianInClinic,
+  assertGuardianLinkedToPet,
+  assertHospitalBedInClinic,
+  assertPetInClinic,
+  assertStaffInClinic,
+  assertUnitInClinic,
+} from './hubTenantAsserts';
 
 const uuidStr = z.string().uuid();
 
@@ -295,6 +305,19 @@ export const createHubPrescription = async (req: Request, res: Response) => {
     .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
+
+  if (!(await assertPetInClinic(b.clinic_id, b.pet_id))) {
+    return res.status(400).json({ error: 'Pet inválido' });
+  }
+  if (!(await assertCaseInClinic(b.clinic_id, b.hub_case_id, b.pet_id))) {
+    return res.status(400).json({ error: 'Caso clínico inválido' });
+  }
+  if (!(await assertEncounterInClinic(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+    return res.status(400).json({ error: 'Referência inválida' });
+  }
+  if (!(await assertStaffInClinic(b.clinic_id, b.hub_staff_member_id))) {
+    return res.status(400).json({ error: 'Referência inválida' });
+  }
 
   if (b.hub_case_id) {
     const { data: caseRow } = await supabaseAdmin
@@ -806,6 +829,19 @@ export const createHubVaccination = async (req: Request, res: Response) => {
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
 
+  if (!(await assertPetInClinic(b.clinic_id, b.pet_id))) {
+    return res.status(400).json({ error: 'Pet inválido' });
+  }
+  if (!(await assertEncounterInClinic(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+    return res.status(400).json({ error: 'Referência inválida' });
+  }
+  if (!(await assertCaseInClinic(b.clinic_id, b.hub_case_id, b.pet_id))) {
+    return res.status(400).json({ error: 'Caso clínico inválido' });
+  }
+  if (!(await assertStaffInClinic(b.clinic_id, b.hub_staff_member_id))) {
+    return res.status(400).json({ error: 'Referência inválida' });
+  }
+
   let inventoryItem: Awaited<ReturnType<typeof assertClinicInventoryItem>> = null;
   let inventoryLot: Awaited<ReturnType<typeof assertClinicInventoryLot>> = null;
   let priceSnapshot: number | null = null;
@@ -957,6 +993,19 @@ export const createHubMedicationAdministration = async (req: Request, res: Respo
     .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
+
+  if (!(await assertPetInClinic(b.clinic_id, b.pet_id))) {
+    return res.status(400).json({ error: 'Pet inválido' });
+  }
+  if (!(await assertEncounterInClinic(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+    return res.status(400).json({ error: 'Referência inválida' });
+  }
+  if (!(await assertCaseInClinic(b.clinic_id, b.hub_case_id, b.pet_id))) {
+    return res.status(400).json({ error: 'Caso clínico inválido' });
+  }
+  if (!(await assertStaffInClinic(b.clinic_id, b.hub_staff_member_id))) {
+    return res.status(400).json({ error: 'Referência inválida' });
+  }
 
   let service: Record<string, unknown> | null = null;
   {
@@ -1159,7 +1208,14 @@ export const createHubClinicalAttachment = async (req: Request, res: Response) =
     })
     .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { data, error } = await supabaseAdmin.from('hub_clinical_attachments').insert(parsed.data).select('*').single();
+  const b = parsed.data;
+  if (!(await assertPetInClinic(b.clinic_id, b.pet_id))) {
+    return res.status(400).json({ error: 'Pet inválido' });
+  }
+  if (!(await assertEncounterInClinic(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+    return res.status(400).json({ error: 'Referência inválida' });
+  }
+  const { data, error } = await supabaseAdmin.from('hub_clinical_attachments').insert(b).select('*').single();
   if (error) {
     if (isMissingPostgrestRelation(error)) {
       return res.status(503).json({ error: CLINICAL_ATTACHMENTS_MIGRATION_HINT });
@@ -1201,6 +1257,12 @@ export const uploadHubClinicalAttachment = (req: Request, res: Response): void =
       .safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
+    if (!(await assertPetInClinic(b.clinic_id, b.pet_id))) {
+      return res.status(400).json({ error: 'Pet inválido' });
+    }
+    if (!(await assertEncounterInClinic(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+      return res.status(400).json({ error: 'Referência inválida' });
+    }
     try {
       const { url, path } = await uploadHubClinicalFileToStorage(
         {
@@ -1271,7 +1333,11 @@ export const createHubHospitalBed = async (req: Request, res: Response) => {
     })
     .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-  const { data, error } = await supabaseAdmin.from('hub_hospital_beds').insert(parsed.data).select('*').single();
+  const bedBody = parsed.data;
+  if (!(await assertUnitInClinic(bedBody.clinic_id, bedBody.unit_id))) {
+    return res.status(400).json({ error: 'Unidade inválida' });
+  }
+  const { data, error } = await supabaseAdmin.from('hub_hospital_beds').insert(bedBody).select('*').single();
   if (error) {
     if (error.code === '23505' || error.message?.includes('uniq_hub_hospital_beds')) {
       return res.status(409).json({ error: 'Já existe um leito com este código nesta clínica.' });
@@ -1325,6 +1391,25 @@ export const createHubHospitalization = async (req: Request, res: Response) => {
     .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
+
+  if (!(await assertPetInClinic(b.clinic_id, b.pet_id))) {
+    return res.status(400).json({ error: 'Pet inválido' });
+  }
+  if (!(await assertGuardianInClinic(b.clinic_id, b.guardian_id))) {
+    return res.status(400).json({ error: 'Tutor inválido' });
+  }
+  if (b.guardian_id && !(await assertGuardianLinkedToPet(b.pet_id, b.guardian_id))) {
+    return res.status(400).json({ error: 'Tutor inválido' });
+  }
+  if (!(await assertUnitInClinic(b.clinic_id, b.unit_id))) {
+    return res.status(400).json({ error: 'Unidade inválida' });
+  }
+  if (!(await assertHospitalBedInClinic(b.clinic_id, b.hub_hospital_bed_id))) {
+    return res.status(400).json({ error: 'Referência inválida' });
+  }
+  if (!(await assertStaffInClinic(b.clinic_id, b.hub_staff_member_id))) {
+    return res.status(400).json({ error: 'Referência inválida' });
+  }
 
   let dailyUnitAmount: number | null = b.daily_unit_amount ?? null;
   if (b.daily_hub_service_type_id) {
@@ -1395,7 +1480,11 @@ export const createHubHospitalization = async (req: Request, res: Response) => {
     .single();
   if (error) return res.status(500).json({ error: error.message });
   if (b.hub_hospital_bed_id) {
-    await supabaseAdmin.from('hub_hospital_beds').update({ status: 'occupied' }).eq('id', b.hub_hospital_bed_id);
+    await supabaseAdmin
+      .from('hub_hospital_beds')
+      .update({ status: 'occupied' })
+      .eq('id', b.hub_hospital_bed_id)
+      .eq('clinic_id', b.clinic_id);
   }
 
   const hospitalizationId = (data as { id: string; admitted_at?: string | null }).id;
@@ -1628,17 +1717,33 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
   if (discharged) {
     const toFree = nextBedId ?? prevBedId;
     if (toFree) {
-      await supabaseAdmin.from('hub_hospital_beds').update({ status: 'available' }).eq('id', toFree);
+      await supabaseAdmin
+        .from('hub_hospital_beds')
+        .update({ status: 'available' })
+        .eq('id', toFree)
+        .eq('clinic_id', clinic_id);
     }
     if (prevBedId && prevBedId !== toFree) {
-      await supabaseAdmin.from('hub_hospital_beds').update({ status: 'available' }).eq('id', prevBedId);
+      await supabaseAdmin
+        .from('hub_hospital_beds')
+        .update({ status: 'available' })
+        .eq('id', prevBedId)
+        .eq('clinic_id', clinic_id);
     }
   } else if (hub_hospital_bed_id !== undefined && prevBedId !== nextBedId) {
     if (prevBedId) {
-      await supabaseAdmin.from('hub_hospital_beds').update({ status: 'available' }).eq('id', prevBedId);
+      await supabaseAdmin
+        .from('hub_hospital_beds')
+        .update({ status: 'available' })
+        .eq('id', prevBedId)
+        .eq('clinic_id', clinic_id);
     }
     if (nextBedId) {
-      await supabaseAdmin.from('hub_hospital_beds').update({ status: 'occupied' }).eq('id', nextBedId);
+      await supabaseAdmin
+        .from('hub_hospital_beds')
+        .update({ status: 'occupied' })
+        .eq('id', nextBedId)
+        .eq('clinic_id', clinic_id);
     }
   }
 

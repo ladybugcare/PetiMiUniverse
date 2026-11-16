@@ -2,7 +2,7 @@
  * Seed Fase 0 — matriz QA no Supabase Preprod / staging.
  *
  * Cria:
- * - Clínica A: CADMIN, CMANAGER, CASSISTANT, CVET_INTERNAL, CFINANCE + unidades A1/A2 + 1 guardian
+ * - Clínica A: CADMIN, CMANAGER, CASSISTANT, CVET_INTERNAL, CFINANCE + unidades A1/A2 + 1 guardian + 1 pet
  * - Clínica B: CADMIN + unidade B1
  * - Assinatura beta em ambas
  *
@@ -10,7 +10,7 @@
  *   # carrega só .env.preprod.local (nunca prod)
  *   npm run seed:fase0-qa-staging
  *
- * Saída: .env.smoke.preprod.local (gitignored) com vars do smoke de isolamento.
+ * Saída: .env.smoke.preprod.local (gitignored) com vars do smoke de isolamento + tokens RBAC.
  */
 import fs from 'fs';
 import path from 'path';
@@ -275,6 +275,44 @@ async function ensureGuardian(clinicId: string): Promise<string> {
   return data.id as string;
 }
 
+async function ensurePet(clinicId: string, guardianId: string): Promise<string> {
+  const petName = `${PREFIX} Pet A`;
+  const { data: existing } = await admin
+    .from('hub_pets')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('name', petName)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (existing?.id) {
+    await admin.from('hub_pet_guardians').upsert(
+      { pet_id: existing.id, guardian_id: guardianId, role: 'primary' },
+      { onConflict: 'pet_id,guardian_id,role', ignoreDuplicates: true },
+    );
+    return existing.id as string;
+  }
+
+  const { data, error } = await admin
+    .from('hub_pets')
+    .insert({
+      clinic_id: clinicId,
+      name: petName,
+      species: 'cão',
+      sex: 'U',
+    })
+    .select('id')
+    .single();
+  if (error) throw error;
+
+  const { error: linkErr } = await admin.from('hub_pet_guardians').insert({
+    pet_id: data.id,
+    guardian_id: guardianId,
+    role: 'primary',
+  });
+  if (linkErr) throw linkErr;
+  return data.id as string;
+}
+
 async function provisionClinic(args: {
   clinicId: string;
   clinicName: string;
@@ -365,16 +403,25 @@ async function main() {
   });
 
   const guardianA = await ensureGuardian(clinicAId);
+  const petA = await ensurePet(clinicAId, guardianA);
   const tokenA = await signIn(CLINIC_A_USERS[0].email);
   const tokenB = await signIn(CLINIC_B_USERS[0].email);
+  const tokenAssistant = await signIn('qa.staging.a.cassistant@petmi.test');
+  const tokenVet = await signIn('qa.staging.a.cvet@petmi.test');
+  const tokenFinance = await signIn('qa.staging.a.cfinance@petmi.test');
 
   const smoke = [
     `HUB_SMOKE_BASE_URL=${API_STAGING.replace(/\/$/, '')}`,
     `HUB_SMOKE_TOKEN_A=${tokenA}`,
     `HUB_SMOKE_TOKEN_B=${tokenB}`,
+    `HUB_SMOKE_TOKEN_A_ASSISTANT=${tokenAssistant}`,
+    `HUB_SMOKE_TOKEN_A_VET=${tokenVet}`,
+    `HUB_SMOKE_TOKEN_A_FINANCE=${tokenFinance}`,
     `HUB_SMOKE_CLINIC_A=${clinicAId}`,
     `HUB_SMOKE_CLINIC_B=${clinicBId}`,
+    `HUB_SMOKE_UNIT_A=${a.mainUnitId}`,
     `HUB_SMOKE_GUARDIAN_A=${guardianA}`,
+    `HUB_SMOKE_PET_A=${petA}`,
     `QA_STAGING_PASSWORD=${QA_PASSWORD}`,
   ].join('\n');
 
@@ -384,6 +431,7 @@ async function main() {
   console.log(`  Clínica A: ${clinicAId} (units ${a.unitIds.join(', ')})`);
   console.log(`  Clínica B: ${clinicBId}`);
   console.log(`  Guardian A: ${guardianA}`);
+  console.log(`  Pet A: ${petA}`);
   console.log(`  Senha QA: ${QA_PASSWORD}`);
   console.log(`  Logins A: ${CLINIC_A_USERS.map((u) => u.email).join(', ')}`);
   console.log(`  Logins B: ${CLINIC_B_USERS.map((u) => u.email).join(', ')}`);

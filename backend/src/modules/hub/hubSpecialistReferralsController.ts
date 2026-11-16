@@ -16,6 +16,13 @@ import {
 import { streamValidatableSpecialistReferralPdf } from './hubSpecialistReferralPdf';
 import { recordTimelineEvent } from './hubClinicalTimelineController';
 import type { SpecialistReferralSnapshot } from './specialistReferralValidation';
+import {
+  assertCaseInClinic,
+  assertEncounterInClinic,
+  assertGuardianInClinic,
+  assertGuardianLinkedToPet,
+  assertPetInClinic,
+} from './hubTenantAsserts';
 
 const uuidStr = z.string().uuid();
 const prioritySchema = z.enum(['routine', 'urgent']);
@@ -110,6 +117,22 @@ export const createHubSpecialistReferral = async (req: Request, res: Response) =
   const parsed = createSchema.safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
   const b = parsed.data;
+
+  if (!(await assertPetInClinic(b.clinic_id, b.pet_id))) {
+    return res.status(400).json({ error: 'Pet inválido' });
+  }
+  if (!(await assertGuardianInClinic(b.clinic_id, b.guardian_id))) {
+    return res.status(400).json({ error: 'Tutor inválido' });
+  }
+  if (b.guardian_id && !(await assertGuardianLinkedToPet(b.pet_id, b.guardian_id))) {
+    return res.status(400).json({ error: 'Tutor inválido' });
+  }
+  if (!(await assertEncounterInClinic(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+    return res.status(400).json({ error: 'Referência inválida' });
+  }
+  if (!(await assertCaseInClinic(b.clinic_id, b.hub_case_id, b.pet_id))) {
+    return res.status(400).json({ error: 'Caso clínico inválido' });
+  }
 
   const { data, error } = await supabaseAdmin
     .from('hub_clinical_specialist_referrals')

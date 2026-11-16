@@ -2,6 +2,12 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { recordTimelineEvent } from './hubClinicalTimelineController';
+import {
+  assertGuardianInClinic,
+  assertGuardianLinkedToPet,
+  assertPetInClinic,
+  assertUnitInClinic,
+} from './hubTenantAsserts';
 
 const uuidStr = z.string().uuid();
 
@@ -191,14 +197,21 @@ export const createHubClinicalCase = async (req: Request, res: Response) => {
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
 
-    const { data: pet } = await supabaseAdmin
-      .from('hub_pets')
-      .select('id')
-      .eq('id', b.pet_id)
-      .eq('clinic_id', b.clinic_id)
-      .is('deleted_at', null)
-      .maybeSingle();
-    if (!pet) return res.status(400).json({ error: 'Pet inválido para esta clínica' });
+    if (!(await assertPetInClinic(b.clinic_id, b.pet_id))) {
+      return res.status(400).json({ error: 'Pet inválido' });
+    }
+    if (!(await assertUnitInClinic(b.clinic_id, b.unit_id))) {
+      return res.status(400).json({ error: 'Unidade inválida' });
+    }
+    if (!(await assertGuardianInClinic(b.clinic_id, b.guardian_id_snapshot))) {
+      return res.status(400).json({ error: 'Tutor inválido' });
+    }
+    if (
+      b.guardian_id_snapshot &&
+      !(await assertGuardianLinkedToPet(b.pet_id, b.guardian_id_snapshot))
+    ) {
+      return res.status(400).json({ error: 'Tutor inválido' });
+    }
 
     const insert = {
       clinic_id: b.clinic_id,
@@ -719,6 +732,19 @@ async function createAutoCase(opts: {
   case_title?: string | null;
   appointment_title?: string | null;
 }): Promise<string> {
+  if (!(await assertPetInClinic(opts.clinic_id, opts.pet_id))) {
+    throw new Error('Pet inválido');
+  }
+  if (!(await assertUnitInClinic(opts.clinic_id, opts.unit_id))) {
+    throw new Error('Unidade inválida');
+  }
+  if (!(await assertGuardianInClinic(opts.clinic_id, opts.guardian_id))) {
+    throw new Error('Tutor inválido');
+  }
+  if (opts.guardian_id && !(await assertGuardianLinkedToPet(opts.pet_id, opts.guardian_id))) {
+    throw new Error('Tutor inválido');
+  }
+
   const title = resolveAutoCaseTitle({
     case_title: opts.case_title,
     chief_complaint: opts.chief_complaint,

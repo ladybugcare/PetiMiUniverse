@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import { assertCaseInClinic, assertEncounterInClinic, assertPetInClinic } from './hubTenantAsserts';
 
 const uuidStr = z.string().uuid();
 
@@ -103,6 +104,16 @@ export const createHubClinicalTimelineNote = async (req: Request, res: Response)
 
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
+
+    if (!(await assertPetInClinic(b.clinic_id, b.pet_id))) {
+      return res.status(400).json({ error: 'Pet inválido' });
+    }
+    if (!(await assertEncounterInClinic(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+      return res.status(400).json({ error: 'Referência inválida' });
+    }
+    if (!(await assertCaseInClinic(b.clinic_id, b.hub_case_id, b.pet_id))) {
+      return res.status(400).json({ error: 'Caso clínico inválido' });
+    }
 
     const { data, error } = await supabaseAdmin
       .from('hub_clinical_timeline_events')

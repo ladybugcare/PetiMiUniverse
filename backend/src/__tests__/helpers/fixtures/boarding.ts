@@ -207,11 +207,20 @@ export function emptyBoardingTables() {
     hub_encounters: [] as Record<string, unknown>[],
     hub_quotes: [] as Record<string, unknown>[],
     hub_guardians: [
-      { id: TEST_GUARDIAN_ID, full_name: 'Maria Silva', phone: null, email: null, tax_id: null, deleted_at: null },
+      {
+        id: TEST_GUARDIAN_ID,
+        clinic_id: TEST_CLINIC_ID,
+        full_name: 'Maria Silva',
+        phone: null,
+        email: null,
+        tax_id: null,
+        deleted_at: null,
+      },
     ],
     hub_pets: [
       {
         id: TEST_PET_ID,
+        clinic_id: TEST_CLINIC_ID,
         name: 'Rex',
         species: 'dog',
         breed: null,
@@ -221,6 +230,7 @@ export function emptyBoardingTables() {
       },
       {
         id: TEST_PET_ID_2,
+        clinic_id: TEST_CLINIC_ID,
         name: 'Luna',
         species: 'dog',
         breed: null,

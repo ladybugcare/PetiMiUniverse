@@ -15,21 +15,23 @@ Marque após validar em **staging**. Fonte: auditoria de lançamento + [HUB_STAG
 - [x] Projeto Supabase staging distinto do de produção (PetMi Preprod)
 - [x] API + Hub web staging apontam só para staging
 - [x] Seed QA: 2 clínicas + roles da matriz (`npm run seed:fase0-qa-staging` → ver `backend/scripts/seed-fase0-qa-staging.ts`)
-- [ ] Backup/PITR prod confirmado no painel
-- [ ] Restore drill executado (backup → staging/drill) e documentado
+- [ ] Backup/PITR de produção — **não confirmado**. Plano Free em 2026-11-13. Upgrade para **Pro** planejado para fim de novembro / início de dezembro de 2026; PITR continua decisão à parte. Ver [HUB_BACKUP_INCIDENT_RUNBOOK.md](./HUB_BACKUP_INCIDENT_RUNBOOK.md)
+- [ ] Restore drill de dados — **pendente**. Schema do Preprod exportado (22,4 s, 151 tabelas) e arquivo apagado. Linhas e Storage não restaurados. Destino proibido: produção e Preprod
 - [x] Política: QA Hub **proibido** em produção (`HUB_MVP_MANUAL_QA.md`)
 
 ### Credenciais seed QA (Preprod)
 
-- Senha padrão: `QaStaging!2026` (ou `QA_STAGING_PASSWORD`)
+- Senha: variável `QA_STAGING_PASSWORD` em `backend/.env.smoke.preprod.local` (gitignored). Não registrar a senha neste documento.
 - Clínica A CADMIN: `qa.staging.a.cadmin@petmi.test` (+ CMANAGER / CASSISTANT / CVET / CFINANCE)
 - Clínica B CADMIN: `qa.staging.b.cadmin@petmi.test`
 - Smoke vars: `backend/.env.smoke.preprod.local` (gitignored)
 
 ## Isolamento multi-tenant
 
-- [x] Smoke `npx tsx scripts/hub-tenant-isolation-smoke.ts` PASS em staging (2026-11-13)
+- [x] Smoke tutores A↔B `hub-tenant-isolation-smoke.ts` PASS em staging (2026-11-13)
+- [ ] Smoke ampliado (listas multi-módulo + RBAC amostrado + FK cruzada) — reexecutar após deploy staging + `seed:fase0-qa-staging`. Ver [HUB_FASE0_TENANT_ISOLATION_AUDIT.md](./HUB_FASE0_TENANT_ISOLATION_AUDIT.md)
 - [ ] Matriz amostrada UI: CADMIN, CASSISTANT, CVET_INTERNAL, CFINANCE (acessos esperados)
+- [x] Correções de código H1–H6 + `hub.staff.roles.assign` (CADMIN) — implementadas 2026-11-16; validação staging pendente do smoke
 
 ## Soft-lock / assinatura
 
@@ -68,12 +70,13 @@ Marque após validar em **staging**. Fonte: auditoria de lançamento + [HUB_STAG
 | Data | 2026-11-13 (parcial) |
 | Responsável | |
 | Ambiente staging URL | https://hub-staging.petmi.app |
-| Resultado | **IN PROGRESS** — infra + seed + smoke OK; soft-lock/reset/Sentry/restore pendentes |
+| Resultado | **IN PROGRESS** — infra + seed + smoke tutores OK. Auditoria isolamento/RBAC concluída com **gaps High** (FK clínicos, leitos, crédito, boarding create, escalação CMANAGER). Backup: **PROTEÇÃO INSUFICIENTE** (plano Free). Soft-lock/Sentry ainda pendentes |
 
 ## Próximos passos imediatos
 
-1. Commit/PR das mudanças Fase 0 (soft-lock, reset senha, Sentry hub-web) → merge em `staging` (e depois `main`).
-2. Redeploy Railway `staging` + Vercel branch `staging`.
-3. Revalidar soft-lock + forgot/reset + error boundary.
-4. Configurar `SENTRY_DSN` (staging) e testar evento.
-5. No Supabase **produção**: confirmar backup diário / PITR; executar restore drill → Preprod (ou projeto drill) e registrar resultado.
+1. Remediação isolamento (§5 de [HUB_FASE0_TENANT_ISOLATION_AUDIT.md](./HUB_FASE0_TENANT_ISOLATION_AUDIT.md)): asserts de pet/guardian/unit + `clinic_id` em leitos + anti-promoção de role.
+2. Re-seed staging + `npm run smoke:tenant-isolation` (smoke ampliado).
+3. Commit/PR das mudanças Fase 0 (soft-lock, reset senha, Sentry hub-web, auditoria) → merge em `staging` (e depois `main`).
+4. Redeploy Railway `staging` + Vercel branch `staging`; revalidar soft-lock + forgot/reset + error boundary.
+5. Configurar `SENTRY_DSN` (staging) e testar evento.
+6. Backup: upgrade Pro na janela fim de novembro / início de dezembro de 2026. Detalhe em [HUB_BACKUP_INCIDENT_RUNBOOK.md](./HUB_BACKUP_INCIDENT_RUNBOOK.md).
