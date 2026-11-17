@@ -3418,6 +3418,10 @@ type DayBoardItem = {
   /** Presente em `hospitalization`: origem real da comanda. */
   billing_origin_type?: 'encounter' | 'appointment' | null;
   billing_origin_id?: string | null;
+  /** Vínculos de agenda (appointments) para rótulo informativo de visita. */
+  parent_appointment_id?: string | null;
+  visit_group_id?: string | null;
+  appointment_kind?: string | null;
 };
 
 /** Waive em cascata: alta cobrada via encounter/appointment também sai da fila C. */
@@ -3495,6 +3499,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
         .from('hub_appointments')
         .select(
           `id, unit_id, starts_at, ends_at, status, guardian_id, pet_id, billing_waived_at, title, hub_service_type_id,
+          parent_appointment_id, visit_group_id, appointment_kind,
           pet:hub_pets(id, name),
           guardian:hub_guardians(id, full_name),
           appointment_services:hub_appointment_services(id, hub_service_type_id, sale_amount_applied, service_type:hub_service_types(name, service_group))`
@@ -3600,6 +3605,9 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
           active_receivable_id: null,
           due_date: null,
         },
+        parent_appointment_id: (row.parent_appointment_id as string | null | undefined) ?? null,
+        visit_group_id: (row.visit_group_id as string | null | undefined) ?? null,
+        appointment_kind: (row.appointment_kind as string | null | undefined) ?? null,
       });
     }
 

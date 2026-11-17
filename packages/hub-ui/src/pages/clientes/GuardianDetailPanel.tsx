@@ -1227,7 +1227,6 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
       guardianName={guardian.full_name}
       onClose={() => setShowBatchCharge(false)}
       onDone={() => {
-        setShowBatchCharge(false);
         void loadFinanceiro();
       }}
       onBundleCreated={(id) => navigate(`/hub/financeiro/cobranca-lote/${id}/pronto-para-envio`)}

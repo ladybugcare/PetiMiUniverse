@@ -380,9 +380,13 @@ export const hubComandaApi = {
     results: Array<{ comanda_id: string; receivable_ids: string[]; error?: string }>;
     partial_errors: boolean;
   }> {
+    const n = body.comanda_ids?.length ?? 1;
+    // Backend processa em série; o default 30s do cliente corta lotes com 2+ comandas.
+    const timeoutMs = Math.min(180_000, 40_000 + Math.max(1, n) * 30_000);
     return apiRequest(`${base}/checkout-bulk`, {
       method: 'POST',
       body: JSON.stringify(body),
+      timeoutMs,
     }) as Promise<{
       results: Array<{ comanda_id: string; receivable_ids: string[]; error?: string }>;
       partial_errors: boolean;

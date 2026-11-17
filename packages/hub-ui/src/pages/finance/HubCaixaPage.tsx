@@ -41,6 +41,14 @@ import {
 } from './hubCaixaSessionHistory';
 import { CaixaSessionHistoryTimeline } from './CaixaSessionHistoryTimeline';
 import { FinanceDayBoardTable } from './FinanceDayBoardTable';
+import { BatchChargeDrawer } from './BatchChargeDrawer';
+import {
+  applyVisitKeysToBatchItems,
+  assertSameGuardian,
+  dayBoardItemToBatchChargeItem,
+  isDayBoardBatchSelectable,
+  type BatchChargeItem,
+} from './batchChargeItems';
 import { SellPackageDrawer } from './SellPackageDrawer';
 import { QuickSaleDrawer } from './QuickSaleDrawer';
 import { EncerrarTurnoDrawer } from './EncerrarTurnoDrawer';
@@ -118,6 +126,9 @@ const HubCaixaPage: React.FC = () => {
   const [checkoutScheduleContext, setCheckoutScheduleContext] = useState<PackageSaleScheduleContext | null>(null);
   const [showSellPackage, setShowSellPackage] = useState(false);
   const [showQuickSale, setShowQuickSale] = useState(false);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
+  const [showBatchCharge, setShowBatchCharge] = useState(false);
+  const [batchItems, setBatchItems] = useState<BatchChargeItem[]>([]);
   const [showEncerrarTurno, setShowEncerrarTurno] = useState(false);
   const [showIniciarTurno, setShowIniciarTurno] = useState(false);
   const [closedSessions, setClosedSessions] = useState<HubCashSession[]>([]);
@@ -236,6 +247,10 @@ const HubCaixaPage: React.FC = () => {
   }, [searchParams]);
 
   useEffect(() => {
+    setSelectedKeys(new Set());
+  }, [dayBoardDate, atendimentosStatusFilter, dayBoardSearch]);
+
+  useEffect(() => {
     if (!clinicId || !cashOpen?.id) return;
     let cancelled = false;
     void (async () => {
@@ -329,6 +344,13 @@ const HubCaixaPage: React.FC = () => {
   const sessionHistoryItems = useMemo(
     () => buildCaixaSessionHistoryItems(cashSummary, dayBoardItems, openComandas),
     [cashSummary, dayBoardItems, openComandas],
+  );
+
+  const dayBoardItemKey = (item: HubFinanceDayBoardItem) => `${item.origin_type}:${item.origin_id}`;
+
+  const selectedDayBoardItems = useMemo(
+    () => dayBoardFiltered.filter((it) => selectedKeys.has(dayBoardItemKey(it))),
+    [dayBoardFiltered, selectedKeys],
   );
 
   if (!permLoading && !hasPermission('hub.financial.read')) {
@@ -614,6 +636,56 @@ const HubCaixaPage: React.FC = () => {
 
   const onCheckoutFromBoard = (item: HubFinanceDayBoardItem) => {
     if (item.billing.comanda_id) setCheckoutComandaId(item.billing.comanda_id);
+  };
+
+  const toggleSelect = (item: HubFinanceDayBoardItem) => {
+    const key = dayBoardItemKey(item);
+    setSelectedKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const toggleSelectAllSelectable = () => {
+    const selectable = dayBoardFiltered.filter(isDayBoardBatchSelectable);
+    const allOn = selectable.length > 0 && selectable.every((it) => selectedKeys.has(dayBoardItemKey(it)));
+    if (allOn) {
+      setSelectedKeys(new Set());
+      return;
+    }
+    setSelectedKeys(new Set(selectable.map(dayBoardItemKey)));
+  };
+
+  const openBatchFromSelection = () => {
+    if (!canCreateReceivable) {
+      showError('Sem permissão para cobrar.');
+      return;
+    }
+    const mapped = selectedDayBoardItems
+      .map(dayBoardItemToBatchChargeItem)
+      .filter((x): x is BatchChargeItem => Boolean(x));
+    const items = applyVisitKeysToBatchItems(mapped, selectedDayBoardItems);
+    if (items.length === 0) {
+      showError('Selecione ao menos uma cobrança elegível.');
+      return;
+    }
+    try {
+      assertSameGuardian(items);
+    } catch (e) {
+      showError((e as Error).message);
+      return;
+    }
+    if (items.length === 1) {
+      const only = items[0];
+      if (only.comandaId) {
+        setCheckoutComandaId(only.comandaId);
+        return;
+      }
+    }
+    setBatchItems(items);
+    setShowBatchCharge(true);
   };
 
   const onWaiveFromBoard = async (item: HubFinanceDayBoardItem) => {
@@ -967,6 +1039,28 @@ const HubCaixaPage: React.FC = () => {
         </div>
 
         <HubRefreshingBanner show={refreshing || dayBoardBusy} label="Atualizando caixa…" />
+        {selectedKeys.size > 0 && canCreateReceivable ? (
+          <div className="hub-batch-charge__toolbar">
+            <span className="hub-clientes__muted">{selectedKeys.size} selecionada(s)</span>
+            <div className="hub-batch-charge__footer-actions">
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                onClick={() => setSelectedKeys(new Set())}
+              >
+                Limpar
+              </button>
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                onClick={openBatchFromSelection}
+              >
+                <Coins size={14} strokeWidth={2} aria-hidden />
+                Cobrar {selectedKeys.size}
+              </button>
+            </div>
+          </div>
+        ) : null}
         {loading && dayBoardItems.length === 0 && openComandas.length === 0 ? (
           <HubLoading variant="block" label="Carregando ações pendentes…" />
         ) : dayBoardFiltered.length === 0 && extraComandas.length === 0 ? (
@@ -990,6 +1084,10 @@ const HubCaixaPage: React.FC = () => {
                 onShareComanda={onShareComanda}
                 onRowClick={onEditComanda}
                 busy={dayBoardBusy}
+                selectionEnabled={canCreateReceivable}
+                selectedKeys={selectedKeys}
+                onToggleSelect={toggleSelect}
+                onToggleSelectAllSelectable={toggleSelectAllSelectable}
               />
             )}
 
@@ -1247,6 +1345,23 @@ const HubCaixaPage: React.FC = () => {
       )}
     </>,
     <>
+      <BatchChargeDrawer
+        open={showBatchCharge}
+        items={batchItems}
+        guardianName={
+          selectedDayBoardItems.find((it) => it.guardian?.full_name)?.guardian?.full_name ?? undefined
+        }
+        cashSessionId={cashOpen?.id ?? null}
+        onClose={() => setShowBatchCharge(false)}
+        onDone={() => {
+          setSelectedKeys(new Set());
+          // Painel da sessão + total recebido + histórico + day-board (sem double-count: summary soma por payment id).
+          void load();
+          void loadDayBoard();
+        }}
+        onBundleCreated={(id) => navigate(`/hub/financeiro/cobranca-lote/${id}/pronto-para-envio`)}
+      />
+
       {clinicId && checkoutComandaId && unitId ? (
         <ComandaCheckoutDrawer
           key={checkoutComandaId}

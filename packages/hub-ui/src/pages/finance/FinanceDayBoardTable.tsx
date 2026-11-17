@@ -84,7 +84,7 @@ export type FinanceDayBoardTableProps = {
   onShareComanda: (item: HubFinanceDayBoardItem) => void;
   onRowClick?: (item: HubFinanceDayBoardItem) => void;
   busy: boolean;
-  /** Multi-seleção (só Financeiro). Keys: `origin_type:origin_id`. */
+  /** Multi-seleção (Financeiro e Caixa). Keys: `origin_type:origin_id`. */
   selectionEnabled?: boolean;
   selectedKeys?: Set<string>;
   onToggleSelect?: (item: HubFinanceDayBoardItem) => void;

@@ -2101,7 +2101,6 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
       guardianName={pet.primary_guardian?.guardian_name ?? undefined}
       onClose={() => setShowBatchCharge(false)}
       onDone={() => {
-        setShowBatchCharge(false);
         void loadFinanceiro();
       }}
       onBundleCreated={(id) => navigate(`/hub/financeiro/cobranca-lote/${id}/pronto-para-envio`)}

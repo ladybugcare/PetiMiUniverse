@@ -48,14 +48,21 @@ export function invalidateApiRequestCache(): void {
   inFlightGets.clear();
 }
 
+/** Opções de `apiRequest` — `timeoutMs` não é passado ao `fetch`. */
+export type ApiRequestOptions = RequestInit & {
+  /** Timeout do cliente. Default 30s. Use valores maiores em lotes longos (ex.: checkout-bulk). */
+  timeoutMs?: number;
+};
+
 async function executeApiRequest(
   endpoint: string,
-  options: RequestInit = {},
+  options: ApiRequestOptions = {},
   generationAtStart = cacheGeneration,
 ): Promise<unknown> {
   const API_BASE_URL = getApiBaseUrl();
   const url = `${API_BASE_URL}${endpoint}`;
   const supabase = getSupabase();
+  const { timeoutMs = 30_000, ...fetchOptions } = options;
 
   let authToken: string | null = null;
 
@@ -131,11 +138,11 @@ async function executeApiRequest(
   }
 
   const isFormData =
-    typeof FormData !== 'undefined' && options.body != null && options.body instanceof FormData;
+    typeof FormData !== 'undefined' && fetchOptions.body != null && fetchOptions.body instanceof FormData;
 
   const headers: Record<string, string> = {
     ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
-    ...((options.headers as Record<string, string>) || {}),
+    ...((fetchOptions.headers as Record<string, string>) || {}),
   };
 
   if (isFormData) {
@@ -148,12 +155,12 @@ async function executeApiRequest(
   }
 
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 30000);
+  const timeoutId = setTimeout(() => controller.abort(), Math.max(1_000, timeoutMs));
 
   try {
     const response = await fetch(url, {
+      ...fetchOptions,
       headers,
-      ...options,
       signal: controller.signal,
     });
 
@@ -247,10 +254,12 @@ async function executeApiRequest(
 
 export const apiRequest = async (
   endpoint: string,
-  options: RequestInit = {},
+  options: ApiRequestOptions = {},
 ): Promise<unknown> => {
   const isGet = options.method === 'GET' || !options.method;
-  const cacheKey = isGet ? `${endpoint}_${JSON.stringify(options)}` : null;
+  // timeoutMs não faz parte da chave de cache (só afeta o cliente).
+  const { timeoutMs: _timeoutMs, ...cacheable } = options;
+  const cacheKey = isGet ? `${endpoint}_${JSON.stringify(cacheable)}` : null;
 
   if (cacheKey) {
     const cached = requestCache.get(cacheKey);

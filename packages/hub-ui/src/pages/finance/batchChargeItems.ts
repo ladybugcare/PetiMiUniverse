@@ -22,7 +22,122 @@ export type BatchChargeItem = {
   tone: DueDateTone;
   petLabel: string;
   guardianId: string | null;
+  /** Rótulo de origem (ex. day-board origin_label). */
+  originLabel?: string | null;
+  /**
+   * Chave informativa de visita (visit_group / parent / âncora).
+   * Só para UI — não implica seleção automática.
+   */
+  visitKey?: string | null;
 };
+
+/** Campos de vínculo usados para resolver visita na agenda. */
+export type VisitLinkFields = {
+  origin_type: string;
+  origin_id: string;
+  visit_group_id?: string | null;
+  parent_appointment_id?: string | null;
+  appointment_kind?: string | null;
+};
+
+/**
+ * Resolve chave de visita a partir dos vínculos da agenda.
+ * Não assume visit_group_id em todos os itens (L&T e filhos usam parent).
+ * Pernas/filhos herdam o visit_group do appointment âncora quando o peer o traz.
+ */
+export function resolveVisitKey(item: VisitLinkFields, peers: VisitLinkFields[]): string | null {
+  const visitGroupByAppt = new Map<string, string>();
+  for (const p of peers) {
+    const vg = p.visit_group_id?.trim();
+    if (vg && p.origin_id) visitGroupByAppt.set(p.origin_id, vg);
+  }
+
+  const ownVg = item.visit_group_id?.trim();
+  if (ownVg) return `vg:${ownVg}`;
+
+  const parentId = item.parent_appointment_id?.trim();
+  if (parentId) {
+    const parentVg = visitGroupByAppt.get(parentId);
+    if (parentVg) return `vg:${parentVg}`;
+    return `ap:${parentId}`;
+  }
+
+  if (item.origin_type === 'appointment' && item.origin_id) {
+    const referencedAsParent = peers.some(
+      (p) =>
+        p.origin_id !== item.origin_id &&
+        Boolean(p.parent_appointment_id) &&
+        p.parent_appointment_id === item.origin_id,
+    );
+    if (referencedAsParent) {
+      const selfVg = visitGroupByAppt.get(item.origin_id);
+      if (selfVg) return `vg:${selfVg}`;
+      return `ap:${item.origin_id}`;
+    }
+  }
+
+  return null;
+}
+
+/** Aplica visitKey em itens do lote a partir dos vínculos dos day-board items de origem. */
+export function applyVisitKeysToBatchItems(
+  batchItems: BatchChargeItem[],
+  sourceItems: HubFinanceDayBoardItem[],
+): BatchChargeItem[] {
+  const peers: VisitLinkFields[] = sourceItems.map((s) => ({
+    origin_type: s.origin_type,
+    origin_id: s.origin_id,
+    visit_group_id: s.visit_group_id ?? null,
+    parent_appointment_id: s.parent_appointment_id ?? null,
+    appointment_kind: s.appointment_kind ?? null,
+  }));
+
+  const withKeys = batchItems.map((item) => {
+    const source = sourceItems.find((s) => {
+      if (item.comandaId && s.billing.comanda_id === item.comandaId) return true;
+      if (item.receivableId && s.billing.active_receivable_id === item.receivableId) return true;
+      return false;
+    });
+    if (!source) return { ...item, visitKey: item.visitKey ?? null };
+    const visitKey = resolveVisitKey(
+      {
+        origin_type: source.origin_type,
+        origin_id: source.origin_id,
+        visit_group_id: source.visit_group_id ?? null,
+        parent_appointment_id: source.parent_appointment_id ?? null,
+        appointment_kind: source.appointment_kind ?? null,
+      },
+      peers,
+    );
+    return {
+      ...item,
+      originLabel: item.originLabel ?? source.origin_label ?? null,
+      visitKey,
+    };
+  });
+
+  // Chaves que aparecem em ≥2 itens do lote → mantém; senão limpa (rótulo só em grupo).
+  const counts = new Map<string, number>();
+  for (const it of withKeys) {
+    if (!it.visitKey) continue;
+    counts.set(it.visitKey, (counts.get(it.visitKey) ?? 0) + 1);
+  }
+  const normalized = withKeys.map((it) => ({
+    ...it,
+    visitKey: it.visitKey && (counts.get(it.visitKey) ?? 0) >= 2 ? it.visitKey : null,
+  }));
+  // Agrupa visualmente itens da mesma visita no drawer.
+  return normalized.sort((a, b) => {
+    const va = a.visitKey ?? '';
+    const vb = b.visitKey ?? '';
+    if (va !== vb) {
+      if (!va) return 1;
+      if (!vb) return -1;
+      return va.localeCompare(vb);
+    }
+    return sortBatchItems(a, b);
+  });
+}
 
 function receivableOutstanding(rv: HubFinanceReceivable): number {
   const balance = (rv as HubFinanceReceivable & { balance_amount?: number }).balance_amount;
@@ -182,6 +297,8 @@ export function dayBoardItemToBatchChargeItem(item: HubFinanceDayBoardItem): Bat
     tone,
     petLabel: item.pet?.name ?? 'Tutor',
     guardianId: item.guardian_id ?? item.guardian?.id ?? null,
+    originLabel: item.origin_label ?? null,
+    visitKey: null,
   };
 }
 

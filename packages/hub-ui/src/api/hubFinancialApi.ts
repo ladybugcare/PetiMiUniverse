@@ -68,6 +68,10 @@ export type HubFinanceDayBoardItem = {
   /** Presente em `hospitalization`: origem real da comanda. */
   billing_origin_type?: 'encounter' | 'appointment' | null;
   billing_origin_id?: string | null;
+  /** Vínculos de agenda (appointments) para rótulo informativo de visita. */
+  parent_appointment_id?: string | null;
+  visit_group_id?: string | null;
+  appointment_kind?: string | null;
 };
 
 export type HubFinanceReceivable = {

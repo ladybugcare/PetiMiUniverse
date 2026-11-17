@@ -5148,7 +5148,21 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
     }
     const notOpen = (comandas ?? []).filter((c) => String(c.status) !== 'aberta');
     if (notOpen.length > 0) {
-      return res.status(409).json({ error: `Comanda(s) não abertas: ${notOpen.map((c) => c.id).join(', ')}` });
+      const detail = notOpen
+        .map((c) => {
+          const st = String(c.status ?? 'desconhecido');
+          const label =
+            st === 'fechada'
+              ? 'fechada (já quitada ou encerrada)'
+              : st === 'cancelada'
+                ? 'cancelada'
+                : st;
+          return `${c.id} (${label})`;
+        })
+        .join(', ');
+      return res.status(409).json({
+        error: `Comanda(s) não elegíveis para este lote — remova-as e tente de novo: ${detail}`,
+      });
     }
 
     // leave_pending: caminho único (recebível + linhas + finance_handoff_at)
@@ -5370,21 +5384,29 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
         const receivableId = rec.id as string;
 
         const { error: linesErr } = await supabaseAdmin.from('hub_receivable_lines').insert(
-          items.map((it, sort) => ({
-            clinic_id,
-            receivable_id: receivableId,
-            comanda_id: comandaId,
-            comanda_item_id: it.id as string,
-            pet_id: (it.pet_id as string | null) ?? null,
-            line_kind: 'service',
-            source_line_id: (it.origin_id as string | null) ?? null,
-            hub_service_type_id: (it.hub_service_type_id as string | null) ?? null,
-            description: String(it.description),
-            quantity: Number(it.quantity ?? 1),
-            unit_sale_amount: Number(it.unit_amount ?? 0),
-            line_total: Number(it.line_total ?? 0),
-            sort_order: sort,
-          })),
+          items.map((it, sort) => {
+            const lineKind =
+              String(it.item_kind ?? '') === 'product'
+                ? 'product'
+                : mapItemToReceivableLineKind((it.origin_type as string | null) ?? null);
+            return {
+              clinic_id,
+              receivable_id: receivableId,
+              comanda_id: comandaId,
+              comanda_item_id: it.id as string,
+              pet_id: (it.pet_id as string | null) ?? null,
+              line_kind: lineKind,
+              source_line_id: (it.origin_id as string | null) ?? null,
+              hub_service_type_id: (it.hub_service_type_id as string | null) ?? null,
+              hub_inventory_item_id: (it.hub_inventory_item_id as string | null) ?? null,
+              hub_inventory_lot_id: (it.hub_inventory_lot_id as string | null) ?? null,
+              description: String(it.description),
+              quantity: Number(it.quantity ?? 1),
+              unit_sale_amount: Number(it.unit_amount ?? 0),
+              line_total: Number(it.line_total ?? 0),
+              sort_order: sort,
+            };
+          }),
         );
         if (linesErr) {
           await supabaseAdmin.from('hub_receivables').delete().eq('id', receivableId);

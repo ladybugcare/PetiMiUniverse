@@ -10,6 +10,7 @@ import { HubComandaReceivableDrawer } from './HubComandaReceivableDrawer';
 import { BatchChargeDrawer } from './BatchChargeDrawer';
 import {
   assertSameGuardian,
+  applyVisitKeysToBatchItems,
   dayBoardItemToBatchChargeItem,
   isDayBoardBatchSelectable,
   type BatchChargeItem,
@@ -344,9 +345,10 @@ export function FinanceDayBoardSection({
       showError('Sem permissão para cobrar.');
       return;
     }
-    const items = selectedItems
+    const mapped = selectedItems
       .map(dayBoardItemToBatchChargeItem)
       .filter((x): x is BatchChargeItem => Boolean(x));
+    const items = applyVisitKeysToBatchItems(mapped, selectedItems);
     if (items.length === 0) {
       showError('Selecione ao menos uma cobrança elegível.');
       return;
@@ -526,7 +528,6 @@ export function FinanceDayBoardSection({
         }
         onClose={() => setShowBatchCharge(false)}
         onDone={() => {
-          setShowBatchCharge(false);
           setSelectedKeys(new Set());
           void loadDayBoard();
         }}

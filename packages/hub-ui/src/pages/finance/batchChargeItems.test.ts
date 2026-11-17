@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { HubFinanceReceivable } from '../../api/hubFinancialApi';
-import { assertSameGuardian, buildBatchChargeItems, sumBatchChargeAmount } from './batchChargeItems';
+import type { HubFinanceDayBoardItem, HubFinanceReceivable } from '../../api/hubFinancialApi';
+import {
+  applyVisitKeysToBatchItems,
+  assertSameGuardian,
+  buildBatchChargeItems,
+  resolveVisitKey,
+  sumBatchChargeAmount,
+  type BatchChargeItem,
+} from './batchChargeItems';
 
 function rv(
   partial: Partial<HubFinanceReceivable> & Pick<HubFinanceReceivable, 'id' | 'status' | 'final_amount'>,
@@ -119,5 +126,143 @@ describe('assertSameGuardian', () => {
         },
       ]),
     ).toThrow(/mesmo tutor/);
+  });
+});
+
+describe('resolveVisitKey', () => {
+  it('usa visit_group_id quando presente', () => {
+    const key = resolveVisitKey(
+      { origin_type: 'appointment', origin_id: 'a1', visit_group_id: 'vg1' },
+      [],
+    );
+    expect(key).toBe('vg:vg1');
+  });
+
+  it('usa parent_appointment_id para pernas L&T e blocos filhos', () => {
+    const key = resolveVisitKey(
+      {
+        origin_type: 'appointment',
+        origin_id: 'pickup1',
+        parent_appointment_id: 'main1',
+        appointment_kind: 'pickup_route',
+      },
+      [],
+    );
+    expect(key).toBe('ap:main1');
+  });
+
+  it('herda visit_group do appointment pai quando a perna só tem parent', () => {
+    const peers = [
+      { origin_type: 'appointment', origin_id: 'main1', visit_group_id: 'vg9' },
+      {
+        origin_type: 'appointment',
+        origin_id: 'pickup1',
+        parent_appointment_id: 'main1',
+        appointment_kind: 'pickup_route',
+      },
+    ];
+    expect(resolveVisitKey(peers[1], peers)).toBe('vg:vg9');
+    expect(resolveVisitKey(peers[0], peers)).toBe('vg:vg9');
+  });
+
+  it('ancora o principal quando peers apontam parent para ele', () => {
+    const peers = [
+      { origin_type: 'appointment', origin_id: 'main1' },
+      { origin_type: 'appointment', origin_id: 'child1', parent_appointment_id: 'main1' },
+    ];
+    expect(resolveVisitKey(peers[0], peers)).toBe('ap:main1');
+    expect(resolveVisitKey(peers[1], peers)).toBe('ap:main1');
+  });
+});
+
+describe('applyVisitKeysToBatchItems', () => {
+  const billing = {
+    comanda_id: null as string | null,
+    comanda_status: 'aberta' as const,
+    has_receivable: false,
+    receivable_status: null,
+    finance_handoff_at: null,
+    active_receivable_id: null,
+    due_date: null,
+  };
+
+  function board(
+    partial: Partial<HubFinanceDayBoardItem> & Pick<HubFinanceDayBoardItem, 'origin_id' | 'billing'>,
+  ): HubFinanceDayBoardItem {
+    return {
+      origin_type: 'appointment',
+      origin_label: 'Agenda',
+      starts_at: null,
+      guardian_id: 'g1',
+      guardian: null,
+      pet_id: null,
+      pet: null,
+      operational_status: 'confirmed',
+      estimated_amount: 10,
+      services: [],
+      ...partial,
+    };
+  }
+
+  it('marca Mesma visita só quando ≥2 itens compartilham a chave', () => {
+    const sources = [
+      board({
+        origin_id: 'main',
+        visit_group_id: 'vg',
+        billing: { ...billing, comanda_id: 'c1' },
+      }),
+      board({
+        origin_id: 'child',
+        visit_group_id: 'vg',
+        parent_appointment_id: 'main',
+        billing: { ...billing, comanda_id: 'c2' },
+      }),
+      board({
+        origin_id: 'indep',
+        billing: { ...billing, comanda_id: 'c3' },
+      }),
+    ];
+    const batch: BatchChargeItem[] = [
+      {
+        kind: 'comanda',
+        id: 'c1',
+        comandaId: 'c1',
+        receivableId: null,
+        title: 'Banho',
+        amount: 80,
+        dueDate: null,
+        tone: 'none',
+        petLabel: 'P',
+        guardianId: 'g1',
+      },
+      {
+        kind: 'comanda',
+        id: 'c2',
+        comandaId: 'c2',
+        receivableId: null,
+        title: 'Consulta',
+        amount: 100,
+        dueDate: null,
+        tone: 'none',
+        petLabel: 'P',
+        guardianId: 'g1',
+      },
+      {
+        kind: 'comanda',
+        id: 'c3',
+        comandaId: 'c3',
+        receivableId: null,
+        title: 'Indep',
+        amount: 100,
+        dueDate: null,
+        tone: 'none',
+        petLabel: 'P',
+        guardianId: 'g1',
+      },
+    ];
+    const out = applyVisitKeysToBatchItems(batch, sources);
+    expect(out[0].visitKey).toBe('vg:vg');
+    expect(out[1].visitKey).toBe('vg:vg');
+    expect(out[2].visitKey).toBeNull();
   });
 });
