@@ -817,6 +817,18 @@ export async function redeemPackageBalancesOnCheckout(input: {
     const appointmentServiceId =
       String(it.origin_type) === 'appointment_service' ? (it.origin_id as string) : null;
 
+    // Idempotente: checkout/retry não consome diária de novo.
+    const { data: existingRedemption } = await supabaseAdmin
+      .from('hub_package_redemptions')
+      .select('id')
+      .eq('comanda_item_id', it.id as string)
+      .is('reversed_at', null)
+      .maybeSingle();
+    if (existingRedemption?.id) {
+      redeemed.push(balanceId);
+      continue;
+    }
+
     const { error: rErr } = await supabaseAdmin.from('hub_package_redemptions').insert({
       clinic_id: input.clinicId,
       balance_id: balanceId,
@@ -824,7 +836,13 @@ export async function redeemPackageBalancesOnCheckout(input: {
       appointment_service_id: appointmentServiceId,
       redeemed_by_staff_id: null,
     });
-    if (rErr) throw new Error(rErr.message);
+    if (rErr) {
+      if (/duplicate key|unique constraint/i.test(String(rErr.message || ''))) {
+        redeemed.push(balanceId);
+        continue;
+      }
+      throw new Error(rErr.message);
+    }
 
     const { error: uErr } = await supabaseAdmin
       .from('hub_customer_package_balances')
