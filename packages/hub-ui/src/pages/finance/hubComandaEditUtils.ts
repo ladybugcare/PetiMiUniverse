@@ -5,7 +5,7 @@ const BALANCE_EPSILON = 0.009;
 
 export type ComandaCheckoutCTA =
   | { kind: 'none' }
-  | { kind: 'checkout_drawer'; label: 'Cobrar' | 'Faturar itens' }
+  | { kind: 'checkout_drawer'; label: 'Cobrar' | 'Faturar itens' | 'Encerrar (cobertura)' }
   | { kind: 'receivable_drawer'; label: 'Registrar pagamento' | 'Ver cobrança' };
 
 export type ComandaCheckoutCTAInput = Pick<
@@ -50,6 +50,10 @@ export function resolveComandaCheckoutCTA(
 
   if (mode === 'caixa') {
     if (scopes && !scopes.caixa) return { kind: 'none' };
+    // Pacote/desconto zera o saldo, mas ainda há itens abertos → encerrar cobertura no checkout.
+    if (openItemIds.length > 0 && balanceDue <= BALANCE_EPSILON) {
+      return { kind: 'checkout_drawer', label: 'Encerrar (cobertura)' };
+    }
     if (balanceDue <= BALANCE_EPSILON) return { kind: 'none' };
     return { kind: 'checkout_drawer', label: 'Cobrar' };
   }

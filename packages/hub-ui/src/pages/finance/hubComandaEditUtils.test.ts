@@ -101,6 +101,21 @@ describe('resolveComandaCheckoutCTA', () => {
     ).toEqual({ kind: 'checkout_drawer', label: 'Cobrar' });
   });
 
+  it('caixa com itens abertos e saldo zero abre Encerrar (cobertura)', () => {
+    expect(
+      resolveComandaCheckoutCTA(
+        'caixa',
+        comandaInput({ open_item_ids: ['item-pkg'], balance_due: 0 }),
+      ),
+    ).toEqual({ kind: 'checkout_drawer', label: 'Encerrar (cobertura)' });
+  });
+
+  it('caixa sem itens e saldo zero não exibe CTA', () => {
+    expect(
+      resolveComandaCheckoutCTA('caixa', comandaInput({ open_item_ids: [], balance_due: 0 })),
+    ).toEqual({ kind: 'none' });
+  });
+
   it('financeiro quitada não exibe CTA', () => {
     expect(
       resolveComandaCheckoutCTA(
