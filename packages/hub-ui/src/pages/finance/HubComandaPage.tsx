@@ -61,7 +61,8 @@ function extractGuardian(comanda: Record<string, unknown>): HubComandaGuardianEm
 
 function extractPets(detail: HubComandaDetailResponse): HubComandaPetEmbed[] {
   if (detail.pets?.length) return detail.pets;
-  const p = (detail.comanda as Record<string, unknown>).pet as HubComandaPetEmbed | null | undefined;
+  const comanda = detail.comanda as Record<string, unknown> | undefined;
+  const p = comanda?.pet as HubComandaPetEmbed | null | undefined;
   if (p?.id && p.name) return [p];
   return [];
 }

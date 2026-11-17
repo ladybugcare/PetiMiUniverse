@@ -60,3 +60,30 @@ describe('hubComandaApi.openComanda', () => {
     expect(apiRequestMock).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('hubComandaApi.applyPackage', () => {
+  beforeEach(() => {
+    apiRequestMock.mockReset();
+  });
+
+  it('desembrulha { detail } da API apply-package', async () => {
+    apiRequestMock.mockResolvedValueOnce({
+      detail: {
+        comanda: { id: 'comanda-1', pet: { id: 'pet-1', name: 'Pet A' } },
+        items: [{ id: 'item-1', line_total: 0, package_balance_id: 'bal-1' }],
+        pets: [{ id: 'pet-1', name: 'Pet A' }],
+      },
+    });
+
+    const detail = await hubComandaApi.applyPackage('comanda-1', {
+      clinic_id: '11111111-1111-4111-8111-111111111111',
+      item_id: 'item-1',
+      package_balance_id: 'bal-1',
+      edit_context: 'caixa',
+    });
+
+    expect(detail.comanda).toMatchObject({ id: 'comanda-1' });
+    expect(detail.items?.[0]).toMatchObject({ line_total: 0, package_balance_id: 'bal-1' });
+    expect(String(apiRequestMock.mock.calls[0]?.[0])).toContain('/apply-package');
+  });
+});

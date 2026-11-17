@@ -206,10 +206,12 @@ export const hubComandaApi = {
       edit_context?: HubComandaEditContext;
     }
   ): Promise<HubComandaDetailResponse> {
-    return apiRequest(`${base}/${encodeURIComponent(comandaId)}/apply-package`, {
+    const res = (await apiRequest(`${base}/${encodeURIComponent(comandaId)}/apply-package`, {
       method: 'POST',
       body: JSON.stringify(body),
-    }) as Promise<HubComandaDetailResponse>;
+    })) as { detail?: HubComandaDetailResponse } & HubComandaDetailResponse;
+    // API responde `{ detail: ... }`; aceita também o payload direto por compatibilidade.
+    return (res?.detail ?? res) as HubComandaDetailResponse;
   },
 
   async checkout(
