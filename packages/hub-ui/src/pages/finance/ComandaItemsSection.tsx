@@ -155,22 +155,42 @@ export const ComandaItemsSection: React.FC<Props> = ({
           {coveredByPackage ? (
             <span className="hub-clientes__pill hub-dayboard__pill--open">Pacote</span>
           ) : eligibleBalances.length > 0 && onTogglePackage && it.id && editable ? (
-            <select
-              className="hub-orcamento-novo__input"
-              value={it.package_balance_id ?? ''}
-              onChange={(e) => onTogglePackage(it.id!, e.target.value || null)}
-              aria-label="Usar pacote"
-            >
-              <option value="">Avulso</option>
-              {eligibleBalances.map((b) => {
-                const pkg = Array.isArray(b.hub_packages) ? b.hub_packages[0] : b.hub_packages;
-                return (
-                  <option key={b.id} value={b.id}>
-                    {pkg?.name ?? 'Pacote'} ({b.sessions_remaining})
-                  </option>
-                );
-              })}
-            </select>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 140 }}>
+              <select
+                className="hub-orcamento-novo__input"
+                value={it.package_balance_id ?? ''}
+                onChange={(e) => onTogglePackage(it.id!, e.target.value || null)}
+                aria-label="Usar pacote"
+              >
+                <option value="">Avulso</option>
+                {eligibleBalances.map((b) => {
+                  const pkg = Array.isArray(b.hub_packages) ? b.hub_packages[0] : b.hub_packages;
+                  return (
+                    <option key={b.id} value={b.id}>
+                      {pkg?.name ?? 'Pacote'} ({b.sessions_remaining})
+                    </option>
+                  );
+                })}
+              </select>
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                onClick={() => {
+                  const preferred = eligibleBalances[0]?.id;
+                  if (!preferred) return;
+                  if (
+                    !window.confirm(
+                      'Aplicar pacote nesta linha? O valor será zerado e o consumo confirma no checkout.',
+                    )
+                  ) {
+                    return;
+                  }
+                  onTogglePackage(it.id!, preferred);
+                }}
+              >
+                Aplicar pacote
+              </button>
+            </div>
           ) : (
             <span className="hub-clientes__muted" style={{ fontSize: 12 }}>
               Avulso

@@ -171,7 +171,8 @@ async function fetchOpenComandaOriginKeys(clinicId: string): Promise<Set<string>
     const oid = row.origin_id as string | null;
     if (oid) set.add(`${row.origin_type as string}:${oid}`);
   }
-  return set;
+  const { expandBoardingAppointmentOriginKeys } = await import('./boardingOriginKeys');
+  return expandBoardingAppointmentOriginKeys(clinicId, set);
 }
 
 async function findOpenComandaIdByOrigin(
@@ -250,7 +251,29 @@ async function resolveExistingOpenComandaIdForOpen(
   if (originType === 'appointment') {
     const byAppt = await findOpenComandaIdByOrigin(clinicId, 'appointment', originId);
     if (byAppt) return byAppt;
+    const boardingId = await findAnyBoardingReservationForAppointment(clinicId, originId);
+    if (boardingId) {
+      const byBoard = await findOpenComandaIdByOrigin(clinicId, 'boarding_reservation', boardingId);
+      if (byBoard) return byBoard;
+    }
     return findOpenEncounterComandaIdForAppointment(clinicId, originId);
+  }
+  if (originType === 'boarding_reservation') {
+    const byBoard = await findOpenComandaIdByOrigin(clinicId, 'boarding_reservation', originId);
+    if (byBoard) return byBoard;
+    const { data: rsv } = await supabaseAdmin
+      .from('hub_boarding_reservations')
+      .select('hub_appointment_id')
+      .eq('id', originId)
+      .eq('clinic_id', clinicId)
+      .is('deleted_at', null)
+      .maybeSingle();
+    const apptId = (rsv?.hub_appointment_id as string | null) ?? null;
+    if (apptId) {
+      const byAppt = await findOpenComandaIdByOrigin(clinicId, 'appointment', apptId);
+      if (byAppt) return byAppt;
+    }
+    return null;
   }
   return findOpenComandaIdByOrigin(clinicId, originType, originId);
 }
@@ -316,6 +339,24 @@ async function findCheckedOutBoardingReservationForAppointment(
     .eq('status', 'checked_out')
     .is('deleted_at', null)
     .order('checked_out_at', { ascending: false, nullsFirst: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data?.id as string) ?? null;
+}
+
+async function findAnyBoardingReservationForAppointment(
+  clinicId: string,
+  appointmentId: string
+): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('hub_boarding_reservations')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('hub_appointment_id', appointmentId)
+    .is('deleted_at', null)
+    .not('status', 'in', '("cancelled")')
+    .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) throw new Error(error.message);
@@ -554,8 +595,31 @@ export async function tryAutoCloseComanda(comandaId: string, clinicId: string): 
   const stillOpenItems = (detail.open_item_ids as string[]).length > 0;
   const balAfter = Number(detail.balance_due ?? 0);
   const total = Number(comandaRow.total_amount ?? 0);
+  const itemCount = Array.isArray(detail.items) ? detail.items.length : 0;
+  const hasPackageCoverage = Array.isArray(detail.items)
+    ? (detail.items as Array<Record<string, unknown>>).some((it) => Boolean(it.package_balance_id))
+    : false;
   // Não fecha comanda vazia (ex.: manual aberta sem itens ainda).
-  if (stillOpenItems || balAfter > 0.02 || total <= 0.02) return false;
+  // Cobertura total por pacote: itens podem permanecer em open_item_ids (sem recebível).
+  // Só fecha após resgate confirmado — aplicar pacote sozinho não encerra.
+  if (balAfter > 0.02) return false;
+  if (itemCount === 0) return false;
+  if (stillOpenItems) {
+    if (!(hasPackageCoverage && total <= 0.02)) return false;
+    const packageItemIds = (detail.items as Array<Record<string, unknown>>)
+      .filter((it) => Boolean(it.package_balance_id))
+      .map((it) => it.id as string);
+    if (!packageItemIds.length) return false;
+    const { data: redemptions } = await supabaseAdmin
+      .from('hub_package_redemptions')
+      .select('id')
+      .in('comanda_item_id', packageItemIds)
+      .is('reversed_at', null)
+      .limit(1);
+    if (!redemptions?.length) return false;
+  } else if (total <= 0.02 && !hasPackageCoverage) {
+    return false;
+  }
 
   const now = new Date().toISOString();
   const { error: closeErr } = await supabaseAdmin
@@ -1692,17 +1756,42 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
     }
     const b = parsed.data;
-    const { clinic_id, origin_type, hub_case_id, hub_encounter_id } = b;
-    const effectiveOriginId =
+    const { clinic_id, hub_case_id, hub_encounter_id } = b;
+    let origin_type = b.origin_type;
+    let effectiveOriginId =
       origin_type === 'manual'
         ? (b.origin_id ?? randomUUID())
         : origin_type === 'package'
           ? (b.origin_id ?? newPurchaseGroupId())
           : (b.origin_id as string);
 
+    // Hotel/Creche: após check-out, novas comandas usam boarding_reservation (não appointment),
+    // reutilizando comanda appointment já aberta quando existir.
+    if (origin_type === 'appointment') {
+      const existingApptOrBoard = await resolveExistingOpenComandaIdForOpen(
+        clinic_id,
+        'appointment',
+        effectiveOriginId,
+      );
+      if (existingApptOrBoard) {
+        const detail = await getHubComandaDetailPayload(existingApptOrBoard, clinic_id);
+        return res.status(200).json(detail);
+      }
+      const checkedOutBoarding = await findCheckedOutBoardingReservationForAppointment(
+        clinic_id,
+        effectiveOriginId,
+      );
+      if (checkedOutBoarding) {
+        origin_type = 'boarding_reservation';
+        effectiveOriginId = checkedOutBoarding;
+      }
+    }
+
     if (origin_type !== 'manual') {
       const keys = await fetchActiveReceivableKeys(clinic_id);
-      if (keys.has(`${origin_type}:${effectiveOriginId}`)) {
+      const { expandBoardingAppointmentOriginKeys } = await import('./boardingOriginKeys');
+      const expanded = await expandBoardingAppointmentOriginKeys(clinic_id, new Set(keys));
+      if (expanded.has(`${origin_type}:${effectiveOriginId}`)) {
         return res.status(409).json({ error: 'Já existe cobrança para esta origem' });
       }
     }

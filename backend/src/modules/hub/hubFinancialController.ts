@@ -2744,7 +2744,8 @@ async function fetchBilledOriginKeysFromComandas(clinicId: string): Promise<Set<
       keys.add(`${c.origin_type as string}:${c.origin_id as string}`);
     }
   }
-  return keys;
+  const { expandBoardingAppointmentOriginKeys } = await import('./boardingOriginKeys');
+  return expandBoardingAppointmentOriginKeys(clinicId, keys);
 }
 
 async function collectUnbilledItems(
@@ -3163,6 +3164,12 @@ const unbilledQuerySchema = z
   })
   .strict();
 
+async function fetchActiveReceivableKeysExpanded(clinicId: string): Promise<Set<string>> {
+  const keys = await fetchActiveReceivableKeys(clinicId);
+  const { expandBoardingAppointmentOriginKeys } = await import('./boardingOriginKeys');
+  return expandBoardingAppointmentOriginKeys(clinicId, keys);
+}
+
 export const getHubFinanceUnbilledCompleted = async (req: Request, res: Response) => {
   try {
     const parsed = unbilledQuerySchema.safeParse(req.query);
@@ -3170,7 +3177,7 @@ export const getHubFinanceUnbilledCompleted = async (req: Request, res: Response
       return res.status(400).json({ error: 'clinic_id obrigatório (UUID)' });
     }
     const { clinic_id, unit_id } = parsed.data;
-    const keys = await fetchActiveReceivableKeys(clinic_id);
+    const keys = await fetchActiveReceivableKeysExpanded(clinic_id);
     const items = await collectUnbilledItems(clinic_id, unit_id, keys);
     return res.json({ items, count: items.length });
   } catch (e: unknown) {
@@ -3186,7 +3193,7 @@ export const getHubFinancePendingBillingCount = async (req: Request, res: Respon
       return res.status(400).json({ error: 'clinic_id obrigatório (UUID)' });
     }
     const { clinic_id, unit_id } = parsed.data;
-    const keys = await fetchActiveReceivableKeys(clinic_id);
+    const keys = await fetchActiveReceivableKeysExpanded(clinic_id);
     const items = await collectUnbilledItems(clinic_id, unit_id, keys);
     return res.json({ pending_billing_count: items.length });
   } catch (e: unknown) {
@@ -3239,6 +3246,29 @@ async function fetchBillingStatusBatch(
       if (!apptId) continue;
       const encComanda = comandaByKey.get(`encounter:${enc.id as string}`);
       if (encComanda) comandaByKey.set(`appointment:${apptId}`, encComanda);
+    }
+  }
+
+  // Alias Hotel/Creche ↔ agendamento: comanda appointment conta para boarding_reservation e vice-versa.
+  const boardingIdsForAlias = originKeys
+    .filter((k) => k.origin_type === 'boarding_reservation')
+    .map((k) => k.origin_id);
+  const appointmentIdsForAlias = originKeys
+    .filter((k) => k.origin_type === 'appointment')
+    .map((k) => k.origin_id);
+  if (boardingIdsForAlias.length || appointmentIdsForAlias.length) {
+    const { fetchBoardingAppointmentLinks } = await import('./boardingOriginKeys');
+    const links = await fetchBoardingAppointmentLinks(clinicId, {
+      boardingIds: boardingIdsForAlias,
+      appointmentIds: appointmentIdsForAlias,
+    });
+    for (const [boardingId, apptId] of links.appointmentByBoardingId) {
+      const boardKey = `boarding_reservation:${boardingId}`;
+      const apptKey = `appointment:${apptId}`;
+      const boardComanda = comandaByKey.get(boardKey);
+      const apptComanda = comandaByKey.get(apptKey);
+      if (!boardComanda && apptComanda) comandaByKey.set(boardKey, apptComanda);
+      if (!apptComanda && boardComanda) comandaByKey.set(apptKey, boardComanda);
     }
   }
 

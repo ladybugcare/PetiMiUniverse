@@ -485,6 +485,30 @@ export function ComandaCheckoutDrawer({
         return { ok: true, lines: out };
       };
 
+      // Cobertura total (pacote/desconto): encerra sem linhas de pagamento.
+      if (
+        !isReceivableOnlyMode &&
+        chargeableTotal <= 0.02 &&
+        openItems.length > 0 &&
+        action === 'receive_now'
+      ) {
+        const res = await hubComandaApi.checkout(comandaId, {
+          clinic_id: clinicId,
+          grouping,
+          tutor_items_group_index: grouping === 'by_pet' ? tutorGroupIdx : undefined,
+          action: 'receive_now',
+          payment_timing: paymentTiming,
+        });
+        notifyDataChanged();
+        setSuccessState({
+          kind: 'receive_now',
+          comandaId,
+          amount: 0,
+          receivableIds: res.receivable_ids ?? [],
+        });
+        return;
+      }
+
       const validated = buildValidatedLines();
       if (!validated.ok) {
         setError(validated.error);
@@ -706,7 +730,11 @@ export function ComandaCheckoutDrawer({
               onClick={() => void submit()}
               disabled={loading || !detail || checkoutLocked || financeReceivableOnlyBlocked}
             >
-              {loading ? 'Processando…' : 'Confirmar'}
+              {loading
+                ? 'Processando…'
+                : action === 'receive_now' && chargeableTotal <= 0.02 && openItems.length > 0
+                  ? 'Encerrar (cobertura)'
+                  : 'Confirmar'}
             </button>
           </div>
         )
@@ -718,7 +746,9 @@ export function ComandaCheckoutDrawer({
             <p className="hub-checkout-drawer__success-text">
               {successState.kind === 'leave_pending'
                 ? 'Cobrança pendente criada. Avise o tutor pelo WhatsApp ou compartilhe a comanda.'
-                : 'Pagamento registrado. Envie a confirmação ao tutor se desejar.'}
+                : successState.amount <= 0.02
+                  ? 'Comanda encerrada com cobertura total (sem recebível avulso).'
+                  : 'Pagamento registrado. Envie a confirmação ao tutor se desejar.'}
             </p>
             {successState.changeAmount != null && successState.changeAmount > 0.009 ? (
               <p className="hub-clientes__muted">
@@ -895,7 +925,16 @@ export function ComandaCheckoutDrawer({
                     ]}
                   />
 
-                {action === 'receive_now' && (
+                {action === 'receive_now' && chargeableTotal <= 0.02 && openItems.length > 0 ? (
+                  <section className="hub-checkout-drawer__payment-block">
+                    <p className="hub-clientes__muted">
+                      Valor a pagar é zero (cobertura por pacote ou desconto). Confirme para encerrar a
+                      comanda sem gerar recebível avulso.
+                    </p>
+                  </section>
+                ) : null}
+
+                {action === 'receive_now' && !(chargeableTotal <= 0.02 && openItems.length > 0) && (
                   <section className="hub-checkout-drawer__payment-block">
                     {!allowMixedPayments && groupTotals.length > 1 ? (
                       <p className="hub-clientes__muted">

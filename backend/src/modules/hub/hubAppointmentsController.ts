@@ -3280,6 +3280,39 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       await syncSurgeryForAppointmentSafe({ clinicId: b.clinic_id, appointmentId: tid, userId: req.user?.id });
     }
 
+    // Hotel/Creche: espelha starts_at/ends_at na reserva vinculada (expected_check_in/out).
+    if (b.starts_at !== undefined || b.ends_at !== undefined) {
+      for (const tid of targetIds) {
+        const { data: apRow } = await supabaseAdmin
+          .from('hub_appointments')
+          .select('starts_at, ends_at, appointment_kind')
+          .eq('id', tid)
+          .eq('clinic_id', b.clinic_id)
+          .maybeSingle();
+        if (!apRow) continue;
+        const kind = String((apRow as { appointment_kind?: string }).appointment_kind ?? '');
+        if (kind !== 'hotel_stay' && kind !== 'daycare_block') continue;
+        const boardingPatch: Record<string, string> = {};
+        if (b.starts_at !== undefined) {
+          boardingPatch.expected_check_in = (apRow as { starts_at: string }).starts_at;
+        }
+        if (b.ends_at !== undefined) {
+          boardingPatch.expected_check_out = (apRow as { ends_at: string }).ends_at;
+        }
+        if (!Object.keys(boardingPatch).length) continue;
+        const { error: boardErr } = await supabaseAdmin
+          .from('hub_boarding_reservations')
+          .update(boardingPatch)
+          .eq('clinic_id', b.clinic_id)
+          .eq('hub_appointment_id', tid)
+          .in('status', ['reserved', 'checked_in'])
+          .is('deleted_at', null);
+        if (boardErr) {
+          console.error('patchHubAppointment sync boarding expected check', tid, boardErr.message);
+        }
+      }
+    }
+
     if (patch.status === 'cancelled') {
       for (const tid of targetIds) {
         void maybeFlagComandaCancellationPending(b.clinic_id, 'appointment', tid);

@@ -260,7 +260,10 @@ export async function syncReservationTasks(
     if (error) throw new Error(error.message);
   }
   if (toInsert.length) {
-    const { error } = await supabaseAdmin.from('hub_boarding_tasks').upsert(
+    // Insert simples: `toInsert` já veio do diff. Não usar upsert/onConflict aqui —
+    // o índice único é parcial (`WHERE plan_key IS NOT NULL`) e o PostgREST não
+    // consegue casar ON CONFLICT com índice parcial.
+    const { error } = await supabaseAdmin.from('hub_boarding_tasks').insert(
       toInsert.map((s) => ({
         clinic_id: reservation.clinic_id,
         hub_boarding_reservation_id: reservation.id,
@@ -273,9 +276,13 @@ export async function syncReservationTasks(
         task_date: s.task_date,
         plan_key: s.plan_key,
       })),
-      { onConflict: 'hub_boarding_reservation_id,plan_key,task_date', ignoreDuplicates: true },
     );
-    if (error) throw new Error(error.message);
+    if (error) {
+      // Corrida rara: outra sincronização já criou a mesma plan_key/data.
+      if (!/duplicate key|unique constraint/i.test(String(error.message || ''))) {
+        throw new Error(error.message);
+      }
+    }
   }
   await supabaseAdmin
     .from('hub_boarding_care_plans')

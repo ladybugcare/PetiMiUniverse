@@ -3,6 +3,7 @@ import { Bone, Footprints, HeartHandshake, Pill, Plus, Trees, X, type LucideIcon
 import { HubTimeField } from '../../components/HubTimeField';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import { HubSearchableCombobox, type HubComboboxOption } from '../../components/HubSearchableCombobox';
+import { parseHm } from '../../utils/hubTime';
 import type {
   BoardingBlockStatus,
   BoardingCareBlockKey,
@@ -43,9 +44,10 @@ const TimesEditor: React.FC<{
   addLabel?: string;
 }> = ({ id, times, disabled, onChange, addLabel = 'Adicionar horário' }) => {
   const [draft, setDraft] = useState('');
-  const add = () => {
-    if (!draft) return;
-    onChange([...new Set([...times, draft])].sort());
+  const addHm = (hm: string) => {
+    const parsed = parseHm(hm);
+    if (!parsed) return;
+    onChange([...new Set([...times, parsed])].sort());
     setDraft('');
   };
   return (
@@ -73,12 +75,21 @@ const TimesEditor: React.FC<{
       ) : null}
       {!disabled ? (
         <div className="hub-boarding-care__add-row">
-          <HubTimeField id={id} valueHm={draft} onChangeHm={setDraft} minuteStep={5} />
+          <HubTimeField
+            id={id}
+            valueHm={draft}
+            onChangeHm={(hm) => {
+              setDraft(hm);
+              // Seletor / blur com HH:mm válido grava na lista (não depende só do botão).
+              if (parseHm(hm)) addHm(hm);
+            }}
+            minuteStep={5}
+          />
           <button
             type="button"
             className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-            disabled={!draft}
-            onClick={add}
+            disabled={!draft || !parseHm(draft)}
+            onClick={() => addHm(draft)}
           >
             <Plus size={14} aria-hidden />
             {addLabel}
