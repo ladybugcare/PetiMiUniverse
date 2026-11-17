@@ -175,6 +175,38 @@ async function fetchOpenComandaOriginKeys(clinicId: string): Promise<Set<string>
   return expandBoardingAppointmentOriginKeys(clinicId, set);
 }
 
+/** Origens de comandas não canceladas que já têm recebível (source_type do recebível pode ser manual). */
+async function fetchBilledComandaOriginKeys(clinicId: string): Promise<Set<string>> {
+  const keys = new Set<string>();
+  const { data: comandas, error: cErr } = await supabaseAdmin
+    .from('hub_comandas')
+    .select('id, origin_type, origin_id')
+    .eq('clinic_id', clinicId)
+    .neq('status', 'cancelada')
+    .is('deleted_at', null)
+    .not('origin_id', 'is', null);
+  if (cErr) throw new Error(cErr.message);
+  if (!comandas?.length) return keys;
+
+  const comandaIds = comandas.map((c) => c.id as string);
+  const { data: receivables, error: rErr } = await supabaseAdmin
+    .from('hub_receivables')
+    .select('comanda_id')
+    .eq('clinic_id', clinicId)
+    .in('comanda_id', comandaIds)
+    .is('deleted_at', null)
+    .neq('status', 'cancelled');
+  if (rErr) throw new Error(rErr.message);
+  const billedComandaIds = new Set((receivables ?? []).map((r) => r.comanda_id as string).filter(Boolean));
+  for (const c of comandas) {
+    if (billedComandaIds.has(c.id as string)) {
+      keys.add(`${c.origin_type as string}:${c.origin_id as string}`);
+    }
+  }
+  const { expandBoardingAppointmentOriginKeys } = await import('./boardingOriginKeys');
+  return expandBoardingAppointmentOriginKeys(clinicId, keys);
+}
+
 async function findOpenComandaIdByOrigin(
   clinicId: string,
   originType: string,
@@ -1791,7 +1823,12 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
       const keys = await fetchActiveReceivableKeys(clinic_id);
       const { expandBoardingAppointmentOriginKeys } = await import('./boardingOriginKeys');
       const expanded = await expandBoardingAppointmentOriginKeys(clinic_id, new Set(keys));
-      if (expanded.has(`${origin_type}:${effectiveOriginId}`)) {
+      // Recebível pode nascer como source_type=manual; a origem efetiva está na comanda.
+      const billedViaComanda = await fetchBilledComandaOriginKeys(clinic_id);
+      if (
+        expanded.has(`${origin_type}:${effectiveOriginId}`) ||
+        billedViaComanda.has(`${origin_type}:${effectiveOriginId}`)
+      ) {
         return res.status(409).json({ error: 'Já existe cobrança para esta origem' });
       }
     }
