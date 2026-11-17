@@ -48,6 +48,7 @@ import {
   loadPartnerClinicMap,
   resolveCareLocation,
 } from './hubCareLocation';
+import { resolveBoardingRateFromAppointment } from './boardingPricing';
 import {
   resolveSpecialPricesForServices,
   type PricingSource,
@@ -2866,6 +2867,11 @@ export const createHubAppointment = async (req: Request, res: Response) => {
         .is('deleted_at', null)
         .maybeSingle();
       if (!existingRsv) {
+        const rate = await resolveBoardingRateFromAppointment({
+          clinicId: b.clinic_id,
+          appointmentId: parentApptId,
+          primaryServiceTypeId: b.hub_service_type_id ?? null,
+        });
         const { error: rsvErr } = await supabaseAdmin.from('hub_boarding_reservations').insert({
           clinic_id: b.clinic_id,
           unit_id: resolvedUnitId,
@@ -2876,7 +2882,13 @@ export const createHubAppointment = async (req: Request, res: Response) => {
           status: 'reserved',
           expected_check_in: b.starts_at,
           expected_check_out: b.ends_at,
-          hub_service_type_id: b.hub_service_type_id,
+          hub_service_type_id: rate?.hub_service_type_id ?? b.hub_service_type_id,
+          ...(rate
+            ? {
+                daily_rate_cents: rate.daily_rate_cents,
+                rate_source: rate.rate_source,
+              }
+            : {}),
         });
         if (rsvErr) {
           console.warn('create_boarding_reservation', rsvErr.message);

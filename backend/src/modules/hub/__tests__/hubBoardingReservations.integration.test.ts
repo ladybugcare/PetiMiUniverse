@@ -16,6 +16,7 @@ import {
   reservedHotelReservation,
   TEST_APPOINTMENT_ID,
   TEST_CLINIC_ID,
+  TEST_HOTEL_SERVICE_TYPE_ID,
   TEST_PET_ID,
   TEST_RESERVATION_ID,
   TEST_UNIT_ID,
@@ -48,6 +49,58 @@ describe('Boarding reservations (integração)', () => {
 
       const appt = getMockSupabaseClient()._state.tables.hub_appointments?.[0];
       expect(appt?.status).toBe('in_progress');
+    });
+
+    it('persiste daily_rate_cents a partir do snapshot da Agenda', async () => {
+      configureSupabaseMock({
+        tables: {
+          ...emptyBoardingTables(),
+          hub_service_types: [{ ...hotelServiceType(), sale_amount: 150 }],
+          hub_appointments: [boardingAppointment()],
+          hub_appointment_services: [
+            {
+              appointment_id: TEST_APPOINTMENT_ID,
+              hub_service_type_id: TEST_HOTEL_SERVICE_TYPE_ID,
+              sale_amount_applied: 150,
+            },
+          ],
+          hub_boarding_reservations: [],
+        },
+      });
+
+      const res = await request(app)
+        .post('/api/hub/boarding/reservations/open-from-appointment')
+        .send({ clinic_id: TEST_CLINIC_ID, hub_appointment_id: TEST_APPOINTMENT_ID });
+
+      expect(res.status).toBe(201);
+      expect(res.body.reservation.daily_rate_cents).toBe(15000);
+      expect(res.body.reservation.rate_source).toBe('appointment');
+    });
+
+    it('persiste diária gratuita intencional (0) do snapshot da Agenda', async () => {
+      configureSupabaseMock({
+        tables: {
+          ...emptyBoardingTables(),
+          hub_service_types: [{ ...hotelServiceType(), sale_amount: 150 }],
+          hub_appointments: [boardingAppointment()],
+          hub_appointment_services: [
+            {
+              appointment_id: TEST_APPOINTMENT_ID,
+              hub_service_type_id: TEST_HOTEL_SERVICE_TYPE_ID,
+              sale_amount_applied: 0,
+            },
+          ],
+          hub_boarding_reservations: [],
+        },
+      });
+
+      const res = await request(app)
+        .post('/api/hub/boarding/reservations/open-from-appointment')
+        .send({ clinic_id: TEST_CLINIC_ID, hub_appointment_id: TEST_APPOINTMENT_ID });
+
+      expect(res.status).toBe(201);
+      expect(res.body.reservation.daily_rate_cents).toBe(0);
+      expect(res.body.reservation.rate_source).toBe('appointment');
     });
 
     it('retorna reserva existente (idempotência)', async () => {
