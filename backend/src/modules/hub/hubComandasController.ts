@@ -180,7 +180,7 @@ async function fetchBilledComandaOriginKeys(clinicId: string): Promise<Set<strin
   const keys = new Set<string>();
   const { data: comandas, error: cErr } = await supabaseAdmin
     .from('hub_comandas')
-    .select('id, origin_type, origin_id')
+    .select('id, origin_type, origin_id, status')
     .eq('clinic_id', clinicId)
     .neq('status', 'cancelada')
     .is('deleted_at', null)
@@ -199,7 +199,7 @@ async function fetchBilledComandaOriginKeys(clinicId: string): Promise<Set<strin
   if (rErr) throw new Error(rErr.message);
   const billedComandaIds = new Set((receivables ?? []).map((r) => r.comanda_id as string).filter(Boolean));
   for (const c of comandas) {
-    if (billedComandaIds.has(c.id as string)) {
+    if (billedComandaIds.has(c.id as string) || String(c.status) === 'fechada') {
       keys.add(`${c.origin_type as string}:${c.origin_id as string}`);
     }
   }

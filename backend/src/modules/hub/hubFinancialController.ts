@@ -2717,7 +2717,7 @@ async function fetchBilledOriginKeysFromComandas(clinicId: string): Promise<Set<
   const keys = new Set<string>();
   const { data: comandas, error: cErr } = await supabaseAdmin
     .from('hub_comandas')
-    .select('id, origin_type, origin_id')
+    .select('id, origin_type, origin_id, status')
     .eq('clinic_id', clinicId)
     .neq('status', 'cancelada')
     .is('deleted_at', null)
@@ -2740,7 +2740,8 @@ async function fetchBilledOriginKeysFromComandas(clinicId: string): Promise<Set<
   );
 
   for (const c of comandas) {
-    if (billedComandaIds.has(c.id as string)) {
+    // Fechada sem recebível = cobertura total (pacote/desconto) — também conta como cobrada.
+    if (billedComandaIds.has(c.id as string) || String(c.status) === 'fechada') {
       keys.add(`${c.origin_type as string}:${c.origin_id as string}`);
     }
   }
