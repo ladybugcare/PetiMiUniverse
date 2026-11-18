@@ -31,16 +31,34 @@ import './pickup-page.css';
 function getAdvanceInfo(
   status: PickupStopStatus,
   direction: 'pickup' | 'delivery' | 'clinic_return' | undefined,
+  opts?: { boarded?: boolean },
 ): { next: PickupStopStatus; label: string } | null {
+  const boarded = Boolean(opts?.boarded);
   switch (status) {
-    case 'pending':    return { next: 'en_route', label: 'A caminho' };
-    case 'en_route':   return { next: 'arrived',  label: 'No endereço' };
+    case 'pending':
+      return {
+        next: 'en_route',
+        label:
+          direction === 'delivery' && !boarded
+            ? 'Ir ao tutor (sem pet embarcado)'
+            : 'A caminho',
+      };
+    case 'en_route':
+      return {
+        next: 'arrived',
+        label:
+          direction === 'delivery' && !boarded
+            ? 'Cheguei (pet ainda não embarcado)'
+            : 'No endereço',
+      };
     case 'arrived':
       if (direction === 'pickup') return { next: 'in_transit', label: 'Pet a bordo' };
       if (direction === 'clinic_return') return { next: 'completed', label: 'Descarregado' };
-      return { next: 'completed', label: 'Entregue' };
-    case 'in_transit': return { next: 'completed', label: 'Na clínica' };
-    default: return null;
+      return { next: 'completed', label: boarded ? 'Entregue ao tutor' : 'Entregue' };
+    case 'in_transit':
+      return { next: 'completed', label: 'Na clínica' };
+    default:
+      return null;
   }
 }
 
@@ -221,16 +239,148 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
     const info = getAdvanceInfo(
       nextStop.status,
       nextStop.direction as 'pickup' | 'delivery' | 'clinic_return' | undefined,
+      { boarded: Boolean(nextStop.boarded_at) },
     );
     if (!info) return;
     setBusy(true);
     try {
-      await hubPickupApi.patchStop(nextStop.id, { clinic_id: clinicId, status: info.next });
+      const payload: Parameters<typeof hubPickupApi.patchStop>[1] = {
+        clinic_id: clinicId,
+        status: info.next,
+      };
+      // Concluir devolução sem embarque: confirmação explícita (registro posterior).
+      if (
+        nextStop.direction === 'delivery' &&
+        info.next === 'completed' &&
+        !nextStop.boarded_at
+      ) {
+        const ok = window.confirm(
+          'O pet já está com você? Confirme para registrar o embarque e concluir a entrega ao tutor.',
+        );
+        if (!ok) {
+          setBusy(false);
+          return;
+        }
+        payload.confirm_pet_with_me = true;
+      }
+      await hubPickupApi.patchStop(nextStop.id, payload);
       showSuccess(info.label);
       setShowFailForm(false);
       await load();
     } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao atualizar');
+      const err = e as Error & {
+        code?: string;
+        body?: { code?: string; error?: string; block_kind?: string };
+      };
+      const code = err.body?.code || err.code;
+      const msg = err.body?.error || err.message || 'Erro ao atualizar';
+      if (code === 'NEED_BOARDING_CONFIRM') {
+        const ok = window.confirm(msg);
+        if (ok) {
+          try {
+            await hubPickupApi.patchStop(nextStop.id, {
+              clinic_id: clinicId,
+              status: info.next,
+              confirm_pet_with_me: true,
+            });
+            showSuccess(info.label);
+            setShowFailForm(false);
+            await load();
+            return;
+          } catch (e2: unknown) {
+            const err2 = e2 as Error & { body?: { code?: string; error?: string } };
+            if (err2.body?.code === 'BLOCKED') {
+              const report = window.confirm(
+                `${err2.body.error || msg}\n\nRegistrar ocorrência de divergência (sem liberar o embarque)?`,
+              );
+              if (report) {
+                try {
+                  await hubPickupApi.patchStop(nextStop.id, {
+                    clinic_id: clinicId,
+                    status: info.next,
+                    confirm_pet_with_me: true,
+                    report_divergence: true,
+                  });
+                  showError('Ocorrência registrada. Embarque permanece bloqueado.');
+                  return;
+                } catch (e3: unknown) {
+                  showError((e3 as Error)?.message || msg);
+                  return;
+                }
+              }
+            }
+            showError(err2.body?.error || err2.message || msg);
+            return;
+          } finally {
+            setBusy(false);
+          }
+        }
+      } else if (code === 'BLOCKED') {
+        const report = window.confirm(
+          `${msg}\n\nRegistrar ocorrência de divergência (sem liberar o embarque)?`,
+        );
+        if (report) {
+          try {
+            await hubPickupApi.patchStop(nextStop.id, {
+              clinic_id: clinicId,
+              confirm_boarded: true,
+              report_divergence: true,
+            });
+            showError('Ocorrência registrada. Embarque permanece bloqueado.');
+          } catch (e2: unknown) {
+            showError((e2 as Error)?.message || msg);
+          }
+        } else {
+          showError(msg);
+        }
+      } else {
+        showError(msg);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleConfirmBoarded = async () => {
+    if (!nextStop || !clinicId || nextStop.direction !== 'delivery') return;
+    setBusy(true);
+    try {
+      const res = await hubPickupApi.patchStop(nextStop.id, {
+        clinic_id: clinicId,
+        confirm_boarded: true,
+      });
+      showSuccess(
+        res.boarding?.already_boarded
+          ? 'Embarque já estava registrado.'
+          : res.boarding?.boarded_late
+            ? 'Embarque confirmado (registro posterior).'
+            : 'Pet embarcado.',
+      );
+      await load();
+    } catch (e: unknown) {
+      const err = e as Error & { body?: { error?: string; code?: string } };
+      const msg = err.body?.error || err.message || 'Não foi possível confirmar o embarque.';
+      if (err.body?.code === 'BLOCKED') {
+        const report = window.confirm(
+          `${msg}\n\nRegistrar ocorrência de divergência (sem liberar o embarque)?`,
+        );
+        if (report) {
+          try {
+            await hubPickupApi.patchStop(nextStop.id, {
+              clinic_id: clinicId,
+              confirm_boarded: true,
+              report_divergence: true,
+            });
+            showError('Ocorrência registrada. Embarque permanece bloqueado.');
+          } catch (e2: unknown) {
+            showError((e2 as Error)?.message || msg);
+          }
+        } else {
+          showError(msg);
+        }
+      } else {
+        showError(msg);
+      }
     } finally {
       setBusy(false);
     }
@@ -302,15 +452,31 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
     ? getAdvanceInfo(
         nextStop.status,
         nextStop.direction as 'pickup' | 'delivery' | 'clinic_return' | undefined,
+        { boarded: Boolean(nextStop.boarded_at) },
       )
     : null;
   const canAdvance = !!advanceInfo;
   const routeTitle =
     route.label?.trim() ||
     (route.vehicle_label ? route.vehicle_label : 'Rota do motorista');
-  const statusLabel = nextStop
-    ? STOP_STATUS_CARD_LABELS[nextStop.status] ?? nextStop.status
-    : null;
+  const statusLabel = (() => {
+    if (!nextStop) return null;
+    if (
+      nextStop.direction === 'delivery' &&
+      (nextStop.status === 'en_route' || nextStop.status === 'arrived') &&
+      !nextStop.boarded_at
+    ) {
+      return nextStop.status === 'en_route'
+        ? 'Em deslocamento — pet ainda não embarcado'
+        : 'No endereço — pet ainda não embarcado';
+    }
+    if (nextStop.direction === 'delivery' && nextStop.boarded_at && nextStop.status !== 'completed') {
+      return nextStop.boarded_late
+        ? 'Pet embarcado (registro posterior)'
+        : 'Pet embarcado';
+    }
+    return STOP_STATUS_CARD_LABELS[nextStop.status] ?? nextStop.status;
+  })();
   const schedulePetLine = nextStop
     ? scheduleAndPetLabel(pet, nextStop.planned_at)
     : null;
@@ -486,6 +652,19 @@ const PickupDriverView: React.FC<Props> = ({ routeId }) => {
                 >
                   <Navigation size={18} aria-hidden />
                   Navegar
+                </button>
+              ) : null}
+              {nextStop.direction === 'delivery' &&
+              !nextStop.boarded_at &&
+              ['pending', 'en_route', 'arrived'].includes(nextStop.status) ? (
+                <button
+                  type="button"
+                  className="hub-pickup-driver-view__action-btn hub-pickup-driver-view__action-btn--advance"
+                  onClick={() => void handleConfirmBoarded()}
+                  disabled={busy}
+                >
+                  {busy ? <Loader size={16} className="spin" aria-hidden /> : null}
+                  Pet embarcado
                 </button>
               ) : null}
               {canAdvance ? (

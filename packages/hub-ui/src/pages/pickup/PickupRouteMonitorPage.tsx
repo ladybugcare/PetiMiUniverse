@@ -53,6 +53,22 @@ const STOP_STATUS_LABELS: Record<string, string> = {
   failed: 'Falhou',
 };
 
+function stopStatusLabel(stop: PickupStop): string {
+  if (
+    stop.direction === 'delivery' &&
+    (stop.status === 'en_route' || stop.status === 'arrived') &&
+    !stop.boarded_at
+  ) {
+    return stop.status === 'en_route'
+      ? 'Em deslocamento — pet ainda não embarcado'
+      : 'No endereço — pet ainda não embarcado';
+  }
+  if (stop.direction === 'delivery' && stop.boarded_at && stop.status !== 'completed') {
+    return stop.boarded_late ? 'Pet embarcado (registro posterior)' : 'Pet embarcado';
+  }
+  return STOP_STATUS_LABELS[stop.status] ?? stop.status;
+}
+
 type SideTab = 'stops' | 'history';
 
 function formatTime(iso?: string | null): string {
@@ -450,7 +466,7 @@ const PickupRouteMonitorPage: React.FC<Props> = ({ routeId: routeIdProp }) => {
                 <div className="hub-pickup-monitor__active-badges">
                   <DirectionPill direction={activeStop.direction} />
                   <span className={stopStatusPillClass(activeStop.status)}>
-                    {STOP_STATUS_LABELS[activeStop.status] ?? activeStop.status}
+                    {stopStatusLabel(activeStop)}
                   </span>
                 </div>
               </div>
@@ -523,7 +539,7 @@ const PickupRouteMonitorPage: React.FC<Props> = ({ routeId: routeIdProp }) => {
                       <div className="hub-pickup-monitor__stop-badges">
                         <DirectionPill direction={s.direction} />
                         <span className={stopStatusPillClass(s.status)}>
-                          {STOP_STATUS_LABELS[s.status] ?? s.status}
+                          {stopStatusLabel(s)}
                         </span>
                       </div>
                       {s.guardian?.full_name && s.direction !== 'clinic_return' ? (

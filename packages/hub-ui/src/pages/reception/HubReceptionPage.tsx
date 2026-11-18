@@ -84,7 +84,7 @@ function primaryAction(item: ReceptionBoardItem): { action: ReceptionResolveActi
   if (item.status !== 'open') return null;
   if (item.kind === 'chegada') return { action: 'chegou', label: 'Chegou' };
   if (item.kind === 'retirada_balcao') return { action: 'entreguei', label: 'Entreguei' };
-  if (item.kind === 'embarque') return { action: 'embarquei', label: 'Embarcou' };
+  if (item.kind === 'embarque') return { action: 'embarquei', label: 'Entreguei ao motorista' };
   if (item.kind === 'autorizar_extra' && item.context?.hub_service_type_id) {
     return { action: 'autorizar', label: 'Autorizar' };
   }

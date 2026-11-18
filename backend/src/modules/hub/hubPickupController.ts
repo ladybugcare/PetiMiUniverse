@@ -1319,7 +1319,7 @@ export const getHubPickupRoute = async (req: Request, res: Response) => {
     const { data: stopsRaw, error: stopsErr } = await supabaseAdmin
       .from('hub_pickup_stops')
       .select(
-        'id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, status, planned_at, completed_at, failure_reason, failure_outcome, failure_resolution, return_stop_id, notes, updated_at',
+        'id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, status, planned_at, completed_at, failure_reason, failure_outcome, failure_resolution, return_stop_id, notes, updated_at, boarded_at, boarded_by_staff_id, boarded_source, boarded_late',
       )
       .eq('hub_pickup_route_id', id)
       .order('sequence', { ascending: true });
@@ -1425,6 +1425,15 @@ const patchStopSchema = z
     notes: z.string().max(2000).optional().nullable(),
     planned_at: z.string().datetime({ offset: true }).optional().nullable(),
     sequence: z.number().int().min(0).optional(),
+    /** Confirma embarque (pet com o motorista) na devolução. */
+    confirm_boarded: z.boolean().optional(),
+    /**
+     * Ao concluir devolução sem boarded_at: true = pet já está/estava comigo (grava embarque).
+     * Ausente/false com status completed → 409 NEED_BOARDING_CONFIRM.
+     */
+    confirm_pet_with_me: z.boolean().optional(),
+    /** Registra divergência sem liberar quando há bloqueio clínico/hotel. */
+    report_divergence: z.boolean().optional(),
   })
   .strict()
   .superRefine((val, ctx) => {
@@ -1444,11 +1453,20 @@ export const patchHubPickupStop = async (req: Request, res: Response) => {
 
     const parsed = patchStopSchema.safeParse(req.body);
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
-    const { clinic_id, status: newStatus, ...rest } = parsed.data;
+    const {
+      clinic_id,
+      status: newStatus,
+      confirm_boarded,
+      confirm_pet_with_me,
+      report_divergence,
+      ...rest
+    } = parsed.data;
 
     const { data: current, error: fetchErr } = await supabaseAdmin
       .from('hub_pickup_stops')
-      .select('id, status, direction, sequence, hub_appointment_id, hub_pickup_route_id')
+      .select(
+        'id, status, direction, sequence, hub_appointment_id, hub_pickup_route_id, boarded_at, boarded_by_staff_id, boarded_source, boarded_late',
+      )
       .eq('id', id)
       .eq('clinic_id', clinic_id)
       .maybeSingle();
@@ -1461,7 +1479,89 @@ export const patchHubPickupStop = async (req: Request, res: Response) => {
       sequence: number;
       hub_appointment_id: string | null;
       hub_pickup_route_id: string | null;
+      boarded_at: string | null;
+      boarded_by_staff_id: string | null;
+      boarded_source: string | null;
+      boarded_late: boolean | null;
     };
+
+    const actorStaffId = await resolveActorStaffIdFromRequest(req, clinic_id);
+
+    let boardingMeta: {
+      boarded_at: string;
+      boarded_by_staff_id: string | null;
+      boarded_source: string;
+      boarded_late: boolean;
+      already_boarded: boolean;
+      handoff_resolved: boolean;
+    } | null = null;
+
+    // Embarque explícito (antes ou depois do deslocamento).
+    if (confirm_boarded || (confirm_pet_with_me && newStatus === 'completed' && cur.direction === 'delivery')) {
+      const { confirmDeliveryBoarding } = await import('./pickupDeliveryBoarding');
+      const boarded = await confirmDeliveryBoarding({
+        clinicId: clinic_id,
+        stopId: id,
+        staffId: actorStaffId,
+        source: 'driver',
+        requireDriverStaffId: actorStaffId,
+        reportDivergenceIfBlocked: Boolean(report_divergence),
+        forceLate: cur.status !== 'pending',
+      });
+      if (!boarded.ok) {
+        return res.status(boarded.status).json({
+          error: boarded.error,
+          code: boarded.code,
+          block_kind: boarded.block_kind,
+          divergence_recorded: boarded.divergence_recorded,
+        });
+      }
+      cur.boarded_at = boarded.boarded_at;
+      boardingMeta = {
+        boarded_at: boarded.boarded_at,
+        boarded_by_staff_id: boarded.boarded_by_staff_id,
+        boarded_source: boarded.boarded_source,
+        boarded_late: boarded.boarded_late,
+        already_boarded: boarded.already_boarded,
+        handoff_resolved: boarded.handoff_resolved,
+      };
+    }
+
+    // Concluir devolução sem embarque: pede confirmação explícita (não bloqueia en_route).
+    if (
+      newStatus === 'completed' &&
+      cur.direction === 'delivery' &&
+      !cur.boarded_at &&
+      !confirm_pet_with_me
+    ) {
+      return res.status(409).json({
+        error: 'O pet já está com você? Confirme o embarque para concluir a entrega.',
+        code: 'NEED_BOARDING_CONFIRM',
+      });
+    }
+
+    const hasStatusOrFields =
+      Boolean(newStatus) ||
+      rest.completed_at !== undefined ||
+      rest.failure_reason !== undefined ||
+      rest.notes !== undefined ||
+      rest.planned_at !== undefined ||
+      rest.sequence !== undefined;
+
+    if (!hasStatusOrFields) {
+      if (!boardingMeta) {
+        return res.status(400).json({ error: 'Nada para atualizar.' });
+      }
+      const { data: stopRow } = await supabaseAdmin
+        .from('hub_pickup_stops')
+        .select(
+          'id, status, completed_at, failure_reason, notes, sequence, direction, planned_at, updated_at, failure_outcome, failure_resolution, failed_at, return_stop_id, boarded_at, boarded_by_staff_id, boarded_source, boarded_late',
+        )
+        .eq('id', id)
+        .eq('clinic_id', clinic_id)
+        .maybeSingle();
+      return res.json({ stop: stopRow, boarding: boardingMeta });
+    }
 
     if (newStatus) {
       let allowed = VALID_STOP_TRANSITIONS[cur.status] ?? [];
@@ -1505,13 +1605,12 @@ export const patchHubPickupStop = async (req: Request, res: Response) => {
       .eq('id', id)
       .eq('clinic_id', clinic_id)
       .select(
-        'id, status, completed_at, failure_reason, notes, sequence, direction, planned_at, updated_at, failure_outcome, failure_resolution, failed_at, return_stop_id',
+        'id, status, completed_at, failure_reason, notes, sequence, direction, planned_at, updated_at, failure_outcome, failure_resolution, failed_at, return_stop_id, boarded_at, boarded_by_staff_id, boarded_source, boarded_late',
       )
       .single();
     if (updateErr) return res.status(500).json({ error: updateErr.message });
 
     if (newStatus && newStatus !== cur.status) {
-      const actorStaffId = await resolveActorStaffIdFromRequest(req, clinic_id);
       await recordStopStatusEvent({
         clinic_id,
         hub_pickup_stop_id: id,
@@ -1608,7 +1707,7 @@ export const patchHubPickupStop = async (req: Request, res: Response) => {
       }
     }
 
-    return res.json({ stop: updated });
+    return res.json({ stop: updated, boarding: boardingMeta });
   } catch (e) {
     console.error('[hubPickupController] patchHubPickupStop', e);
     return res.status(500).json({ error: 'Erro ao atualizar parada.' });

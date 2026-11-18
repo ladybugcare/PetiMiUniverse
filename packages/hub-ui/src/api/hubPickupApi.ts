@@ -122,6 +122,11 @@ export type PickupStop = {
   return_stop_id?: string | null;
   notes?: string | null;
   updated_at?: string | null;
+  /** Embarque físico na devolução (ortogonal ao status de deslocamento). */
+  boarded_at?: string | null;
+  boarded_by_staff_id?: string | null;
+  boarded_source?: 'reception' | 'driver' | null;
+  boarded_late?: boolean | null;
   pet?: PickupDayBoardPet | null;
   guardian?: PickupGuardian | null;
 };
@@ -311,12 +316,25 @@ export const hubPickupApi = {
       notes?: string | null;
       planned_at?: string | null;
       sequence?: number;
+      confirm_boarded?: boolean;
+      confirm_pet_with_me?: boolean;
+      report_divergence?: boolean;
     },
   ) {
     return apiRequest(`${pickupBase}/stops/${encodeURIComponent(stopId)}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
-    }) as Promise<{ stop: PickupStop }>;
+    }) as Promise<{
+      stop: PickupStop;
+      boarding?: {
+        boarded_at: string;
+        boarded_by_staff_id: string | null;
+        boarded_source: 'reception' | 'driver';
+        boarded_late: boolean;
+        already_boarded: boolean;
+        handoff_resolved: boolean;
+      } | null;
+    }>;
   },
 
   /** Cria ou atualiza uma parada solta (sem rota) para uma perna pickup_route. */

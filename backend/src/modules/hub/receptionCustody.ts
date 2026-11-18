@@ -57,6 +57,7 @@ export type CustodyAppointment = {
   service_group: string | null;
   service_name: string | null;
   parent_appointment_id: string | null;
+  visit_group_id?: string | null;
   deleted_at?: string | null;
 };
 
@@ -121,6 +122,11 @@ export type CustodyLeg = {
   stop_status: string | null;
   route_id: string | null;
   driver_id: string | null;
+  /** Embarque físico na devolução (metadado; independente do status de deslocamento). */
+  boarded_at?: string | null;
+  boarded_by_staff_id?: string | null;
+  boarded_source?: 'reception' | 'driver' | null;
+  boarded_late?: boolean | null;
   failure_outcome?: 'no_pet' | 'return_to_clinic' | null;
 };
 
@@ -211,20 +217,69 @@ function boardingLabel(mode: 'hotel' | 'daycare' | null | undefined): string {
   return mode === 'daycare' ? 'Creche' : 'Hotel';
 }
 
-function exitBlocked(snap: CustodySnapshot, exceptAppointmentId: string | null): boolean {
+/** Agendamentos da mesma visita (visit_group / parent) a partir dos IDs de liberação. */
+export function linkedAppointmentIds(
+  snap: CustodySnapshot,
+  releaseAppointmentIds: string[],
+): Set<string> {
+  const linked = new Set<string>(releaseAppointmentIds.filter(Boolean));
+  const groups = new Set<string>();
+  for (const id of linked) {
+    const appt = snap.appointments.find((a) => a.id === id);
+    if (appt?.visit_group_id) groups.add(appt.visit_group_id);
+    if (appt?.parent_appointment_id) linked.add(appt.parent_appointment_id);
+  }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const a of snap.appointments) {
+      if (a.deleted_at) continue;
+      const byParent =
+        (a.parent_appointment_id && linked.has(a.parent_appointment_id)) ||
+        (a.id && [...linked].some((id) => {
+          const other = snap.appointments.find((x) => x.id === id);
+          return other?.parent_appointment_id === a.id;
+        }));
+      const byGroup = a.visit_group_id != null && groups.has(a.visit_group_id);
+      if ((byParent || byGroup) && !linked.has(a.id)) {
+        linked.add(a.id);
+        if (a.visit_group_id) groups.add(a.visit_group_id);
+        changed = true;
+      }
+    }
+  }
+  return linked;
+}
+
+/**
+ * Bloqueios duros (clínico) sempre; serviços/agenda só se vinculados à visita de liberação.
+ * Agendamentos independentes no mesmo dia não bloqueiam.
+ */
+function exitBlocked(
+  snap: CustodySnapshot,
+  releaseAppointmentIds: string[],
+): boolean {
   if (snap.hospitalizations.some((h) => h.status === 'active')) return true;
   if (snap.surgeries.some((s) => s.status === 'in_progress')) return true;
   if (snap.encounters.some((e) => e.status === 'in_progress' || e.status === 'waiting')) return true;
+
+  const linked = linkedAppointmentIds(snap, releaseAppointmentIds);
+
   if (
-    snap.groomingSessions.some(
-      (s) => !s.deleted_at && OPEN_GROOMING.has(s.grooming_stage),
-    )
+    snap.groomingSessions.some((s) => {
+      if (s.deleted_at || !OPEN_GROOMING.has(s.grooming_stage)) return false;
+      if (!s.hub_appointment_id) return true;
+      if (releaseAppointmentIds.includes(s.hub_appointment_id)) return false;
+      return linked.has(s.hub_appointment_id);
+    })
   ) {
     return true;
   }
+
   return snap.appointments.some((a) => {
     if (a.deleted_at) return false;
-    if (exceptAppointmentId && a.id === exceptAppointmentId) return false;
+    if (releaseAppointmentIds.includes(a.id)) return false;
+    if (!linked.has(a.id)) return false;
     if (a.appointment_kind === 'pickup_route') return false;
     if (a.appointment_kind === 'hotel_stay' || a.appointment_kind === 'daycare_block') return false;
     if (TERMINAL_APPT.has(a.status)) return false;
@@ -234,9 +289,10 @@ function exitBlocked(snap: CustodySnapshot, exceptAppointmentId: string | null):
   });
 }
 
-type DeliveryOutcome = 'none' | 'wait_driver' | 'needs_boarding' | 'delivered' | 'failed';
+/** Outcome da devolução L&T. `wait_driver` removido como supressor de handoff. */
+export type DeliveryOutcome = 'none' | 'needs_boarding' | 'boarded' | 'delivered' | 'failed';
 
-function deliveryOutcome(legs: CustodyLeg[]): DeliveryOutcome {
+export function deliveryOutcome(legs: CustodyLeg[]): DeliveryOutcome {
   const deliveries = legs.filter((l) => l.direction === 'delivery' && l.appointment_status !== 'cancelled');
   if (deliveries.length === 0) return 'none';
   if (deliveries.some((l) => l.stop_status === 'completed' || l.appointment_status === 'done' || l.appointment_status === 'paid')) {
@@ -244,7 +300,7 @@ function deliveryOutcome(legs: CustodyLeg[]): DeliveryOutcome {
   }
   const live = deliveries.filter((l) => l.stop_status !== 'failed');
   if (live.length === 0) return 'failed';
-  if (live.some((l) => l.route_id && l.driver_id)) return 'wait_driver';
+  if (live.some((l) => l.boarded_at)) return 'boarded';
   return 'needs_boarding';
 }
 
@@ -255,7 +311,7 @@ function legsFor(snap: CustodySnapshot, parentId: string | null): CustodyLeg[] {
 
 function strictestOutcome(outcomes: DeliveryOutcome[]): DeliveryOutcome {
   if (outcomes.includes('delivered')) return 'delivered';
-  if (outcomes.includes('wait_driver')) return 'wait_driver';
+  if (outcomes.includes('boarded')) return 'boarded';
   if (outcomes.includes('needs_boarding')) return 'needs_boarding';
   if (outcomes.includes('failed')) return 'failed';
   return 'none';
@@ -310,6 +366,10 @@ function pushExit(
   appointmentId: string | null,
   sessionId: string | null,
 ): void {
+  const deliveryLegs = appointmentId
+    ? legsFor(snap, appointmentId).filter((l) => l.direction === 'delivery' && l.stop_status !== 'failed')
+    : [];
+  const withDriver = deliveryLegs.find((l) => l.route_id && l.driver_id) ?? deliveryLegs[0];
   handoffs.push({
     kind,
     source_type: sourceType,
@@ -323,6 +383,11 @@ function pushExit(
       ready_at: openedAt,
       appointment_id: appointmentId,
       session_id: sessionId,
+      ...(kind === 'embarque' && withDriver
+        ? {
+            route_id: withDriver.route_id,
+          }
+        : {}),
     },
   });
 }
@@ -366,7 +431,8 @@ function planBoardingExits(
       completeBoardingReservationIds.push(stay.id);
       continue;
     }
-    if (outcome === 'wait_driver') continue;
+    // Pet já com o motorista: sem tarefa de embarque; checkout só após entrega.
+    if (outcome === 'boarded') continue;
 
     const kind = outcome === 'needs_boarding' ? 'embarque' : 'retirada_balcao';
     const openedAt = stay.handoff_ready_at || snap.nowIso;
@@ -507,23 +573,7 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
     ...dischargedToday.map((h) => h.hub_appointment_id),
   ].filter((id): id is string => Boolean(id));
 
-  const blocked =
-    exitBlocked(snap, releaseAppointmentIds.length === 1 ? releaseAppointmentIds[0] : null) &&
-    releaseAppointmentIds.length <= 1
-      ? exitBlocked(snap, releaseAppointmentIds[0] ?? null)
-      : snap.hospitalizations.some((h) => h.status === 'active') ||
-        snap.surgeries.some((s) => s.status === 'in_progress') ||
-        snap.encounters.some((e) => e.status === 'in_progress' || e.status === 'waiting') ||
-        snap.groomingSessions.some((s) => !s.deleted_at && OPEN_GROOMING.has(s.grooming_stage)) ||
-        snap.appointments.some((a) => {
-          if (a.deleted_at) return false;
-          if (releaseAppointmentIds.includes(a.id)) return false;
-          if (a.appointment_kind === 'pickup_route') return false;
-          if (a.appointment_kind === 'hotel_stay' || a.appointment_kind === 'daycare_block') return false;
-          if (TERMINAL_APPT.has(a.status)) return false;
-          if (!a.starts_at || ymdInSaoPaulo(a.starts_at) !== snap.dayYmd) return false;
-          return true;
-        });
+  const blocked = exitBlocked(snap, releaseAppointmentIds);
 
   if (blocked) {
     return { handoffs, closeGroomingSessionIds, completeBoardingReservationIds };
@@ -536,7 +586,9 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
     for (const s of readyLive) closeGroomingSessionIds.push(s.id);
     return { handoffs, closeGroomingSessionIds, completeBoardingReservationIds };
   }
-  if (outcome === 'wait_driver') {
+  // Já embarcado: fecha banho e não abre tarefa (motorista segue com o pet).
+  if (outcome === 'boarded') {
+    for (const s of readyLive) closeGroomingSessionIds.push(s.id);
     return { handoffs, closeGroomingSessionIds, completeBoardingReservationIds };
   }
 

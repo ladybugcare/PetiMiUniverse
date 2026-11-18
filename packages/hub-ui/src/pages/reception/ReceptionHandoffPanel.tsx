@@ -138,10 +138,18 @@ function taskTimeline(view: ReceptionHandoffDetail): Array<{ label: string; valu
   }
 
   if (view.resolved_at) {
+    const late =
+      'delivery_boarding' in view && view.delivery_boarding?.boarded_late ? ' · registro posterior' : '';
+    const resolutionHint =
+      view.resolution === 'motorista_embarcou'
+        ? `Confirmado pelo motorista${late}`
+        : view.resolution === 'embarquei'
+          ? `Confirmado pela recepção${late}`
+          : view.resolution || undefined;
     rows.push({
       label: 'Concluída em',
       value: formatWhen(view.resolved_at),
-      hint: view.resolution || undefined,
+      hint: resolutionHint,
     });
   }
 
@@ -193,7 +201,7 @@ function primaryAction(item: ReceptionBoardItem): { action: ReceptionResolveActi
   if (item.status !== 'open') return null;
   if (item.kind === 'chegada') return { action: 'chegou', label: 'Chegou' };
   if (item.kind === 'retirada_balcao') return { action: 'entreguei', label: 'Entreguei' };
-  if (item.kind === 'embarque') return { action: 'embarquei', label: 'Embarcou' };
+  if (item.kind === 'embarque') return { action: 'embarquei', label: 'Entreguei ao motorista' };
   if (item.kind === 'autorizar_extra' && item.context?.hub_service_type_id) {
     return { action: 'autorizar', label: 'Autorizar' };
   }
@@ -454,6 +462,11 @@ const ReceptionHandoffPanel: React.FC<ReceptionHandoffPanelProps> = ({
                   <p className="hub-reception-panel__pet-name">{displayPetName}</p>
                   <div className="hub-reception-panel__pet-badges">
                     <span className="hub-clientes__pill hub-clinic-queue__pill--waiting">{kindLabel(view)}</span>
+                    {view.delivery_boarding?.exit_ux_status ? (
+                      <span className="hub-clientes__pill hub-clinic-queue__pill--waiting">
+                        {view.delivery_boarding.exit_ux_status}
+                      </span>
+                    ) : null}
                     {view.is_late ? (
                       <span className="hub-clientes__pill hub-clinic-queue__pill--waiting">Em atraso</span>
                     ) : null}
@@ -562,6 +575,35 @@ const ReceptionHandoffPanel: React.FC<ReceptionHandoffPanelProps> = ({
                   </label>
                 ) : null}
               </div>
+            </section>
+          ) : null}
+
+          {view.kind === 'embarque' && view.delivery_boarding ? (
+            <section className="hub-reception-panel__section" aria-label="Leva e Traz">
+              <h3 className="hub-reception-panel__section-title">Leva e Traz</h3>
+              <ul className="hub-reception-panel__cues">
+                {view.delivery_boarding.driver_name ? (
+                  <li className="hub-reception-panel__cue">
+                    <p className="hub-reception-panel__cue-label">Motorista</p>
+                    <p className="hub-reception-panel__cue-detail">{view.delivery_boarding.driver_name}</p>
+                  </li>
+                ) : null}
+                <li className="hub-reception-panel__cue">
+                  <p className="hub-reception-panel__cue-label">Situação</p>
+                  <p className="hub-reception-panel__cue-detail">{view.delivery_boarding.exit_ux_status}</p>
+                </li>
+                {view.delivery_boarding.boarded_at ? (
+                  <li className="hub-reception-panel__cue">
+                    <p className="hub-reception-panel__cue-label">Embarque</p>
+                    <p className="hub-reception-panel__cue-detail">
+                      {view.delivery_boarding.boarded_source === 'driver'
+                        ? 'Registrado pelo motorista'
+                        : 'Registrado pela recepção'}
+                      {view.delivery_boarding.boarded_late ? ' (posterior)' : ''}
+                    </p>
+                  </li>
+                ) : null}
+              </ul>
             </section>
           ) : null}
 

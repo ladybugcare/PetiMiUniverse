@@ -101,6 +101,16 @@ export type ReceptionHandoffDetail = Omit<ReceptionBoardItem, 'pet' | 'guardian'
     pending_belongings: number;
     open_incidents: number;
   } | null;
+  /** Metadados da devolução L&T (embarque). */
+  delivery_boarding?: {
+    boarded_at: string | null;
+    boarded_source: string | null;
+    boarded_late: boolean;
+    stop_status: string | null;
+    route_id: string | null;
+    driver_name: string | null;
+    exit_ux_status: string;
+  } | null;
 };
 
 export const hubReceptionApi = {

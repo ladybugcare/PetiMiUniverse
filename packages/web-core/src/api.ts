@@ -205,7 +205,19 @@ async function executeApiRequest(
         }
       }
 
-      throw new Error(errorData?.error || errorData?.message || errorText || `Erro ${response.status}`);
+      const message = errorData?.error || errorData?.message || errorText || `Erro ${response.status}`;
+      const err = new Error(message) as Error & {
+        status?: number;
+        body?: unknown;
+        code?: string;
+      };
+      err.status = response.status;
+      err.body = errorData;
+      err.code =
+        errorData && typeof errorData === 'object' && 'code' in errorData
+          ? String((errorData as { code?: unknown }).code ?? '')
+          : undefined;
+      throw err;
     }
 
     const text = await response.text();

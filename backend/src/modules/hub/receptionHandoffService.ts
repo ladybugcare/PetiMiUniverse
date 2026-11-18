@@ -28,6 +28,7 @@ type ApptRow = {
   appointment_kind: string | null;
   starts_at: string | null;
   parent_appointment_id: string | null;
+  visit_group_id?: string | null;
   hub_service_type_id: string | null;
   deleted_at?: string | null;
 };
@@ -54,7 +55,42 @@ function petHasDestinationService(
 }
 
 const STOP_COLUMNS =
-  'id, hub_appointment_id, direction, status, hub_pickup_route_id, completed_at, failure_outcome, failure_resolution, failure_reason, failed_at, return_stop_id';
+  'id, hub_appointment_id, direction, status, hub_pickup_route_id, completed_at, boarded_at, boarded_by_staff_id, boarded_source, boarded_late, failure_outcome, failure_resolution, failure_reason, failed_at, return_stop_id';
+
+function boardingSourceOf(stop: Record<string, unknown> | undefined): 'reception' | 'driver' | null {
+  const src = stop?.boarded_source;
+  return src === 'driver' || src === 'reception' ? src : null;
+}
+
+/** Fecha handoff `embarque` órfão quando a parada já tem boarded_* (recuperação). */
+async function recoverBoardedEmbarqueHandoffs(
+  clinicId: string,
+  petId: string,
+  legs: Array<{
+    parent_appointment_id: string | null;
+    direction: string | null;
+    boarded_at?: string | null;
+    boarded_by_staff_id?: string | null;
+    boarded_source?: 'reception' | 'driver' | null;
+  }>,
+): Promise<void> {
+  const boarded = legs.filter((l) => l.direction === 'delivery' && l.boarded_at);
+  if (boarded.length === 0) return;
+  const { ensureEmbarqueHandoffResolvedForBoardedStop } = await import('./pickupDeliveryBoarding');
+  for (const leg of boarded) {
+    try {
+      await ensureEmbarqueHandoffResolvedForBoardedStop({
+        clinicId,
+        petId,
+        parentAppointmentId: leg.parent_appointment_id,
+        boardedSource: leg.boarded_source === 'driver' ? 'driver' : 'reception',
+        boardedByStaffId: leg.boarded_by_staff_id ?? null,
+      });
+    } catch (e) {
+      console.error('[receptionHandoff] recover boarded embarque', e);
+    }
+  }
+}
 
 /** Situação dos retornos à clínica ligados a falhas pendentes. */
 async function loadReturnStops(
@@ -198,6 +234,7 @@ async function persistReconcile(
 export async function syncReceptionHandoffsForPet(clinicId: string, petId: string, dayYmd?: string): Promise<void> {
   const day = dayYmd || todayYmdSaoPaulo();
   const snap = await loadSnapshot(clinicId, petId, day);
+  await recoverBoardedEmbarqueHandoffs(clinicId, petId, snap.legs);
   const plan = planCustody(snap);
   await applyCustodySideEffects(clinicId, plan);
   const existing = await loadStored(clinicId, petId);
@@ -228,7 +265,9 @@ async function loadStored(clinicId: string, petId: string): Promise<StoredHandof
 async function loadSnapshot(clinicId: string, petId: string, dayYmd: string): Promise<CustodySnapshot> {
   const { data: apptRows, error: apptErr } = await supabaseAdmin
     .from('hub_appointments')
-    .select('id, unit_id, guardian_id, pet_id, status, appointment_kind, starts_at, parent_appointment_id, hub_service_type_id')
+    .select(
+      'id, unit_id, guardian_id, pet_id, status, appointment_kind, starts_at, parent_appointment_id, visit_group_id, hub_service_type_id',
+    )
     .eq('clinic_id', clinicId)
     .eq('pet_id', petId)
     .is('deleted_at', null);
@@ -365,6 +404,10 @@ async function loadSnapshot(clinicId: string, petId: string, dayYmd: string): Pr
         stop_status: (stop?.status as string | null) ?? null,
         route_id: routeId,
         driver_id: routeId ? driverByRoute.get(routeId) ?? null : null,
+        boarded_at: (stop?.boarded_at as string | null) ?? null,
+        boarded_by_staff_id: (stop?.boarded_by_staff_id as string | null) ?? null,
+        boarded_source: boardingSourceOf(stop),
+        boarded_late: Boolean(stop?.boarded_late),
         failure_outcome: failureOutcomeOf(stop),
       };
     });
@@ -413,6 +456,7 @@ async function loadSnapshot(clinicId: string, petId: string, dayYmd: string): Pr
       service_group: a.hub_service_type_id ? typeById.get(a.hub_service_type_id)?.service_group ?? null : null,
       service_name: a.hub_service_type_id ? typeById.get(a.hub_service_type_id)?.name ?? null : null,
       parent_appointment_id: a.parent_appointment_id,
+      visit_group_id: a.visit_group_id ?? null,
     })),
     groomingSessions: (sessions ?? []).map((s) => ({
       id: s.id as string,
@@ -576,7 +620,7 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
       'hub_appointments',
       clinicId,
       petIds,
-      'id, unit_id, guardian_id, pet_id, status, appointment_kind, starts_at, parent_appointment_id, hub_service_type_id',
+      'id, unit_id, guardian_id, pet_id, status, appointment_kind, starts_at, parent_appointment_id, visit_group_id, hub_service_type_id',
       { activeOnly: true },
     ),
     selectByPetIds<{
@@ -771,9 +815,14 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
           stop_status: (stop?.status as string | null) ?? null,
           route_id: routeId,
           driver_id: routeId ? driverByRoute.get(routeId) ?? null : null,
+          boarded_at: (stop?.boarded_at as string | null) ?? null,
+          boarded_by_staff_id: (stop?.boarded_by_staff_id as string | null) ?? null,
+          boarded_source: boardingSourceOf(stop),
+          boarded_late: Boolean(stop?.boarded_late),
           failure_outcome: failureOutcomeOf(stop),
         };
       });
+    await recoverBoardedEmbarqueHandoffs(clinicId, petId, legs);
     const apptIdSet = new Set(appointments.map((a) => a.id));
     const failedReturns = buildFailedReturns(
       appointments,
@@ -824,6 +873,7 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
         service_group: a.hub_service_type_id ? typeById.get(a.hub_service_type_id)?.service_group ?? null : null,
         service_name: a.hub_service_type_id ? typeById.get(a.hub_service_type_id)?.name ?? null : null,
         parent_appointment_id: a.parent_appointment_id,
+        visit_group_id: a.visit_group_id ?? null,
       })),
       groomingSessions: (sessionsByPet.get(petId) ?? []).map((s) => ({
         id: s.id,
@@ -1008,6 +1058,36 @@ async function applyResolution(
   }
 
   if (action === 'entreguei' || action === 'embarquei') {
+    if (action === 'embarquei') {
+      const { confirmDeliveryBoarding, findDeliveryStopForParentAppointment } = await import(
+        './pickupDeliveryBoarding'
+      );
+      let parentAppointmentId =
+        (typeof ctx.appointment_id === 'string' && ctx.appointment_id) || null;
+      if (!parentAppointmentId && row.source_type === 'boarding_reservation') {
+        const { loadReservation } = await import('./boardingCareService');
+        const reservation = await loadReservation(clinicId, row.source_id);
+        parentAppointmentId = reservation?.hub_appointment_id ?? null;
+      }
+      if (parentAppointmentId) {
+        const stopId = await findDeliveryStopForParentAppointment(clinicId, parentAppointmentId);
+        if (stopId) {
+          const boarded = await confirmDeliveryBoarding({
+            clinicId,
+            stopId,
+            staffId,
+            source: 'reception',
+          });
+          if (!boarded.ok && boarded.code === 'BLOCKED') {
+            throw new Error(boarded.error);
+          }
+          if (!boarded.ok && boarded.code !== 'NOT_DELIVERY' && boarded.code !== 'NOT_FOUND') {
+            throw new Error(boarded.error);
+          }
+        }
+      }
+    }
+
     if (row.source_type === 'boarding_reservation') {
       const { completeBoardingReservationCheckout, loadReservation, loadUnitSettings, petHasOpenBoardingCharge } =
         await import('./boardingCareService');
@@ -1020,7 +1100,11 @@ async function applyResolution(
             throw new Error('Há cobrança em aberto no Caixa. Quite a comanda antes de confirmar a saída.');
           }
         }
-        await completeBoardingReservationCheckout({ clinicId, reservationId: row.source_id });
+        // Embarque: checkout do hotel só após entrega ao tutor (boarded ≠ delivered).
+        // Retirada no balcão: fecha agora.
+        if (action === 'entreguei') {
+          await completeBoardingReservationCheckout({ clinicId, reservationId: row.source_id });
+        }
       }
     }
     if (row.pet_id) {

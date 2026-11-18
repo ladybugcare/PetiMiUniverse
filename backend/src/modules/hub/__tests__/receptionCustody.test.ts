@@ -164,7 +164,7 @@ describe('planCustody', () => {
     expect(plan.handoffs.map((h) => h.kind)).toEqual(['embarque']);
   });
 
-  it('ready_for_handoff com motorista na rota não cria handoff de saída', () => {
+  it('ready_for_handoff com motorista na rota ainda cria embarque até boarded', () => {
     const plan = planCustody(
       snap({
         boarding: [
@@ -189,7 +189,37 @@ describe('planCustody', () => {
         ],
       }),
     );
-    expect(plan.handoffs.filter((h) => h.kind === 'retirada_balcao' || h.kind === 'embarque')).toEqual([]);
+    expect(plan.handoffs.map((h) => h.kind)).toEqual(['embarque']);
+  });
+
+  it('ready_for_handoff com boarded não cria handoff e não completa estadia ainda', () => {
+    const plan = planCustody(
+      snap({
+        boarding: [
+          {
+            id: 'b1',
+            unit_id: 'u1',
+            status: 'ready_for_handoff',
+            hub_appointment_id: 'a-hotel',
+            mode: 'hotel',
+            handoff_ready_at: '2026-11-06T16:00:00.000Z',
+          },
+        ],
+        legs: [
+          {
+            parent_appointment_id: 'a-hotel',
+            appointment_status: 'confirmed',
+            direction: 'delivery',
+            stop_status: 'en_route',
+            route_id: 'r1',
+            driver_id: 'd1',
+            boarded_at: '2026-11-06T16:30:00.000Z',
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs.filter((h) => h.kind === 'embarque' || h.kind === 'retirada_balcao')).toEqual([]);
+    expect(plan.completeBoardingReservationIds).toEqual([]);
   });
 
   it('ready_for_handoff com entrega já concluída completa a estadia', () => {
@@ -245,7 +275,7 @@ describe('planCustody', () => {
     }
   });
 
-  it('entrega com motorista não cria tarefa; concluída fecha o banho', () => {
+  it('entrega com motorista cria embarque; concluída fecha o banho', () => {
     const ready = {
       id: 's1',
       unit_id: 'u1',
@@ -269,8 +299,27 @@ describe('planCustody', () => {
         ],
       }),
     );
-    expect(waiting.handoffs).toEqual([]);
+    expect(waiting.handoffs.map((h) => h.kind)).toEqual(['embarque']);
     expect(waiting.closeGroomingSessionIds).toEqual([]);
+
+    const boarded = planCustody(
+      snap({
+        groomingSessions: [ready],
+        legs: [
+          {
+            parent_appointment_id: 'a1',
+            appointment_status: 'confirmed',
+            direction: 'delivery',
+            stop_status: 'en_route',
+            route_id: 'r1',
+            driver_id: 'd1',
+            boarded_at: '2026-11-06T15:10:00.000Z',
+          },
+        ],
+      }),
+    );
+    expect(boarded.handoffs).toEqual([]);
+    expect(boarded.closeGroomingSessionIds).toEqual(['s1']);
 
     const done = planCustody(
       snap({
@@ -283,12 +332,101 @@ describe('planCustody', () => {
             stop_status: 'completed',
             route_id: 'r1',
             driver_id: 'd1',
+            boarded_at: '2026-11-06T15:10:00.000Z',
           },
         ],
       }),
     );
     expect(done.closeGroomingSessionIds).toEqual(['s1']);
     expect(done.handoffs).toEqual([]);
+  });
+
+  it('agendamento independente no mesmo dia não bloqueia saída da visita', () => {
+    const plan = planCustody(
+      snap({
+        groomingSessions: [
+          {
+            id: 's1',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-banho',
+            grooming_stage: 'ready',
+            ready_at: '2026-11-06T14:00:00.000Z',
+          },
+        ],
+        appointments: [
+          {
+            id: 'a-banho',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            status: 'done',
+            appointment_kind: 'standard',
+            starts_at: '2026-11-06T13:00:00.000Z',
+            service_group: 'banho_tosa',
+            service_name: 'Banho',
+            parent_appointment_id: null,
+            visit_group_id: 'vg-banho',
+          },
+          {
+            id: 'a-consulta-outra',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            status: 'confirmed',
+            appointment_kind: 'standard',
+            starts_at: '2026-11-06T17:00:00.000Z',
+            service_group: 'clinica',
+            service_name: 'Consulta avulsa',
+            parent_appointment_id: null,
+            visit_group_id: 'vg-outra',
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs.some((h) => h.kind === 'retirada_balcao')).toBe(true);
+  });
+
+  it('serviço vinculado pendente na mesma visita bloqueia saída', () => {
+    const plan = planCustody(
+      snap({
+        groomingSessions: [
+          {
+            id: 's1',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-banho',
+            grooming_stage: 'ready',
+            ready_at: '2026-11-06T14:00:00.000Z',
+          },
+        ],
+        appointments: [
+          {
+            id: 'a-banho',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            status: 'done',
+            appointment_kind: 'standard',
+            starts_at: '2026-11-06T13:00:00.000Z',
+            service_group: 'banho_tosa',
+            service_name: 'Banho',
+            parent_appointment_id: null,
+            visit_group_id: 'vg-1',
+          },
+          {
+            id: 'a-consulta',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            status: 'confirmed',
+            appointment_kind: 'standard',
+            starts_at: '2026-11-06T14:30:00.000Z',
+            service_group: 'clinica',
+            service_name: 'Consulta',
+            parent_appointment_id: null,
+            visit_group_id: 'vg-1',
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs.filter((h) => h.kind === 'retirada_balcao' || h.kind === 'embarque')).toEqual([]);
   });
 
   it('perna de volta sem motorista vira embarque', () => {
@@ -381,7 +519,7 @@ describe('planCustody', () => {
     expect(obito.handoffs).toEqual([]);
   });
 
-  it('outro serviço aberto no dia bloqueia a retirada', () => {
+  it('outro serviço vinculado na mesma visita bloqueia a retirada', () => {
     const plan = planCustody(
       snap({
         groomingSessions: [
@@ -396,6 +534,18 @@ describe('planCustody', () => {
         ],
         appointments: [
           {
+            id: 'a1',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            status: 'done',
+            appointment_kind: 'standard',
+            starts_at: '2026-11-06T13:00:00.000Z',
+            service_group: 'banho_tosa',
+            service_name: 'Banho',
+            parent_appointment_id: null,
+            visit_group_id: 'vg-dia',
+          },
+          {
             id: 'a2',
             unit_id: 'u1',
             guardian_id: 'g1',
@@ -405,6 +555,7 @@ describe('planCustody', () => {
             service_group: 'clinica',
             service_name: 'Consulta',
             parent_appointment_id: null,
+            visit_group_id: 'vg-dia',
           },
         ],
       }),
