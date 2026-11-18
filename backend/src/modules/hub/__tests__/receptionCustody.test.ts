@@ -519,6 +519,78 @@ describe('planCustody', () => {
     expect(obito.handoffs).toEqual([]);
   });
 
+  it('alta gera retirada mesmo com encounter órfão de internação cancelada', () => {
+    const plan = planCustody(
+      snap({
+        hospitalizations: [
+          {
+            id: 'h-ok',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-hosp',
+            status: 'discharged',
+            discharged_at: '2026-11-06T16:00:00.000Z',
+          },
+          {
+            id: 'h-dup',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-dup',
+            status: 'cancelled',
+            discharged_at: null,
+          },
+        ],
+        encounters: [
+          {
+            id: 'e-dup',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-dup',
+            status: 'in_progress',
+            completed_at: null,
+          },
+          {
+            id: 'e-old',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-old',
+            status: 'in_progress',
+            completed_at: null,
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs.map((h) => h.source_type)).toEqual(['hospitalization']);
+    expect(plan.handoffs[0].source_id).toBe('h-ok');
+  });
+
+  it('escolhe a alta mais recente do dia quando há mais de uma', () => {
+    const plan = planCustody(
+      snap({
+        hospitalizations: [
+          {
+            id: 'h-old',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a1',
+            status: 'discharged',
+            discharged_at: '2026-11-06T12:00:00.000Z',
+          },
+          {
+            id: 'h-new',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a2',
+            status: 'discharged',
+            discharged_at: '2026-11-06T18:00:00.000Z',
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs).toHaveLength(1);
+    expect(plan.handoffs[0].source_id).toBe('h-new');
+  });
+
   it('outro serviço vinculado na mesma visita bloqueia a retirada', () => {
     const plan = planCustody(
       snap({

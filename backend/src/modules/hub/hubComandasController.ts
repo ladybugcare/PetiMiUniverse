@@ -118,9 +118,26 @@ import {
   type BoardingExtraInput,
 } from './boardingBilling';
 import {
+  dropAppointmentLinesReplacedByHospitalization,
   loadHospitalizationComandaItems,
   mergeHospitalizationItemsIntoSnapshot,
 } from './hubHospitalizationBilling';
+
+async function loadServiceGroupByIds(
+  serviceTypeIds: string[],
+): Promise<Map<string, string | null | undefined>> {
+  const ids = [...new Set(serviceTypeIds.filter(Boolean))];
+  const map = new Map<string, string | null | undefined>();
+  if (ids.length === 0) return map;
+  const { data } = await supabaseAdmin
+    .from('hub_service_types')
+    .select('id, service_group')
+    .in('id', ids);
+  for (const row of data ?? []) {
+    map.set(row.id as string, (row as { service_group?: string | null }).service_group);
+  }
+  return map;
+}
 import { comandaOriginSchema } from './hubComandaSchemas';
 
 async function resolveClinicDefaultUnitId(clinicId: string): Promise<string | null> {
@@ -1435,10 +1452,24 @@ async function buildComandaItemsFromEncounter(
     appointmentId: apptId,
     defaultPetId: petId,
   });
+  // Remove espelho de agenda (appointment_service de internação) quando há diária.
+  const apptSvcIds = allItems
+    .filter((it) => it.origin_type === 'appointment_service' && it.hub_service_type_id)
+    .map((it) => it.hub_service_type_id as string);
+  const groupById = await loadServiceGroupByIds(apptSvcIds);
+  const dropped = dropAppointmentLinesReplacedByHospitalization(
+    allItems,
+    groupById,
+    hospBuilt.items,
+  );
+  allItems.length = 0;
+  allItems.push(...dropped.items);
+  subtotal = round2(subtotal - dropped.removedTotal);
+
   for (const line of hospBuilt.items) {
     allItems.push({ ...line, sort_order: allItems.length });
   }
-  subtotal += hospBuilt.subtotal;
+  subtotal = round2(subtotal + hospBuilt.subtotal);
 
   // Fallback: generic consultation fee if nothing was found
   if (allItems.length === 0) {
@@ -1619,7 +1650,13 @@ async function buildDesiredComandaSnapshot(
       appointmentId: oid,
       defaultPetId: snapshot.pet_id,
     });
-    snapshot = mergeHospitalizationItemsIntoSnapshot(snapshot, hospForAppt.items);
+    {
+      const svcIds = snapshot.items
+        .filter((it) => it.origin_type === 'appointment_service' && it.hub_service_type_id)
+        .map((it) => it.hub_service_type_id as string);
+      const groupById = await loadServiceGroupByIds(svcIds);
+      snapshot = mergeHospitalizationItemsIntoSnapshot(snapshot, hospForAppt.items, groupById);
+    }
 
     // Encounter aberto com internação: também puxa por encounter_id.
     const openEncId = await findLatestEncounterIdForAppointment(clinicId, oid, { anyOpen: true });
@@ -1630,7 +1667,11 @@ async function buildDesiredComandaSnapshot(
         appointmentId: oid,
         defaultPetId: snapshot.pet_id,
       });
-      snapshot = mergeHospitalizationItemsIntoSnapshot(snapshot, hospForEnc.items);
+      const svcIds = snapshot.items
+        .filter((it) => it.origin_type === 'appointment_service' && it.hub_service_type_id)
+        .map((it) => it.hub_service_type_id as string);
+      const groupById = await loadServiceGroupByIds(svcIds);
+      snapshot = mergeHospitalizationItemsIntoSnapshot(snapshot, hospForEnc.items, groupById);
     }
 
     const boardingId = await findCheckedOutBoardingReservationForAppointment(clinicId, oid);

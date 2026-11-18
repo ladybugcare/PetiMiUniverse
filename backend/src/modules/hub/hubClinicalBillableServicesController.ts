@@ -8,6 +8,21 @@ import {
   roundMoney2,
   type ServicePriceModeRow,
 } from './hubVariablePrice';
+import { isHospitalizationClosed } from './hubHospitalizationBilling';
+
+const HOSPITALIZATION_CHARGE_BLOCKED_STATUSES = new Set([
+  'discharged',
+  'death',
+  'transferred',
+  'cancelled',
+]);
+
+function hospitalizationChargeBlockedMessage(status: string): string {
+  if (status === 'cancelled') {
+    return 'Não é possível lançar itens em internação cancelada.';
+  }
+  return 'Internação encerrada: não é possível lançar novos itens clínicos. Use o fluxo financeiro de ajuste, se necessário.';
+}
 
 const uuidStr = z.string().uuid();
 
@@ -388,13 +403,22 @@ export const createHubHospitalizationCharge = async (req: Request, res: Response
 
   const { data: hosp, error: hospErr } = await supabaseAdmin
     .from('hub_hospitalizations')
-    .select('id, clinic_id, daily_includes_medication, hub_encounter_id')
+    .select('id, clinic_id, status, daily_includes_medication, hub_encounter_id')
     .eq('id', hospId.data)
     .eq('clinic_id', b.clinic_id)
     .is('deleted_at', null)
     .maybeSingle();
   if (hospErr) return res.status(500).json({ error: hospErr.message });
   if (!hosp) return res.status(404).json({ error: 'Internação não encontrada' });
+
+  const hospStatus = String((hosp as { status?: string }).status ?? '');
+  if (HOSPITALIZATION_CHARGE_BLOCKED_STATUSES.has(hospStatus) || isHospitalizationClosed(hospStatus)) {
+    return res.status(409).json({
+      error: hospitalizationChargeBlockedMessage(hospStatus),
+      code: 'HOSPITALIZATION_CLOSED',
+      status: hospStatus,
+    });
+  }
 
   let service: (ServicePriceModeRow & { service_group: string }) | null = null;
   if (b.hub_service_type_id) {
@@ -405,10 +429,32 @@ export const createHubHospitalizationCharge = async (req: Request, res: Response
     }
   }
 
+  let inventoryName: string | null = null;
+  let inventorySale: number | null = null;
+  if (b.hub_inventory_item_id) {
+    const { data: inv, error: invErr } = await supabaseAdmin
+      .from('hub_inventory_items')
+      .select('id, name, sale_amount, active, deleted_at')
+      .eq('id', b.hub_inventory_item_id)
+      .eq('clinic_id', b.clinic_id)
+      .maybeSingle();
+    if (invErr) return res.status(500).json({ error: invErr.message });
+    if (!inv || inv.deleted_at || inv.active === false) {
+      return res.status(400).json({ error: 'Item de estoque não encontrado' });
+    }
+    inventoryName = String(inv.name ?? '') || null;
+    inventorySale = inv.sale_amount == null ? null : roundMoney2(Number(inv.sale_amount));
+  }
+
   const serviceName =
     b.service_name?.trim() ||
     service?.name ||
-    (b.charge_kind === 'medication' ? 'Medicação' : 'Item de internação');
+    inventoryName ||
+    (b.charge_kind === 'medication'
+      ? 'Medicação'
+      : b.charge_kind === 'material'
+        ? 'Material'
+        : 'Item de internação');
 
   const defaultBilling: 'charge' | 'included' =
     b.billing_mode ??
@@ -416,7 +462,9 @@ export const createHubHospitalizationCharge = async (req: Request, res: Response
       ? 'included'
       : 'charge');
 
-  let unit_amount = roundMoney2(Number(b.unit_amount ?? service?.sale_amount ?? 0));
+  let unit_amount = roundMoney2(
+    Number(b.unit_amount ?? service?.sale_amount ?? inventorySale ?? 0),
+  );
   let pricing_source: z.infer<typeof pricingSourceSchema> = 'catalog';
   let price_status: 'confirmed' | 'pending_approval' = 'confirmed';
 
@@ -430,10 +478,19 @@ export const createHubHospitalizationCharge = async (req: Request, res: Response
     unit_amount = resolved.unit_amount;
     pricing_source = resolved.pricing_source as z.infer<typeof pricingSourceSchema>;
     price_status = resolved.price_status;
+  } else if (b.hub_inventory_item_id && inventorySale != null && b.unit_amount == null) {
+    // Material/medicamento do estoque ao preço de catálogo — cobrável sem aprovação extra.
+    unit_amount = inventorySale;
+    pricing_source = 'catalog';
+    price_status = 'confirmed';
   } else if (b.unit_amount != null) {
     const canApprove = await canAutoApproveFinancial(req.user?.id, b.clinic_id);
-    pricing_source = 'manual';
-    price_status = canApprove ? 'confirmed' : 'pending_approval';
+    const catalog = inventorySale;
+    pricing_source =
+      catalog != null && roundMoney2(b.unit_amount) === catalog ? 'catalog' : 'manual';
+    // Preço manual explícito exige hub.financial.write; preço de catálogo confirma.
+    price_status =
+      pricing_source === 'catalog' || canApprove ? 'confirmed' : 'pending_approval';
   }
 
   // Itens inclusos não precisam de aprovação financeira
@@ -487,6 +544,24 @@ export const patchHubHospitalizationCharge = async (req: Request, res: Response)
     return res.status(400).json({ error: 'Dados inválidos' });
   }
   const b = parsed.data;
+
+  const { data: hospRow, error: hospStatusErr } = await supabaseAdmin
+    .from('hub_hospitalizations')
+    .select('id, status')
+    .eq('id', hospId.data)
+    .eq('clinic_id', b.clinic_id)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (hospStatusErr) return res.status(500).json({ error: hospStatusErr.message });
+  if (!hospRow) return res.status(404).json({ error: 'Internação não encontrada' });
+  const patchHospStatus = String((hospRow as { status?: string }).status ?? '');
+  if (HOSPITALIZATION_CHARGE_BLOCKED_STATUSES.has(patchHospStatus) || isHospitalizationClosed(patchHospStatus)) {
+    return res.status(409).json({
+      error: hospitalizationChargeBlockedMessage(patchHospStatus),
+      code: 'HOSPITALIZATION_CLOSED',
+      status: patchHospStatus,
+    });
+  }
 
   const { data: existing, error: getErr } = await supabaseAdmin
     .from('hub_hospitalization_charges')

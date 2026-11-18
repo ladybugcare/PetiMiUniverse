@@ -1,8 +1,10 @@
 import {
   buildHospitalizationDailyItems,
   computeHospitalizationDays,
+  dropAppointmentLinesReplacedByHospitalization,
   estimateHospitalizationBillingAmount,
   hospitalizationChargeDescription,
+  isAppointmentLineReplacedByHospitalization,
   isHospitalizationClosed,
   mergeHospitalizationItemsIntoSnapshot,
   resolveHospitalizationBillingOrigin,
@@ -155,5 +157,90 @@ describe('hubHospitalizationBilling', () => {
     ]);
     expect(merged.items).toHaveLength(2);
     expect(merged.subtotal).toBe(140);
+  });
+
+  it('isAppointmentLineReplacedByHospitalization remove espelho de diária e preserva consulta', () => {
+    expect(
+      isAppointmentLineReplacedByHospitalization('svc-daily', 'internacao', ['svc-daily']),
+    ).toBe(true);
+    expect(
+      isAppointmentLineReplacedByHospitalization('svc-other', 'internacao', ['svc-daily']),
+    ).toBe(true);
+    expect(
+      isAppointmentLineReplacedByHospitalization('svc-consulta', 'clinica', ['svc-daily']),
+    ).toBe(false);
+  });
+
+  it('dropAppointmentLinesReplacedByHospitalization evita diária duplicada na comanda', () => {
+    const groupById = new Map<string, string>([
+      ['svc-daily', 'internacao'],
+      ['svc-consulta', 'clinica'],
+    ]);
+    const { items, removedTotal } = dropAppointmentLinesReplacedByHospitalization(
+      [
+        {
+          origin_type: 'appointment_service',
+          hub_service_type_id: 'svc-consulta',
+          line_total: 120,
+          sort_order: 0,
+        },
+        {
+          origin_type: 'appointment_service',
+          hub_service_type_id: 'svc-daily',
+          line_total: 250,
+          sort_order: 1,
+        },
+      ],
+      groupById,
+      [
+        {
+          origin_type: 'hospitalization_daily',
+          hub_service_type_id: 'svc-daily',
+        },
+      ],
+    );
+    expect(removedTotal).toBe(250);
+    expect(items).toHaveLength(1);
+    expect(items[0].hub_service_type_id).toBe('svc-consulta');
+  });
+
+  it('mergeHospitalizationItemsIntoSnapshot remove appointment_service de internação ao anexar diária', () => {
+    const groupById = new Map<string, string>([['svc-daily', 'internacao']]);
+    const merged = mergeHospitalizationItemsIntoSnapshot(
+      {
+        items: [
+          {
+            origin_type: 'appointment_service',
+            origin_id: 'as-1',
+            hub_service_type_id: 'svc-daily',
+            line_total: 250,
+            sort_order: 0,
+          },
+        ],
+        subtotal: 250,
+      },
+      [
+        {
+          pet_id: null,
+          item_kind: 'service',
+          hub_service_type_id: 'svc-daily',
+          hub_inventory_item_id: null,
+          hub_inventory_lot_id: null,
+          description: 'Diária — 1 diária',
+          quantity: 1,
+          unit_amount: 250,
+          discount_amount: 0,
+          line_total: 250,
+          service_date: null,
+          origin_type: 'hospitalization_daily',
+          origin_id: 'hosp-1',
+          sort_order: 0,
+        },
+      ],
+      groupById,
+    );
+    expect(merged.items).toHaveLength(1);
+    expect(merged.items[0].origin_type).toBe('hospitalization_daily');
+    expect(merged.subtotal).toBe(250);
   });
 });

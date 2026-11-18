@@ -426,29 +426,103 @@ export async function loadHospitalizationComandaItems(
   return { items, subtotal: round2(subtotal) };
 }
 
+/**
+ * Linha de agenda espelhada da internação (grupo `internacao` ou mesmo serviço da diária)
+ * é substituída por `hospitalization_daily` — evita cobrança dupla do mesmo valor.
+ * Consultas (`clinica`) e outros grupos permanecem.
+ */
+export function isAppointmentLineReplacedByHospitalization(
+  lineServiceTypeId: string | null | undefined,
+  lineServiceGroup: string | null | undefined,
+  dailyServiceTypeIds: Iterable<string | null | undefined>,
+): boolean {
+  const dailyIds = new Set(
+    [...dailyServiceTypeIds].filter((id): id is string => Boolean(id)),
+  );
+  if (lineServiceTypeId && dailyIds.has(lineServiceTypeId)) return true;
+  return lineServiceGroup === 'internacao';
+}
+
+/** Remove do snapshot as linhas de agenda cobertas pela diária da internação. */
+export function dropAppointmentLinesReplacedByHospitalization<
+  T extends {
+    origin_type?: string | null;
+    hub_service_type_id?: string | null;
+    line_total?: number;
+    sort_order?: number;
+  },
+>(
+  items: T[],
+  serviceGroupById: Map<string, string | null | undefined>,
+  hospItems: Array<{ origin_type?: string | null; hub_service_type_id?: string | null }>,
+): { items: T[]; removedTotal: number } {
+  const hasDaily = hospItems.some((it) => it.origin_type === 'hospitalization_daily');
+  if (!hasDaily) return { items, removedTotal: 0 };
+
+  const dailyServiceTypeIds = hospItems
+    .filter((it) => it.origin_type === 'hospitalization_daily')
+    .map((it) => it.hub_service_type_id);
+
+  let removedTotal = 0;
+  const kept = items.filter((it) => {
+    if (it.origin_type !== 'appointment_service') return true;
+    const sid = it.hub_service_type_id ?? null;
+    const group = sid ? serviceGroupById.get(sid) : null;
+    const replaced = isAppointmentLineReplacedByHospitalization(sid, group, dailyServiceTypeIds);
+    if (replaced) removedTotal = round2(removedTotal + Number(it.line_total ?? 0));
+    return !replaced;
+  });
+  return {
+    items: kept.map((it, i) => ({ ...it, sort_order: i })),
+    removedTotal,
+  };
+}
+
 export function mergeHospitalizationItemsIntoSnapshot<
   T extends {
-    items: Array<{ origin_type?: string | null; origin_id?: string | null; line_total?: number; sort_order?: number }>;
+    items: Array<{
+      origin_type?: string | null;
+      origin_id?: string | null;
+      hub_service_type_id?: string | null;
+      line_total?: number;
+      sort_order?: number;
+    }>;
     subtotal: number;
   },
 >(
   snapshot: T,
   hospItems: HospitalizationComandaLine[],
+  serviceGroupById?: Map<string, string | null | undefined>,
 ): T {
   if (!hospItems.length) return snapshot;
+
+  let baseItems = snapshot.items;
+  let subtotal = snapshot.subtotal;
+  if (serviceGroupById) {
+    const dropped = dropAppointmentLinesReplacedByHospitalization(
+      baseItems,
+      serviceGroupById,
+      hospItems,
+    );
+    baseItems = dropped.items;
+    subtotal = round2(subtotal - dropped.removedTotal);
+  }
+
   const existing = new Set(
-    snapshot.items
+    baseItems
       .filter((it) => it.origin_type && it.origin_id)
       .map((it) => `${it.origin_type}:${it.origin_id}`),
   );
   const toAdd = hospItems.filter((it) => !existing.has(`${it.origin_type}:${it.origin_id}`));
-  if (!toAdd.length) return snapshot;
-  const base = snapshot.items.length;
+  if (!toAdd.length) {
+    return { ...snapshot, items: baseItems, subtotal };
+  }
+  const base = baseItems.length;
   const mapped = toAdd.map((it, i) => ({ ...it, sort_order: base + i }));
   const addTotal = round2(mapped.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
   return {
     ...snapshot,
-    items: [...snapshot.items, ...mapped],
-    subtotal: round2(snapshot.subtotal + addTotal),
+    items: [...baseItems, ...mapped],
+    subtotal: round2(subtotal + addTotal),
   };
 }

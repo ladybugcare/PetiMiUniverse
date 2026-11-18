@@ -261,9 +261,28 @@ function exitBlocked(
 ): boolean {
   if (snap.hospitalizations.some((h) => h.status === 'active')) return true;
   if (snap.surgeries.some((s) => s.status === 'in_progress')) return true;
-  if (snap.encounters.some((e) => e.status === 'in_progress' || e.status === 'waiting')) return true;
 
   const linked = linkedAppointmentIds(snap, releaseAppointmentIds);
+
+  // Encounters abertos só bloqueiam se forem da mesma visita de liberação (ou sem agenda).
+  // Encounters órfãos de internação cancelada / consultas abandonadas não prendem a saída.
+  const cancelledHospAppointmentIds = new Set(
+    snap.hospitalizations
+      .filter((h) => h.status === 'cancelled' && h.hub_appointment_id)
+      .map((h) => h.hub_appointment_id as string),
+  );
+  if (
+    snap.encounters.some((e) => {
+      if (e.status !== 'in_progress' && e.status !== 'waiting') return false;
+      if (e.hub_appointment_id && cancelledHospAppointmentIds.has(e.hub_appointment_id)) {
+        return false;
+      }
+      if (!e.hub_appointment_id) return true;
+      return linked.has(e.hub_appointment_id);
+    })
+  ) {
+    return true;
+  }
 
   if (
     snap.groomingSessions.some((s) => {
@@ -593,7 +612,10 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
   }
 
   const latestReady = [...readyLive].sort((a, b) => String(b.ready_at).localeCompare(String(a.ready_at)))[0];
-  const discharge = dischargedToday[0];
+  // Uma saída por pet: usa a alta mais recente do dia (evita órfão quando há retries/QA).
+  const discharge = [...dischargedToday].sort((a, b) =>
+    String(b.discharged_at ?? '').localeCompare(String(a.discharged_at ?? '')),
+  )[0];
   const encounter = dischargedToday.length > 0 ? undefined : encountersToday[0];
 
   if (!latestReady && !discharge && !encounter) {

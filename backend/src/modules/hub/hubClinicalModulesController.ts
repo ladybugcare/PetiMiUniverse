@@ -44,6 +44,7 @@ import {
   syncSurgeryTeamPayables,
 } from './hubPayablesService';
 import { roundMoney2 } from './hubVariablePrice';
+import { resolveHospitalizationEventsId } from './hospitalizationRequestIds';
 import {
   assertCaseInClinic,
   assertEncounterInClinic,
@@ -1411,6 +1412,64 @@ export const createHubHospitalization = async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Referência inválida' });
   }
 
+  // Idempotência / concorrência: no máximo uma internação ativa por pet.
+  const { data: activeForPet, error: activePetErr } = await supabaseAdmin
+    .from('hub_hospitalizations')
+    .select('id')
+    .eq('clinic_id', b.clinic_id)
+    .eq('pet_id', b.pet_id)
+    .eq('status', 'active')
+    .is('deleted_at', null)
+    .limit(1)
+    .maybeSingle();
+  if (activePetErr) return res.status(500).json({ error: activePetErr.message });
+  if (activeForPet) {
+    return res.status(409).json({
+      error: 'Este pet já possui uma internação ativa nesta clínica.',
+      code: 'HOSPITALIZATION_PET_ACTIVE',
+      hospitalization_id: (activeForPet as { id: string }).id,
+    });
+  }
+
+  if (b.hub_hospital_bed_id) {
+    const { data: bed, error: bedErr } = await supabaseAdmin
+      .from('hub_hospital_beds')
+      .select('id, status')
+      .eq('id', b.hub_hospital_bed_id)
+      .eq('clinic_id', b.clinic_id)
+      .is('deleted_at', null)
+      .maybeSingle();
+    if (bedErr) return res.status(500).json({ error: bedErr.message });
+    if (!bed) return res.status(400).json({ error: 'Leito não encontrado' });
+    if (bed.status === 'maintenance') {
+      return res.status(409).json({ error: 'Este leito está em manutenção.' });
+    }
+    if (bed.status === 'occupied') {
+      return res.status(409).json({
+        error: 'Este leito já está ocupado.',
+        code: 'HOSPITALIZATION_BED_OCCUPIED',
+      });
+    }
+
+    const { data: activeOnBed, error: activeBedErr } = await supabaseAdmin
+      .from('hub_hospitalizations')
+      .select('id')
+      .eq('clinic_id', b.clinic_id)
+      .eq('hub_hospital_bed_id', b.hub_hospital_bed_id)
+      .eq('status', 'active')
+      .is('deleted_at', null)
+      .limit(1)
+      .maybeSingle();
+    if (activeBedErr) return res.status(500).json({ error: activeBedErr.message });
+    if (activeOnBed) {
+      return res.status(409).json({
+        error: 'Este leito já está ocupado.',
+        code: 'HOSPITALIZATION_BED_OCCUPIED',
+        hospitalization_id: (activeOnBed as { id: string }).id,
+      });
+    }
+  }
+
   let dailyUnitAmount: number | null = b.daily_unit_amount ?? null;
   if (b.daily_hub_service_type_id) {
     const { data: svc, error: svcErr } = await supabaseAdmin
@@ -1478,13 +1537,45 @@ export const createHubHospitalization = async (req: Request, res: Response) => {
     })
     .select('*')
     .single();
-  if (error) return res.status(500).json({ error: error.message });
+  if (error) {
+    const code = (error as { code?: string }).code;
+    if (code === '23505') {
+      return res.status(409).json({
+        error: 'Já existe internação ativa para este pet ou leito.',
+        code: 'HOSPITALIZATION_ACTIVE_CONFLICT',
+      });
+    }
+    return res.status(500).json({ error: error.message });
+  }
   if (b.hub_hospital_bed_id) {
-    await supabaseAdmin
+    // Ocupa só se ainda disponível — protege corrida entre dois POSTs.
+    const { data: occupied, error: occErr } = await supabaseAdmin
       .from('hub_hospital_beds')
       .update({ status: 'occupied' })
       .eq('id', b.hub_hospital_bed_id)
-      .eq('clinic_id', b.clinic_id);
+      .eq('clinic_id', b.clinic_id)
+      .eq('status', 'available')
+      .select('id')
+      .maybeSingle();
+    if (occErr) return res.status(500).json({ error: occErr.message });
+    if (!occupied) {
+      const rolledBackId = (data as { id: string }).id;
+      await supabaseAdmin
+        .from('hub_hospitalizations')
+        .update({ status: 'cancelled', hub_hospital_bed_id: null })
+        .eq('id', rolledBackId)
+        .eq('clinic_id', b.clinic_id);
+      await supabaseAdmin
+        .from('hub_encounters')
+        .update({ status: 'cancelled', completed_at: new Date().toISOString() })
+        .eq('id', encounterId)
+        .eq('clinic_id', b.clinic_id)
+        .in('status', ['in_progress', 'waiting']);
+      return res.status(409).json({
+        error: 'Este leito já está ocupado.',
+        code: 'HOSPITALIZATION_BED_OCCUPIED',
+      });
+    }
   }
 
   const hospitalizationId = (data as { id: string; admitted_at?: string | null }).id;
@@ -1714,7 +1805,7 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
 
   const prevBedId = (existing as { hub_hospital_bed_id?: string | null }).hub_hospital_bed_id ?? null;
   const nextBedId = hub_hospital_bed_id !== undefined ? hub_hospital_bed_id ?? null : prevBedId;
-  if (discharged) {
+  if (discharged || cancellingHospitalization) {
     const toFree = nextBedId ?? prevBedId;
     if (toFree) {
       await supabaseAdmin
@@ -1739,12 +1830,45 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
         .eq('clinic_id', clinic_id);
     }
     if (nextBedId) {
-      await supabaseAdmin
+      const { data: occupiedBed, error: occupyErr } = await supabaseAdmin
         .from('hub_hospital_beds')
         .update({ status: 'occupied' })
         .eq('id', nextBedId)
-        .eq('clinic_id', clinic_id);
+        .eq('clinic_id', clinic_id)
+        .eq('status', 'available')
+        .select('id')
+        .maybeSingle();
+      if (occupyErr) return res.status(500).json({ error: occupyErr.message });
+      if (!occupiedBed) {
+        // Reverte a troca de leito se o destino já foi ocupado.
+        await supabaseAdmin
+          .from('hub_hospitalizations')
+          .update({ hub_hospital_bed_id: prevBedId })
+          .eq('id', id.data)
+          .eq('clinic_id', clinic_id);
+        if (prevBedId) {
+          await supabaseAdmin
+            .from('hub_hospital_beds')
+            .update({ status: 'occupied' })
+            .eq('id', prevBedId)
+            .eq('clinic_id', clinic_id);
+        }
+        return res.status(409).json({
+          error: 'Este leito já está ocupado.',
+          code: 'HOSPITALIZATION_BED_OCCUPIED',
+        });
+      }
     }
+  }
+
+  // Cancelamento: encerra encounter/appointment espelhados para não bloquear handoff de saída.
+  if (cancellingHospitalization && linkedEncounterId) {
+    await supabaseAdmin
+      .from('hub_encounters')
+      .update({ status: 'cancelled', completed_at: new Date().toISOString() })
+      .eq('id', linkedEncounterId)
+      .eq('clinic_id', clinic_id)
+      .in('status', ['in_progress', 'waiting']);
   }
 
   const hospData = data as Record<string, unknown> | null;
@@ -1800,13 +1924,19 @@ export const addHubHospitalizationDailyNote = async (req: Request, res: Response
 const hospitalizationEventKindSchema = z.enum(['vital', 'medication', 'feeding', 'fluid', 'nursing', 'note']);
 
 export const listHubHospitalizationEvents = async (req: Request, res: Response) => {
-  const hospitalization_id = uuidStr.safeParse(req.query.hospitalization_id);
-  if (!hospitalization_id.success) return res.status(400).json({ error: 'hospitalization_id obrigatório' });
+  // Preferência: ID na rota (`/hospitalizations/:id/events`). Query `hospitalization_id` permanece por compatibilidade.
+  const hospitalizationId = resolveHospitalizationEventsId(
+    req.params.id,
+    req.query.hospitalization_id,
+  );
+  if (!hospitalizationId) {
+    return res.status(400).json({ error: 'id da internação obrigatório (rota ou hospitalization_id)' });
+  }
 
   let q = supabaseAdmin
     .from('hub_hospitalization_events')
     .select('id, hospitalization_id, kind, recorded_at, payload, hub_staff_member_id, created_at')
-    .eq('hospitalization_id', hospitalization_id.data)
+    .eq('hospitalization_id', hospitalizationId)
     .order('recorded_at', { ascending: false })
     .limit(500);
 

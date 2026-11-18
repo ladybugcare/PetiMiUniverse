@@ -343,7 +343,7 @@ async function loadSnapshot(clinicId: string, petId: string, dayYmd: string): Pr
 
   const { data: hosps, error: hErr } = await supabaseAdmin
     .from('hub_hospitalizations')
-    .select('id, guardian_id, hub_appointment_id, status, discharged_at')
+    .select('id, unit_id, guardian_id, hub_appointment_id, status, discharged_at')
     .eq('clinic_id', clinicId)
     .eq('pet_id', petId);
   if (hErr) throw new Error(hErr.message);
@@ -479,7 +479,8 @@ async function loadSnapshot(clinicId: string, petId: string, dayYmd: string): Pr
     const linked = appointments.find((a) => a.id === h.hub_appointment_id);
     return {
       id: h.id as string,
-      unit_id: linked?.unit_id ?? null,
+      // Preferir unit_id da internação (sync em lote já fazia isso); appointment é fallback.
+      unit_id: (h.unit_id as string | null) ?? linked?.unit_id ?? null,
       guardian_id: (h.guardian_id as string | null) ?? linked?.guardian_id ?? null,
       hub_appointment_id: (h.hub_appointment_id as string | null) ?? null,
       status: String(h.status),
