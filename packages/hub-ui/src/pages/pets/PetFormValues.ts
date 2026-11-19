@@ -15,6 +15,8 @@ export type PetFormValues = {
   size_tier: '' | PetBodyPorteValue;
   coat_color: string;
   coat_type: '' | CoatTypeValue;
+  /** Microchip físico (opcional). */
+  external_microchip: string;
   primary_guardian_id: string;
   secondary_guardian_id: string;
 };
@@ -32,6 +34,7 @@ export const emptyPetForm: PetFormValues = {
   size_tier: '',
   coat_color: '',
   coat_type: '',
+  external_microchip: '',
   primary_guardian_id: '',
   secondary_guardian_id: '',
 };

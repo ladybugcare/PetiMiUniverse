@@ -1,20 +1,15 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { Copy, Download } from 'lucide-react';
 import type { HubPublicPrescriptionMedication, HubPublicPrescriptionPayload } from '../../api/hubPrescriptionPublicApi';
 import { publicPrescriptionPdfUrl } from '../../api/hubPrescriptionPublicApi';
 import { HubPrescriptionDocumentBadge } from '../../components/clinical/HubPrescriptionDocumentBadge';
 
 function medicationQty(it: HubPublicPrescriptionMedication): string {
-  return [it.quantity, it.presentation].filter(Boolean).join(' ').trim();
+  return (it.presentation ?? '').trim();
 }
 
 function medicationInstructions(it: HubPublicPrescriptionMedication): string {
-  return [
-    it.posology,
-    it.duration ? `durante ${it.duration}` : null,
-    it.concentration ? `(${it.concentration})` : null,
-    it.instructions,
-  ]
+  return [it.posology, it.concentration ? `(${it.concentration})` : null, it.instructions]
     .filter(Boolean)
     .join(' ')
     .trim();
@@ -51,6 +46,38 @@ async function copyText(value: string, onDone?: () => void, onErr?: (msg: string
   }
 }
 
+async function downloadPublicPdf(pdfHref: string, validationCode: string): Promise<'tab' | 'download'> {
+  const res = await fetch(pdfHref, { credentials: 'omit' });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(data.error || 'Não foi possível baixar o PDF da receita');
+  }
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const filename = `receita-${(validationCode || 'documento').replace(/[^\w.-]+/g, '_')}.pdf`;
+
+  const opened = window.open(objectUrl, '_blank');
+  if (opened) {
+    try {
+      opened.opener = null;
+    } catch {
+      /* ignore */
+    }
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+    return 'tab';
+  }
+
+  const a = document.createElement('a');
+  a.href = objectUrl;
+  a.download = filename;
+  a.rel = 'noopener';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 5_000);
+  return 'download';
+}
+
 export type HubPrescriptionPublicViewProps = {
   prescription: HubPublicPrescriptionPayload;
   /** Token público para link de PDF (somente na rota /receita/:token). */
@@ -66,6 +93,7 @@ export const HubPrescriptionPublicView: React.FC<HubPrescriptionPublicViewProps>
   onCopyError,
 }) => {
   const groups = useMemo(() => groupByRoute(prescription.medications ?? []), [prescription.medications]);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
   const statusBanner =
     prescription.status === 'revoked'
       ? {
@@ -86,6 +114,20 @@ export const HubPrescriptionPublicView: React.FC<HubPrescriptionPublicViewProps>
   const validUntilDate = prescription.expires_at
     ? new Date(prescription.expires_at).toLocaleDateString('pt-BR')
     : null;
+
+  const handleDownloadPdf = async () => {
+    if (!pdfHref || downloadingPdf) return;
+    setDownloadingPdf(true);
+    try {
+      const mode = await downloadPublicPdf(pdfHref, prescription.validation_code);
+      if (mode === 'download') onCopySuccess?.('PDF baixado — verifique a pasta Downloads');
+      else onCopySuccess?.('PDF aberto em nova aba');
+    } catch (e: unknown) {
+      onCopyError?.((e as Error)?.message || 'Não foi possível baixar o PDF');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   return (
     <div className="hub-public-rx-doc">
@@ -229,14 +271,14 @@ export const HubPrescriptionPublicView: React.FC<HubPrescriptionPublicViewProps>
               </button>
             ) : null}
             {pdfHref ? (
-              <a
-                href={pdfHref}
-                target="_blank"
-                rel="noopener noreferrer"
+              <button
+                type="button"
                 className="hub-clientes__btn hub-clientes__btn--sm"
+                disabled={downloadingPdf}
+                onClick={() => void handleDownloadPdf()}
               >
-                <Download size={14} /> Baixar PDF
-              </a>
+                <Download size={14} /> {downloadingPdf ? 'Baixando…' : 'Baixar PDF'}
+              </button>
             ) : null}
           </div>
         </aside>

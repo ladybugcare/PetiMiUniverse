@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   ChevronLeft,
   ChevronRight,
+  Printer,
   Search,
 } from 'lucide-react';
 import { apiRequest, useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petimi/web-core';
@@ -58,6 +59,8 @@ import {
   serviceGroupLabel,
   laneKeyForAppointment,
   computeOverlapConflictIds,
+  layoutDayLaneAppointments,
+  clampAppointmentToDayLane,
   computeAgendaHourRange,
   parseStaffWorkHours,
   canEditAgendaAppointment,
@@ -96,7 +99,7 @@ const FILTERS_STORAGE_KEY = AGENDA_FILTERS_STORAGE_KEY;
 const MOBILE_MQ = '(max-width: 900px)';
 const SLOT_MIN = 30;
 const SLOT_H = 26;
-const HEADER_H = 44;
+const HEADER_H = 56;
 
 type PersistedFilters = AgendaPersistedFilters & { groupMode: AgendaGroupMode };
 
@@ -866,13 +869,14 @@ const HubAgendaPage: React.FC = () => {
   }, [clinicUnits, unitFilter, allAppointments]);
 
   useEffect(() => {
-    if (!clinicId || !isUuid(unitFilter)) {
+    if (!clinicId) {
       setCatalogResources([]);
       return;
     }
     let cancelled = false;
+    const unitId = isUuid(unitFilter) ? unitFilter : undefined;
     void Promise.all([
-      hubResourcesApi.list({ clinicId, unitId: unitFilter }),
+      hubResourcesApi.list({ clinicId, unitId }),
       hubResourcesApi.listKinds(clinicId),
     ])
       .then(([res, kindsRes]) => {
@@ -1159,12 +1163,19 @@ const HubAgendaPage: React.FC = () => {
       }));
     }
     const source = view === 'day' ? dayAppointments : weekAppointments;
-    if (visibleCatalogResources.length > 0 && isUuid(unitFilter)) {
-      const cols = visibleCatalogResources.map((r) => ({
-        key: r.id,
-        title: r.name,
-        subtitle: r.kind_name || 'Recurso',
-      }));
+    const unitNameById = new Map(clinicUnits.map((u) => [u.id, u.name]));
+    if (visibleCatalogResources.length > 0) {
+      const cols = visibleCatalogResources.map((r) => {
+        const unitName = unitNameById.get(r.unit_id);
+        const kind = r.kind_name || 'Recurso';
+        const subtitle =
+          !isUuid(unitFilter) && unitName ? `${kind} · ${unitName}` : kind;
+        return {
+          key: r.id,
+          title: r.name,
+          subtitle,
+        };
+      });
       const known = new Set(cols.map((c) => c.key));
       const extra = new Set<string>();
       source.forEach((a) => {
@@ -1183,9 +1194,18 @@ const HubAgendaPage: React.FC = () => {
     return [...keys].sort().map((k) => ({
       key: k,
       title: k === '__none__' ? 'Sem recurso/sala' : k,
-      subtitle: 'Recurso',
+      subtitle: k === '__none__' ? 'Sem catálogo nesta unidade' : 'Texto livre',
     }));
-  }, [groupMode, view, dayAppointments, weekAppointments, staffOptions, visibleCatalogResources, unitFilter]);
+  }, [
+    groupMode,
+    view,
+    dayAppointments,
+    weekAppointments,
+    staffOptions,
+    visibleCatalogResources,
+    unitFilter,
+    clinicUnits,
+  ]);
 
   const weekRows = dayColumns;
 
@@ -1262,6 +1282,29 @@ const HubAgendaPage: React.FC = () => {
     if (serviceTypeFilter !== 'all') count += 1;
     return count;
   }, [unitFilter, professionalFilter, groupFilter, statusFilter, resourceFilter, serviceTypeFilter]);
+
+  /** Prévia de impressão do dia do cursor, com os filtros ativos da agenda. */
+  const printAgendaHref = useMemo(() => {
+    const params = new URLSearchParams();
+    params.set('date', toYmd(cursorDate));
+    params.set('from', 'agenda');
+    if (groupFilter !== 'all') params.set('grupo', groupFilter);
+    if (serviceTypeFilter !== 'all') params.set('servico', serviceTypeFilter);
+    if (professionalFilter !== 'all') params.set('profissional', professionalFilter);
+    if (resourceFilter !== 'all') params.set('recurso', resourceFilter);
+    if (statusFilter !== 'all') params.set('status', statusFilter);
+    const q = searchQ.trim();
+    if (q) params.set('q', q);
+    return `/hub/impressoes/agenda?${params.toString()}`;
+  }, [
+    cursorDate,
+    groupFilter,
+    serviceTypeFilter,
+    professionalFilter,
+    resourceFilter,
+    statusFilter,
+    searchQ,
+  ]);
 
   const patchAppointmentStatus = async (status: AgendaStatus) => {
     if (!clinicId || !selected || !canWrite) return;
@@ -1698,16 +1741,26 @@ const HubAgendaPage: React.FC = () => {
 
   const renderDayLane = (colKey: string) => {
     const list = apptsForDayColumn(colKey);
+    const dayMinutes = (endHour - startHour) * 60;
+    const laneLayouts = layoutDayLaneAppointments(list, { dayStart, dayMinutes });
     const lines: React.ReactNode[] = [];
     const hoverKey = `day:${colKey}`;
-    for (let h = startHour; h <= endHour; h++) {
-      const top = ((h - startHour) * 60) * pxPerMin;
-      lines.push(<div key={h} className="hub-agenda-day__hour-line" style={{ top }} />);
+    const slotCount = Math.round(dayMinutes / SLOT_MIN);
+    for (let i = 0; i <= slotCount; i++) {
+      const top = i * SLOT_H;
+      const isHour = i % 2 === 0;
+      lines.push(
+        <div
+          key={`slot-${i}`}
+          className={isHour ? 'hub-agenda-day__hour-line' : 'hub-agenda-day__half-line'}
+          style={{ top }}
+        />,
+      );
     }
     return (
       <div
         className={`hub-agenda-day__lane${dropHoverKey === hoverKey ? ' hub-agenda-day__lane--drop-hover' : ''}`}
-        style={{ ['--ag-lane-h' as string]: `${laneH}px` }}
+        style={{ height: laneH, ['--ag-lane-h' as string]: `${laneH}px` }}
         onDragOver={(e) => allowAppointmentDrop(e, hoverKey)}
         onDragLeave={(e) => clearDropHover(e, hoverKey)}
         onDrop={(e) => void handleDropOnLane(e, colKey)}
@@ -1716,18 +1769,30 @@ const HubAgendaPage: React.FC = () => {
         {lines}
         {nowLineTop !== null ? <div className="hub-agenda-day__now-line" style={{ top: nowLineTop }} /> : null}
         {list.map((a) => {
-          const top = minutesSinceDayStart(a.start, dayStart) * pxPerMin;
-          const h = Math.max(((a.end.getTime() - a.start.getTime()) / 60_000) * pxPerMin, 22);
+          const clamped = clampAppointmentToDayLane(a.start, a.end, dayStart, dayMinutes);
+          if (!clamped) return null;
+          const top = clamped.startMins * pxPerMin;
+          const h = Math.max((clamped.endMins - clamped.startMins) * pxPerMin, 22);
+          const pack = laneLayouts.get(a.id) ?? { column: 0, columnCount: 1 };
+          const widthPct = 100 / pack.columnCount;
+          const leftPct = pack.column * widthPct;
+          const selected = selectedId === a.id;
           return (
             <div
               key={a.id}
               className="hub-agenda-day__card-wrap"
-              style={{ top, height: h }}
+              style={{
+                top,
+                height: h,
+                left: `calc(${leftPct}% + 3px)`,
+                width: `calc(${widthPct}% - 6px)`,
+                zIndex: selected ? 3 : pack.column + 1,
+              }}
             >
               <AgendaAppointmentCard
                 appointment={a}
                 heightPx={h}
-                selected={selectedId === a.id}
+                selected={selected}
                 showProfessional={groupMode !== 'professional'}
                 {...appointmentDragHandlers(a)}
                 onClick={(e) => {
@@ -1946,6 +2011,17 @@ const HubAgendaPage: React.FC = () => {
                 />
               </div>
             </div>
+
+            {accessAllowed ? (
+              <Link
+                to={printAgendaHref}
+                className="hub-agenda__print-btn"
+                title="Imprimir agenda do dia com os filtros ativos"
+              >
+                <Printer size={16} aria-hidden />
+                Imprimir
+              </Link>
+            ) : null}
           </div>
 
           {!remoteLoading && !appointmentsError ? (
@@ -2157,9 +2233,13 @@ const HubAgendaPage: React.FC = () => {
                 <div className="hub-agenda-day__cols">
                   {dayColumns.map((col) => (
                     <div key={col.key} className="hub-agenda-day__col">
-                      <div className="hub-agenda-day__col-head" style={{ height: HEADER_H }}>
-                        <span>{col.title}</span>
-                        <small>{col.subtitle}</small>
+                      <div
+                        className="hub-agenda-day__col-head"
+                        style={{ height: HEADER_H }}
+                        title={`${col.title} — ${col.subtitle}`}
+                      >
+                        <span className="hub-agenda-day__col-head-title">{col.title}</span>
+                        <small className="hub-agenda-day__col-head-sub">{col.subtitle}</small>
                       </div>
                       {renderDayLane(col.key)}
                     </div>
@@ -2193,11 +2273,9 @@ const HubAgendaPage: React.FC = () => {
                 <tbody>
                   {weekRows.map((row) => (
                     <tr key={row.key}>
-                      <td>
-                        <div style={{ fontWeight: 700 }}>{row.title}</div>
-                        <div className="hub-clientes__muted" style={{ fontSize: 11 }}>
-                          {row.subtitle}
-                        </div>
+                      <td title={`${row.title} — ${row.subtitle}`}>
+                        <div className="hub-agenda-week__row-title">{row.title}</div>
+                        <div className="hub-agenda-week__row-sub">{row.subtitle}</div>
                       </td>
                       {weekDays.map((d) => {
                         const cell = apptsForWeekCell(row.key, d).sort((a, b) => a.start.getTime() - b.start.getTime());

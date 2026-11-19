@@ -21,6 +21,7 @@ Tabela `hub_pets` e `POST /api/hub/pets` (ver [`002_create_hub_pets_and_pet_guar
 | `primary_guardian_id` | Tutor principal (obrigatório) |
 | `secondary_guardian_id` | Tutor secundário (opcional) |
 | `petmi_pet_id` | UUID estável gerado pelo sistema (não é microchip físico) |
+| `external_microchip` | Microchip físico (opcional); ver migração `149_alter_hub_pets_external_microchip.sql` |
 
 ## Mapeamento wizard (mock) ↔ PetiHub
 
@@ -32,11 +33,11 @@ Tabela `hub_pets` e `POST /api/hub/pets` (ver [`002_create_hub_pets_and_pet_guar
 | Espécie | Sim | `species` |
 | Raça / SRD | Sim | `breed`; se SRD ativo → `breed: null`. |
 | Sexo | Sim | `sex` |
-| Castrado(a)? | Não | Futuro: `neutered` boolean. |
+| Castrado(a)? | Sim | `neutered` boolean. |
 | Data de nascimento | Sim | `birth_date` |
 | Idade | — | Apenas cálculo na UI. |
-| Cor / pelagem | Não | Futuro: `coat_color`. |
-| Microchip (alfanum.) | Não | **Distinto** de `petmi_pet_id`; futuro: `external_microchip` ou equivalente. |
+| Cor / pelagem | Sim | `coat_color` / `coat_type`. |
+| Microchip (alfanum.) | Sim | `external_microchip` — **distinto** de `petmi_pet_id`. |
 | Peso / altura / porte | Não | Futuro: `weight_kg`, `height_cm`, `size`. |
 | Como nos conheceu? | Não | CRM no pet ou herdar `lead_source` do tutor. |
 | Frequenta outros locais? | Não | Futuro: boolean. |

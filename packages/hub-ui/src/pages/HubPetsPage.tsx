@@ -47,6 +47,7 @@ function petToForm(p: HubPet): PetFormValues {
     size_tier: sizeOk ? (st as PetFormValues['size_tier']) : '',
     coat_color: p.coat_color || '',
     coat_type: p.coat_type ? (p.coat_type as CoatTypeValue) : '',
+    external_microchip: p.external_microchip || '',
     primary_guardian_id: p.primary_guardian?.guardian_id || '',
     secondary_guardian_id: p.secondary_guardian?.guardian_id || '',
   };
@@ -148,14 +149,16 @@ const HubPetsPage: React.FC = () => {
         const species = p.species.toLowerCase();
         const tutor = (p.primary_guardian?.guardian_name || '').toLowerCase();
         const tutor2 = (p.secondary_guardian?.guardian_name || '').toLowerCase();
-        const chip = (p.petmi_pet_id || '').toLowerCase().replace(/\s/g, '');
+        const chip = (p.external_microchip || '').toLowerCase().replace(/\s/g, '');
+        const petmiId = (p.petmi_pet_id || '').toLowerCase().replace(/\s/g, '');
         const qn = q.replace(/\s/g, '');
         return (
           name.includes(q) ||
           species.includes(q) ||
           tutor.includes(q) ||
           tutor2.includes(q) ||
-          chip.includes(qn)
+          (chip && chip.includes(qn)) ||
+          petmiId.includes(qn)
         );
       });
     }
@@ -287,6 +290,7 @@ const HubPetsPage: React.FC = () => {
           size_tier: sizeTier,
           coat_color: form.coat_color.trim() || null,
           coat_type: form.coat_type || null,
+          external_microchip: form.external_microchip.trim() || null,
           primary_guardian_id: form.primary_guardian_id,
           secondary_guardian_id: sec,
         });
@@ -310,6 +314,7 @@ const HubPetsPage: React.FC = () => {
           size_tier: sizeTier,
           coat_color: form.coat_color.trim() || null,
           coat_type: form.coat_type || null,
+          external_microchip: form.external_microchip.trim() || null,
           primary_guardian_id: form.primary_guardian_id,
           secondary_guardian_id: sec,
         });

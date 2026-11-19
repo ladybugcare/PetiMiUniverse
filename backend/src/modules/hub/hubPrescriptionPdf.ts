@@ -289,10 +289,15 @@ export async function streamValidatablePrescriptionPdf(
   res: Response,
   prescription: PrescriptionFull,
   validation: PrescriptionValidationMeta,
+  opts?: { contentDisposition?: 'inline' | 'attachment' },
 ): Promise<void> {
+  const disposition = opts?.contentDisposition ?? 'inline';
   const doc = new PDFDocument({ size: 'A4', margin: 48, bufferPages: true });
   res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `inline; filename="receita-${validation.validation_code}.pdf"`);
+  res.setHeader(
+    'Content-Disposition',
+    `${disposition}; filename="receita-${validation.validation_code}.pdf"`,
+  );
   doc.pipe(res);
 
   const margin = 48;

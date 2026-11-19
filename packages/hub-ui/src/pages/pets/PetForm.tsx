@@ -295,6 +295,19 @@ export const PetForm: React.FC<PetFormProps> = ({
         />
       </div>
       <div className="hub-clientes__field">
+        <label className="hub-clientes__label" htmlFor="pet-form-microchip">
+          Microchip
+        </label>
+        <input
+          id="pet-form-microchip"
+          className="hub-clientes__input"
+          value={value.external_microchip}
+          onChange={(e) => patch({ external_microchip: e.target.value })}
+          placeholder="Número alfanumérico (não é o PetMi ID)"
+          autoComplete="off"
+        />
+      </div>
+      <div className="hub-clientes__field">
         <label className="hub-clientes__label" htmlFor="pet-form-sex">
           Sexo
         </label>

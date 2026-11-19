@@ -3,8 +3,9 @@
  *
  * - CADMIN Diana + staff Diana Paixão
  * - Catálogo básico (grupos, tipos, banheiras)
- * - Muitos tutores/pets
- * - Em seguida rode: npm run seed:ops-demo (com SEED_CLINIC_ID / SEED_UNIT_ID)
+ * - Muitos tutores/pets + agenda com vários serviços e status
+ * - Encadeia seed:ops-demo (banho, hotel/creche, leva-traz, cirurgia/internação)
+ *   com estágios operacionais distintos. Pule com SKIP_OPS=1.
  *
  * Uso:
  *   npm run seed:diana-staging
@@ -12,6 +13,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { spawnSync } from 'child_process';
 import dotenv from 'dotenv';
 import { createClient } from '@supabase/supabase-js';
 
@@ -332,16 +334,104 @@ async function ensureCatalog(unitId: string) {
   }
 }
 
+/** Status da agenda clínica — cobre o funil completo. */
+const AGENDA_STATUSES = [
+  'pending_confirm',
+  'confirmed',
+  'checked_in',
+  'in_progress',
+  'done',
+  'cancelled',
+] as const;
+
+const SERVICE_CODES = [
+  'banho',
+  'tosa',
+  'consulta',
+  'retorno',
+  'hotel_diaria',
+  'creche_dia',
+  'leva_traz',
+  'cirurgia_seed',
+  'internacao_seed',
+] as const;
+
+async function ensureClinicalEncounter(args: {
+  unitId: string;
+  staffId: string;
+  petId: string;
+  guardianId: string;
+  appointmentId: string;
+  serviceTypeId: string;
+  status: (typeof AGENDA_STATUSES)[number];
+  petName: string;
+  serviceName: string;
+  encounterType: 'consultation' | 'return';
+}) {
+  // Fila de recepção (checked_in) ainda não abre encounter
+  if (args.status !== 'in_progress' && args.status !== 'done') return;
+
+  const encounterStatus = args.status === 'done' ? 'completed' : 'in_progress';
+  const { data: ex } = await admin
+    .from('hub_encounters')
+    .select('id')
+    .eq('clinic_id', CLINIC_ID)
+    .eq('hub_appointment_id', args.appointmentId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (ex?.id) return;
+
+  const clinicalCase = must(
+    await admin
+      .from('hub_clinical_cases')
+      .insert({
+        clinic_id: CLINIC_ID,
+        unit_id: args.unitId,
+        pet_id: args.petId,
+        guardian_id_snapshot: args.guardianId,
+        primary_veterinarian_id: args.staffId,
+        title: `${args.serviceName} — ${args.petName}`,
+        status: args.status === 'done' ? 'resolved' : 'active',
+        opened_at: new Date().toISOString(),
+        closed_at: args.status === 'done' ? new Date().toISOString() : null,
+      })
+      .select('id')
+      .single(),
+    `caso ${args.petName}`,
+  ) as { id: string };
+
+  await admin.from('hub_encounters').insert({
+    clinic_id: CLINIC_ID,
+    unit_id: args.unitId,
+    pet_id: args.petId,
+    guardian_id: args.guardianId,
+    hub_case_id: clinicalCase.id,
+    hub_appointment_id: args.appointmentId,
+    hub_staff_member_id: args.staffId,
+    hub_service_type_id: args.serviceTypeId,
+    encounter_type: args.encounterType,
+    status: encounterStatus,
+    chief_complaint: `${args.serviceName} seed — ${args.petName}`,
+    summary_notes: `${MARKER} · ${args.serviceName}`,
+    started_at: new Date().toISOString(),
+    completed_at: encounterStatus === 'completed' ? new Date().toISOString() : null,
+  });
+}
+
 async function ensureClientsAndAgenda(staffId: string, unitId: string) {
   const { data: types } = await admin
     .from('hub_service_types')
     .select('id, code, name, service_group')
     .eq('clinic_id', CLINIC_ID)
     .is('deleted_at', null);
-  const byCode = new Map((types ?? []).map((t: { code: string; id: string; name: string; service_group: string }) => [t.code, t]));
+  const byCode = new Map(
+    (types ?? []).map((t: { code: string; id: string; name: string; service_group: string }) => [t.code, t]),
+  );
 
   const dayMs = 24 * 60 * 60 * 1000;
   let slot = 0;
+  let created = 0;
+  let skipped = 0;
 
   for (const tutor of TUTORS) {
     let guardianId: string;
@@ -411,60 +501,113 @@ async function ensureClientsAndAgenda(staffId: string, unitId: string) {
         });
       }
 
-      // Um agendamento por pet, espalhado nos serviços
-      const codes = ['banho', 'consulta', 'hotel_diaria', 'creche_dia', 'leva_traz', 'cirurgia_seed', 'internacao_seed'];
-      const code = codes[slot % codes.length];
-      const st = byCode.get(code);
-      slot += 1;
-      if (!st) continue;
+      // Dois agendamentos por pet: serviços e estágios diferentes
+      for (let i = 0; i < 2; i++) {
+        const code = SERVICE_CODES[(slot + i) % SERVICE_CODES.length];
+        const status = AGENDA_STATUSES[(slot + i * 3) % AGENDA_STATUSES.length];
+        const st = byCode.get(code);
+        if (!st) continue;
 
-      const dayOffset = (slot % 5) - 1; // ontem … +3 dias
-      const hour = 9 + (slot % 7);
-      const starts = new Date(Date.now() + dayOffset * dayMs);
-      starts.setHours(hour, 0, 0, 0);
-      const ends = new Date(starts.getTime() + 60 * 60 * 1000);
+        // Passado para done/cancelled; hoje para fila/em curso; futuro para pending/confirmed
+        let dayOffset: number;
+        if (status === 'done' || status === 'cancelled') dayOffset = -1 - ((slot + i) % 3);
+        else if (status === 'checked_in' || status === 'in_progress') dayOffset = 0;
+        else dayOffset = 1 + ((slot + i) % 4);
 
-      const title = `${st.name} · ${petSpec.name}`;
-      const { data: apEx } = await admin
-        .from('hub_appointments')
-        .select('id')
-        .eq('clinic_id', CLINIC_ID)
-        .eq('pet_id', petId)
-        .eq('title', title)
-        .is('deleted_at', null)
-        .maybeSingle();
-      if (apEx) continue;
+        const hour = 8 + ((slot + i) % 9);
+        const starts = new Date(Date.now() + dayOffset * dayMs);
+        starts.setHours(hour, (i * 15) % 60, 0, 0);
+        const ends = new Date(starts.getTime() + 60 * 60 * 1000);
 
-      const appt = must(
-        await admin
+        const title = `${st.name} · ${petSpec.name}`;
+        const notes = `${MARKER} agenda demo · status=${status}`;
+
+        const { data: apEx } = await admin
           .from('hub_appointments')
-          .insert({
-            clinic_id: CLINIC_ID,
-            unit_id: unitId,
-            hub_service_type_id: st.id,
-            hub_staff_member_id: staffId,
-            pet_id: petId,
-            guardian_id: guardianId,
-            starts_at: starts.toISOString(),
-            ends_at: ends.toISOString(),
-            status: 'confirmed',
-            appointment_kind: 'standard',
-            title,
-            notes: `${MARKER} agenda demo`,
-          })
-          .select('id')
-          .single(),
-        `appt ${title}`,
-      ) as { id: string };
+          .select('id, status')
+          .eq('clinic_id', CLINIC_ID)
+          .eq('pet_id', petId)
+          .eq('title', title)
+          .is('deleted_at', null)
+          .maybeSingle();
 
-      await admin.from('hub_appointment_services').insert({
-        appointment_id: appt.id,
-        hub_service_type_id: st.id,
-        duration_minutes: 60,
-        order_index: 0,
-      });
+        if (apEx?.id) {
+          // Atualiza status se o seed anterior deixou tudo confirmed
+          if (apEx.status !== status) {
+            await admin
+              .from('hub_appointments')
+              .update({ status, notes, starts_at: starts.toISOString(), ends_at: ends.toISOString() })
+              .eq('id', apEx.id);
+          }
+          if (code === 'consulta' || code === 'retorno') {
+            await ensureClinicalEncounter({
+              unitId,
+              staffId,
+              petId,
+              guardianId,
+              appointmentId: apEx.id as string,
+              serviceTypeId: st.id,
+              status,
+              petName: petSpec.name,
+              serviceName: st.name,
+              encounterType: code === 'retorno' ? 'return' : 'consultation',
+            });
+          }
+          skipped += 1;
+          continue;
+        }
+
+        const appt = must(
+          await admin
+            .from('hub_appointments')
+            .insert({
+              clinic_id: CLINIC_ID,
+              unit_id: unitId,
+              hub_service_type_id: st.id,
+              hub_staff_member_id: staffId,
+              pet_id: petId,
+              guardian_id: guardianId,
+              starts_at: starts.toISOString(),
+              ends_at: ends.toISOString(),
+              status,
+              appointment_kind: 'standard',
+              title,
+              notes,
+            })
+            .select('id')
+            .single(),
+          `appt ${title}`,
+        ) as { id: string };
+
+        await admin.from('hub_appointment_services').insert({
+          appointment_id: appt.id,
+          hub_service_type_id: st.id,
+          duration_minutes: 60,
+          order_index: 0,
+        });
+
+        if (code === 'consulta' || code === 'retorno') {
+          await ensureClinicalEncounter({
+            unitId,
+            staffId,
+            petId,
+            guardianId,
+            appointmentId: appt.id,
+            serviceTypeId: st.id,
+            status,
+            petName: petSpec.name,
+            serviceName: st.name,
+            encounterType: code === 'retorno' ? 'return' : 'consultation',
+          });
+        }
+
+        created += 1;
+      }
+      slot += 1;
     }
   }
+
+  console.log(`  Agenda: ${created} novo(s), ${skipped} já existia(m) (status sincronizado).`);
 }
 
 async function main() {
@@ -501,8 +644,28 @@ async function main() {
   console.log(`  Clínica:  ${CLINIC_ID}`);
   console.log(`  Unidade:  ${unitId}`);
   console.log(`  Creds →   ${out}`);
-  console.log('\nAgora rode os seeds ops (banho, hotel, leva-traz, clínica):');
-  console.log('  set -a && source .env.preprod.local && source .env.diana.staging.local && set +a && npm run seed:ops-demo');
+
+  if (process.env.SKIP_OPS === '1') {
+    console.log('\nSKIP_OPS=1 — ops-demo não executado.');
+    console.log('  set -a && source .env.preprod.local && source .env.diana.staging.local && set +a && npm run seed:ops-demo');
+    return;
+  }
+
+  console.log('\n→ Encadeando seed:ops-demo (estágios operacionais)…');
+  const ops = spawnSync('npm', ['run', 'seed:ops-demo'], {
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      SEED_CLINIC_ID: CLINIC_ID,
+      SEED_UNIT_ID: unitId,
+      SEED_VET_NAME: FULL_NAME,
+    },
+    stdio: 'inherit',
+  });
+  if (ops.status !== 0) {
+    throw new Error(`seed:ops-demo falhou (exit ${ops.status ?? 'null'})`);
+  }
+  console.log('\nOK Diana + ops-demo');
 }
 
 main().catch((e) => {

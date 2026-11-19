@@ -29,6 +29,7 @@ export function petToWizardState(
     size: sizeOk ? st : '',
     coatColor: pet.coat_color || '',
     coatType: pet.coat_type || '',
+    microchip: pet.external_microchip || '',
     primary_guardian_id: pet.primary_guardian?.guardian_id || '',
     secondary_guardian_id: pet.secondary_guardian?.guardian_id || '',
   };

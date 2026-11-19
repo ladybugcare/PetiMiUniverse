@@ -903,6 +903,7 @@
   display: grid;
   /* Paradas da rota precisam de mais espaço (nome + endereço + caixa). */
   grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.35fr);
+  grid-template-rows: minmax(0, 1fr);
   gap: 0;
   flex: 1;
   min-height: 240px;
@@ -920,7 +921,11 @@
   padding: 0.875rem 1.25rem;
   overflow-x: hidden;
   overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Grid items default min-height:auto — sem isso o overflow-y nunca ativa e o pai corta a lista. */
   min-width: 0;
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
 }
 
 .hub-pickup-builder__available {
@@ -928,12 +933,17 @@
 }
 
 .hub-pickup-builder__section-label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   font-size: 0.75rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--hub-text-muted, #64748b);
-  margin-bottom: 0.25rem;
+  margin: 0 0 0.25rem;
+  padding: 0.125rem 0 0.375rem;
+  background: var(--hub-bg-surface, #fff);
 }
 
 .hub-pickup-builder__avail-item {
@@ -2141,6 +2151,10 @@
     border-right: none;
     border-bottom: 1px solid var(--hub-border, #e2e8f0);
     max-height: 200px;
+  }
+
+  .hub-pickup-builder__selected {
+    max-height: min(360px, 45vh);
   }
 
   .hub-pickup-stop-drawer__actions {

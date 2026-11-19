@@ -45,6 +45,8 @@ export interface HubPet {
   size_tier: PetBodyPorteValue;
   coat_color: string | null;
   coat_type: CoatTypeValue | null;
+  /** Microchip físico; distinto de `petmi_pet_id`. Ausente em respostas legadas. */
+  external_microchip?: string | null;
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
@@ -75,6 +77,7 @@ export const hubPetsApi = {
     size_tier: PetBodyPorteValue;
     coat_color?: string | null;
     coat_type?: CoatTypeValue | null;
+    external_microchip?: string | null;
     primary_guardian_id: string;
     secondary_guardian_id?: string | null;
   } & HubPetHealthPayload): Promise<{ pet: HubPet }> {
@@ -98,6 +101,7 @@ export const hubPetsApi = {
       size_tier?: PetBodyPorteValue;
       coat_color?: string | null;
       coat_type?: CoatTypeValue | null;
+      external_microchip?: string | null;
       archived?: boolean;
       primary_guardian_id?: string;
       secondary_guardian_id?: string | null;

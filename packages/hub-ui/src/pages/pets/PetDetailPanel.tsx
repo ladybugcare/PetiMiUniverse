@@ -632,6 +632,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
     pet.coat_type && COAT_TYPE_LABELS[pet.coat_type as CoatTypeValue]
       ? COAT_TYPE_LABELS[pet.coat_type as CoatTypeValue]
       : '—';
+  const microchipLabel = pet.external_microchip?.trim() || '—';
   const identityChips = [
     porteLabel !== '—' ? { key: 'porte', label: `Porte ${porteLabel}` } : null,
     pelagemLabel !== '—' ? { key: 'pelagem', label: pelagemLabel } : null,
@@ -641,6 +642,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
       : pet.neutered === false
         ? { key: 'neutered', label: 'Não castrado' }
         : null,
+    microchipLabel !== '—' ? { key: 'microchip', label: `Chip ${microchipLabel}` } : null,
   ].filter((c): c is { key: string; label: string } => Boolean(c));
 
   const openFullPage = () => {
@@ -1116,6 +1118,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
       { label: 'Pelagem', value: pelagemLabel },
       { label: 'Cor', value: pet.coat_color?.trim() || '—' },
       { label: 'Castrado(a)', value: neuteredLabel(pet.neutered) },
+      { label: 'Microchip', value: microchipLabel },
     ];
 
     return (
@@ -1241,6 +1244,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
             <InfoPair label="Pelagem" value={pelagemLabel} />
             <InfoPair label="Castrado(a)" value={neuteredLabel(pet.neutered)} />
             <InfoPair label="Porte" value={porteLabel} />
+            <InfoPair label="Microchip" value={microchipLabel} />
           </div>
         </div>
       </div>

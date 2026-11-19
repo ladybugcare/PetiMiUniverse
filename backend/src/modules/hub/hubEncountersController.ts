@@ -1471,7 +1471,19 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
     }
 
     const patch: Record<string, unknown> = {};
-    if (b.status !== undefined) patch.status = b.status;
+    if (b.status !== undefined) {
+      // Finalização com efeitos colaterais deve usar POST /complete — mas se o status
+      // completed chegar via PATCH, garanta completed_at para handoff/caixa.
+      if (b.status === 'completed') {
+        return res.status(400).json({
+          error: 'Para finalizar o atendimento use a ação de conclusão (completed_at obrigatório).',
+        });
+      }
+      patch.status = b.status;
+      if (b.status === 'cancelled') {
+        patch.completed_at = new Date().toISOString();
+      }
+    }
     if (b.chief_complaint !== undefined) patch.chief_complaint = b.chief_complaint;
     if (b.summary_notes !== undefined) patch.summary_notes = b.summary_notes;
     if (b.hub_staff_member_id !== undefined) patch.hub_staff_member_id = b.hub_staff_member_id;

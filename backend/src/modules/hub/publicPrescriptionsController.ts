@@ -124,14 +124,19 @@ export const getPublicPrescriptionPdf = async (req: Request, res: Response) => {
     const pdfView = snapshotToPdfView(doc.snapshot as PrescriptionSnapshot, {
       expires_at: payload.expires_at,
     });
-    await streamValidatablePrescriptionPdf(res, pdfView, {
-      validation_code: payload.validation_code,
-      public_url: publicUrl,
-      content_hash: String(doc.content_hash ?? ''),
-      issued_at: payload.issued_at,
-      expires_at: payload.expires_at,
-      disclaimers: payload.disclaimers,
-    });
+    await streamValidatablePrescriptionPdf(
+      res,
+      pdfView,
+      {
+        validation_code: payload.validation_code,
+        public_url: publicUrl,
+        content_hash: String(doc.content_hash ?? ''),
+        issued_at: payload.issued_at,
+        expires_at: payload.expires_at,
+        disclaimers: payload.disclaimers,
+      },
+      { contentDisposition: 'attachment' },
+    );
   } catch (e) {
     console.error('[public_prescriptions] pdf', e);
     if (!res.headersSent) {

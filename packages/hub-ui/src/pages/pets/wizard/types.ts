@@ -14,6 +14,7 @@ export type PetWizardState = {
   neutered: '' | 'Y' | 'N';
   coatColor: string;
   coatType: string;
+  /** Microchip físico — persistido em hub_pets.external_microchip. */
   microchip: string;
   weightKg: string;
   heightCm: string;

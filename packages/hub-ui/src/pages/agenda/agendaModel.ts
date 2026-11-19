@@ -189,10 +189,12 @@ export function computeAgendaHourRange(
 
   for (const a of appointments) {
     if (a.status === 'cancelled') continue;
-    extendForMinutes(
-      a.start.getHours() * 60 + a.start.getMinutes(),
-      a.end.getHours() * 60 + a.end.getMinutes(),
-    );
+    const startMinutes = a.start.getHours() * 60 + a.start.getMinutes();
+    // Overnight: ignora o horário de checkout no outro dia (a grade do dia já cobre até o padrão/estendido).
+    const endMinutes = isSameDay(a.start, a.end)
+      ? a.end.getHours() * 60 + a.end.getMinutes()
+      : DEFAULT_AGENDA_END_HOUR * 60;
+    extendForMinutes(startMinutes, endMinutes);
   }
 
   for (const wh of options?.staffWorkHours ?? []) {
@@ -212,6 +214,25 @@ export function startOfDay(d: Date): Date {
 
 export function minutesSinceDayStart(d: Date, dayStart: Date): number {
   return Math.round((d.getTime() - dayStart.getTime()) / 60_000);
+}
+
+/**
+ * Limita o card à faixa visível da grade do dia (evita hospedagens/overnight
+ * esticarem o scroll sem horários abaixo do fim da agenda).
+ */
+export function clampAppointmentToDayLane(
+  start: Date,
+  end: Date,
+  dayStart: Date,
+  dayMinutes: number,
+): { startMins: number; endMins: number } | null {
+  if (dayMinutes <= 0) return null;
+  const rawStart = minutesSinceDayStart(start, dayStart);
+  const rawEnd = minutesSinceDayStart(end, dayStart);
+  const startMins = Math.max(0, Math.min(rawStart, dayMinutes));
+  const endMins = Math.max(0, Math.min(rawEnd, dayMinutes));
+  if (endMins <= startMins) return null;
+  return { startMins, endMins };
 }
 
 export function formatHm(d: Date): string {
@@ -319,6 +340,104 @@ export function computeOverlapConflictIds(list: AgendaAppointment[], groupMode: 
     }
   }
   return bad;
+}
+
+/** Posição horizontal de um card quando há conflitos no mesmo horário. */
+export type DayLaneCardLayout = {
+  column: number;
+  columnCount: number;
+};
+
+type LaneLayoutInterval = { id: string; startMs: number; endMs: number };
+
+/**
+ * Empacota agendamentos sobrepostos lado a lado (estilo calendário clássico).
+ * Eventos que só se tocam no limite não compartilham coluna.
+ * Com `dayStart`/`dayMinutes`, usa o intervalo já cortado na grade do dia
+ * (evita overnight/hotel “engolir” o empacotamento do dia inteiro).
+ */
+export function layoutDayLaneAppointments(
+  list: Array<Pick<AgendaAppointment, 'id' | 'start' | 'end'>>,
+  options?: { dayStart?: Date; dayMinutes?: number },
+): Map<string, DayLaneCardLayout> {
+  const result = new Map<string, DayLaneCardLayout>();
+  if (list.length === 0) return result;
+
+  const dayStart = options?.dayStart;
+  const dayMinutes = options?.dayMinutes;
+
+  const intervals: LaneLayoutInterval[] = [];
+  for (const a of list) {
+    if (dayStart != null && dayMinutes != null && dayMinutes > 0) {
+      const clamped = clampAppointmentToDayLane(a.start, a.end, dayStart, dayMinutes);
+      if (!clamped) continue;
+      intervals.push({
+        id: a.id,
+        startMs: clamped.startMins,
+        endMs: clamped.endMins,
+      });
+    } else {
+      intervals.push({
+        id: a.id,
+        startMs: a.start.getTime(),
+        endMs: a.end.getTime(),
+      });
+    }
+  }
+
+  intervals.sort((a, b) => {
+    const byStart = a.startMs - b.startMs;
+    if (byStart !== 0) return byStart;
+    return b.endMs - a.endMs;
+  });
+
+  let cluster: LaneLayoutInterval[] = [];
+  let clusterEnd = 0;
+
+  const flushCluster = () => {
+    if (cluster.length === 0) return;
+
+    const colEnds: number[] = [];
+    const assignments = new Map<string, number>();
+
+    for (const ev of cluster) {
+      let col = colEnds.findIndex((end) => end <= ev.startMs);
+      if (col === -1) {
+        col = colEnds.length;
+        colEnds.push(ev.endMs);
+      } else {
+        colEnds[col] = ev.endMs;
+      }
+      assignments.set(ev.id, col);
+    }
+
+    const columnCount = Math.max(colEnds.length, 1);
+    for (const ev of cluster) {
+      result.set(ev.id, { column: assignments.get(ev.id) ?? 0, columnCount });
+    }
+
+    cluster = [];
+    clusterEnd = 0;
+  };
+
+  for (const ev of intervals) {
+    if (cluster.length === 0) {
+      cluster = [ev];
+      clusterEnd = ev.endMs;
+      continue;
+    }
+    if (ev.startMs < clusterEnd) {
+      cluster.push(ev);
+      clusterEnd = Math.max(clusterEnd, ev.endMs);
+    } else {
+      flushCluster();
+      cluster = [ev];
+      clusterEnd = ev.endMs;
+    }
+  }
+  flushCluster();
+
+  return result;
 }
 
 export { serviceGroupLabel };

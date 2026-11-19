@@ -32,6 +32,7 @@ import { useMyStaffMember } from '../../hooks/useMyStaffMember';
 import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { normalizeBrPhone } from '../../utils/whatsappLink';
 import { formatPrescriptionItemMeta } from './clinicalDisplay';
+import { isPrescriptionContentEditableToday } from './prescriptionEditWindow';
 import {
   buildPrescriptionWhatsAppMessage,
   openPrescriptionWhatsApp,
@@ -44,11 +45,11 @@ function draftToCreateItem(draft: PrescriptionItemDraft) {
     medication_name: draft.medication_name.trim(),
     presentation: draft.presentation.trim() || null,
     concentration: draft.concentration.trim() || null,
-    quantity: draft.quantity.trim() || null,
+    quantity: null,
     posology: draft.posology.trim() || null,
     dosage: draft.concentration.trim() || null,
     frequency: draft.posology.trim() || null,
-    duration: draft.duration.trim() || null,
+    duration: null,
     instructions: draft.instructions.trim() || null,
     hub_inventory_item_id: null,
     administration: 'home_use' as const,
@@ -61,11 +62,11 @@ function prescriptionItemToPayload(it: HubPrescriptionItem) {
     medication_name: it.medication_name,
     presentation: it.presentation ?? null,
     concentration: it.concentration ?? it.dosage ?? null,
-    quantity: it.quantity ?? null,
+    quantity: null,
     posology: it.posology ?? it.frequency ?? null,
     dosage: it.dosage ?? it.concentration ?? null,
     frequency: it.frequency ?? it.posology ?? null,
-    duration: it.duration ?? null,
+    duration: null,
     instructions: it.instructions ?? null,
     hub_inventory_item_id: it.hub_inventory_item_id ?? null,
     administration: 'home_use' as const,
@@ -84,6 +85,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
   const [searchParams] = useSearchParams();
   const petId = searchParams.get('petId')?.trim() || '';
   const presetCaseId = searchParams.get('caseId')?.trim() || '';
+  const prescriptionIdParam = searchParams.get('prescriptionId')?.trim() || '';
   const { showError, showSuccess } = useAlert();
   const { hasPermission, loading: permLoading } = usePermissions();
   const canWrite = hasPermission('hub.clinic.write');
@@ -93,6 +95,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
 
   const [pet, setPet] = useState<HubPet | null>(null);
   const [loadingPet, setLoadingPet] = useState(true);
+  const [loadingPrescription, setLoadingPrescription] = useState(Boolean(prescriptionIdParam));
   const [staffId, setStaffId] = useState('');
   const [draft, setDraft] = useState<PrescriptionItemDraft>(emptyPrescriptionItemDraft);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -154,15 +157,75 @@ const HubStandalonePrescriptionPage: React.FC = () => {
     if (preferred) setStaffId(preferred);
   }, [myStaffMember, myStaffLoading, staffId]);
 
+  useEffect(() => {
+    if (!clinicId || !petId || !prescriptionIdParam) {
+      setLoadingPrescription(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingPrescription(true);
+    void hubClinicalApi
+      .listPrescriptions(clinicId, petId)
+      .then(async (r) => {
+        if (cancelled) return;
+        const found = (r.prescriptions ?? []).find((p) => p.id === prescriptionIdParam) ?? null;
+        if (!found) {
+          showError('Receita não encontrada para edição');
+          setPrescription(null);
+          return;
+        }
+        setPrescription(found);
+        setNotes(found.notes?.trim() ? String(found.notes) : '');
+        if (found.hub_staff_member_id) setStaffId(found.hub_staff_member_id);
+        if (found.hub_case_id) {
+          setCaseLinkedId(found.hub_case_id);
+          setCaseLink({ hub_case_id: found.hub_case_id });
+        }
+        if (found.status === 'issued') {
+          setPostIssueStep(true);
+          try {
+            const docs = await hubClinicalApi.listPrescriptionDocuments(found.id, clinicId);
+            const latest = (docs.documents ?? [])[0] ?? null;
+            if (latest) {
+              setIssuedDoc(latest);
+              setIssuedPublicUrl(latest.validation_url ?? latest.public_url ?? null);
+              setIssuedHashShort(latest.content_hash_short ?? null);
+            }
+          } catch {
+            /* ignore */
+          }
+        }
+      })
+      .catch((e: unknown) => {
+        if (!cancelled) showError((e as Error)?.message || 'Erro ao carregar receita');
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingPrescription(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId, petId, prescriptionIdParam, showError]);
+
   const issued = prescription?.status === 'issued';
+  const sameDayEditable = isPrescriptionContentEditableToday({
+    prescribedAt: prescription?.prescribed_at,
+    createdAt: prescription?.created_at,
+    status: prescription?.status,
+  });
+  const editLocked = Boolean(prescription) && !sameDayEditable;
   const items = prescription?.items ?? [];
 
   const ensurePrescription = useCallback(
     async (firstItem: ReturnType<typeof draftToCreateItem>) => {
       if (!clinicId || !petId || !staffId) throw new Error('Selecione o veterinário responsável');
       if (prescription?.id) {
-        if (prescription.status === 'issued') {
-          throw new Error('Receita já emitida — não é possível adicionar itens');
+        if (!isPrescriptionContentEditableToday({
+          prescribedAt: prescription.prescribed_at,
+          createdAt: prescription.created_at,
+          status: prescription.status,
+        })) {
+          throw new Error('Edição disponível apenas no dia da receita');
         }
         const nextItems = [...(prescription.items ?? []).map(prescriptionItemToPayload), firstItem];
         const res = await hubClinicalApi.patchPrescription(prescription.id, {
@@ -194,7 +257,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
   };
 
   const startEdit = (index: number) => {
-    if (!prescription || issued) return;
+    if (!prescription || editLocked) return;
     const it = (prescription.items ?? [])[index];
     if (!it) return;
     setEditingIndex(index);
@@ -202,7 +265,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
   };
 
   const addItem = async () => {
-    if (!draft.medication_name.trim() || issued) return;
+    if (!draft.medication_name.trim() || editLocked) return;
     setSaving(true);
     try {
       if (editingIndex != null && prescription?.id && clinicId) {
@@ -233,7 +296,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
   };
 
   const removeItemAt = async (index: number) => {
-    if (!clinicId || !prescription || issued) return;
+    if (!clinicId || !prescription || editLocked) return;
     const list = [...(prescription.items ?? [])];
     if (list.length <= 1) {
       showError('A receita precisa ter pelo menos um medicamento.');
@@ -276,7 +339,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
     setIssuePanelLoading(true);
     setIssuing(true);
     try {
-      if (!issued) {
+      if (!issued || sameDayEditable) {
         await hubClinicalApi.patchPrescription(prescription.id, {
           clinic_id: clinicId,
           hub_staff_member_id: staffId,
@@ -435,7 +498,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
       }));
   }, [staffList]);
 
-  if (permLoading || loadingPet) {
+  if (permLoading || loadingPet || loadingPrescription) {
     return (
       <div className="hub-standalone-rx">
         <HubLoading label="Carregando…" />
@@ -477,16 +540,21 @@ const HubStandalonePrescriptionPage: React.FC = () => {
             {presetCaseId ? 'Voltar ao caso' : `Ficha de ${pet.name}`}
           </button>
           <h1 className="hub-standalone-rx__topbar-title">
-            <Pill size={20} aria-hidden /> Nova receita — {pet.name}
+            <Pill size={20} aria-hidden />{' '}
+            {prescriptionIdParam ? 'Editar receita' : 'Nova receita'} — {pet.name}
           </h1>
           <p className="hub-standalone-rx__topbar-subtitle">
-            {presetCaseId
-              ? 'Receita complementar neste caso, sem precisar abrir outro atendimento.'
-              : 'Receita avulsa sem atendimento completo. Depois da emissão, vincule a um caso e cobre se quiser.'}
+            {prescriptionIdParam
+              ? sameDayEditable
+                ? 'Edição liberada no dia da receita. Se já estiver emitida, gere um novo PDF/link após salvar.'
+                : 'Esta receita não pode mais ser editada (fora do dia da emissão).'
+              : presetCaseId
+                ? 'Receita complementar neste caso, sem precisar abrir outro atendimento.'
+                : 'Receita avulsa sem atendimento completo. Depois da emissão, vincule a um caso e cobre se quiser.'}
           </p>
         </div>
         <div className="hub-standalone-rx__topbar-actions">
-          {!issued && canWrite ? (
+          {canWrite && (!issued || sameDayEditable) ? (
             <button
               type="button"
               className="hub-standalone-rx__btn hub-standalone-rx__btn--primary"
@@ -494,7 +562,11 @@ const HubStandalonePrescriptionPage: React.FC = () => {
               onClick={() => void issueValidatable()}
             >
               <Send size={16} aria-hidden />
-              {issuing ? 'Emitindo…' : 'Emitir receita validável'}
+              {issuing
+                ? 'Emitindo…'
+                : issued
+                  ? 'Gerar novo PDF e link validável'
+                  : 'Emitir receita validável'}
             </button>
           ) : null}
           {issued ? <span className="hub-rx-badge hub-rx-badge--issued">Emitida</span> : null}
@@ -546,7 +618,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
                   </p>
                 </div>
               </div>
-              {!issued ? (
+              {!editLocked ? (
                 <HubPrescriptionItemForm
                   draft={draft}
                   onChange={setDraft}
@@ -559,8 +631,15 @@ const HubStandalonePrescriptionPage: React.FC = () => {
                   onCancelEdit={cancelEdit}
                 />
               ) : (
-                <p className="hub-rx-locked-note">Prescrição emitida — edição de itens bloqueada.</p>
+                <p className="hub-rx-locked-note">
+                  Edição disponível apenas no dia da receita. Após esse prazo, revogue e emita uma nova se precisar corrigir.
+                </p>
               )}
+              {issued && sameDayEditable ? (
+                <p className="hub-clientes__muted" style={{ marginTop: 8, fontSize: 13 }}>
+                  Receita já emitida: após editar, gere um novo PDF/link e revogue a versão antiga se necessário.
+                </p>
+              ) : null}
             </section>
 
             <section className="hub-standalone-rx__card">
@@ -588,7 +667,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
                           <div className="hub-standalone-rx__med-meta">{formatPrescriptionItemMeta(it)}</div>
                         </div>
                       </div>
-                      {!issued ? (
+                      {!editLocked ? (
                         <div className="hub-standalone-rx__med-actions">
                           <button
                             type="button"
@@ -628,7 +707,7 @@ const HubStandalonePrescriptionPage: React.FC = () => {
                 className="hub-standalone-rx__textarea"
                 rows={3}
                 value={notes}
-                disabled={issued}
+                disabled={editLocked}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Ex.: retornar em 7 dias se não houver melhora…"
               />

@@ -22,6 +22,7 @@ import { dayRangeIsoLocal, loadAgendaPersistedFilters, isUuid } from '../agenda/
 import { mapHubAppointmentToAgenda } from '../agenda/mapHubAgenda';
 import {
   STATUS_META,
+  STATUS_OPTIONS,
   computeDisplayServiceLabel,
   type AgendaAppointment,
 } from '../agenda/agendaModel';
@@ -30,6 +31,7 @@ import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import '../clientes/clientes.css';
 
 const GROUP_OPTIONS = SERVICE_GROUP_OPTIONS.map((g) => ({ value: g.value, label: g.label }));
+const STATUS_FILTER_OPTIONS = STATUS_OPTIONS.map((s) => ({ value: s.value, label: s.label }));
 
 const HubImpressoesAgendaPage: React.FC = () => {
   const clinicId = getStoredClinicId();
@@ -38,14 +40,22 @@ const HubImpressoesAgendaPage: React.FC = () => {
   const { showError } = useAlert();
   const [searchParams] = useSearchParams();
   const dateYmd = toYmdLocal(parseYmdLocal(searchParams.get('date')));
+  const fromAgenda = searchParams.get('from') === 'agenda';
+  const searchQ = (searchParams.get('q') ?? '').trim();
   const [groupFilter, setGroupFilter] = usePrintQueryMultiFilter('grupo');
+  const [professionalFilter, setProfessionalFilter] = usePrintQueryMultiFilter('profissional');
+  const [resourceFilter, setResourceFilter] = usePrintQueryMultiFilter('recurso');
+  const [statusFilter, setStatusFilter] = usePrintQueryMultiFilter('status');
   const { serviceIds, setServiceIds, options: allServiceOptions, services } =
     usePrintServiceTypeFilter();
   const [rows, setRows] = useState<AgendaAppointment[]>([]);
   const [loading, setLoading] = useState(true);
 
   const canRead = hasPermission('hub.appointments.read');
-  const backHref = `/hub/impressoes?date=${encodeURIComponent(dateYmd)}`;
+  const backHref = fromAgenda
+    ? `/hub/appointments?date=${encodeURIComponent(dateYmd)}`
+    : `/hub/impressoes?date=${encodeURIComponent(dateYmd)}`;
+  const backLabel = fromAgenda ? 'Agenda' : 'Impressões';
 
   const serviceOptions = useMemo(() => {
     if (groupFilter.length === 0) return allServiceOptions;
@@ -90,9 +100,9 @@ const HubImpressoesAgendaPage: React.FC = () => {
 
         const { appointments } = await hubAgendaApi.list(params);
         if (cancelled) return;
+        // Inclui cancelados para permitir filtro explícito de status; exclusão padrão fica no filtered.
         const mapped = (appointments ?? [])
           .map(mapHubAppointmentToAgenda)
-          .filter((a) => a.status !== 'cancelled')
           .sort((a, b) => a.start.getTime() - b.start.getTime());
         setRows(mapped);
       } catch (e: unknown) {
@@ -110,17 +120,100 @@ const HubImpressoesAgendaPage: React.FC = () => {
     };
   }, [clinicId, unitId, dateYmd, canRead, permLoading, showError]);
 
+  const professionalOptions = useMemo(() => {
+    const map = new Map<string, string>();
+    let hasNa = false;
+    for (const a of rows) {
+      if (!a.professionalId) {
+        hasNa = true;
+        continue;
+      }
+      const label =
+        a.professionalName && a.professionalName !== '—'
+          ? a.professionalName
+          : a.professionalId;
+      if (!map.has(a.professionalId)) map.set(a.professionalId, label);
+    }
+    const opts = Array.from(map.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+    if (hasNa || professionalFilter.includes('__na__')) {
+      opts.push({ value: '__na__', label: 'Não atribuído' });
+    }
+    for (const id of professionalFilter) {
+      if (id !== '__na__' && !opts.some((o) => o.value === id)) {
+        opts.push({
+          value: id,
+          label: id.length > 12 ? `Profissional (${id.slice(0, 8)}…)` : `Profissional (${id})`,
+        });
+      }
+    }
+    return opts;
+  }, [rows, professionalFilter]);
+
+  const resourceOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const a of rows) {
+      const r = (a.resourceLabel ?? '').trim();
+      if (r && r !== '—') set.add(r);
+    }
+    for (const r of resourceFilter) {
+      if (r.trim()) set.add(r.trim());
+    }
+    return Array.from(set)
+      .sort((a, b) => a.localeCompare(b, 'pt-BR'))
+      .map((value) => ({ value, label: value }));
+  }, [rows, resourceFilter]);
+
   const filtered = useMemo(() => {
+    const q = searchQ.toLowerCase();
     return rows.filter((a) => {
+      if (statusFilter.length === 0) {
+        if (a.status === 'cancelled') return false;
+      } else if (!matchesPrintMultiFilter(statusFilter, a.status)) {
+        return false;
+      }
+
       if (!matchesPrintMultiFilter(groupFilter, a.group)) return false;
-      if (serviceIds.length === 0) return true;
-      const ids = [
-        a.hub_service_type_id,
-        ...(a.services ?? []).map((s) => s.hub_service_type_id),
-      ].filter(Boolean) as string[];
-      return ids.some((id) => serviceIds.includes(id));
+
+      if (professionalFilter.length > 0) {
+        const wantsNa = professionalFilter.includes('__na__');
+        const ids = professionalFilter.filter((id) => id !== '__na__');
+        const matchId = a.professionalId != null && ids.includes(a.professionalId);
+        const matchNa = wantsNa && a.professionalId == null;
+        if (!matchId && !matchNa) return false;
+      }
+
+      if (resourceFilter.length > 0) {
+        const r = (a.resourceLabel ?? '').trim();
+        if (!r || !resourceFilter.includes(r)) return false;
+      }
+
+      if (serviceIds.length > 0) {
+        const ids = [
+          a.hub_service_type_id,
+          ...(a.services ?? []).map((s) => s.hub_service_type_id),
+        ].filter(Boolean) as string[];
+        if (!ids.some((id) => serviceIds.includes(id))) return false;
+      }
+
+      if (q) {
+        const blob =
+          `${a.petName} ${a.guardianName} ${a.serviceName} ${a.professionalName} ${a.partnerClinic?.name ?? ''}`.toLowerCase();
+        if (!blob.includes(q)) return false;
+      }
+
+      return true;
     });
-  }, [rows, groupFilter, serviceIds]);
+  }, [
+    rows,
+    groupFilter,
+    serviceIds,
+    professionalFilter,
+    resourceFilter,
+    statusFilter,
+    searchQ,
+  ]);
 
   const filterDefs = [
     {
@@ -139,8 +232,37 @@ const HubImpressoesAgendaPage: React.FC = () => {
       onChange: setServiceIds,
       placeholder: 'Todos os serviços',
     },
+    {
+      id: 'profissional',
+      label: 'Profissional',
+      value: professionalFilter,
+      options: professionalOptions,
+      onChange: setProfessionalFilter,
+      placeholder: 'Todos os profissionais',
+    },
+    {
+      id: 'recurso',
+      label: 'Recurso',
+      value: resourceFilter,
+      options: resourceOptions,
+      onChange: setResourceFilter,
+      placeholder: 'Todos os recursos',
+    },
+    {
+      id: 'status',
+      label: 'Status',
+      value: statusFilter,
+      options: STATUS_FILTER_OPTIONS,
+      onChange: setStatusFilter,
+      placeholder: 'Todos (exceto cancelados)',
+    },
   ];
-  const filterSummary = describeActivePrintFilters(filterDefs);
+  const filtersSummary = describeActivePrintFilters(filterDefs);
+  const filterSummary = searchQ
+    ? filtersSummary
+      ? `${filtersSummary} · Busca: ${searchQ}`
+      : `Busca: ${searchQ}`
+    : filtersSummary;
   const subtitle = useMemo(() => formatDateLongPt(dateYmd), [dateYmd]);
 
   if (!permLoading && !canRead) {
@@ -152,7 +274,7 @@ const HubImpressoesAgendaPage: React.FC = () => {
       title="Agenda do dia"
       subtitle={subtitle}
       backTo={backHref}
-      backLabel="Impressões"
+      backLabel={backLabel}
       filters={<HubPrintFilters filters={filterDefs} />}
       filterSummary={filterSummary}
     >

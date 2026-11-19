@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ExternalLink, Home, Stethoscope } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ExternalLink, Home, Pencil, Stethoscope } from 'lucide-react';
 import { useAlert } from '../../components/AlertProvider';
 import { HubPrescriptionIssuePanel } from './HubPrescriptionIssuePanel';
 import { HubPrescriptionRevokeModal } from './HubPrescriptionRevokeModal';
@@ -18,6 +19,7 @@ import {
   prescriptionKindLabel,
   type PrescriptionKind,
 } from '../../pages/clinica/clinicalDisplay';
+import { isPrescriptionContentEditableToday } from '../../pages/clinica/prescriptionEditWindow';
 
 type DocsByPrescription = Record<string, HubPrescriptionDocumentRow[]>;
 
@@ -59,11 +61,21 @@ function formatRxDateTime(value?: string | null): string {
   return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
+function buildPrescriptionEditPath(rx: HubPrescription): string {
+  const q = new URLSearchParams({
+    petId: rx.pet_id,
+    prescriptionId: rx.id,
+  });
+  if (rx.hub_case_id) q.set('caseId', rx.hub_case_id);
+  return `/hub/clinica/receitas/nova?${q.toString()}`;
+}
+
 export function HubPrescriptionHistoryList({
   prescriptions,
   clinicId,
   canWrite = false,
 }: HubPrescriptionHistoryListProps) {
+  const navigate = useNavigate();
   const { showError, showSuccess } = useAlert();
   const [docsByRx, setDocsByRx] = useState<DocsByPrescription>({});
   const [loading, setLoading] = useState(false);
@@ -178,6 +190,13 @@ export function HubPrescriptionHistoryList({
                 {rows.map((p) => {
                   const docs = docsByRx[p.id] ?? [];
                   const items = p.items ?? [];
+                  const canEditToday =
+                    canWrite &&
+                    isPrescriptionContentEditableToday({
+                      prescribedAt: p.prescribed_at,
+                      createdAt: p.created_at,
+                      status: p.status,
+                    });
                   return (
                     <li key={p.id} className={`hub-rx-card hub-rx-card--${kind}`}>
                       <div className="hub-rx-card__head">
@@ -236,6 +255,15 @@ export function HubPrescriptionHistoryList({
                       ) : docs.length === 0 ? (
                         <div className="hub-rx-history__empty">
                           <p className="hub-clientes__muted hub-rx-card__docs-hint">{emptyDocsCopy(kind)}</p>
+                          {canEditToday ? (
+                            <button
+                              type="button"
+                              className="hub-clientes__btn hub-clientes__btn--outline hub-clientes__btn--sm"
+                              onClick={() => navigate(buildPrescriptionEditPath(p))}
+                            >
+                              <Pencil size={14} aria-hidden /> Editar
+                            </button>
+                          ) : null}
                           {kind !== 'clinic' ? (
                             <button
                               type="button"
@@ -262,7 +290,7 @@ export function HubPrescriptionHistoryList({
                             {kind === 'clinic' ? 'Documentos da prescrição' : 'Receitas emitidas'}
                           </span>
                           <ul className="hub-rx-history__list">
-                            {docs.map((d) => {
+                            {docs.map((d, docIdx) => {
                               const publicLink =
                                 d.validation_url ??
                                 (d.public_url ? hubClinicalApi.publicPrescriptionLink(d.public_url) : '');
@@ -276,6 +304,15 @@ export function HubPrescriptionHistoryList({
                                   </div>
                                   <div className="hub-rx-history__item-actions">
                                     <HubPrescriptionDocumentBadge status={d.document_status} />
+                                    {canEditToday && docIdx === 0 ? (
+                                      <button
+                                        type="button"
+                                        className="hub-clientes__btn hub-clientes__btn--outline hub-clientes__btn--sm"
+                                        onClick={() => navigate(buildPrescriptionEditPath(p))}
+                                      >
+                                        <Pencil size={14} aria-hidden /> Editar
+                                      </button>
+                                    ) : null}
                                     <button
                                       type="button"
                                       className="hub-clientes__btn hub-clientes__btn--outline hub-clientes__btn--sm"

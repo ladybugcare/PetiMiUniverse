@@ -121,6 +121,7 @@ async function loadHardBlocks(
       .eq('clinic_id', clinicId)
       .eq('pet_id', petId)
       .eq('status', 'in_progress')
+      .is('deleted_at', null)
       .limit(1),
     supabaseAdmin
       .from('hub_boarding_reservations')

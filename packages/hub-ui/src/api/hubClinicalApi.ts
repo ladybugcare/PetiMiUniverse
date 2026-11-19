@@ -186,9 +186,11 @@ export type HubPrescription = {
   pet_id: string;
   hub_encounter_id?: string | null;
   hub_case_id?: string | null;
+  hub_staff_member_id?: string | null;
   notes?: string | null;
   status?: string;
   prescribed_at?: string;
+  created_at?: string;
   items: HubPrescriptionItem[];
 };
 

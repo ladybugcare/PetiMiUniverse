@@ -50,6 +50,7 @@ const createHubPetBodySchema = z.object({
   size_tier: petSizeTierSchema,
   coat_color: z.string().trim().max(120).optional().nullable(),
   coat_type: petCoatTypeSchema,
+  external_microchip: z.string().trim().max(64).optional().nullable(),
   primary_guardian_id: uuidStr,
   secondary_guardian_id: uuidStr.optional().nullable(),
   neutered: z.boolean().nullable().optional(),
@@ -71,6 +72,7 @@ const updateHubPetBodySchema = z.object({
   size_tier: petSizeTierSchema.optional(),
   coat_color: z.string().trim().max(120).optional().nullable(),
   coat_type: petCoatTypeSchema,
+  external_microchip: z.string().trim().max(64).optional().nullable(),
   archived: z.boolean().optional(),
   primary_guardian_id: uuidStr.optional(),
   secondary_guardian_id: uuidStr.optional().nullable(),
@@ -82,7 +84,7 @@ const updateHubPetBodySchema = z.object({
 });
 
 const HUB_PET_SELECT_COLUMNS =
-  'id, petmi_pet_id, clinic_id, name, species, breed, sex, birth_date, notes, behavior_tags, neutered, size_tier, coat_color, coat_type, created_at, updated_at';
+  'id, petmi_pet_id, clinic_id, name, species, breed, sex, birth_date, notes, behavior_tags, neutered, size_tier, coat_color, coat_type, external_microchip, created_at, updated_at';
 
 function actorUserId(req: Request): string | null {
   return req.user?.id ?? null;
@@ -206,6 +208,7 @@ export const createHubPet = async (req: Request, res: Response) => {
       size_tier,
       coat_color,
       coat_type,
+      external_microchip,
       primary_guardian_id,
       secondary_guardian_id,
       neutered,
@@ -247,6 +250,7 @@ export const createHubPet = async (req: Request, res: Response) => {
       size_tier,
       coat_color: coat_color ?? null,
       coat_type: coat_type ?? null,
+      external_microchip: external_microchip?.trim() ? external_microchip.trim() : null,
       deleted_at: null,
     };
 
@@ -355,6 +359,7 @@ export const updateHubPet = async (req: Request, res: Response) => {
       size_tier,
       coat_color,
       coat_type,
+      external_microchip,
       neutered,
       profile_source,
       behavior_tags_mode,
@@ -373,6 +378,7 @@ export const updateHubPet = async (req: Request, res: Response) => {
       size_tier === undefined &&
       coat_color === undefined &&
       coat_type === undefined &&
+      external_microchip === undefined &&
       archived === undefined &&
       primary_guardian_id === undefined &&
       secondary_guardian_id === undefined &&
@@ -408,6 +414,9 @@ export const updateHubPet = async (req: Request, res: Response) => {
     if (size_tier !== undefined) patch.size_tier = size_tier;
     if (coat_color !== undefined) patch.coat_color = coat_color;
     if (coat_type !== undefined) patch.coat_type = coat_type;
+    if (external_microchip !== undefined) {
+      patch.external_microchip = external_microchip?.trim() ? external_microchip.trim() : null;
+    }
 
     const source = resolveProfileSource(profile_source);
     const actor = actorUserId(req);

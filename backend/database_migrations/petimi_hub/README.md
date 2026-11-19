@@ -310,3 +310,7 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 146. **`146_fix_boarding_tasks_unique_on_conflict.sql`** — Índice único completo em `hub_boarding_tasks` (reserva, plan_key, task_date) para `ON CONFLICT` via PostgREST. Executar depois do item 125.
 
 147. **`147_alter_hub_pickup_stops_delivery_boarding.sql`** — Embarque na devolução L&T: `boarded_at` / `boarded_by_staff_id` / `boarded_source` / `boarded_late` em `hub_pickup_stops` + `hub_custody_divergence_events` (ocorrência sem liberação autorizada). Executar depois dos itens 012c/083/092/121.
+
+148. **`148_uniq_hub_hospitalizations_active_pet_bed.sql`** — Índices únicos para impedir internação ativa duplicada no mesmo pet ou leito. Executar depois de `025k` / `025s`.
+
+149. **`149_alter_hub_pets_external_microchip.sql`** — Coluna `external_microchip` em `hub_pets` (microchip físico; distinto de `petmi_pet_id`). Executar depois de `002_create_hub_pets_and_pet_guardians.sql`.

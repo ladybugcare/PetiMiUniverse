@@ -19,17 +19,18 @@ import {
   type HubPrescriptionItem,
 } from '../../api/hubClinicalApi';
 import { HubCwsStatusPills } from './HubCwsStatusPills';
+import { isPrescriptionContentEditableToday } from './prescriptionEditWindow';
 
 function prescriptionItemToPayload(it: HubPrescriptionItem) {
   return {
     medication_name: it.medication_name,
     presentation: it.presentation ?? null,
     concentration: it.concentration ?? it.dosage ?? null,
-    quantity: it.quantity ?? null,
+    quantity: null,
     posology: it.posology ?? it.frequency ?? null,
     dosage: it.dosage ?? it.concentration ?? null,
     frequency: it.frequency ?? it.posology ?? null,
-    duration: it.duration ?? null,
+    duration: null,
     instructions: it.instructions ?? null,
     hub_inventory_item_id: it.hub_inventory_item_id ?? null,
     administration: 'home_use' as const,
@@ -42,11 +43,11 @@ function draftToCreateItem(draft: PrescriptionItemDraft) {
     medication_name: draft.medication_name.trim(),
     presentation: draft.presentation.trim() || null,
     concentration: draft.concentration.trim() || null,
-    quantity: draft.quantity.trim() || null,
+    quantity: null,
     posology: draft.posology.trim() || null,
     dosage: draft.concentration.trim() || null,
     frequency: draft.posology.trim() || null,
-    duration: draft.duration.trim() || null,
+    duration: null,
     instructions: draft.instructions.trim() || null,
     hub_inventory_item_id: null,
     administration: 'home_use' as const,
@@ -131,7 +132,12 @@ export function HubWorkspacePrescriptions({
     return sameEncounter[0] ?? null;
   }, [items, encounter.id]);
 
-  const editLocked = readOnly || canonicalRx?.status === 'issued';
+  const sameDayEditable = isPrescriptionContentEditableToday({
+    prescribedAt: canonicalRx?.prescribed_at,
+    createdAt: canonicalRx?.created_at,
+    status: canonicalRx?.status,
+  });
+  const editLocked = readOnly || (Boolean(canonicalRx) && !sameDayEditable);
   const issueBlockReason = useMemo(
     () => resolveIssueBlockReason({ readOnly, canonicalRx, encounter }),
     [readOnly, canonicalRx, encounter],
@@ -142,11 +148,14 @@ export function HubWorkspacePrescriptions({
     if (!encounter.hub_staff_member_id) warnings.push('Atendimento sem veterinário responsável.');
     if (!encounter.pet_id) warnings.push('Atendimento sem pet vinculado.');
     const meds = canonicalRx?.items ?? [];
-    if (meds.some((m) => !m.posology && !m.frequency && !m.quantity)) {
-      warnings.push('Alguns itens estão sem posologia ou quantidade — revise antes de emitir.');
+    if (meds.some((m) => !m.posology && !m.frequency)) {
+      warnings.push('Alguns itens estão sem posologia — revise antes de emitir.');
+    }
+    if (canonicalRx?.status === 'issued' && sameDayEditable) {
+      warnings.push('Receita já emitida: após editar, gere um novo PDF/link e revogue a versão antiga se necessário.');
     }
     return warnings;
-  }, [encounter, canonicalRx?.items]);
+  }, [encounter, canonicalRx?.items, canonicalRx?.status, sameDayEditable]);
 
   const caseLinkedOthers = useMemo(() => {
     if (!encounter.hub_case_id) return [];
@@ -192,13 +201,18 @@ export function HubWorkspacePrescriptions({
     if (!draft.medication_name.trim() || editLocked || savingItem) return;
     setSavingItem(true);
     try {
-      if (editingIndex != null && canonicalRx) {
+      if (canonicalRx) {
         const list = [...(canonicalRx.items ?? [])];
-        if (editingIndex < 0 || editingIndex >= list.length) return;
-        list[editingIndex] = {
-          ...list[editingIndex],
-          ...draftToCreateItem(draft),
-        };
+        const wasEditing = editingIndex != null;
+        if (wasEditing) {
+          if (editingIndex < 0 || editingIndex >= list.length) return;
+          list[editingIndex] = {
+            ...list[editingIndex],
+            ...draftToCreateItem(draft),
+          };
+        } else {
+          list.push(draftToCreateItem(draft) as HubPrescriptionItem);
+        }
         await hubClinicalApi.patchPrescription(canonicalRx.id, {
           clinic_id: clinicId,
           items: list.map(prescriptionItemToPayload),
@@ -206,7 +220,7 @@ export function HubWorkspacePrescriptions({
         setEditingIndex(null);
         setDraft(emptyPrescriptionItemDraft());
         await reloadList();
-        showSuccess('Medicamento atualizado');
+        showSuccess(wasEditing ? 'Medicamento atualizado' : 'Medicamento incluído na receita do atendimento');
         onClinicalRefresh?.();
         return;
       }
@@ -394,9 +408,9 @@ export function HubWorkspacePrescriptions({
             onCancelEdit={cancelEdit}
           />
         </div>
-      ) : canonicalRx?.status === 'issued' ? (
+      ) : canonicalRx && !sameDayEditable ? (
         <p className="hub-rx-locked-note">
-          Receita emitida — edição bloqueada. Reemita uma nova versão ou revogue no histórico.
+          Edição disponível apenas no dia da receita. Após esse prazo, revogue e emita uma nova se precisar corrigir.
         </p>
       ) : null}
 
@@ -461,7 +475,6 @@ export function HubWorkspacePrescriptions({
                 <tr>
                   <th>Medicamento</th>
                   <th>Posologia</th>
-                  <th>Duração</th>
                   <th />
                 </tr>
               </thead>
@@ -490,13 +503,9 @@ export function HubWorkspacePrescriptions({
                         </div>
                       ) : null}
                     </td>
-                    <td className="hub-clientes__muted">
+                    <td className="hub-clientes__muted" style={{ whiteSpace: 'pre-wrap' }}>
                       {it.posology || it.frequency || '—'}
-                      {it.quantity ? (
-                        <div style={{ fontSize: 12 }}>{it.quantity}</div>
-                      ) : null}
                     </td>
-                    <td className="hub-clientes__muted">{it.duration?.trim() || '—'}</td>
                     <td>
                       {!editLocked ? (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}>

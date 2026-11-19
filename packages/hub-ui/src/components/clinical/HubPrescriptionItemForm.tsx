@@ -13,8 +13,10 @@ export type PrescriptionItemDraft = {
   medication_name: string;
   presentation: string;
   concentration: string;
+  /** Mantido para compatibilidade com API; não é mais coletado na UI. */
   quantity: string;
   posology: string;
+  /** Mantido para compatibilidade com API; não é mais coletado na UI. */
   duration: string;
   instructions: string;
   administration: HubPrescriptionAdministration;
@@ -50,9 +52,9 @@ export function prescriptionItemToDraft(it: {
     medication_name: it.medication_name ?? '',
     presentation: it.presentation ?? '',
     concentration: it.concentration ?? it.dosage ?? '',
-    quantity: it.quantity ?? '',
+    quantity: '',
     posology: it.posology ?? it.frequency ?? '',
-    duration: it.duration ?? '',
+    duration: '',
     instructions: it.instructions ?? '',
     administration: 'home_use',
     use_route: it.use_route ?? '',
@@ -299,40 +301,22 @@ export function HubPrescriptionItemForm({
         />,
       )}
       {field(
-        'Quantidade',
-        'hub-rx-quantity',
-        <input
-          id="hub-rx-quantity"
-          className="hub-clientes__input"
-          placeholder={labeled ? 'Ex.: 14 comprimidos' : 'Quantidade'}
-          value={draft.quantity}
-          disabled={disabled}
-          onChange={(e) => set({ quantity: e.target.value })}
-        />,
-      )}
-      {field(
         'Posologia',
         'hub-rx-posology',
-        <input
+        <textarea
           id="hub-rx-posology"
           className="hub-clientes__input"
-          placeholder={labeled ? 'Ex.: 12/12h' : 'Posologia'}
+          rows={compact ? 2 : 3}
+          placeholder={
+            labeled
+              ? 'Ex.: 1 comprimido a cada 12h, por 7 dias'
+              : 'Posologia (dose, frequência e duração)'
+          }
           value={draft.posology}
           disabled={disabled}
           onChange={(e) => set({ posology: e.target.value })}
         />,
-      )}
-      {field(
-        'Duração',
-        'hub-rx-duration',
-        <input
-          id="hub-rx-duration"
-          className="hub-clientes__input"
-          placeholder={labeled ? 'Ex.: 7 dias' : 'Duração'}
-          value={draft.duration}
-          disabled={disabled}
-          onChange={(e) => set({ duration: e.target.value })}
-        />,
+        true,
       )}
       {field(
         'Observações do item',

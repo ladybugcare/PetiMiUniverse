@@ -172,16 +172,31 @@ export function formatAgeFromBirthDate(birthDate: string | null | undefined, now
   return `${years} ano${years > 1 ? 's' : ''}, ${months} ${months === 1 ? 'mês' : 'meses'}`;
 }
 
+function formatPostalCodeBr(raw: string | null | undefined): string | null {
+  const digits = String(raw ?? '').replace(/\D/g, '');
+  if (digits.length === 8) return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+  const trimmed = String(raw ?? '').trim();
+  return trimmed || null;
+}
+
+/** Mesmo padrão de endereço de tutores no Hub (rua, nº · bairro · cidade / UF · CEP). */
 export function formatGuardianAddress(g: PrescriptionSnapshotGuardian): string {
-  const line1 = [g.street, g.street_number].filter(Boolean).join(', ').trim();
-  const line2 = [g.district, g.city, g.state].filter(Boolean).join(', ').trim();
-  const parts = [line1, line2, g.postal_code?.trim()].filter(Boolean);
-  return parts.length ? parts.join(' — ') : 'Não informado';
+  const parts: string[] = [];
+  if (g.street) {
+    parts.push([g.street, g.street_number].filter(Boolean).join(', '));
+  }
+  if (g.district) parts.push(g.district);
+  if (g.city || g.state) parts.push([g.city, g.state].filter(Boolean).join(' / '));
+  const cep = formatPostalCodeBr(g.postal_code);
+  if (cep) parts.push(`CEP ${cep}`);
+  return parts.length ? parts.join(' · ') : 'Não informado';
 }
 
 export function formatClinicAddress(c: PrescriptionSnapshotClinic): string {
-  const parts = [c.address?.trim(), [c.city, c.state].filter(Boolean).join(' - ')].filter(Boolean);
-  return parts.join(', ') || '';
+  const parts: string[] = [];
+  if (c.address?.trim()) parts.push(c.address.trim());
+  if (c.city || c.state) parts.push([c.city, c.state].filter(Boolean).join(' / '));
+  return parts.join(' · ') || '';
 }
 
 export function formatTaxIdDisplay(taxId: string | null | undefined): string {
@@ -196,13 +211,12 @@ export function formatTaxIdDisplay(taxId: string | null | undefined): string {
 }
 
 export function formatMedicationQuantityLine(med: PrescriptionSnapshotMedication): string {
-  return [med.quantity, med.presentation].filter(Boolean).join(' ').trim();
+  return (med.presentation ?? '').trim();
 }
 
 export function formatMedicationInstructions(med: PrescriptionSnapshotMedication): string {
   const bits = [
     med.posology,
-    med.duration ? `durante ${med.duration}` : null,
     med.concentration ? `(${med.concentration})` : null,
     med.instructions,
   ].filter(Boolean);

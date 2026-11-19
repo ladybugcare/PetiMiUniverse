@@ -311,6 +311,7 @@ const HubPetWizardPage: React.FC = () => {
         size_tier: sizeTier,
         coat_color: state.coatColor.trim() || null,
         coat_type: state.coatType.trim() ? (state.coatType as CoatTypeValue) : null,
+        external_microchip: state.microchip.trim() || null,
         primary_guardian_id: state.primary_guardian_id,
         secondary_guardian_id: sec,
         behavior_tags: state.behaviorTags.length ? state.behaviorTags : null,
