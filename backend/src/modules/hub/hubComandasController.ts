@@ -1177,6 +1177,168 @@ async function fetchPrimaryGuardianForPet(petId: string): Promise<string | null>
   return (data as { guardian_id: string } | null)?.guardian_id ?? null;
 }
 
+type SurgeryComandaServiceRow = {
+  id: string;
+  surgery_id: string;
+  hub_service_type_id: string | null;
+  hub_appointment_service_id: string | null;
+  service_name: string | null;
+  quantity: number | null;
+  unit_amount: number | null;
+};
+
+/**
+ * Carrega serviços cirúrgicos confirmados e os mescla na comanda:
+ * - substitui o espelho `appointment_service` quando há vínculo (mesma cobrança);
+ * - não duplica por `hub_service_type_id` já coberto por outra linha cirúrgica;
+ * - preços pendentes ficam de fora (só `confirmed` + `charge`).
+ */
+async function loadConfirmedSurgeryServiceRows(opts: {
+  clinicId: string;
+  encounterId?: string | null;
+  appointmentId?: string | null;
+}): Promise<SurgeryComandaServiceRow[]> {
+  const surgeryIds = new Set<string>();
+  if (opts.encounterId) {
+    const { data, error } = await supabaseAdmin
+      .from('hub_surgeries')
+      .select('id')
+      .eq('hub_encounter_id', opts.encounterId)
+      .eq('clinic_id', opts.clinicId)
+      .is('deleted_at', null);
+    if (!error || !isMissingPostgrestRelation(error)) {
+      for (const row of data ?? []) surgeryIds.add((row as { id: string }).id);
+    }
+  }
+  if (opts.appointmentId) {
+    const { data, error } = await supabaseAdmin
+      .from('hub_surgeries')
+      .select('id')
+      .eq('hub_appointment_id', opts.appointmentId)
+      .eq('clinic_id', opts.clinicId)
+      .is('deleted_at', null);
+    if (!error || !isMissingPostgrestRelation(error)) {
+      for (const row of data ?? []) surgeryIds.add((row as { id: string }).id);
+    }
+  }
+  if (surgeryIds.size === 0) return [];
+
+  const { data: surgSvcRows, error: surgSvcErr } = await supabaseAdmin
+    .from('hub_surgery_services')
+    .select(
+      'id, surgery_id, hub_service_type_id, hub_appointment_service_id, service_name, quantity, unit_amount, billing_mode, price_status',
+    )
+    .in('surgery_id', [...surgeryIds])
+    .eq('billing_mode', 'charge')
+    .eq('price_status', 'confirmed')
+    .is('deleted_at', null);
+  if (surgSvcErr && isMissingPostgrestRelation(surgSvcErr)) return [];
+  if (surgSvcErr) throw new Error(surgSvcErr.message);
+  return (surgSvcRows ?? []) as SurgeryComandaServiceRow[];
+}
+
+/** @internal exportado para testes de regressão da comanda cirúrgica */
+export function applySurgeryServiceLinesToComandaItems(opts: {
+  items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[];
+  surgSvcList: SurgeryComandaServiceRow[];
+  petId: string | null;
+}): { items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[]; subtotal: number } {
+  const { items, surgSvcList, petId } = opts;
+  if (surgSvcList.length === 0) {
+    const subtotal = round2(items.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+    return { items, subtotal };
+  }
+
+  const replaceApptIds = new Set(
+    surgSvcList
+      .map((row) => row.hub_appointment_service_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const replaceTypeIds = new Set(
+    surgSvcList
+      .map((row) => row.hub_service_type_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  let subtotal = 0;
+  const kept: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[] = [];
+  for (const it of items) {
+    if (it.origin_type === 'appointment_service') {
+      const oid = it.origin_id;
+      const typeId = it.hub_service_type_id;
+      if ((oid && replaceApptIds.has(oid)) || (typeId && replaceTypeIds.has(typeId))) {
+        continue;
+      }
+    }
+    if (it.origin_type === 'surgery_service') {
+      // Será reinserido abaixo a partir da fonte canônica.
+      continue;
+    }
+    kept.push({ ...it, sort_order: kept.length });
+    subtotal = round2(subtotal + Number(it.line_total ?? 0));
+  }
+
+  const seenSurgerySvc = new Set<string>();
+  const seenTypeIds = new Set(
+    kept
+      .map((it) => it.hub_service_type_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  for (const row of surgSvcList) {
+    if (seenSurgerySvc.has(row.id)) continue;
+    seenSurgerySvc.add(row.id);
+    const typeId = row.hub_service_type_id;
+    if (typeId && seenTypeIds.has(typeId)) continue;
+    if (typeId) seenTypeIds.add(typeId);
+    const qty = Number(row.quantity ?? 1) || 1;
+    const unit = Number(row.unit_amount ?? 0);
+    const lineTotal = round2(qty * unit);
+    kept.push({
+      pet_id: petId,
+      item_kind: 'service',
+      hub_service_type_id: typeId,
+      hub_inventory_item_id: null,
+      hub_inventory_lot_id: null,
+      description: `Cirurgia: ${String(row.service_name || 'Procedimento')}`,
+      quantity: qty,
+      unit_amount: unit,
+      discount_amount: 0,
+      line_total: lineTotal,
+      service_date: null,
+      origin_type: 'surgery_service',
+      origin_id: row.id,
+      sort_order: kept.length,
+    });
+    subtotal = round2(subtotal + lineTotal);
+  }
+
+  return { items: kept, subtotal };
+}
+
+async function mergeSurgeryServicesIntoComandaItems(opts: {
+  clinicId: string;
+  items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[];
+  subtotal: number;
+  petId: string | null;
+  encounterId?: string | null;
+  appointmentId?: string | null;
+}): Promise<{ items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[]; subtotal: number }> {
+  const surgSvcList = await loadConfirmedSurgeryServiceRows({
+    clinicId: opts.clinicId,
+    encounterId: opts.encounterId,
+    appointmentId: opts.appointmentId,
+  });
+  if (surgSvcList.length === 0) {
+    return { items: opts.items, subtotal: round2(opts.subtotal) };
+  }
+  return applySurgeryServiceLinesToComandaItems({
+    items: opts.items,
+    surgSvcList,
+    petId: opts.petId,
+  });
+}
+
 async function buildComandaItemsFromEncounter(
   clinicId: string,
   encounterId: string,
@@ -1394,55 +1556,19 @@ async function buildComandaItemsFromEncounter(
   }
 
   // 5. Serviços de cirurgia vinculados a este atendimento
-  const coveredApptSvcIds = new Set(
-    allItems
-      .filter((it) => it.origin_type === 'appointment_service' && it.origin_id)
-      .map((it) => it.origin_id as string),
-  );
-  const { data: surgeryRows, error: surgeryErr } = await supabaseAdmin
-    .from('hub_surgeries')
-    .select('id')
-    .eq('hub_encounter_id', encounterId)
-    .eq('clinic_id', clinicId)
-    .is('deleted_at', null);
-  const surgeryList = surgeryErr && isMissingPostgrestRelation(surgeryErr) ? [] : surgeryRows ?? [];
-  const surgeryIds = surgeryList.map((s) => (s as { id: string }).id);
-  if (surgeryIds.length > 0) {
-    const { data: surgSvcRows, error: surgSvcErr } = await supabaseAdmin
-      .from('hub_surgery_services')
-      .select(
-        'id, surgery_id, hub_service_type_id, hub_appointment_service_id, service_name, quantity, unit_amount, billing_mode, price_status',
-      )
-      .in('surgery_id', surgeryIds)
-      .eq('billing_mode', 'charge')
-      .eq('price_status', 'confirmed')
-      .is('deleted_at', null);
-    const surgSvcList = surgSvcErr && isMissingPostgrestRelation(surgSvcErr) ? [] : surgSvcRows ?? [];
-    for (const raw of surgSvcList) {
-      const row = raw as Record<string, unknown>;
-      const apptSvcId = row.hub_appointment_service_id as string | null;
-      if (apptSvcId && coveredApptSvcIds.has(apptSvcId)) continue;
-      const qty = Number(row.quantity ?? 1) || 1;
-      const unit = Number(row.unit_amount ?? 0);
-      const lineTotal = round2(qty * unit);
-      allItems.push({
-        pet_id: petId,
-        item_kind: 'service',
-        hub_service_type_id: (row.hub_service_type_id as string | null) ?? null,
-        hub_inventory_item_id: null,
-        hub_inventory_lot_id: null,
-        description: `Cirurgia: ${String(row.service_name || 'Procedimento')}`,
-        quantity: qty,
-        unit_amount: unit,
-        discount_amount: 0,
-        line_total: lineTotal,
-        service_date: null,
-        origin_type: 'surgery_service',
-        origin_id: row.id as string,
-        sort_order: allItems.length,
-      });
-      subtotal += lineTotal;
-    }
+  // Preferir a linha cirúrgica confirmada sobre o espelho da agenda (evita "Consulta R$0" + total errado).
+  {
+    const surgMerged = await mergeSurgeryServicesIntoComandaItems({
+      clinicId,
+      items: allItems,
+      subtotal,
+      petId,
+      encounterId,
+      appointmentId: apptId,
+    });
+    allItems.length = 0;
+    allItems.push(...surgMerged.items);
+    subtotal = surgMerged.subtotal;
   }
 
   // 6. Diárias e lançamentos de internação (encounter e/ou appointment espelhado)
@@ -1491,6 +1617,7 @@ async function buildComandaItemsFromEncounter(
       origin_id: null,
       sort_order: 0,
     });
+    subtotal = 0;
   }
 
   return {
@@ -1643,6 +1770,20 @@ async function buildDesiredComandaSnapshot(
 
     let snapshot = await buildComandaItemsFromAppointment(clinicId, oid, { allowIncompleteStatus: true });
     snapshot = await appendGroomingExtrasToAppointmentSnapshot(clinicId, oid, snapshot);
+
+    // Cirurgia ligada ao appointment: preferir hub_surgery_services confirmados.
+    {
+      const openEncForSurg = await findLatestEncounterIdForAppointment(clinicId, oid, { anyOpen: true });
+      const surgMerged = await mergeSurgeryServicesIntoComandaItems({
+        clinicId,
+        items: snapshot.items,
+        subtotal: snapshot.subtotal,
+        petId: snapshot.pet_id,
+        encounterId: openEncForSurg,
+        appointmentId: oid,
+      });
+      snapshot = { ...snapshot, items: surgMerged.items, subtotal: surgMerged.subtotal };
+    }
 
     // Internação ligada ao appointment (ou encounter incompleto): anexa diárias/charges.
     const hospForAppt = await loadHospitalizationComandaItems({

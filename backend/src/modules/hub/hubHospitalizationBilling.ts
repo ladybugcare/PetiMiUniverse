@@ -457,7 +457,14 @@ export function dropAppointmentLinesReplacedByHospitalization<
   hospItems: Array<{ origin_type?: string | null; hub_service_type_id?: string | null }>,
 ): { items: T[]; removedTotal: number } {
   const hasDaily = hospItems.some((it) => it.origin_type === 'hospitalization_daily');
-  if (!hasDaily) return { items, removedTotal: 0 };
+  // Sempre devolver cópia: o caller costuma fazer `allItems.length = 0; push(...dropped.items)`.
+  // Se devolver a mesma referência, o clear esvazia `dropped.items` antes do push.
+  if (!hasDaily) {
+    return {
+      items: items.map((it, i) => ({ ...it, sort_order: i })),
+      removedTotal: 0,
+    };
+  }
 
   const dailyServiceTypeIds = hospItems
     .filter((it) => it.origin_type === 'hospitalization_daily')

@@ -171,6 +171,25 @@ describe('hubHospitalizationBilling', () => {
     ).toBe(false);
   });
 
+  it('dropAppointmentLinesReplacedByHospitalization sem diária devolve cópia (não alias)', () => {
+    const original = [
+      {
+        origin_type: 'surgery_service',
+        hub_service_type_id: 'svc-cirurgia',
+        line_total: 800,
+        sort_order: 0,
+      },
+    ];
+    const { items, removedTotal } = dropAppointmentLinesReplacedByHospitalization(original, new Map(), []);
+    expect(removedTotal).toBe(0);
+    expect(items).toHaveLength(1);
+    expect(items).not.toBe(original);
+    // Simula o padrão do builder de comanda: clear + push da lista retornada.
+    original.length = 0;
+    expect(items).toHaveLength(1);
+    expect(items[0].origin_type).toBe('surgery_service');
+  });
+
   it('dropAppointmentLinesReplacedByHospitalization evita diária duplicada na comanda', () => {
     const groupById = new Map<string, string>([
       ['svc-daily', 'internacao'],

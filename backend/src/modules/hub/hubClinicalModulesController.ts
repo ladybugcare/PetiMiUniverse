@@ -30,7 +30,10 @@ import {
 } from './hubInventoryStockUtils.js';
 
 import { applyClinicalFlagUpsert, resolveProfileSource } from './hubPetHealthProfile';
-import { syncOpenComandasAfterEncounterChargeableChange } from './hubComandasController';
+import {
+  syncOpenComandasAfterEncounterChargeableChange,
+  syncOpenComandasAfterEncounterCompleted,
+} from './hubComandasController';
 import { insertSurgeryServicesBatch } from './hubClinicalBillableServicesController';
 import { advanceLinkedAppointmentOnSurgeryStart } from './hubSurgeryFromAppointment';
 import {
@@ -179,9 +182,9 @@ const prescriptionItemInputSchema = z.object({
   presentation: z.string().trim().max(200).optional().nullable(),
   concentration: z.string().trim().max(200).optional().nullable(),
   quantity: z.string().trim().max(200).optional().nullable(),
-  posology: z.string().trim().max(200).optional().nullable(),
+  posology: z.string().trim().max(2000).optional().nullable(),
   dosage: z.string().trim().max(200).optional().nullable(),
-  frequency: z.string().trim().max(200).optional().nullable(),
+  frequency: z.string().trim().max(2000).optional().nullable(),
   duration: z.string().trim().max(200).optional().nullable(),
   instructions: z.string().trim().max(2000).optional().nullable(),
   hub_inventory_item_id: uuidStr.optional().nullable(),
@@ -334,21 +337,32 @@ export const createHubPrescription = async (req: Request, res: Response) => {
     }
   }
 
-  /** Uma prescrição ativa/rascunho por atendimento: novos itens são anexados à existente. */
+  /** Uma prescrição ativa/rascunho/emitida (mesmo dia) por atendimento: novos itens são anexados à existente. */
   if (b.hub_encounter_id) {
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
     const { data: issuedList } = await supabaseAdmin
       .from('hub_prescriptions')
-      .select('id')
+      .select('id, prescribed_at, created_at')
       .eq('hub_encounter_id', b.hub_encounter_id)
       .eq('clinic_id', b.clinic_id)
       .eq('pet_id', b.pet_id)
       .eq('status', 'issued')
       .is('deleted_at', null)
+      .order('prescribed_at', { ascending: false })
       .limit(1);
-    if (issuedList?.length) {
-      return res.status(409).json({
-        error: 'Prescrição já emitida; não é possível adicionar medicamentos sem reemitir nova versão',
-      });
+    const issuedRow = issuedList?.[0] as
+      | { id: string; prescribed_at?: string | null; created_at?: string | null }
+      | undefined;
+    if (issuedRow) {
+      const anchor = issuedRow.prescribed_at || issuedRow.created_at;
+      const rxDay = anchor
+        ? new Date(anchor).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
+        : today;
+      if (rxDay !== today) {
+        return res.status(409).json({
+          error: 'Prescrição já emitida em outro dia; não é possível adicionar medicamentos',
+        });
+      }
     }
 
     const { data: existingList } = await supabaseAdmin
@@ -357,11 +371,11 @@ export const createHubPrescription = async (req: Request, res: Response) => {
       .eq('hub_encounter_id', b.hub_encounter_id)
       .eq('clinic_id', b.clinic_id)
       .eq('pet_id', b.pet_id)
-      .in('status', ['draft', 'active'])
+      .in('status', issuedRow ? ['issued', 'draft', 'active'] : ['draft', 'active'])
       .is('deleted_at', null)
       .order('prescribed_at', { ascending: false })
       .limit(1);
-    const existingId = existingList?.[0]?.id as string | undefined;
+    const existingId = (existingList?.[0]?.id as string | undefined) ?? issuedRow?.id;
     if (existingId) {
       const { data: maxRow } = await supabaseAdmin
         .from('hub_prescription_items')
@@ -466,7 +480,7 @@ export const patchHubPrescription = async (req: Request, res: Response) => {
 
   const { data: rx, error: rxErr } = await supabaseAdmin
     .from('hub_prescriptions')
-    .select('id, status, clinic_id, pet_id')
+    .select('id, status, clinic_id, pet_id, prescribed_at, created_at')
     .eq('id', id.data)
     .eq('clinic_id', b.clinic_id)
     .is('deleted_at', null)
@@ -474,10 +488,17 @@ export const patchHubPrescription = async (req: Request, res: Response) => {
   if (rxErr) return res.status(500).json({ error: rxErr.message });
   if (!rx) return res.status(404).json({ error: 'Prescrição não encontrada' });
   if (rx.status === 'cancelled') return res.status(409).json({ error: 'Prescrição cancelada não pode ser editada' });
-  if (rx.status === 'issued' && hasContentEdit) {
-    return res.status(409).json({
-      error: 'Prescrição já emitida; não é possível editar conteúdo sem reemitir nova versão (vínculo a caso/atendimento ainda é permitido)',
-    });
+  if (hasContentEdit) {
+    const anchor = (rx.prescribed_at as string | null) || (rx.created_at as string | null);
+    const rxDay = anchor
+      ? new Date(anchor).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
+      : new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    if (rxDay !== today) {
+      return res.status(409).json({
+        error: 'Edição de conteúdo disponível apenas no dia da receita (vínculo a caso/atendimento ainda é permitido)',
+      });
+    }
   }
 
   if (b.hub_case_id) {
@@ -2267,10 +2288,11 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
   const { data: existing } = await supabaseAdmin
     .from('hub_surgeries')
     .select(
-      'pet_id, guardian_id, unit_id, hub_case_id, hub_encounter_id, hub_staff_member_id, hub_appointment_id, title, status, team',
+      'pet_id, guardian_id, unit_id, hub_case_id, hub_encounter_id, hub_staff_member_id, hub_appointment_id, title, status, team, discharge_at, completed_at, deleted_at',
     )
     .eq('id', id.data)
     .eq('clinic_id', clinic_id)
+    .is('deleted_at', null)
     .maybeSingle();
   if (!existing) return res.status(404).json({ error: 'Cirurgia não encontrada' });
 
@@ -2281,6 +2303,21 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
   }
   const existingStatus = (existing as { status?: string }).status;
   const linkedAppointmentId = (existing as { hub_appointment_id?: string | null }).hub_appointment_id;
+  const existingDischargeAt = (existing as { discharge_at?: string | null }).discharge_at ?? null;
+
+  // Alta ambulatorial só após o procedimento concluído — não confunde com "completed".
+  if (patch.discharge_at) {
+    const statusAfter = patch.status ?? existingStatus;
+    if (statusAfter !== 'completed') {
+      return res.status(400).json({
+        error: 'Registre a alta clínica só depois de concluir o procedimento cirúrgico.',
+      });
+    }
+  }
+  if (patch.status === 'completed' && update.completed_at === undefined) {
+    update.completed_at =
+      (existing as { completed_at?: string | null }).completed_at ?? new Date().toISOString();
+  }
 
   // Reagenda o slot enquanto a ficha ainda está scheduled.
   if (
@@ -2424,6 +2461,85 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
       title: `Cirurgia realizada: ${ex.title as string}`,
       created_by: ex.hub_staff_member_id as string | null,
     });
+    // Concluir o procedimento NÃO encerra o encounter nem autoriza retirada.
+  }
+
+  // Liberação clínica ambulatorial (discharge_at): encerra o encounter se não houver
+  // internação ativa no mesmo atendimento — sem fechar o caso clínico.
+  const dischargeJustRegistered =
+    Boolean(patch.discharge_at) &&
+    !existingDischargeAt &&
+    Boolean((responseRow as { discharge_at?: string | null }).discharge_at ?? patch.discharge_at);
+  if (dischargeJustRegistered && existing) {
+    const ex = existing as Record<string, unknown>;
+    const row = responseRow as Record<string, unknown>;
+    const linkedEncounterId =
+      (row.hub_encounter_id as string | null) ?? (ex.hub_encounter_id as string | null);
+    const petId = ex.pet_id as string;
+
+    let hasActiveHospitalization = false;
+    if (linkedEncounterId) {
+      const { data: activeHosp } = await supabaseAdmin
+        .from('hub_hospitalizations')
+        .select('id')
+        .eq('clinic_id', clinic_id)
+        .eq('hub_encounter_id', linkedEncounterId)
+        .eq('status', 'active')
+        .limit(1)
+        .maybeSingle();
+      hasActiveHospitalization = Boolean(activeHosp);
+    }
+    if (!hasActiveHospitalization) {
+      const { data: activeHospPet } = await supabaseAdmin
+        .from('hub_hospitalizations')
+        .select('id')
+        .eq('clinic_id', clinic_id)
+        .eq('pet_id', petId)
+        .eq('status', 'active')
+        .limit(1)
+        .maybeSingle();
+      hasActiveHospitalization = Boolean(activeHospPet);
+    }
+
+    if (linkedEncounterId && !hasActiveHospitalization) {
+      const { data: enc } = await supabaseAdmin
+        .from('hub_encounters')
+        .select('id, status, completed_at')
+        .eq('id', linkedEncounterId)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (enc && !['completed', 'cancelled'].includes(String(enc.status ?? ''))) {
+        const nowIso = new Date().toISOString();
+        await supabaseAdmin
+          .from('hub_encounters')
+          .update({ status: 'completed', completed_at: nowIso })
+          .eq('id', linkedEncounterId)
+          .eq('clinic_id', clinic_id);
+        void syncOpenComandasAfterEncounterCompleted(clinic_id, linkedEncounterId);
+      } else if (enc && enc.status === 'completed' && !enc.completed_at) {
+        await supabaseAdmin
+          .from('hub_encounters')
+          .update({ completed_at: new Date().toISOString() })
+          .eq('id', linkedEncounterId)
+          .eq('clinic_id', clinic_id);
+      }
+    }
+
+    void recordTimelineEvent({
+      clinic_id,
+      pet_id: petId,
+      hub_case_id: (row.hub_case_id as string | null) ?? (ex.hub_case_id as string | null),
+      hub_encounter_id: linkedEncounterId,
+      event_type: 'note',
+      ref_type: 'surgery',
+      ref_id: id.data,
+      title: `Alta cirúrgica: ${ex.title as string}`,
+      created_by: ex.hub_staff_member_id as string | null,
+    });
+
+    const { scheduleReceptionSync } = await import('./receptionSync');
+    scheduleReceptionSync(clinic_id, petId);
   }
 
   if (patch.status === 'cancelled' && existing) {

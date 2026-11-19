@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, BedDouble, Check, Link2, Play } from 'lucide-react';
+import { ArrowLeft, BedDouble, Check, DoorOpen, Link2, Play } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
@@ -230,6 +230,22 @@ const HubClinicSurgeryPage: React.FC = () => {
     void patchStatus('in_progress');
   };
 
+  /** Liberação clínica ambulatorial — distinta de concluir o procedimento. */
+  const registerClinicalDischarge = async () => {
+    if (!clinicId || !surgery) return;
+    try {
+      const res = (await hubClinicalApi.patchSurgery(surgery.id, {
+        clinic_id: clinicId,
+        discharge_at: new Date().toISOString(),
+      })) as { surgery?: HubSurgery; payables?: HubSurgeryPayable[] };
+      if (res.surgery) applySurgery(res.surgery, res.payables);
+      else await reload();
+      showSuccess('Alta clínica registrada — a Recepção pode liberar a retirada quando não houver bloqueios');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao registrar alta clínica');
+    }
+  };
+
   const openLinkCase = () => {
     setLinkCaseValue({});
     setLinkCaseHasActive(false);
@@ -323,7 +339,9 @@ const HubClinicSurgeryPage: React.FC = () => {
               body:
                 surgery.status === 'cancelled'
                   ? 'Esta ficha foi cancelada e não pode mais ser editada.'
-                  : 'Procedimento encerrado — a ficha ficou somente leitura. O registro fica no caso clínico e no prontuário do pet.',
+                  : surgery.discharge_at
+                    ? `Alta clínica em ${formatHospDateTime(surgery.discharge_at)}. A retirada fica com a Recepção.`
+                    : 'Procedimento encerrado — ainda falta a alta clínica para liberar a retirada no balcão (ou interne no pós-operatório).',
             };
 
   const visibleTabs = showIntraSections
@@ -439,13 +457,42 @@ const HubClinicSurgeryPage: React.FC = () => {
             </Link>
           ) : null}
 
-          {canWrite && phase === 'done' && surgery.status === 'completed' ? (
+          {canWrite && phase === 'done' && surgery.status === 'completed' && !surgery.discharge_at ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+              onClick={() => {
+                showAlert({
+                  type: 'warning',
+                  title: 'Registrar alta clínica?',
+                  message:
+                    'Isso libera o paciente para a Recepção entregar ao tutor. Não use se o pet for internar no pós-operatório.',
+                  showCancel: true,
+                  confirmText: 'Registrar alta',
+                  cancelText: 'Cancelar',
+                  onConfirm: () => {
+                    void registerClinicalDischarge();
+                  },
+                });
+              }}
+            >
+              <DoorOpen size={14} strokeWidth={2} /> Registrar alta clínica
+            </button>
+          ) : null}
+
+          {canWrite && phase === 'done' && surgery.status === 'completed' && !surgery.discharge_at ? (
             <Link
               to={`/hub/clinica?admit=1&pet_id=${encodeURIComponent(surgery.pet_id)}${surgery.hub_case_id ? `&hub_case_id=${encodeURIComponent(surgery.hub_case_id)}` : ''}`}
               className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
             >
               <BedDouble size={14} strokeWidth={2} /> Internar pós-operatório
             </Link>
+          ) : null}
+
+          {canWrite && phase === 'done' && surgery.status === 'completed' && surgery.discharge_at ? (
+            <span className="hub-clientes__muted" style={{ fontSize: 13 }}>
+              Alta clínica registrada
+            </span>
           ) : null}
         </div>
       </header>

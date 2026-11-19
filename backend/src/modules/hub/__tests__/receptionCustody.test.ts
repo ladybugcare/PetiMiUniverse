@@ -591,6 +591,147 @@ describe('planCustody', () => {
     expect(plan.handoffs[0].source_id).toBe('h-new');
   });
 
+  it('cirurgia soft-deleted in_progress não bloqueia saída após alta da internação', () => {
+    const plan = planCustody(
+      snap({
+        hospitalizations: [
+          {
+            id: 'h1',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-hosp',
+            status: 'discharged',
+            discharged_at: '2026-11-06T16:00:00.000Z',
+          },
+        ],
+        surgeries: [
+          {
+            id: 'surg-ghost',
+            status: 'in_progress',
+            deleted_at: '2026-11-06T12:00:00.000Z',
+            hub_appointment_id: 'a-surg',
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs.map((h) => h.kind)).toEqual(['retirada_balcao']);
+    expect(plan.handoffs[0].source_type).toBe('hospitalization');
+  });
+
+  it('cirurgia in_progress vigente bloqueia saída mesmo com alta hospitalar', () => {
+    const plan = planCustody(
+      snap({
+        hospitalizations: [
+          {
+            id: 'h1',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-hosp',
+            status: 'discharged',
+            discharged_at: '2026-11-06T16:00:00.000Z',
+          },
+        ],
+        surgeries: [
+          {
+            id: 'surg-live',
+            status: 'in_progress',
+            deleted_at: null,
+            hub_appointment_id: 'a-surg',
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs.filter((h) => h.kind === 'retirada_balcao')).toEqual([]);
+  });
+
+  it('alta cirúrgica ambulatorial gera retirada; só concluir o procedimento não gera', () => {
+    const completedOnly = planCustody(
+      snap({
+        surgeries: [
+          {
+            id: 'surg-1',
+            status: 'completed',
+            discharge_at: null,
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-surg',
+          },
+        ],
+        encounters: [
+          {
+            id: 'e1',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-surg',
+            status: 'in_progress',
+            completed_at: null,
+          },
+        ],
+      }),
+    );
+    expect(completedOnly.handoffs.filter((h) => h.kind === 'retirada_balcao')).toEqual([]);
+
+    const afterDischarge = planCustody(
+      snap({
+        surgeries: [
+          {
+            id: 'surg-1',
+            status: 'completed',
+            discharge_at: '2026-11-06T17:00:00.000Z',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-surg',
+          },
+        ],
+        encounters: [
+          {
+            id: 'e1',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-surg',
+            status: 'completed',
+            completed_at: '2026-11-06T17:00:00.000Z',
+          },
+        ],
+      }),
+    );
+    expect(afterDischarge.handoffs).toHaveLength(1);
+    expect(afterDischarge.handoffs[0]).toMatchObject({
+      kind: 'retirada_balcao',
+      source_type: 'surgery',
+      source_id: 'surg-1',
+      context: expect.objectContaining({ label: 'Alta cirúrgica' }),
+    });
+  });
+
+  it('cirurgia com alta e internação ativa não libera retirada prematura', () => {
+    const plan = planCustody(
+      snap({
+        surgeries: [
+          {
+            id: 'surg-1',
+            status: 'completed',
+            discharge_at: '2026-11-06T12:00:00.000Z',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-surg',
+          },
+        ],
+        hospitalizations: [
+          {
+            id: 'h1',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-hosp',
+            status: 'active',
+            discharged_at: null,
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs.filter((h) => h.kind === 'retirada_balcao')).toEqual([]);
+  });
+
   it('outro serviço vinculado na mesma visita bloqueia a retirada', () => {
     const plan = planCustody(
       snap({

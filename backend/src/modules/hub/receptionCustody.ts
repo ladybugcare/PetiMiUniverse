@@ -102,6 +102,11 @@ export type CustodyHospitalization = {
 export type CustodySurgery = {
   id: string;
   status: string;
+  deleted_at?: string | null;
+  discharge_at?: string | null;
+  unit_id?: string | null;
+  guardian_id?: string | null;
+  hub_appointment_id?: string | null;
 };
 
 export type CustodyBoarding = {
@@ -260,7 +265,8 @@ function exitBlocked(
   releaseAppointmentIds: string[],
 ): boolean {
   if (snap.hospitalizations.some((h) => h.status === 'active')) return true;
-  if (snap.surgeries.some((s) => s.status === 'in_progress')) return true;
+  // Soft-deleted não bloqueia saída (histórico permanece para auditoria).
+  if (snap.surgeries.some((s) => !s.deleted_at && s.status === 'in_progress')) return true;
 
   const linked = linkedAppointmentIds(snap, releaseAppointmentIds);
 
@@ -572,6 +578,13 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
   const dischargedToday = snap.hospitalizations.filter(
     (h) => h.status === 'discharged' && h.discharged_at && ymdInSaoPaulo(h.discharged_at) === snap.dayYmd,
   );
+  // Alta ambulatorial da cirurgia (discharge_at) — distinto de concluir o procedimento.
+  const surgeryDischargedToday = snap.surgeries.filter(
+    (s) =>
+      !s.deleted_at &&
+      s.discharge_at &&
+      ymdInSaoPaulo(s.discharge_at) === snap.dayYmd,
+  );
   const encountersToday = snap.encounters.filter(
     (e) => e.status === 'completed' && e.completed_at && ymdInSaoPaulo(e.completed_at) === snap.dayYmd,
   );
@@ -590,6 +603,7 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
     ...readyLive.map((s) => s.hub_appointment_id),
     ...encountersToday.map((e) => e.hub_appointment_id),
     ...dischargedToday.map((h) => h.hub_appointment_id),
+    ...surgeryDischargedToday.map((s) => s.hub_appointment_id),
   ].filter((id): id is string => Boolean(id));
 
   const blocked = exitBlocked(snap, releaseAppointmentIds);
@@ -616,9 +630,18 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
   const discharge = [...dischargedToday].sort((a, b) =>
     String(b.discharged_at ?? '').localeCompare(String(a.discharged_at ?? '')),
   )[0];
-  const encounter = dischargedToday.length > 0 ? undefined : encountersToday[0];
+  const surgeryDischarge =
+    dischargedToday.length > 0
+      ? undefined
+      : [...surgeryDischargedToday].sort((a, b) =>
+          String(b.discharge_at ?? '').localeCompare(String(a.discharge_at ?? '')),
+        )[0];
+  const encounter =
+    dischargedToday.length > 0 || surgeryDischargedToday.length > 0
+      ? undefined
+      : encountersToday[0];
 
-  if (!latestReady && !discharge && !encounter) {
+  if (!latestReady && !discharge && !surgeryDischarge && !encounter) {
     return { handoffs, closeGroomingSessionIds, completeBoardingReservationIds };
   }
 
@@ -649,6 +672,20 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
       discharge.discharged_at || snap.nowIso,
       'Alta',
       discharge.hub_appointment_id,
+      null,
+    );
+  } else if (surgeryDischarge) {
+    pushExit(
+      handoffs,
+      snap,
+      kind,
+      'surgery',
+      surgeryDischarge.id,
+      surgeryDischarge.unit_id ?? null,
+      surgeryDischarge.guardian_id ?? null,
+      surgeryDischarge.discharge_at || snap.nowIso,
+      'Alta cirúrgica',
+      surgeryDischarge.hub_appointment_id ?? null,
       null,
     );
   } else if (encounter) {

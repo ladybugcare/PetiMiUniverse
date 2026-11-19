@@ -350,9 +350,10 @@ async function loadSnapshot(clinicId: string, petId: string, dayYmd: string): Pr
 
   const { data: surgeries, error: surErr } = await supabaseAdmin
     .from('hub_surgeries')
-    .select('id, status')
+    .select('id, status, deleted_at, discharge_at, unit_id, guardian_id, hub_appointment_id')
     .eq('clinic_id', clinicId)
-    .eq('pet_id', petId);
+    .eq('pet_id', petId)
+    .is('deleted_at', null);
   if (surErr) throw new Error(surErr.message);
 
   const { data: boarding, error: bErr } = await supabaseAdmin
@@ -487,7 +488,15 @@ async function loadSnapshot(clinicId: string, petId: string, dayYmd: string): Pr
       discharged_at: (h.discharged_at as string | null) ?? null,
     };
   }),
-    surgeries: (surgeries ?? []).map((s) => ({ id: s.id as string, status: String(s.status) })),
+    surgeries: (surgeries ?? []).map((s) => ({
+      id: s.id as string,
+      status: String(s.status),
+      deleted_at: (s.deleted_at as string | null) ?? null,
+      discharge_at: (s.discharge_at as string | null) ?? null,
+      unit_id: (s.unit_id as string | null) ?? null,
+      guardian_id: (s.guardian_id as string | null) ?? null,
+      hub_appointment_id: (s.hub_appointment_id as string | null) ?? null,
+    })),
     boarding: (boarding ?? []).map((b) => ({
       id: b.id as string,
       unit_id: (b.unit_id as string | null) ?? null,
@@ -534,7 +543,7 @@ export async function collectReceptionPetIds(clinicId: string, unitId: string, d
   const { from, to } = dayBoundsFromYmdSaoPaulo(dayYmd);
   const ids = new Set<string>();
 
-  const [appts, sessions, open, encounters, discharges, boardingOut] = await Promise.all([
+  const [appts, sessions, open, encounters, discharges, surgeryDischarges, boardingOut] = await Promise.all([
     supabaseAdmin
       .from('hub_appointments')
       .select('pet_id')
@@ -577,6 +586,15 @@ export async function collectReceptionPetIds(clinicId: string, unitId: string, d
       .lte('discharged_at', to)
       .limit(100),
     supabaseAdmin
+      .from('hub_surgeries')
+      .select('pet_id')
+      .eq('clinic_id', clinicId)
+      .is('deleted_at', null)
+      .not('discharge_at', 'is', null)
+      .gte('discharge_at', from)
+      .lte('discharge_at', to)
+      .limit(100),
+    supabaseAdmin
       .from('hub_boarding_reservations')
       .select('pet_id')
       .eq('clinic_id', clinicId)
@@ -594,6 +612,7 @@ export async function collectReceptionPetIds(clinicId: string, unitId: string, d
   for (const row of open.data ?? []) if (row.pet_id) ids.add(row.pet_id as string);
   for (const row of encounters.data ?? []) if (row.pet_id) ids.add(row.pet_id as string);
   for (const row of discharges.data ?? []) if (row.pet_id) ids.add(row.pet_id as string);
+  for (const row of surgeryDischarges.data ?? []) if (row.pet_id) ids.add(row.pet_id as string);
   for (const row of boardingOut.data ?? []) if (row.pet_id) ids.add(row.pet_id as string);
 
   return [...ids].slice(0, 80);
@@ -655,7 +674,22 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
       status: string;
       discharged_at: string | null;
     }>('hub_hospitalizations', clinicId, petIds, 'id, pet_id, unit_id, guardian_id, hub_appointment_id, status, discharged_at'),
-    selectByPetIds<{ id: string; pet_id: string; status: string }>('hub_surgeries', clinicId, petIds, 'id, pet_id, status'),
+    selectByPetIds<{
+      id: string;
+      pet_id: string;
+      status: string;
+      deleted_at: string | null;
+      discharge_at: string | null;
+      unit_id: string | null;
+      guardian_id: string | null;
+      hub_appointment_id: string | null;
+    }>(
+      'hub_surgeries',
+      clinicId,
+      petIds,
+      'id, pet_id, status, deleted_at, discharge_at, unit_id, guardian_id, hub_appointment_id',
+      { activeOnly: true },
+    ),
     selectByPetIds<{
       id: string;
       pet_id: string;
@@ -904,7 +938,15 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
           discharged_at: h.discharged_at,
         };
       }),
-      surgeries: (surgeriesByPet.get(petId) ?? []).map((s) => ({ id: s.id, status: String(s.status) })),
+      surgeries: (surgeriesByPet.get(petId) ?? []).map((s) => ({
+        id: s.id,
+        status: String(s.status),
+        deleted_at: s.deleted_at ?? null,
+        discharge_at: s.discharge_at ?? null,
+        unit_id: s.unit_id ?? null,
+        guardian_id: s.guardian_id ?? null,
+        hub_appointment_id: s.hub_appointment_id ?? null,
+      })),
       boarding: (boardingByPet.get(petId) ?? []).map((b) => ({
         id: b.id,
         unit_id: b.unit_id,
