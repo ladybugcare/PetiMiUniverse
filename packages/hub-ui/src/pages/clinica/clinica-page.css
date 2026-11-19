@@ -2291,7 +2291,8 @@ button.hub-clinic-case-page__generic-hint:focus-visible {
   --hub-cws-muted: #7a6865;
   background: var(--hub-cws-cream);
   border-radius: 16px;
-  padding: 8px 12px 100px;
+  /* Reserva altura do rodapé fixo (.hub-cws-footer) para não interceptar cliques em Emitir/PDF. */
+  padding: 8px 12px calc(120px + env(safe-area-inset-bottom, 0px));
   box-sizing: border-box;
   width: 100%;
   max-width: none;
@@ -3452,7 +3453,8 @@ button.hub-clinic-case-page__generic-hint:focus-visible {
 }
 
 .hub-cws-footer-anchor {
-  height: 1px;
+  /* Espaço de scroll até a área útil acima do rodapé fixo. */
+  height: 88px;
 }
 
 .hub-cws-timeline-col {

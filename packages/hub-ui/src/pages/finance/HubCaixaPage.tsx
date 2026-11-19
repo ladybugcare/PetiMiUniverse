@@ -1466,7 +1466,9 @@ const HubCaixaPage: React.FC = () => {
           dayBoardItems={dayBoardItems}
           expectedBalance={expectedBalance}
           methodsTotal={methodsTotal}
-          dataLoading={loading || refreshing || cashSummary == null}
+          // Não travar em "Aguardando dados…" se o load falhou depois de abrir a sessão:
+          // cashOpen pode existir com cashSummary ainda null (Promise.all rejeitou).
+          dataLoading={(loading || refreshing) && cashSummary == null}
           onClosed={async () => {
             setShowEncerrarTurno(false);
             showSuccess('Caixa fechado com sucesso.');

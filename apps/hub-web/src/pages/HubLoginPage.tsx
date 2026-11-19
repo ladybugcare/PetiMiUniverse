@@ -31,7 +31,7 @@ const HubLoginPage: React.FC = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
-  const { setAuthFromLogin } = useAuth();
+  const { setAuthFromLogin, user, loading: authLoading } = useAuth();
 
   const redirectAfterLogin = useMemo(
     () => safeInternalRedirect(searchParams.get('redirect')),
@@ -51,6 +51,30 @@ const HubLoginPage: React.FC = () => {
       /* ignore */
     }
   }, []);
+
+  // Se a rota protegida redirecionou cedo demais e a sessão hidratou depois, volta ao Hub.
+  useEffect(() => {
+    if (authLoading || !user || isInviteLogin) return;
+    if (redirectAfterLogin) {
+      navigate(redirectAfterLogin, { replace: true });
+      return;
+    }
+    try {
+      const raw = localStorage.getItem('clinic_user');
+      const clinicUser = raw ? JSON.parse(raw) : null;
+      const dest = getHubPostLoginDestination(
+        { user, clinicUser, session: null },
+        vetBase || undefined,
+      );
+      if (dest.type === 'external') {
+        window.location.replace(dest.url);
+      } else {
+        navigate(dest.path, { replace: true });
+      }
+    } catch {
+      navigate('/hub/dashboard', { replace: true });
+    }
+  }, [authLoading, user, isInviteLogin, redirectAfterLogin, navigate]);
 
   useEffect(() => {
     const st = (location.state as { passwordReset?: boolean } | null)?.passwordReset;

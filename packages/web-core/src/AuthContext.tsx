@@ -39,46 +39,58 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
-    const initAuth = async () => {
+    let mounted = true;
+    let initialized = false;
+
+    const applySession = (nextSession: { user?: unknown } | null) => {
+      if (!mounted) return;
+      if (nextSession) {
+        setSession(nextSession);
+        setUser(nextSession.user ?? null);
+        setRole(getUserRole(nextSession.user));
+        return;
+      }
+      // Evita limpar a sessão durante a hidratação inicial (corrida getSession vs
+      // onAuthStateChange), que mandava o HubProtectedRoute para /login cedo demais.
+      if (!initialized) return;
+      setSession(null);
+      setUser(null);
+      setRole('UNKNOWN');
+    };
+
+    const finishInit = () => {
+      if (!mounted || initialized) return;
+      initialized = true;
+      setLoading(false);
+    };
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      applySession(nextSession);
+      finishInit();
+    });
+
+    void (async () => {
       try {
         const { data } = await supabase.auth.getSession();
-
-        if (data.session) {
-          setSession(data.session);
-          setUser(data.session.user);
-          setRole(getUserRole(data.session.user));
-        } else {
+        applySession(data.session);
+      } catch (err) {
+        console.error('[web-core AuthContext] Erro ao carregar sessão:', err);
+        if (mounted && !initialized) {
           setSession(null);
           setUser(null);
           setRole('UNKNOWN');
         }
-      } catch (err) {
-        console.error('[web-core AuthContext] Erro ao carregar sessão:', err);
-        setSession(null);
-        setUser(null);
-        setRole('UNKNOWN');
       } finally {
-        setLoading(false);
+        finishInit();
       }
-    };
-
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextSession) => {
-      if (nextSession) {
-        setSession(nextSession);
-        setUser(nextSession.user);
-        setRole(getUserRole(nextSession.user));
-      } else {
-        setSession(null);
-        setUser(null);
-        setRole('UNKNOWN');
-      }
-    });
-
-    void initAuth();
+    })();
 
     return () => {
+      mounted = false;
       listener.subscription.unsubscribe();
     };
+    // supabase client é singleton; re-subscrever a cada render quebraria a hidratação.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const setAuthFromLogin = async (result: unknown) => {
