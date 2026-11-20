@@ -60,6 +60,23 @@ function optionMatchesQuery(o: HubComboboxOption, query: string): boolean {
   return false;
 }
 
+/** Resolve o valor a confirmar ao pressionar Enter na pesquisa do combobox. */
+export function resolveComboboxEnterCommit(opts: {
+  query: string;
+  filtered: HubComboboxOption[];
+  allowCreate: boolean;
+}): string | null {
+  const qTrim = opts.query.trim();
+  if (!qTrim) return null;
+  const exact = opts.filtered.find(
+    (o) => norm(o.label) === norm(qTrim) || norm(o.value) === norm(qTrim),
+  );
+  if (exact) return exact.value;
+  if (opts.filtered.length === 1) return opts.filtered[0]!.value;
+  if (opts.allowCreate) return qTrim;
+  return null;
+}
+
 export const HubSearchableCombobox: React.FC<HubSearchableComboboxProps> = ({
   id,
   className = '',
@@ -87,7 +104,13 @@ export const HubSearchableCombobox: React.FC<HubSearchableComboboxProps> = ({
   const [query, setQuery] = useState('');
   const [floating, setFloating] = useState<ComboboxFloatingRect | null>(null);
 
-  const selected = useMemo(() => options.find((o) => o.value === value), [options, value]);
+  const selected = useMemo(() => {
+    const fromOptions = options.find((o) => o.value === value);
+    if (fromOptions) return fromOptions;
+    const trimmed = value.trim();
+    // Valor já gravado no formulário mas ainda fora da lista (ex.: criação em voo).
+    return trimmed ? { value: trimmed, label: trimmed } : undefined;
+  }, [options, value]);
   const markedSet = useMemo(() => new Set(markedValues ?? []), [markedValues]);
 
   const filtered = useMemo(() => {
@@ -197,8 +220,19 @@ export const HubSearchableCombobox: React.FC<HubSearchableComboboxProps> = ({
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === 'Escape') {
+              e.preventDefault();
               setOpen(false);
               setQuery('');
+              return;
+            }
+            if (e.key === 'Enter') {
+              e.preventDefault();
+              const next = resolveComboboxEnterCommit({
+                query,
+                filtered,
+                allowCreate,
+              });
+              if (next != null) commit(next);
             }
           }}
           aria-label={searchPlaceholder}

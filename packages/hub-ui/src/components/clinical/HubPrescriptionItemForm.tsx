@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   hubClinicalApi,
   type HubPrescriptionAdministration,
@@ -107,6 +107,8 @@ export function HubPrescriptionItemForm({
   const [medicationLookups, setMedicationLookups] = useState<HubPrescriptionLookupOption[]>([]);
   const [presentationLookups, setPresentationLookups] = useState<HubPrescriptionLookupOption[]>([]);
   const [useRouteLookups, setUseRouteLookups] = useState<HubPrescriptionLookupOption[]>([]);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
 
   const set = (patch: Partial<PrescriptionItemDraft>) => onChange({ ...draft, ...patch });
 
@@ -179,6 +181,10 @@ export function HubPrescriptionItemForm({
         return;
       }
 
+      // Otimista: grava no formulário na hora para o trigger não voltar ao placeholder
+      // enquanto o catálogo persiste (e para Enter/criar não parecer “falha”).
+      onChange({ ...draftRef.current, [field]: t });
+
       try {
         const res = await hubClinicalApi.createPrescriptionLookup({
           clinic_id: clinicId,
@@ -187,7 +193,9 @@ export function HubPrescriptionItemForm({
         });
         const label = res.lookup.label;
         await loadKind(kind);
-        onChange({ ...draft, [field]: label });
+        if (label !== t) {
+          onChange({ ...draftRef.current, [field]: label });
+        }
         if (res.created) {
           const noun =
             kind === 'medication' ? 'Medicamento' : kind === 'presentation' ? 'Apresentação' : 'Uso';
@@ -195,7 +203,7 @@ export function HubPrescriptionItemForm({
         }
       } catch (e: unknown) {
         showError((e as Error)?.message || 'Erro ao adicionar ao catálogo');
-        onChange({ ...draft, [field]: t });
+        // Mantém o texto digitado no formulário mesmo se o catálogo falhar.
       }
     },
     [
