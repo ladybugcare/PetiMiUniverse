@@ -1744,6 +1744,10 @@ a.hub-pets-detail__history-row-title:hover {
     min-width: 0;
   }
 
+  .hub-pets-page .hub-pets-toolbar-row--filters > div:last-of-type:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
   .hub-pets-page .hub-pets-new-btn-group {
     width: 100%;
   }
