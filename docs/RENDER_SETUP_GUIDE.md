@@ -284,15 +284,19 @@ Error: connect ECONNREFUSED
 
 Após a meia-noite em `America/Sao_Paulo`, o Hub fecha sessões de caixa ainda abertas de dias anteriores e envia comandas abertas ao financeiro (leave_pending → recebíveis pendentes).
 
+**Staging (Railway — atual):** serviço `cash-auto-close-cron` no environment `staging`, schedule `5 3 * * *` (03:05 UTC ≈ 00:05 BRT), chama `POST $BACKEND_URL/api/hub/finance/cash-sessions/auto-close-overdue` com `CRON_SECRET`. Disparo manual: `railway cron run --service cash-auto-close-cron --environment staging --yes`.
+
+Alternativa genérica (Render Cron / [cron-job.org](https://cron-job.org)):
+
 1. Adicione a env var `CRON_SECRET` no Web Service do backend (valor longo e aleatório).
-2. Crie um **Cron Job** (Render Cron ou [cron-job.org](https://cron-job.org)):
+2. Crie um **Cron Job**:
    - **Horário preferencial:** `00:05` com timezone IANA `America/Sao_Paulo`
    - **Se o provedor só aceitar UTC:** `03:05 UTC` (enquanto SP estiver em UTC−3)
    - **Método:** `POST`
    - **URL:** `https://<seu-backend>/api/hub/finance/cash-sessions/auto-close-overdue`
    - **Header:** `Authorization: Bearer <CRON_SECRET>` (ou `X-Cron-Secret: <CRON_SECRET>`)
    - **Body (opcional):** `{"dry_run": false}` — em staging pode usar `{"dry_run": true}` ou `{"clinic_id": "<uuid>"}` ( `clinic_id` **não** é aceito em production)
-3. O filtro de quais sessões fechar é sempre calculado no backend com `America/Sao_Paulo` (não depende do fuso da instância Render).
+3. O filtro de quais sessões fechar é sempre calculado no backend com `America/Sao_Paulo`.
 4. Pré-requisito SQL: migration `150_alter_hub_cash_sessions_auto_close.sql`.
 
 ---
