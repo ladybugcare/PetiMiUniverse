@@ -47,6 +47,39 @@ function parseTab(value: string | null): ClinicRecordsTabId {
   return value && TAB_IDS.has(value as ClinicRecordsTabId) ? (value as ClinicRecordsTabId) : 'casos';
 }
 
+/** Pet mínimo a partir do atendimento — CVET tem clinic.read, mas nem sempre pets.read. */
+function petFromEncounterContext(
+  petId: string,
+  clinicId: string,
+  encounters: HubEncounter[],
+): HubPet | undefined {
+  const encounter = encounters.find((e) => e.pet_id === petId && e.pet);
+  if (!encounter?.pet) return undefined;
+  const p = encounter.pet;
+  return {
+    id: petId,
+    petmi_pet_id: '',
+    clinic_id: clinicId,
+    name: p.name,
+    species: p.species || '',
+    breed: p.breed ?? null,
+    sex: null,
+    birth_date: p.birth_date ?? null,
+    notes: null,
+    behavior_tags: p.behavior_tags ?? null,
+    neutered: p.neutered ?? null,
+    size_tier: (p.size_tier as HubPet['size_tier']) || 'medio',
+    coat_color: null,
+    coat_type: (p.coat_type as HubPet['coat_type']) ?? null,
+    created_at: encounter.created_at || '',
+    updated_at: encounter.updated_at || '',
+    primary_guardian: encounter.guardian
+      ? { guardian_id: encounter.guardian.id, guardian_name: encounter.guardian.full_name }
+      : null,
+    secondary_guardian: null,
+  };
+}
+
 const HubClinicRecordsPage: React.FC = () => {
   const clinicId = getStoredClinicId();
   const navigate = useNavigate();
@@ -54,6 +87,7 @@ const HubClinicRecordsPage: React.FC = () => {
   const { showError, showSuccess } = useAlert();
   const { hasPermission } = usePermissions();
   const canRead = hasPermission('hub.clinic.read');
+  const canReadPets = hasPermission('hub.pets.read');
   const canWrite = hasPermission('hub.clinic.write');
   const canWritePets = hasPermission('hub.pets.write') || canWrite;
 
@@ -99,13 +133,19 @@ const HubClinicRecordsPage: React.FC = () => {
 
   useEffect(() => {
     if (!clinicId || !canRead) return;
+    // CVET tem clinic.read, mas não pets.read — evita 403/timeout inútil na lista.
+    if (!canReadPets) {
+      setPets([]);
+      setPetsLoading(false);
+      return;
+    }
     setPetsLoading(true);
     void hubPetsApi
       .list(clinicId)
       .then((r) => setPets(r.pets ?? []))
       .catch(() => setPets([]))
       .finally(() => setPetsLoading(false));
-  }, [clinicId, canRead]);
+  }, [clinicId, canRead, canReadPets]);
 
   useEffect(() => {
     if (initialPetId) setSelectedId(initialPetId);
@@ -121,57 +161,81 @@ const HubClinicRecordsPage: React.FC = () => {
     return [...list].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR'));
   }, [pets, search]);
 
-  const selectedPet = pets.find((p) => p.id === selectedId);
+  const selectedPetFromList = pets.find((p) => p.id === selectedId);
+  const selectedPet =
+    selectedPetFromList ||
+    (clinicId && selectedId ? petFromEncounterContext(selectedId, clinicId, encounters) : undefined);
+
+  const petsForList = useMemo(() => {
+    if (!selectedPet || pets.some((p) => p.id === selectedPet.id)) return filteredPets;
+    return [selectedPet, ...filteredPets];
+  }, [filteredPets, pets, selectedPet]);
 
   const loadPetClinical = useCallback(async () => {
     if (!clinicId || !selectedId) return;
     const keepContent = loadedPetIdRef.current === selectedId;
     if (keepContent) setRefreshing(true);
     else setLoading(true);
-    const results = await Promise.allSettled([
-      hubEncountersApi.listByPet(clinicId, selectedId),
-      hubClinicalCasesApi.list(clinicId, { petId: selectedId }),
-      hubClinicalTimelineApi.list(clinicId, { petId: selectedId }),
-      hubClinicalApi.listPetFlags(clinicId, selectedId),
-      hubClinicalApi.listPrescriptions(clinicId, selectedId),
-      hubClinicalApi.listVaccinations(clinicId, selectedId),
-      hubClinicalApi.listAttachments(clinicId, { petId: selectedId }),
-      hubPetsApi.listProfileChanges(clinicId, selectedId),
-      hubClinicalExamsApi.list(clinicId, { petId: selectedId }),
-      hubSpecialistReferralsApi.list(clinicId, { petId: selectedId }),
-      hubClinicalApi.listSurgeries(clinicId, undefined, undefined, selectedId),
-      hubClinicalApi.listHospitalizations(clinicId, undefined, undefined, selectedId),
-    ]);
-    const pick = <T,>(i: number, fallback: T): T => {
-      const r = results[i];
-      return r?.status === 'fulfilled' ? (r.value as T) : fallback;
-    };
-    setEncounters(pick(0, { encounters: [] }).encounters ?? []);
-    setCases(pick(1, { cases: [] }).cases ?? []);
-    setTimelineEvents(pick(2, { events: [] }).events ?? []);
-    setFlags(pick(3, { flags: [] }).flags ?? []);
-    setPrescriptions(pick(4, { prescriptions: [] }).prescriptions ?? []);
-    setVaccinations(pick(5, { vaccinations: [] }).vaccinations ?? []);
-    setAttachments(pick(6, { attachments: [] }).attachments ?? []);
-    setProfileChanges(pick(7, { changes: [] }).changes ?? []);
-    setExams(pick(8, { exams: [] }).exams ?? []);
-    setReferrals(pick(9, { referrals: [] }).referrals ?? []);
-    setSurgeries(pick(10, { surgeries: [] }).surgeries ?? []);
-    setHospitalizations(pick(11, { hospitalizations: [] }).hospitalizations ?? []);
 
-    const failed = results
-      .map((r, i) => (r.status === 'rejected' ? i : -1))
-      .filter((i) => i >= 0);
-    const criticalFailed = failed.some((i) => i < 2);
-    if (criticalFailed) {
-      const first = results.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
+    const pickSettled = <T,>(r: PromiseSettledResult<T>, fallback: T): T =>
+      r.status === 'fulfilled' ? r.value : fallback;
+
+    // Fase 1: exames + anexos (caminho do laudo). Evita listByPet no caminho crítico —
+    // a listagem enriquecida de atendimentos pode estourar o timeout do cliente.
+    const core = await Promise.allSettled([
+      hubClinicalExamsApi.list(clinicId, { petId: selectedId }),
+      hubClinicalApi.listAttachments(clinicId, { petId: selectedId }),
+      hubClinicalCasesApi.list(clinicId, { petId: selectedId }),
+    ]);
+    const examsCore = pickSettled(core[0], { exams: [] }).exams ?? [];
+    setExams(examsCore);
+    setAttachments(pickSettled(core[1], { attachments: [] }).attachments ?? []);
+    setCases(pickSettled(core[2], { cases: [] }).cases ?? []);
+
+    const examEncounterId = examsCore.find((e) => e.hub_encounter_id)?.hub_encounter_id ?? null;
+    if (examEncounterId) {
+      try {
+        const { encounter } = await hubEncountersApi.get(examEncounterId, clinicId);
+        setEncounters([encounter]);
+      } catch {
+        // cabeçalho do pet fica para a fase 2
+      }
+    }
+
+    if (core[0]?.status === 'rejected') {
+      const first = core.find((r) => r.status === 'rejected') as PromiseRejectedResult | undefined;
       showError((first?.reason as Error)?.message || 'Erro ao carregar prontuário');
     } else {
       loadedPetIdRef.current = selectedId;
     }
     setLoading(false);
+
+    // Fase 2: histórico completo em background (não bloqueia Exames).
+    const rest = await Promise.allSettled([
+      hubEncountersApi.listByPet(clinicId, selectedId),
+      hubClinicalTimelineApi.list(clinicId, { petId: selectedId }),
+      hubClinicalApi.listPetFlags(clinicId, selectedId),
+      hubClinicalApi.listPrescriptions(clinicId, selectedId),
+      hubClinicalApi.listVaccinations(clinicId, selectedId),
+      canReadPets
+        ? hubPetsApi.listProfileChanges(clinicId, selectedId)
+        : Promise.resolve({ changes: [] as HubPetProfileChange[] }),
+      hubSpecialistReferralsApi.list(clinicId, { petId: selectedId }),
+      hubClinicalApi.listSurgeries(clinicId, undefined, undefined, selectedId),
+      hubClinicalApi.listHospitalizations(clinicId, undefined, undefined, selectedId),
+    ]);
+    const encList = pickSettled(rest[0], { encounters: [] }).encounters ?? [];
+    if (encList.length) setEncounters(encList);
+    setTimelineEvents(pickSettled(rest[1], { events: [] }).events ?? []);
+    setFlags(pickSettled(rest[2], { flags: [] }).flags ?? []);
+    setPrescriptions(pickSettled(rest[3], { prescriptions: [] }).prescriptions ?? []);
+    setVaccinations(pickSettled(rest[4], { vaccinations: [] }).vaccinations ?? []);
+    setProfileChanges(pickSettled(rest[5], { changes: [] }).changes ?? []);
+    setReferrals(pickSettled(rest[6], { referrals: [] }).referrals ?? []);
+    setSurgeries(pickSettled(rest[7], { surgeries: [] }).surgeries ?? []);
+    setHospitalizations(pickSettled(rest[8], { hospitalizations: [] }).hospitalizations ?? []);
     setRefreshing(false);
-  }, [clinicId, selectedId, showError]);
+  }, [clinicId, selectedId, showError, canReadPets]);
 
   useEffect(() => {
     void loadPetClinical();
@@ -284,16 +348,16 @@ const HubClinicRecordsPage: React.FC = () => {
   return (
     <div className="hub-clientes hub-clinic-records">
       <ClinicRecordsPetList
-        pets={filteredPets}
+        pets={petsForList}
         selectedId={selectedId}
         search={search}
         onSearchChange={setSearch}
         onSelect={handleSelect}
-        loading={petsLoading}
+        loading={petsLoading && !selectedPet}
       />
       <ClinicRecordsDetail
         pet={selectedPet}
-        loading={Boolean(selectedId) && (loading || (petsLoading && !selectedPet))}
+        loading={Boolean(selectedId) && (loading || (!selectedPet && (petsLoading || loading)))}
         refreshing={refreshing}
         tab={tab}
         onTabChange={handleTabChange}
@@ -322,6 +386,7 @@ const HubClinicRecordsPage: React.FC = () => {
         onAddFlag={() => void addFlag()}
         onRemoveFlag={(flag) => void removeFlag(flag)}
         onSaveHealthFicha={(patch) => void saveHealthFicha(patch)}
+        onExamResultSaved={() => void loadPetClinical()}
       />
     </div>
   );

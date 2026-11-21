@@ -472,7 +472,98 @@ async function enrichEncounter(row: Record<string, unknown>) {
 }
 
 async function enrichEncounters(rows: Record<string, unknown>[]) {
-  return Promise.all(rows.map((r) => enrichEncounter(r)));
+  if (!rows.length) return [];
+
+  const clinicId = String(rows[0]?.clinic_id || '');
+  const petIds = [...new Set(rows.map((r) => r.pet_id).filter(Boolean))] as string[];
+  const guIds = [...new Set(rows.map((r) => r.guardian_id).filter(Boolean))] as string[];
+  const staffIds = [...new Set(rows.map((r) => r.hub_staff_member_id).filter(Boolean))] as string[];
+  const apptIds = [...new Set(rows.map((r) => r.hub_appointment_id).filter(Boolean))] as string[];
+  const caseIds = [...new Set(rows.map((r) => r.hub_case_id).filter(Boolean))] as string[];
+  const partnerIds = [...new Set(rows.map((r) => r.hub_partner_clinic_id).filter(Boolean))] as string[];
+  const encIds = rows.map((r) => r.id as string).filter(Boolean);
+
+  const [petsRes, gusRes, staffRes, apptsRes, casesRes, adjMap, partnerMap] = await Promise.all([
+    petIds.length
+      ? supabaseAdmin
+          .from('hub_pets')
+          .select('id, name, species, breed, size_tier, birth_date, coat_type, behavior_tags, neutered')
+          .in('id', petIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    guIds.length
+      ? supabaseAdmin.from('hub_guardians').select('id, full_name').in('id', guIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    staffIds.length
+      ? supabaseAdmin.from('hub_staff_members').select('id, full_name').in('id', staffIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    apptIds.length
+      ? supabaseAdmin
+          .from('hub_appointments')
+          .select('id, starts_at, ends_at, status, hub_service_type_id, title, appointment_kind')
+          .in('id', apptIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    caseIds.length
+      ? supabaseAdmin
+          .from('hub_clinical_cases')
+          .select('id, title, status, opened_at, closed_at')
+          .in('id', caseIds)
+      : Promise.resolve({ data: [] as Record<string, unknown>[] }),
+    clinicId && encIds.length
+      ? financialAdjustmentFlagsForEncounters(clinicId, encIds)
+      : Promise.resolve(new Map()),
+    clinicId && partnerIds.length
+      ? loadPartnerClinicMap(clinicId, partnerIds)
+      : Promise.resolve(new Map<string, { id: string; name: string }>()),
+  ]);
+
+  const petMap = new Map((petsRes.data ?? []).map((p) => [p.id as string, p]));
+  const guMap = new Map((gusRes.data ?? []).map((g) => [g.id as string, g]));
+  const staffMap = new Map((staffRes.data ?? []).map((s) => [s.id as string, s]));
+  const apptMap = new Map(
+    (apptsRes.data ?? []).map((a) => [a.id as string, a as Record<string, unknown>]),
+  );
+  const caseMap = new Map((casesRes.data ?? []).map((c) => [c.id as string, c]));
+
+  const serviceTypeIds = [
+    ...new Set(
+      [...apptMap.values()]
+        .map((a) => a.hub_service_type_id as string | null | undefined)
+        .filter(Boolean),
+    ),
+  ] as string[];
+  const serviceTypeMap = new Map<string, { id: string; name: string; service_group: string }>();
+  if (serviceTypeIds.length) {
+    const { data: sts } = await supabaseAdmin
+      .from('hub_service_types')
+      .select('id, name, service_group')
+      .in('id', serviceTypeIds);
+    for (const st of sts ?? []) {
+      serviceTypeMap.set(st.id as string, st as { id: string; name: string; service_group: string });
+    }
+  }
+
+  return rows.map((row) => {
+    const appt = row.hub_appointment_id
+      ? apptMap.get(row.hub_appointment_id as string) ?? null
+      : null;
+    const serviceTypeId = (appt?.hub_service_type_id as string | null | undefined) || null;
+    const adj = adjMap.get(row.id as string);
+    const partnerId = row.hub_partner_clinic_id as string | null;
+    return {
+      ...row,
+      pet: row.pet_id ? petMap.get(row.pet_id as string) ?? null : null,
+      guardian: row.guardian_id ? guMap.get(row.guardian_id as string) ?? null : null,
+      staff_member: row.hub_staff_member_id
+        ? staffMap.get(row.hub_staff_member_id as string) ?? null
+        : null,
+      appointment: appt,
+      service_type: serviceTypeId ? serviceTypeMap.get(serviceTypeId) ?? null : null,
+      case: row.hub_case_id ? caseMap.get(row.hub_case_id as string) ?? null : null,
+      partner_clinic: partnerId ? partnerMap.get(partnerId) ?? null : null,
+      financial_adjustment_pending: adj?.financial_adjustment_pending ?? false,
+      comanda_id: adj?.comanda_id ?? null,
+    };
+  });
 }
 
 async function assertPetInClinic(clinicId: string, petId: string): Promise<boolean> {

@@ -547,6 +547,29 @@
   margin-top: 8px;
 }
 
+.hub-clinic-records__exam-result-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.hub-clinic-records__exam-result-form textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 120px;
+}
+
+.hub-clinic-records__exam-result-alert {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #f0c9a0;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .hub-clinic-records__flag-list {
   list-style: none;
   margin: 0;

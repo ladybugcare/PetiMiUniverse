@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import {
   BedDouble,
@@ -55,6 +55,8 @@ import {
   vaccineSourceLabel,
   type ClinicRecordsTabId,
 } from './clinicRecordsUtils';
+import { ClinicRecordsExamResultModal } from './ClinicRecordsExamResultModal';
+import { canRegisterExamResult, examNeedsResultAttachment } from './registerExamResult';
 import './clinic-records.css';
 
 type Props = {
@@ -88,6 +90,7 @@ type Props = {
   onAddFlag: () => void;
   onRemoveFlag: (flag: HubPetClinicalFlag) => void;
   onSaveHealthFicha: (patch: { neutered?: boolean | null; behavior_tags?: string[] | null }) => void;
+  onExamResultSaved?: () => void;
 };
 
 function caseStatusLabel(status: HubClinicalCase['status']): string {
@@ -177,7 +180,19 @@ const ClinicRecordsDetail: React.FC<Props> = ({
   onAddFlag,
   onRemoveFlag,
   onSaveHealthFicha,
+  onExamResultSaved,
 }) => {
+  const [resultExam, setResultExam] = useState<HubClinicalExam | null>(null);
+  const [resultAttachmentOnly, setResultAttachmentOnly] = useState(false);
+
+  if (loading && !refreshing && !pet) {
+    return (
+      <div className="hub-clinic-records__detail">
+        <HubLoading variant="block" label="Carregando prontuário…" />
+      </div>
+    );
+  }
+
   if (!pet) {
     return (
       <div className="hub-clinic-records__detail hub-clinic-records__detail--empty">
@@ -637,6 +652,33 @@ const ClinicRecordsDetail: React.FC<Props> = ({
                               ) : null}
                               {ex.result_text ? <p className="hub-rx-card__notes">{ex.result_text}</p> : null}
                               <div className="hub-clinic-records__chip-row">
+                                {canWrite && clinicId && pet && canRegisterExamResult(ex) ? (
+                                  <button
+                                    type="button"
+                                    className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                                    onClick={() => {
+                                      setResultAttachmentOnly(false);
+                                      setResultExam(ex);
+                                    }}
+                                  >
+                                    Registrar resultado
+                                  </button>
+                                ) : null}
+                                {canWrite &&
+                                clinicId &&
+                                pet &&
+                                examNeedsResultAttachment(ex, attachments) ? (
+                                  <button
+                                    type="button"
+                                    className="hub-clientes__btn hub-clientes__btn--outline hub-clientes__btn--sm"
+                                    onClick={() => {
+                                      setResultAttachmentOnly(true);
+                                      setResultExam(ex);
+                                    }}
+                                  >
+                                    Anexar PDF do laudo
+                                  </button>
+                                ) : null}
                                 {ex.hub_encounter_id ? (
                                   <Link
                                     to={`/hub/clinica/atendimentos/${ex.hub_encounter_id}`}
@@ -904,6 +946,23 @@ const ClinicRecordsDetail: React.FC<Props> = ({
             Cirurgia
           </Link>
         </div>
+      ) : null}
+
+      {canWrite && clinicId && pet ? (
+        <ClinicRecordsExamResultModal
+          open={Boolean(resultExam)}
+          exam={resultExam}
+          clinicId={clinicId}
+          petId={pet.id}
+          attachmentOnly={resultAttachmentOnly}
+          onClose={() => {
+            setResultExam(null);
+            setResultAttachmentOnly(false);
+          }}
+          onSaved={() => {
+            onExamResultSaved?.();
+          }}
+        />
       ) : null}
     </div>
   );
