@@ -63,7 +63,9 @@ Saídas no dashboard / fluxo de caixa = `hub_expenses` + payables com `status = 
 
 ### Caixa (`hub_cash_sessions`, `hub_cash_movements`)
 
-Sessão por unidade; movimentos `withdrawal` (sangria), `deposit` (suprimento), etc.
+Sessão por unidade (no máximo **uma** `open` por `unit_id`, índice parcial único); movimentos `withdrawal` (sangria), `deposit` (suprimento), etc.
+
+**Fechamento:** manual (operador informa `closing_balance`) ou **automático overdue** após meia-noite (`America/Sao_Paulo`): job `POST /api/hub/finance/cash-sessions/auto-close-overdue` (auth `CRON_SECRET`) fecha sessões ainda `open` com dia civil de `opened_at` anterior a hoje, faz handoff leave_pending das comandas abertas → recebíveis `pending`, e grava `closing_balance = expected_balance`, `difference_amount = 0`, `auto_closed = true`.
 
 **Independência do Financeiro:** PIX/cartão/transferência/link/crédito **não** exigem sessão aberta. Dinheiro operacional do balcão exige. Correção histórica em dinheiro usa `posting_kind = historical_correction` sem sessão. Sessões fechadas têm snapshot imutável; impactos posteriores vão em `hub_cash_session_post_close_adjustments`.
 

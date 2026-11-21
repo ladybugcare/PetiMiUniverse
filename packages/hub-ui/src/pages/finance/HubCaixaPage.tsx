@@ -453,6 +453,18 @@ const HubCaixaPage: React.FC = () => {
                               minute: '2-digit',
                             })
                           : 'Sessão'}
+                        {sess.auto_closed ? (
+                          <span
+                            style={{
+                              marginLeft: 6,
+                              fontSize: 11,
+                              fontWeight: 600,
+                              color: '#64748b',
+                            }}
+                          >
+                            · Automático
+                          </span>
+                        ) : null}
                       </span>
                       <span className="hub-caixa-page__session-history-meta">
                         esperado{' '}
@@ -473,6 +485,9 @@ const HubCaixaPage: React.FC = () => {
                 <p className="hub-clientes__muted" style={{ marginBottom: 8 }}>
                   Snapshot congelado no fechamento
                   {closedSessionSummary.summary?.snapshot_frozen ? ' (imutável)' : ''}.
+                  {closedSessionSummary.cash_session?.auto_closed
+                    ? ' Fechamento automático (sem contagem física).'
+                    : null}
                 </p>
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, fontSize: 13 }}>
                   <span>
@@ -1222,10 +1237,11 @@ const HubCaixaPage: React.FC = () => {
                     const diff = sess.difference_amount ?? null;
                     const diffColor =
                       diff == null ? '#888' : diff >= -0.009 ? '#065f46' : '#dc2626';
-                    const operadorName =
-                      (sess.opened_by_staff as { display_name?: string | null; full_name?: string | null } | null | undefined)?.display_name ??
-                      (sess.opened_by_staff as { full_name?: string | null } | null | undefined)?.full_name ??
-                      '—';
+                    const operadorName = sess.auto_closed
+                      ? 'Automático'
+                      : (sess.opened_by_staff as { display_name?: string | null; full_name?: string | null } | null | undefined)?.display_name ??
+                        (sess.opened_by_staff as { full_name?: string | null } | null | undefined)?.full_name ??
+                        '—';
                     const selected = viewedClosedSessionId === sess.id;
                     return (
                       <tr
@@ -1279,6 +1295,11 @@ const HubCaixaPage: React.FC = () => {
                                 minute: '2-digit',
                               })
                             : '—'}
+                          {sess.auto_closed ? (
+                            <span style={{ display: 'block', fontSize: 11, color: '#64748b', fontWeight: 600 }}>
+                              Fechamento automático
+                            </span>
+                          ) : null}
                         </td>
                         <td style={{ padding: '8px 10px', color: '#555' }}>{operadorName}</td>
                         <td style={{ padding: '8px 10px', textAlign: 'right' }}>
@@ -1302,6 +1323,9 @@ const HubCaixaPage: React.FC = () => {
                   <p className="hub-clientes__muted" style={{ marginBottom: 8 }}>
                     Snapshot congelado no fechamento
                     {closedSessionSummary.summary?.snapshot_frozen ? ' (imutável)' : ''}.
+                    {closedSessionSummary.cash_session?.auto_closed
+                      ? ' Fechamento automático (sem contagem física).'
+                      : null}
                   </p>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, fontSize: 13 }}>
                     <span>

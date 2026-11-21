@@ -314,3 +314,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 148. **`148_uniq_hub_hospitalizations_active_pet_bed.sql`** — Índices únicos para impedir internação ativa duplicada no mesmo pet ou leito. Executar depois de `025k` / `025s`.
 
 149. **`149_alter_hub_pets_external_microchip.sql`** — Coluna `external_microchip` em `hub_pets` (microchip físico; distinto de `petmi_pet_id`). Executar depois de `002_create_hub_pets_and_pet_guardians.sql`.
+
+150. **`150_alter_hub_cash_sessions_auto_close.sql`** — `auto_closed` em `hub_cash_sessions` + RPCs `hub_list_overdue_open_cash_sessions` / `hub_close_cash_session_atomic` (fechamento automático overdue à meia-noite SP). Executar depois dos itens 035, 044 e 136.

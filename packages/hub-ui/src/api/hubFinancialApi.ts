@@ -338,6 +338,9 @@ export type HubCashSession = {
   expected_balance?: number | null;
   closing_balance?: number | null;
   difference_amount?: number | null;
+  notes?: string | null;
+  /** true quando fechado pelo job automático de meia-noite (sem contagem física). */
+  auto_closed?: boolean | null;
   opened_by_staff_id?: string | null;
   opened_by_staff?: {
     id: string;

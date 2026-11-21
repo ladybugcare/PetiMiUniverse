@@ -12,6 +12,13 @@ import {
   tryAutoCloseComanda,
 } from './hubComandasController';
 import {
+  closeCashSession,
+  extractCronSecretFromRequest,
+  isCronClinicFilterAllowed,
+  runAutoCloseOverdueJob,
+  verifyCronSecret,
+} from './cashSessionCloseService';
+import {
   FinanceLedgerError,
   postHistoricalCashPayment,
   recalculateReceivableFromPosted,
@@ -2358,85 +2365,70 @@ export const postHubFinanceCashSessionClose = async (req: Request, res: Response
       return res.status(400).json({ error: 'Dados inválidos' });
     }
     const { clinic_id, closing_balance, notes } = parsed.data;
-    const { data: sess, error: sErr } = await supabaseAdmin
-      .from('hub_cash_sessions')
-      .select('id, clinic_id, unit_id, opening_balance, status')
-      .eq('id', idParsed.data)
-      .maybeSingle();
-    if (sErr || !sess || sess.clinic_id !== clinic_id) return res.status(404).json({ error: 'Sessão não encontrada' });
-    if (sess.status !== 'open') return res.status(409).json({ error: 'Caixa já fechado' });
-
-    // Auto-handoff: mesmo caminho leave_pending (recebível + linhas + finance_handoff_at)
-    const todayYmd = paymentYmdSaoPaulo(new Date().toISOString());
-    let autoHandoffCount = 0;
-    const autoHandoffErrors: string[] = [];
-    try {
-      const handoff = await leavePendingHandoffOpenComandasForUnit(
-        clinic_id,
-        sess.unit_id as string,
-        { dueDate: todayYmd, userId: req.user?.id ?? null },
-      );
-      autoHandoffCount = handoff.handoff_count;
-      autoHandoffErrors.push(...handoff.errors);
-    } catch (handoffErr) {
-      autoHandoffErrors.push(String((handoffErr as Error)?.message ?? 'handoff'));
-    }
-
-    const openBal = Number(sess.opening_balance ?? 0);
-    const [{ data: cashPayments, error: payErr }, { data: cashMovements, error: movErr }] = await Promise.all([
-      supabaseAdmin
-        .from('hub_payments')
-        .select('amount')
-        .eq('clinic_id', clinic_id)
-        .eq('cash_session_id', sess.id as string)
-        .eq('payment_method', 'cash')
-        .eq('status', 'posted')
-        .eq('posting_kind', 'operational'),
-      supabaseAdmin
-        .from('hub_cash_movements')
-        .select('amount, movement_type')
-        .eq('clinic_id', clinic_id)
-        .eq('cash_session_id', sess.id as string),
-    ]);
-    if (payErr) return res.status(500).json({ error: payErr.message });
-    if (movErr) return res.status(500).json({ error: movErr.message });
-    const cashInBase = round2((cashPayments ?? []).reduce((sum, row) => sum + Number(row.amount ?? 0), 0));
-    const creditCashIn = await sumCreditCashInSession(clinic_id, sess.id as string);
-    const cashIn = round2(cashInBase + creditCashIn);
-    const deposits = round2(
-      (cashMovements ?? [])
-        .filter((row) => row.movement_type === 'deposit')
-        .reduce((sum, row) => sum + Number(row.amount ?? 0), 0)
-    );
-    const withdrawals = round2(
-      (cashMovements ?? [])
-        .filter((row) => row.movement_type === 'withdrawal')
-        .reduce((sum, row) => sum + Number(row.amount ?? 0), 0)
-    );
-    const expected = round2(openBal + cashIn + deposits - withdrawals);
-    const diff = round2(round2(closing_balance) - expected);
-    const now = new Date().toISOString();
-    const { data: updated, error: uErr } = await supabaseAdmin
-      .from('hub_cash_sessions')
-      .update({
-        status: 'closed',
-        closed_at: now,
-        closing_balance: round2(closing_balance),
-        expected_balance: expected,
-        difference_amount: diff,
-        notes: notes ?? null,
-      })
-      .eq('id', sess.id as string)
-      .select('*')
-      .single();
-    if (uErr) return res.status(500).json({ error: uErr.message });
+    const result = await closeCashSession({
+      sessionId: idParsed.data,
+      clinicId: clinic_id,
+      closingBalance: closing_balance,
+      autoClosed: false,
+      notes: notes ?? null,
+      actorUserId: req.user?.id ?? null,
+      abortOnHandoffErrors: false,
+    });
     return res.json({
-      cash_session: updated,
-      auto_handoff_count: autoHandoffCount,
-      auto_handoff_errors: autoHandoffErrors,
+      cash_session: result.cash_session,
+      auto_handoff_count: result.auto_handoff_count,
+      auto_handoff_errors: result.auto_handoff_errors,
     });
   } catch (e: unknown) {
+    const status = Number((e as { statusCode?: number })?.statusCode);
+    if (status === 404) return res.status(404).json({ error: 'Sessão não encontrada' });
+    if (status === 409) return res.status(409).json({ error: (e as Error).message || 'Caixa já fechado' });
     console.error('postHubFinanceCashSessionClose', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+const autoCloseOverdueSchema = z
+  .object({
+    dry_run: z.boolean().optional(),
+    clinic_id: uuidStr.optional(),
+  })
+  .strict();
+
+/**
+ * POST /finance/cash-sessions/auto-close-overdue
+ * Job de meia-noite: fecha sessões open com opened_at em dia civil SP anterior a hoje.
+ * Auth: CRON_SECRET (Bearer ou X-Cron-Secret). clinic_id só fora de production.
+ */
+export const postHubFinanceCashSessionsAutoCloseOverdue = async (req: Request, res: Response) => {
+  try {
+    const provided = extractCronSecretFromRequest(req.headers as {
+      authorization?: string;
+      'x-cron-secret'?: string;
+    });
+    const expected = process.env.CRON_SECRET;
+    if (!verifyCronSecret(provided, expected)) {
+      return res.status(401).json({ error: 'Não autorizado' });
+    }
+
+    const parsed = autoCloseOverdueSchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Dados inválidos' });
+    }
+
+    if (parsed.data.clinic_id && !isCronClinicFilterAllowed(process.env.NODE_ENV)) {
+      return res.status(400).json({
+        error: 'clinic_id não é permitido em production; o job fecha globalmente',
+      });
+    }
+
+    const result = await runAutoCloseOverdueJob({
+      dryRun: parsed.data.dry_run ?? false,
+      clinicId: parsed.data.clinic_id ?? null,
+    });
+    return res.json(result);
+  } catch (e: unknown) {
+    console.error('postHubFinanceCashSessionsAutoCloseOverdue', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
   }
 };
@@ -2541,7 +2533,7 @@ export const listHubFinanceCashSessionsClosed = async (req: Request, res: Respon
     const { data, error } = await supabaseAdmin
       .from('hub_cash_sessions')
       .select(
-        'id, opened_at, closed_at, opening_balance, closing_balance, expected_balance, difference_amount, status, opened_by_staff_id, opened_by_staff:hub_staff_members!opened_by_staff_id(id, full_name, display_name)'
+        'id, opened_at, closed_at, opening_balance, closing_balance, expected_balance, difference_amount, status, notes, auto_closed, opened_by_staff_id, opened_by_staff:hub_staff_members!opened_by_staff_id(id, full_name, display_name)'
       )
       .eq('clinic_id', clinicParsed.data)
       .eq('unit_id', unitParsed.data)

@@ -371,6 +371,7 @@ import {
   getHubFinancePaymentReceipt,
   postHubFinanceCashSessionOpen,
   postHubFinanceCashSessionClose,
+  postHubFinanceCashSessionsAutoCloseOverdue,
   postHubFinanceHandoffPending,
   getHubFinanceCashSessionOpen,
   getHubFinanceCashSessionStatus,
@@ -1986,6 +1987,11 @@ router.post(
   authenticateUser,
   requirePermission('hub.cash.session'), requireCoreOpsWrite,
   postHubFinanceCashSessionOpen
+);
+/** Job cron (meia-noite SP): auth via CRON_SECRET, sem sessão de usuário. */
+router.post(
+  '/finance/cash-sessions/auto-close-overdue',
+  postHubFinanceCashSessionsAutoCloseOverdue
 );
 router.post(
   '/finance/cash-sessions/:id/close',
