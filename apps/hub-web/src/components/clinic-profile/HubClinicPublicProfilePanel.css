@@ -1,0 +1,397 @@
+/* Editor da página pública da clínica — tokens alinhados ao Hub */
+
+.hub-cpp-editor {
+  --hc-brand: #c86a4d;
+  --hc-brand-hover: #a85a40;
+  --hc-text: #4a3b3a;
+  --hc-text-muted: #8e6e67;
+  --hc-border: #e5dcd6;
+  --hc-card: #ffffff;
+  --hc-soft: #fdf8f5;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--hc-text);
+}
+
+.hub-cpp-editor .hub-clientes__input,
+.hub-cpp-editor .hub-clientes__textarea,
+.hub-cpp-editor select.hub-clientes__input {
+  border: 1px solid var(--hc-border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--hc-text);
+  box-shadow: none;
+}
+
+.hub-cpp-editor .hub-clientes__input:hover,
+.hub-cpp-editor .hub-clientes__textarea:hover,
+.hub-cpp-editor select.hub-clientes__input:hover {
+  border-color: #c9b8b4;
+}
+
+.hub-cpp-editor .hub-clientes__input:focus,
+.hub-cpp-editor .hub-clientes__textarea:focus,
+.hub-cpp-editor select.hub-clientes__input:focus {
+  outline: none;
+  border-color: var(--hc-brand);
+  box-shadow: 0 0 0 3px rgba(200, 106, 77, 0.14);
+}
+
+.hub-cpp-editor .hub-clientes__input:disabled,
+.hub-cpp-editor .hub-clientes__textarea:disabled,
+.hub-cpp-editor select.hub-clientes__input:disabled {
+  background: #faf8f6;
+  opacity: 0.72;
+}
+
+.hub-cpp-editor .hub-clientes__field {
+  margin-bottom: 0;
+}
+
+.hub-cpp-editor__hint {
+  margin: 6px 0 0;
+  color: var(--hc-text-muted);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.hub-cpp-editor__grid2 {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+}
+
+/* Barra de publicação */
+.hub-cpp-editor__publish {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--hc-border);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fffdfb 0%, #fff 100%);
+}
+
+.hub-cpp-editor__publish-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.hub-cpp-editor__publish-label {
+  margin: 0 0 4px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--hc-text);
+}
+
+.hub-cpp-editor__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.hub-cpp-editor__status--live {
+  background: #e8f6ef;
+  color: #1f6b45;
+}
+
+.hub-cpp-editor__status--draft {
+  background: #f3eee9;
+  color: var(--hc-text-muted);
+}
+
+.hub-cpp-editor__slug {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.hub-cpp-editor__slug-prefix {
+  flex-shrink: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--hc-text-muted);
+}
+
+.hub-cpp-editor__slug .hub-clientes__input {
+  flex: 1;
+}
+
+.hub-cpp-editor__link-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: 0.5rem;
+}
+
+.hub-cpp-editor__link-row code {
+  font-size: 0.8rem;
+  color: var(--hc-text-muted);
+  word-break: break-all;
+}
+
+.hub-cpp-editor__publish-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* Seções colapsáveis */
+.hub-cpp-editor__section {
+  border: 1px solid var(--hc-border);
+  border-radius: 14px;
+  background: var(--hc-card);
+  overflow: hidden;
+}
+
+.hub-cpp-editor__section-toggle {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  font: inherit;
+}
+
+.hub-cpp-editor__section-toggle:hover {
+  background: var(--hc-soft);
+}
+
+.hub-cpp-editor__section-toggle:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px rgba(200, 106, 77, 0.35);
+}
+
+.hub-cpp-editor__section-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  background: var(--hc-soft);
+  color: var(--hc-brand);
+}
+
+.hub-cpp-editor__section-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.hub-cpp-editor__section-title {
+  margin: 0;
+  font-size: 0.98rem;
+  font-weight: 700;
+  color: var(--hc-text);
+}
+
+.hub-cpp-editor__section-sub {
+  margin: 2px 0 0;
+  font-size: 0.82rem;
+  color: var(--hc-text-muted);
+  line-height: 1.35;
+}
+
+.hub-cpp-editor__section-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.hub-cpp-editor__badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #f3eee9;
+  color: var(--hc-text-muted);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.hub-cpp-editor__badge--ok {
+  background: #e8f6ef;
+  color: #1f6b45;
+}
+
+.hub-cpp-editor__chevron {
+  color: var(--hc-text-muted);
+  transition: transform 0.15s ease;
+}
+
+.hub-cpp-editor__section--open .hub-cpp-editor__chevron {
+  transform: rotate(180deg);
+  color: var(--hc-brand);
+}
+
+.hub-cpp-editor__section-body {
+  padding: 0 16px 16px;
+  display: grid;
+  gap: 14px;
+  border-top: 1px solid transparent;
+}
+
+.hub-cpp-editor__section--open .hub-cpp-editor__section-body {
+  border-top-color: var(--hc-border);
+  padding-top: 14px;
+}
+
+.hub-cpp-editor__checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+}
+
+.hub-cpp-editor__media {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.hub-cpp-editor__thumbs {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.hub-cpp-editor__thumbs img {
+  width: 88px;
+  height: 56px;
+  object-fit: cover;
+  border-radius: 8px;
+  border: 1px solid var(--hc-border);
+}
+
+.hub-cpp-editor__hours {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.hub-cpp-editor__hours-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.hub-cpp-editor__hours-toolbar-label {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--hc-text-muted);
+  margin-right: 2px;
+}
+
+.hub-cpp-editor__hour-row {
+  display: grid;
+  grid-template-columns: 7rem minmax(6.5rem, auto) minmax(9rem, 1fr) minmax(9rem, 1fr);
+  gap: 0.75rem 1rem;
+  align-items: start;
+  padding: 12px 14px;
+  border: 1px solid var(--hc-border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.hub-cpp-editor__hour-row--closed {
+  background: #faf8f6;
+}
+
+/* Alinha dia/checkbox com o controle do HubTimeField (abaixo do rótulo Abre/Fecha). */
+.hub-cpp-editor__day,
+.hub-cpp-editor__open-check {
+  display: flex;
+  align-items: center;
+  min-height: 40px;
+  padding-top: 22px;
+  box-sizing: content-box;
+}
+
+.hub-cpp-editor__day {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--hc-text);
+}
+
+.hub-cpp-editor__offer-block {
+  display: grid;
+  gap: 10px;
+  padding-top: 4px;
+}
+
+.hub-cpp-editor__offer-title {
+  margin: 0;
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--hc-text);
+}
+
+.hub-cpp-editor__item-meta {
+  color: var(--hc-text-muted);
+  font-weight: 500;
+  font-size: 0.85em;
+}
+
+.hub-cpp-editor__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.75rem;
+}
+
+.hub-cpp-editor__list > li {
+  padding: 12px;
+  border: 1px solid var(--hc-border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.hub-cpp-editor__list-extra {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0.55rem 0 0 1.5rem;
+}
+
+.hub-cpp-editor__empty {
+  margin: 0;
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--hc-soft);
+  color: var(--hc-text-muted);
+  font-size: 0.9rem;
+}
+
+@media (max-width: 720px) {
+  .hub-cpp-editor__hour-row {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .hub-cpp-editor__day,
+  .hub-cpp-editor__open-check {
+    grid-column: 1 / -1;
+    padding-top: 0;
+    min-height: auto;
+  }
+
+  .hub-cpp-editor__section-toggle {
+    align-items: flex-start;
+  }
+}

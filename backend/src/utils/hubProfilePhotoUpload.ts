@@ -96,3 +96,16 @@ export async function uploadHubClinicProfilePhotoToStorage(
   const path = buildPath('clinics', clinicId, file.originalname);
   return uploadToHubProfileBucket(file, path);
 }
+
+/** Capa/logo da landing pública: clinics/{id}/public/{kind}-*.ext */
+export async function uploadHubClinicPublicProfileAssetToStorage(
+  file: HubProfilePhotoFile,
+  clinicId: string,
+  kind: 'cover' | 'logo',
+): Promise<{ url: string; path: string }> {
+  const sanitized = sanitizeFilename(file.originalname);
+  const extRaw = sanitized.split('.').pop()?.toLowerCase() || 'jpg';
+  const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(extRaw) ? extRaw : 'jpg';
+  const path = `clinics/${clinicId}/public/${kind}-${Date.now()}.${safeExt}`;
+  return uploadToHubProfileBucket(file, path);
+}

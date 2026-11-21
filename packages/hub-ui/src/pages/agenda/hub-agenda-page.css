@@ -2039,7 +2039,7 @@
   }
 
   .hub-agenda__density {
-    align-self: flex-start;
+    display: none;
   }
 
   .hub-agenda__filters-details {

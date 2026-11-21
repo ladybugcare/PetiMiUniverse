@@ -1047,7 +1047,7 @@ button.vet-cockpit-snapshot-card:hover {
 
 .vet-cockpit-panel__footer {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   flex-shrink: 0;
   padding: 12px 20px 16px;
@@ -1058,11 +1058,17 @@ button.vet-cockpit-snapshot-card:hover {
   grid-template-columns: 1fr;
 }
 
+/* Com 3 ações (ex.: cirurgia + continuar + finalizar), a última ocupa a linha inteira. */
+.vet-cockpit-panel__footer:has(> :nth-child(3)) > :last-child {
+  grid-column: 1 / -1;
+}
+
 .vet-cockpit-action-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
+  min-width: 0;
   min-height: 40px;
   padding: 8px 12px;
   border-radius: 10px;
@@ -1070,10 +1076,11 @@ button.vet-cockpit-snapshot-card:hover {
   background: #fff;
   font-size: 0.8125rem;
   font-weight: 600;
+  line-height: 1.25;
   cursor: pointer;
   text-decoration: none;
   color: inherit;
-  flex: 1 1 140px;
+  text-wrap: balance;
 }
 
 .vet-cockpit-action-btn--primary {

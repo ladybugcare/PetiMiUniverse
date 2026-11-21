@@ -76,7 +76,7 @@ export const ClientesToolbar: React.FC<ClientesToolbarProps> = ({
           </button>
         </div>
       </div>
-      <div className="hub-clientes-toolbar-row">
+      <div className="hub-clientes-toolbar-row hub-clientes-toolbar-row--filters">
         {!isCompanyTab ? (
           <HubSearchableCombobox
             id="hub-clientes-toolbar-bond"

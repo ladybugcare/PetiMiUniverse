@@ -48,12 +48,6 @@
 
 @media (max-width: 720px) {
   .hub-today-dash__ops-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@media (max-width: 480px) {
-  .hub-today-dash__ops-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -128,6 +122,229 @@
 
 @media (max-width: 720px) {
   .hub-today-dash__finance-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+/* —— Mobile: densidade operacional —— */
+@media (max-width: 720px) {
+  .hub-today-dash,
+  .hub-today-dash .hub-clientes__main {
+    min-width: 0;
+    max-width: 100%;
+    overflow-x: hidden;
+    box-sizing: border-box;
+  }
+
+  .hub-today-dash.hub-finance-page > .hub-clientes__main {
+    padding-right: 12px;
+  }
+
+  .hub-today-dash__header {
+    gap: 8px 12px;
+    margin-bottom: 12px;
+  }
+
+  .hub-today-dash__title {
+    font-size: 1.15rem;
+  }
+
+  .hub-today-dash__subtitle {
+    margin-top: 2px;
+    font-size: 12px;
+    line-height: 1.3;
+  }
+
+  .hub-today-dash__header-actions {
+    width: 100%;
+    gap: 6px;
+  }
+
+  .hub-today-dash__header-actions .hub-clientes__btn {
+    flex: 1;
+    justify-content: center;
+    min-height: 36px;
+    padding: 7px 10px;
+    font-size: 13px;
+  }
+
+  .hub-today-dash__ops {
+    margin-bottom: 14px;
+  }
+
+  .hub-today-dash .hub-dash__panel-title {
+    margin-bottom: 4px;
+    font-size: 14px;
+  }
+
+  .hub-today-dash .hub-dash__panel-sub {
+    display: none;
+  }
+
+  .hub-today-dash__ops-grid {
+    gap: 6px;
+  }
+
+  /* Linha compacta: área + meta | valor */
+  .hub-today-dash__ops-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    column-gap: 10px;
+    row-gap: 2px;
+    align-items: center;
+    min-height: 0;
+    padding: 10px 12px;
+    border-radius: 10px;
+    box-shadow: none;
+  }
+
+  .hub-today-dash__ops-card.hub-today-dash__ops-card--empty {
+    display: none;
+  }
+
+  .hub-today-dash__ops-card-top {
+    grid-column: 1;
+    grid-row: 1;
+    gap: 6px;
+    min-width: 0;
+  }
+
+  .hub-today-dash__ops-card-top svg:first-child {
+    width: 16px;
+    height: 16px;
+    flex-shrink: 0;
+  }
+
+  .hub-today-dash__ops-card-label {
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .hub-today-dash__ops-card-arrow {
+    display: none;
+  }
+
+  .hub-today-dash__ops-card-value {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    font-size: 1.25rem;
+    line-height: 1;
+    align-self: center;
+  }
+
+  .hub-today-dash__ops-card-meta {
+    grid-column: 1;
+    grid-row: 2;
+    font-size: 11px;
+    line-height: 1.3;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .hub-today-dash__finance {
+    margin-bottom: 0;
+  }
+
+  .hub-today-dash__finance-row {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .hub-today-dash .hub-dash__kpi-card {
+    min-height: 0;
+    padding: 10px 10px;
+    border-radius: 10px;
+    box-shadow: none;
+  }
+
+  .hub-today-dash .hub-dash__kpi-label {
+    margin-bottom: 2px;
+    font-size: 11px;
+  }
+
+  .hub-today-dash .hub-dash__kpi-value {
+    font-size: 0.92rem;
+    line-height: 1.2;
+    word-break: break-word;
+  }
+
+  .hub-today-dash .hub-dash__kpi-hint {
+    margin-top: 2px;
+    font-size: 11px;
+  }
+
+  .hub-today-dash .hub-dash__two-col {
+    gap: 10px;
+    margin-top: 10px !important;
+    margin-bottom: 12px;
+  }
+
+  .hub-today-dash .hub-dash__panel {
+    padding: 12px;
+    border-radius: 10px;
+    box-shadow: none;
+  }
+
+  .hub-today-dash .hub-dash__alerts {
+    gap: 6px;
+  }
+
+  .hub-today-dash .hub-dash__alert-card {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    padding: 10px;
+    gap: 4px 8px;
+    border-radius: 10px;
+    align-items: start;
+  }
+
+  .hub-today-dash .hub-dash__alert-card > svg {
+    grid-row: 1 / span 2;
+    width: 18px;
+    height: 18px;
+    margin-top: 2px;
+  }
+
+  .hub-today-dash .hub-dash__alert-card > div {
+    grid-column: 2;
+    min-width: 0;
+  }
+
+  .hub-today-dash .hub-dash__alert-title {
+    font-size: 13px;
+  }
+
+  .hub-today-dash .hub-dash__alert-meta {
+    font-size: 11px;
+  }
+
+  .hub-today-dash .hub-dash__alert-cta {
+    grid-column: 2;
+    justify-self: start;
+    margin-top: 2px;
+    padding: 4px 0;
+    font-size: 12px;
+    border: none;
+    background: transparent;
+  }
+
+  .hub-today-dash .hub-dash__shortcuts {
+    gap: 6px;
+  }
+
+  /* Já cobertos pelos cards de operação acima */
+  .hub-today-dash__shortcut--ops {
+    display: none;
+  }
+
+  .hub-today-dash .hub-dash__shortcut {
+    padding: 8px 10px;
+    font-size: 13px;
+    border-radius: 8px;
   }
 }

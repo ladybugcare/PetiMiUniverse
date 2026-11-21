@@ -190,6 +190,14 @@ export { default as HubOrcamentosRoutes } from './pages/orcamentos/HubOrcamentos
 export { default as HubQuotePublicView } from './pages/orcamentos/HubQuotePublicView';
 export { default as BoardingCarePublicView } from './pages/boarding/BoardingCarePublicView';
 export type { BoardingCarePublicData, BoardingCarePublicSubmit } from './pages/boarding/BoardingCarePublicView';
+export { default as HubClinicPublicLanding } from './pages/public-profile/HubClinicPublicLanding';
+export type { HubClinicPublicLandingProps } from './pages/public-profile/HubClinicPublicLanding';
+export type {
+  HubClinicPublicLandingData,
+  HubPublicThemePreset,
+  HubPublicSocialLinks,
+  HubPublicBusinessHours,
+} from './pages/public-profile/clinicPublicProfileTypes';
 export { hubProspectsApi } from './api/hubProspectsApi';
 export type { HubProspect } from './api/hubProspectsApi';
 export { hubQuotesApi, openHubQuotePdf, downloadHubQuotePdf } from './api/hubQuotesApi';

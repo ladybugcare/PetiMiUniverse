@@ -185,6 +185,11 @@ async function executeApiRequest(
           );
         }
         const isLoginEndpoint = endpoint.includes('/auth/login');
+        // Polling de badge não deve derrubar a sessão inteira se um 401 pontual falhar.
+        const isBestEffortAuthProbe =
+          endpoint.includes('/notifications/unread-count') ||
+          /\/support\/tickets\/unread-count\b/.test(endpoint) ||
+          /\/unread-count\?/.test(endpoint);
         const isTokenError =
           errorMessage?.includes('expirado') ||
           errorMessage?.includes('Token inválido') ||
@@ -193,7 +198,7 @@ async function executeApiRequest(
           errorMessage?.includes('signature') ||
           /token.*expir|jwt.*invalid|signature.*invalid/i.test(String(errorText));
 
-        if (isTokenError && !isLoginEndpoint) {
+        if (isTokenError && !isLoginEndpoint && !isBestEffortAuthProbe) {
           console.warn('[web-core] Token inválido ou expirado. Limpando sessão...');
           await handleInvalidToken();
           if (typeof window !== 'undefined') {

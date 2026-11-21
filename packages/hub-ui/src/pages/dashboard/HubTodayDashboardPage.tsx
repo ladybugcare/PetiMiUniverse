@@ -299,11 +299,12 @@ const HubTodayDashboardPage: React.FC = () => {
                 (card.id === 'boarding' &&
                   (summary?.boarding?.hotel.over_capacity || summary?.boarding?.daycare.over_capacity)) ||
                 (card.id === 'pickup' && (summary?.pickup?.routes_without_driver ?? 0) > 0);
+              const empty = !loading && primary === '0';
               return (
                 <Link
                   key={card.id}
                   to={card.href}
-                  className={`hub-today-dash__ops-card${warn ? ' hub-today-dash__ops-card--warn' : ''}${loading ? ' hub-today-dash__ops-card--loading' : ''}`}
+                  className={`hub-today-dash__ops-card${warn ? ' hub-today-dash__ops-card--warn' : ''}${loading ? ' hub-today-dash__ops-card--loading' : ''}${empty ? ' hub-today-dash__ops-card--empty' : ''}`}
                 >
                   <div className="hub-today-dash__ops-card-top">
                     <Icon size={18} strokeWidth={1.75} aria-hidden />
@@ -522,7 +523,11 @@ const HubTodayDashboardPage: React.FC = () => {
           <p className="hub-dash__panel-sub">Operação e análise — sem misturar modos.</p>
           <div className="hub-dash__shortcuts">
             {visibleCards.map((card) => (
-              <Link key={card.id} className="hub-dash__shortcut" to={card.href}>
+              <Link
+                key={card.id}
+                className="hub-dash__shortcut hub-today-dash__shortcut--ops"
+                to={card.href}
+              >
                 {card.label}
                 <ArrowRight size={14} aria-hidden />
               </Link>

@@ -57,6 +57,7 @@ import HubNotificationsPage from './pages/HubNotificationsPage';
 import HubClinicaPerfilPage from './pages/HubClinicaPerfilPage';
 import HubDesignSystemPage from './pages/HubDesignSystemPage';
 import PublicQuotePage from './pages/PublicQuotePage';
+import PublicClinicProfilePage from './pages/PublicClinicProfilePage';
 import PublicBoardingCarePage from './pages/PublicBoardingCarePage';
 import PublicComandaPage from './pages/PublicComandaPage';
 import PublicChargeBundlePage from './pages/PublicChargeBundlePage';
@@ -103,6 +104,7 @@ const router = createBrowserRouter(
       <Route path="/accept-invitation" element={<HubAcceptInvitationPage />} />
       <Route path="/signup-convite" element={<HubInviteSignUpPage />} />
       <Route path="/email-confirmed" element={<HubEmailConfirmedPage />} />
+      <Route path="/c/:slug" element={<PublicClinicProfilePage />} />
       <Route path="/orcamento/:token" element={<PublicQuotePage />} />
       <Route path="/cuidados-hospedagem/:token" element={<PublicBoardingCarePage />} />
       <Route path="/comanda/:token" element={<PublicComandaPage />} />

@@ -41,6 +41,38 @@
   margin-top: 8px;
 }
 
+/* Mobile: KPIs 2×2 compactos (padrão Orçamento) */
+@media (max-width: 640px) {
+  .hub-clientes-page .hub-clientes__metric-card {
+    padding: 12px 12px 10px;
+  }
+
+  .hub-clientes-metric-card__top {
+    position: relative;
+    margin-bottom: 0;
+    padding-right: 40px;
+  }
+
+  .hub-clientes-metric-card__icon {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+  }
+
+  .hub-clientes-metric-card__icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .hub-clientes-metric-trend {
+    font-size: 11px;
+    margin-top: 2px;
+  }
+}
+
 .hub-clientes-toolbar-wrap {
   display: flex;
   flex-direction: column;
@@ -150,16 +182,39 @@
 }
 
 @media (max-width: 900px) {
-  .hub-clientes-page .hub-clientes-toolbar-row {
+  .hub-clientes-page .hub-clientes-toolbar-wrap {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .hub-clientes-page .hub-clientes-toolbar-row:not(.hub-clientes-toolbar-row--filters) {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .hub-clientes-page .hub-clientes-toolbar-row .hub-clientes__search,
-  .hub-clientes-page .hub-clientes-toolbar-row .hub-combobox--clientes {
+  .hub-clientes-page .hub-clientes-toolbar-row .hub-clientes__search {
     width: 100%;
     min-width: 0;
     max-width: none;
+  }
+
+  /* Filtros em grade 2 colunas — evita empilhar 3 selects altos */
+  .hub-clientes-page .hub-clientes-toolbar-row--filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .hub-clientes-page .hub-clientes-toolbar-row--filters .hub-combobox--clientes {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+    flex: none;
+  }
+
+  .hub-clientes-page .hub-clientes-toolbar-row--filters > .hub-combobox--clientes:last-of-type:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 
   .hub-clientes-page .hub-clientes-new-btn-group {

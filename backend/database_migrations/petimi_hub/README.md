@@ -316,3 +316,7 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 149. **`149_alter_hub_pets_external_microchip.sql`** — Coluna `external_microchip` em `hub_pets` (microchip físico; distinto de `petmi_pet_id`). Executar depois de `002_create_hub_pets_and_pet_guardians.sql`.
 
 150. **`150_alter_hub_cash_sessions_auto_close.sql`** — `auto_closed` em `hub_cash_sessions` + RPCs `hub_list_overdue_open_cash_sessions` / `hub_close_cash_session_atomic` (fechamento automático overdue à meia-noite SP). Executar depois dos itens 035, 044 e 136.
+
+151. **`151_create_hub_clinic_public_profiles.sql`** — Landing pública opt-in da clínica: tabela `hub_clinic_public_profiles` (slug, hero, horários, redes, SEO, tema) + flags em `hub_service_types` / `hub_staff_members` (`show_on_public_profile`, blurbs/bio, ordenação). Executar depois dos itens 003 e 009.
+
+152. **`152_alter_hub_public_profile_service_groups.sql`** — `services_display_mode` (`groups` | `services` | `both`) em `hub_clinic_public_profiles` + flags públicas em `hub_service_groups`. Executar depois dos itens 017 e 151.

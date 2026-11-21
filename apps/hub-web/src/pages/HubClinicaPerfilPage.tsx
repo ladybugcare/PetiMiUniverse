@@ -5,6 +5,7 @@ import { usePermissions } from '@petimi/web-core';
 import '@petimi/hub-ui/pages/clientes/clientes.css';
 import HubProfilePhotoPicker from '../components/HubProfilePhotoPicker';
 import HubClinicEditPanel from '../components/clinic-profile/HubClinicEditPanel';
+import HubClinicPublicProfilePanel from '../components/clinic-profile/HubClinicPublicProfilePanel';
 import HubUnitEditPanel from '../components/clinic-profile/HubUnitEditPanel';
 import {
   HubAccountProfileCard,
@@ -188,6 +189,14 @@ const HubClinicaPerfilPage: React.FC = () => {
           ]}
         />
       </HubAccountProfileCard>
+
+      {clinicId ? (
+        <HubClinicPublicProfilePanel
+          clinicId={clinicId}
+          clinicName={displayName}
+          canEdit={canEditClinicProfile}
+        />
+      ) : null}
 
       <HubAccountProfileCard
         title="Unidades"

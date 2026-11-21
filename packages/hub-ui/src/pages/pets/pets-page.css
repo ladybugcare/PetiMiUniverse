@@ -46,6 +46,38 @@
   margin-top: 8px;
 }
 
+/* Mobile: KPIs 2×2 compactos (padrão Orçamento) */
+@media (max-width: 640px) {
+  .hub-pets-page .hub-clientes__metric-card {
+    padding: 12px 12px 10px;
+  }
+
+  .hub-pets-metric-card__top {
+    position: relative;
+    margin-bottom: 0;
+    padding-right: 40px;
+  }
+
+  .hub-pets-metric-card__icon {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+  }
+
+  .hub-pets-metric-card__icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .hub-pets-metric-trend {
+    font-size: 11px;
+    margin-top: 2px;
+  }
+}
+
 .hub-pets-toolbar-wrap {
   display: flex;
   flex-direction: column;
@@ -1677,14 +1709,37 @@ a.hub-pets-detail__history-row-title:hover {
 
 /* Mobile — lista e toolbar de pets */
 @media (max-width: 900px) {
-  .hub-pets-page .hub-pets-toolbar-row {
+  .hub-pets-page .hub-pets-toolbar-wrap {
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .hub-pets-page .hub-pets-toolbar-row:not(.hub-pets-toolbar-row--filters) {
     flex-direction: column;
     align-items: stretch;
   }
 
-  .hub-pets-page .hub-pets-toolbar-row .hub-clientes__search,
-  .hub-pets-page .hub-pets-toolbar-row .hub-combobox--clientes,
-  .hub-pets-page .hub-pets-toolbar-row select {
+  .hub-pets-page .hub-pets-toolbar-row .hub-clientes__search {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Filtros em grade 2 colunas — evita empilhar 3 selects altos */
+  .hub-pets-page .hub-pets-toolbar-row--filters {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    align-items: stretch;
+  }
+
+  .hub-pets-page .hub-pets-toolbar-row--filters > div {
+    max-width: none !important;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .hub-pets-page .hub-pets-toolbar-row--filters .hub-combobox--clientes,
+  .hub-pets-page .hub-pets-toolbar-row--filters select {
     width: 100%;
     min-width: 0;
   }

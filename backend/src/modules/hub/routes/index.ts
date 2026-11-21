@@ -137,6 +137,12 @@ import { listHubStaff, getHubStaff, createHubStaff, patchHubStaff, inviteHubStaf
 import { postHubStaffPhoto } from '../hubStaffPhotoController';
 import { postHubClinicProfilePhoto, postHubUserProfilePhoto } from '../hubProfilePhotoController.js';
 import { patchHubClinicProfile, patchHubUnitProfile, postHubUnit } from '../hubClinicProfileController.js';
+import {
+  getHubClinicPublicProfile,
+  patchHubClinicPublicProfile,
+  postHubClinicPublicProfileCover,
+  postHubClinicPublicProfileLogo,
+} from '../hubClinicPublicProfileController.js';
 import { getHubSessionContext } from '../hubSessionController.js';
 import {
   getHubSubscriptionMe,
@@ -582,6 +588,26 @@ router.post('/profile/me/photo', authenticateUser, postHubUserProfilePhoto);
 /** Perfil/logo da clínica: catálogo admin — bloqueado em soft_lock e read_history. */
 router.post('/clinic/profile/photo', authenticateUser, requireCoreCatalogWrite, postHubClinicProfilePhoto);
 router.patch('/clinic/profile', authenticateUser, requireCoreCatalogWrite, patchHubClinicProfile);
+/** Landing pública da clínica (opt-in / slug / hero / serviços / equipe). */
+router.get('/clinic/public-profile', authenticateUser, requireClinicAccess, getHubClinicPublicProfile);
+router.patch(
+  '/clinic/public-profile',
+  authenticateUser,
+  requireCoreCatalogWrite,
+  patchHubClinicPublicProfile,
+);
+router.post(
+  '/clinic/public-profile/cover',
+  authenticateUser,
+  requireCoreCatalogWrite,
+  postHubClinicPublicProfileCover,
+);
+router.post(
+  '/clinic/public-profile/logo',
+  authenticateUser,
+  requireCoreCatalogWrite,
+  postHubClinicPublicProfileLogo,
+);
 /** Unidades: catálogo/capacidade — controller mantém assertCanCreateUnit. */
 router.post('/units', authenticateUser, requireUnitCapacityWrite, postHubUnit);
 router.patch('/units/:unitId', authenticateUser, requireCoreCatalogWrite, patchHubUnitProfile);

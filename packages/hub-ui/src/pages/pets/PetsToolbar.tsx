@@ -97,7 +97,7 @@ export const PetsToolbar: React.FC<PetsToolbarProps> = ({
           <PetsNewEntryMenu onNewPet={onNewPet} onQuickCreate={onQuickCreate} />
         </div>
       </div>
-      <div className="hub-pets-toolbar-row">
+      <div className="hub-pets-toolbar-row hub-pets-toolbar-row--filters">
         <div style={{ flex: '1 1 200px', minWidth: 0, maxWidth: 360 }}>
           <HubSearchableCombobox
             id="hub-pets-toolbar-species"
