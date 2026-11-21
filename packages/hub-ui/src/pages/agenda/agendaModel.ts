@@ -444,10 +444,207 @@ export { serviceGroupLabel };
 
 export type AgendaCardSize = 'compact' | 'medium' | 'tall';
 
-export function agendaCardSizeFromHeight(heightPx: number): AgendaCardSize {
-  if (heightPx < 40) return 'compact';
-  if (heightPx <= 64) return 'medium';
-  return 'tall';
+/** Densidade visual da grade diária (altura do slot de 30 min). */
+export type AgendaDensity = 'compact' | 'comfortable' | 'spacious';
+
+export const AGENDA_DENSITY_SLOT_H: Record<AgendaDensity, number> = {
+  compact: 22,
+  comfortable: 26,
+  spacious: 34,
+};
+
+export const AGENDA_DENSITY_STORAGE_KEY = 'petmi-hub-agenda-density-v1';
+
+export const DAY_CARD_MIN_WIDTH_PX = 96;
+export const DAY_CARD_FULL_WIDTH_PX = 120;
+export const DAY_MAX_VISIBLE_COLUMNS = 3;
+export const DAY_LANE_DEFAULT_WIDTH_PX = 200;
+/** Largura reservada à direita da lane para o trilho «+N». */
+export const DAY_OVERFLOW_RAIL_PX = 34;
+/** A partir desta duração (na grade do dia) o atendimento vai para a faixa «Dia todo». */
+export const DAY_STAY_MIN_MINUTES = 240;
+
+/**
+ * Hospedagens e atendimentos longos (≥ 4h na grade do dia) saem da timeline
+ * e aparecem na faixa «Dia todo» do topo da coluna. Só apresentação.
+ */
+export function isAgendaDayStay(
+  a: Pick<AgendaAppointment, 'start' | 'end' | 'appointment_kind'>,
+  dayStart: Date,
+  dayMinutes: number,
+): boolean {
+  if (a.appointment_kind === 'hotel_stay') return true;
+  const clamped = clampAppointmentToDayLane(a.start, a.end, dayStart, dayMinutes);
+  if (!clamped) return false;
+  return clamped.endMins - clamped.startMins >= DAY_STAY_MIN_MINUTES;
+}
+
+/** Texto curto do período de uma estadia relativo ao dia exibido. */
+export function agendaDayStayPeriodLabel(
+  a: Pick<AgendaAppointment, 'start' | 'end'>,
+  day: Date,
+): string {
+  const startsToday = isSameDay(a.start, day);
+  const endsToday = isSameDay(a.end, day);
+  if (startsToday && endsToday) return `${formatHm(a.start)}–${formatHm(a.end)}`;
+  if (startsToday) return `entra ${formatHm(a.start)}`;
+  if (endsToday) return `sai ${formatHm(a.end)}`;
+  return 'dia todo';
+}
+
+/**
+ * Modo do card por altura e largura útil.
+ * - mínimo: altura &lt; 40 ou largura &lt; 96
+ * - completo: altura ≥ 72 e largura ≥ 120 (ou largura desconhecida)
+ * - compacto: demais casos
+ */
+export function agendaCardSizeFromHeight(heightPx: number, widthPx?: number): AgendaCardSize {
+  if (heightPx < 40 || (widthPx != null && widthPx < DAY_CARD_MIN_WIDTH_PX)) return 'compact';
+  if (heightPx >= 72 && (widthPx == null || widthPx >= DAY_CARD_FULL_WIDTH_PX)) return 'tall';
+  return 'medium';
+}
+
+/** Quantas colunas cabem sem ficar ilegível (piso de largura + teto de cards). */
+export function dayLaneVisibleColumnCap(
+  columnCount: number,
+  opts?: { maxVisible?: number; minWidthPx?: number; laneWidthPx?: number },
+): number {
+  const maxVisible = opts?.maxVisible ?? DAY_MAX_VISIBLE_COLUMNS;
+  const minWidth = opts?.minWidthPx ?? DAY_CARD_MIN_WIDTH_PX;
+  const laneW = opts?.laneWidthPx ?? DAY_LANE_DEFAULT_WIDTH_PX;
+  const byWidth = Math.max(1, Math.floor(laneW / minWidth));
+  return Math.max(1, Math.min(columnCount, maxVisible, byWidth));
+}
+
+export type DayLaneOverflowGroup = {
+  /** Todos os ids do cluster de overlap. */
+  allIds: string[];
+  visibleIds: string[];
+  hiddenIds: string[];
+  hasConflict: boolean;
+  /** Intervalo coberto pelos ocultos (posição do trilho «+N»). */
+  startMs: number;
+  endMs: number;
+};
+
+export type DayLaneDisplayPlan = {
+  /** Layout remapeado só para cards visíveis (columnCount = cap). */
+  display: Map<string, { column: number; columnCount: number }>;
+  overflows: DayLaneOverflowGroup[];
+};
+
+/**
+ * Aplica teto de colunas / piso de largura sobre o packing existente,
+ * sem alterar horários nem `layoutDayLaneAppointments`.
+ */
+export function planDayLaneOverflowDisplay(
+  appointments: Array<{ id: string; start: Date; end: Date; conflict?: boolean }>,
+  layouts: Map<string, { column: number; columnCount: number }>,
+  opts?: { maxVisible?: number; minWidthPx?: number; laneWidthPx?: number },
+): DayLaneDisplayPlan {
+  const display = new Map<string, { column: number; columnCount: number }>();
+  const overflows: DayLaneOverflowGroup[] = [];
+  const byId = new Map(appointments.map((a) => [a.id, a]));
+
+  // Componentes conexos por sobreposição temporal (mesma noção de cluster do packing).
+  const ids = appointments.filter((a) => layouts.has(a.id)).map((a) => a.id);
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    let p = parent.get(x) ?? x;
+    while (p !== (parent.get(p) ?? p)) p = parent.get(p) ?? p;
+    parent.set(x, p);
+    return p;
+  };
+  const union = (a: string, b: string) => {
+    const ra = find(a);
+    const rb = find(b);
+    if (ra !== rb) parent.set(ra, rb);
+  };
+  for (const id of ids) parent.set(id, id);
+
+  for (let i = 0; i < ids.length; i++) {
+    const a = byId.get(ids[i]!)!;
+    const aStart = a.start.getTime();
+    const aEnd = a.end.getTime();
+    for (let j = i + 1; j < ids.length; j++) {
+      const b = byId.get(ids[j]!)!;
+      if (aStart < b.end.getTime() && b.start.getTime() < aEnd) {
+        union(ids[i]!, ids[j]!);
+      }
+    }
+  }
+
+  const clusters = new Map<string, string[]>();
+  for (const id of ids) {
+    const root = find(id);
+    const arr = clusters.get(root) ?? [];
+    arr.push(id);
+    clusters.set(root, arr);
+  }
+
+  for (const clusterIds of clusters.values()) {
+    const pack0 = layouts.get(clusterIds[0]!) ?? { column: 0, columnCount: 1 };
+    const columnCount = Math.max(
+      pack0.columnCount,
+      ...clusterIds.map((id) => layouts.get(id)?.columnCount ?? 1),
+    );
+    const cap = dayLaneVisibleColumnCap(columnCount, opts);
+    const sorted = [...clusterIds].sort((a, b) => {
+      const ca = layouts.get(a)?.column ?? 0;
+      const cb = layouts.get(b)?.column ?? 0;
+      if (ca !== cb) return ca - cb;
+      const sa = byId.get(a)!.start.getTime();
+      const sb = byId.get(b)!.start.getTime();
+      return sa - sb;
+    });
+
+    const visibleIds: string[] = [];
+    const hiddenIds: string[] = [];
+    for (const id of sorted) {
+      const col = layouts.get(id)?.column ?? 0;
+      if (col < cap) {
+        visibleIds.push(id);
+        display.set(id, { column: col, columnCount: cap });
+      } else {
+        hiddenIds.push(id);
+      }
+    }
+
+    if (hiddenIds.length === 0) {
+      for (const id of sorted) {
+        const pack = layouts.get(id) ?? { column: 0, columnCount: 1 };
+        display.set(id, { column: pack.column, columnCount: Math.min(pack.columnCount, cap) });
+      }
+      continue;
+    }
+
+    let startMs = Number.POSITIVE_INFINITY;
+    let endMs = 0;
+    let hasConflict = false;
+    for (const id of hiddenIds) {
+      const ap = byId.get(id)!;
+      startMs = Math.min(startMs, ap.start.getTime());
+      endMs = Math.max(endMs, ap.end.getTime());
+    }
+    for (const id of clusterIds) {
+      if (byId.get(id)!.conflict) hasConflict = true;
+    }
+
+    const allIds = [...clusterIds].sort(
+      (a, b) => byId.get(a)!.start.getTime() - byId.get(b)!.start.getTime(),
+    );
+
+    overflows.push({
+      allIds,
+      visibleIds,
+      hiddenIds,
+      hasConflict,
+      startMs,
+      endMs,
+    });
+  }
+
+  return { display, overflows };
 }
 
 /** Primeiro nome do tutor para cards compactos. */

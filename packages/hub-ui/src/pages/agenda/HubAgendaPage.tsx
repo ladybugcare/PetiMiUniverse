@@ -1,18 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import {
-  ChevronLeft,
-  ChevronRight,
-  Printer,
-  Search,
-} from 'lucide-react';
+import { Navigate, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { apiRequest, useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petimi/web-core';
 import { redirectAwayFromHub } from '../../utils/redirectAwayFromHub';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
-import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
-import { HubDateField } from '../../components/HubDateField';
 import {
   hubAgendaApi,
   type HubAgendaCalendarBlock,
@@ -31,19 +23,25 @@ import { hubGuardiansApi } from '../../api/hubGuardiansApi';
 import { hubQuotesApi, type HubQuoteLine, type HubQuoteLineServiceEmbed } from '../../api/hubQuotesApi';
 import type { PackageSaleAgendaNavigationState } from '../finance/packageSaleScheduleUtils';
 import { AppointmentSidePanel } from './AppointmentSidePanel';
-import { AgendaNewEntryMenu } from './AgendaNewEntryMenu';
 import { NewAppointmentModal } from './NewAppointmentModal';
 import type { CreateHubAppointmentResult, NewAppointmentInitial } from './NewAppointmentModal';
-import { SERVICE_GROUP_OPTIONS, resolveServiceAccentColor } from '../../utils/serviceTypeSlug';
-import { ServiceGroupIcon } from '../../components/ServiceGroupIcon';
+import { SERVICE_GROUP_OPTIONS } from '../../utils/serviceTypeSlug';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
 import './hub-agenda-page.css';
 import {
   type AgendaAppointment,
+  type AgendaDensity,
   type AgendaGroupMode,
   type AgendaStatus,
   type AgendaView,
+  AGENDA_DENSITY_SLOT_H,
+  AGENDA_DENSITY_STORAGE_KEY,
+  DAY_LANE_DEFAULT_WIDTH_PX,
+  DAY_OVERFLOW_RAIL_PX,
+  DAY_MAX_VISIBLE_COLUMNS,
+  isAgendaDayStay,
+  agendaDayStayPeriodLabel,
   STATUS_META,
   minutesSinceDayStart,
   formatHm,
@@ -60,6 +58,7 @@ import {
   laneKeyForAppointment,
   computeOverlapConflictIds,
   layoutDayLaneAppointments,
+  planDayLaneOverflowDisplay,
   clampAppointmentToDayLane,
   computeAgendaHourRange,
   parseStaffWorkHours,
@@ -70,6 +69,10 @@ import {
 import { mapHubAppointmentToAgenda, buildDuplicateAppointmentInitial, buildSeriesRenewalInitial } from './mapHubAgenda';
 import { findExtraBlockChildren } from './extraBlockAgendaUtils';
 import { AgendaAppointmentCard } from './AgendaAppointmentCard';
+import { AgendaToolbar } from './AgendaToolbar';
+import { AgendaFiltersBar, type AgendaFilterChip } from './AgendaFiltersBar';
+import { AgendaConflictSummary } from './AgendaConflictSummary';
+import { AgendaDayOverflowMenu } from './AgendaDayOverflowMenu';
 import { hubEncountersApi, type DayBoardItem } from '../../api/hubClinicalApi';
 import { hubGroomingApi } from '../../api/hubGroomingApi';
 import { hubBoardingApi } from '../../api/hubBoardingApi';
@@ -98,8 +101,23 @@ const FILTERS_STORAGE_KEY = AGENDA_FILTERS_STORAGE_KEY;
 
 const MOBILE_MQ = '(max-width: 900px)';
 const SLOT_MIN = 30;
-const SLOT_H = 26;
-const HEADER_H = 56;
+const HEADER_H = 48;
+const DAY_STAY_ROW_H = 24;
+const DAY_STAY_MAX_ROWS = 3;
+/** Largura de coluna sem nenhum atendimento no dia. */
+const DAY_COL_EMPTY_W = 140;
+/** Largura por card simultâneo ao dimensionar a coluna (até DAY_MAX_VISIBLE_COLUMNS). */
+const DAY_COL_PER_CARD_W = 112;
+
+function loadPersistedDensity(): AgendaDensity {
+  try {
+    const raw = sessionStorage.getItem(AGENDA_DENSITY_STORAGE_KEY);
+    if (raw === 'compact' || raw === 'comfortable' || raw === 'spacious') return raw;
+  } catch {
+    /* ignore */
+  }
+  return 'comfortable';
+}
 
 type PersistedFilters = AgendaPersistedFilters & { groupMode: AgendaGroupMode };
 
@@ -215,6 +233,8 @@ const HubAgendaPage: React.FC = () => {
   const [isMobile, setIsMobile] = useState(() =>
     typeof window !== 'undefined' ? window.matchMedia(MOBILE_MQ).matches : false,
   );
+  const [density, setDensity] = useState<AgendaDensity>(() => loadPersistedDensity());
+  const SLOT_H = AGENDA_DENSITY_SLOT_H[density];
 
   useEffect(() => {
     const mq = window.matchMedia(MOBILE_MQ);
@@ -223,6 +243,14 @@ const HubAgendaPage: React.FC = () => {
     mq.addEventListener('change', onChange);
     return () => mq.removeEventListener('change', onChange);
   }, []);
+
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(AGENDA_DENSITY_STORAGE_KEY, density);
+    } catch {
+      /* ignore */
+    }
+  }, [density]);
 
   const allAppointments = rawList;
 
@@ -1057,6 +1085,10 @@ const HubAgendaPage: React.FC = () => {
     [allAppointments, openCreateModal],
   );
 
+  const goToday = useCallback(() => {
+    setCursorDate(startOfDay(new Date()));
+  }, []);
+
   const goNow = useCallback(() => {
     const n = new Date();
     setCursorDate(startOfDay(n));
@@ -1209,6 +1241,28 @@ const HubAgendaPage: React.FC = () => {
 
   const weekRows = dayColumns;
 
+  const [dayColsEl, setDayColsEl] = useState<HTMLDivElement | null>(null);
+  const [dayColWidths, setDayColWidths] = useState<Record<string, number>>({});
+  useEffect(() => {
+    if (!dayColsEl) return;
+    const measure = () => {
+      const next: Record<string, number> = {};
+      dayColsEl.querySelectorAll<HTMLElement>('[data-col-key]').forEach((el) => {
+        next[el.dataset.colKey!] = Math.floor(el.getBoundingClientRect().width);
+      });
+      setDayColWidths((prev) => {
+        const keys = Object.keys(next);
+        if (keys.length === Object.keys(prev).length && keys.every((k) => prev[k] === next[k])) return prev;
+        return next;
+      });
+    };
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(measure);
+    dayColsEl.querySelectorAll('[data-col-key]').forEach((el) => ro.observe(el));
+    return () => ro.disconnect();
+  }, [dayColsEl, dayColumns]);
+
   const apptsForDayColumn = (colKey: string) => {
     if (groupMode === 'professional') {
       if (colKey === '__na__') return dayAppointmentsUI.filter((a) => a.professionalId === null);
@@ -1259,18 +1313,27 @@ const HubAgendaPage: React.FC = () => {
     return m;
   }, [calendarBlocks]);
 
+  const metricsList = useMemo(() => {
+    if (view === 'day') return dayAppointments;
+    if (view === 'week') return weekAppointments;
+    return monthAppointments;
+  }, [view, dayAppointments, weekAppointments, monthAppointments]);
+
+  const conflictIdsView = useMemo(
+    () => computeOverlapConflictIds(metricsList, groupMode),
+    [metricsList, groupMode],
+  );
+
   const sidebarMetrics = useMemo(() => {
-    const list = view === 'day' ? dayAppointments : view === 'week' ? weekAppointments : monthAppointments;
-    const pets = new Set(list.map((a) => a.petName));
-    const mins = list.reduce((acc, a) => acc + (a.end.getTime() - a.start.getTime()) / 60_000, 0);
-    const overlapSet = computeOverlapConflictIds(list, groupMode);
+    const pets = new Set(metricsList.map((a) => a.petName));
+    const mins = metricsList.reduce((acc, a) => acc + (a.end.getTime() - a.start.getTime()) / 60_000, 0);
     return {
-      total: list.length,
+      total: metricsList.length,
       pets: pets.size,
       hours: Math.round((mins / 60) * 10) / 10,
-      conflicts: overlapSet.size,
+      conflicts: conflictIdsView.size,
     };
-  }, [view, dayAppointments, weekAppointments, monthAppointments, groupMode]);
+  }, [metricsList, conflictIdsView]);
 
   const activeFilterCount = useMemo(() => {
     let count = 0;
@@ -1282,6 +1345,78 @@ const HubAgendaPage: React.FC = () => {
     if (serviceTypeFilter !== 'all') count += 1;
     return count;
   }, [unitFilter, professionalFilter, groupFilter, statusFilter, resourceFilter, serviceTypeFilter]);
+
+  const filterChips = useMemo((): AgendaFilterChip[] => {
+    const chips: AgendaFilterChip[] = [];
+    const labelOf = (opts: HubComboboxOption[], value: string) =>
+      opts.find((o) => o.value === value)?.label ?? value;
+    if (unitFilter !== 'all') {
+      chips.push({
+        key: 'unit',
+        label: `Unidade: ${labelOf(unitComboOptions, unitFilter)}`,
+        onClear: () => setUnitFilter('all'),
+      });
+    }
+    if (professionalFilter !== 'all') {
+      chips.push({
+        key: 'professional',
+        label: `Profissional: ${labelOf(professionalComboOptions, professionalFilter)}`,
+        onClear: () => setProfessionalFilter('all'),
+      });
+    }
+    if (groupFilter !== 'all') {
+      chips.push({
+        key: 'group',
+        label: `Grupo: ${labelOf(groupComboOptions, groupFilter)}`,
+        onClear: () => setGroupFilter('all'),
+      });
+    }
+    if (resourceFilter !== 'all') {
+      chips.push({
+        key: 'resource',
+        label: `${resourceFieldLabel}: ${labelOf(resourceComboOptions, resourceFilter)}`,
+        onClear: () => setResourceFilter('all'),
+      });
+    }
+    if (serviceTypeFilter !== 'all') {
+      chips.push({
+        key: 'service_type',
+        label: `Tipo: ${labelOf(serviceTypeComboOptions, serviceTypeFilter)}`,
+        onClear: () => setServiceTypeFilter('all'),
+      });
+    }
+    if (statusFilter !== 'all') {
+      chips.push({
+        key: 'status',
+        label: `Status: ${labelOf(statusComboOptions, statusFilter)}`,
+        onClear: () => setStatusFilter('all'),
+      });
+    }
+    return chips;
+  }, [
+    unitFilter,
+    professionalFilter,
+    groupFilter,
+    resourceFilter,
+    serviceTypeFilter,
+    statusFilter,
+    unitComboOptions,
+    professionalComboOptions,
+    groupComboOptions,
+    resourceComboOptions,
+    serviceTypeComboOptions,
+    statusComboOptions,
+    resourceFieldLabel,
+  ]);
+
+  const clearAllFilters = useCallback(() => {
+    setUnitFilter('all');
+    setProfessionalFilter('all');
+    setGroupFilter('all');
+    setResourceFilter('all');
+    setServiceTypeFilter('all');
+    setStatusFilter('all');
+  }, []);
 
   /** Prévia de impressão do dia do cursor, com os filtros ativos da agenda. */
   const printAgendaHref = useMemo(() => {
@@ -1739,10 +1874,87 @@ const HubAgendaPage: React.FC = () => {
     [canWrite, pxPerMin, dayStart, cursorDate, groupMode, openCreateModal, startHour, endHour],
   );
 
+  const dayGridMinutes = (endHour - startHour) * 60;
+  const dayStaysByCol = new Map<string, AgendaAppointment[]>();
+  if (view === 'day') {
+    for (const col of dayColumns) {
+      const stays = apptsForDayColumn(col.key)
+        .filter((a) => isAgendaDayStay(a, dayStart, dayGridMinutes))
+        .sort((a, b) => a.start.getTime() - b.start.getTime());
+      if (stays.length) dayStaysByCol.set(col.key, stays);
+    }
+  }
+  const maxDayStays = Math.max(0, ...[...dayStaysByCol.values()].map((s) => s.length));
+  const dayStayRows = Math.min(maxDayStays, DAY_STAY_MAX_ROWS);
+  const dayStaysH = dayStayRows > 0 ? dayStayRows * DAY_STAY_ROW_H + (dayStayRows - 1) * 3 + 12 : 0;
+  const dayTopH = HEADER_H + dayStaysH;
+
+  const renderDayStays = (colKey: string) => {
+    const stays = dayStaysByCol.get(colKey) ?? [];
+    const fits = stays.length <= DAY_STAY_MAX_ROWS;
+    const shown = fits ? stays : stays.slice(0, DAY_STAY_MAX_ROWS - 1);
+    return (
+      <div className="hub-agenda-day__stays" style={{ height: dayStaysH }}>
+        {shown.map((a) => (
+          <AgendaAppointmentCard
+            key={a.id}
+            appointment={a}
+            variant="stay"
+            periodLabel={agendaDayStayPeriodLabel(a, cursorDate)}
+            selected={selectedId === a.id}
+            {...appointmentDragHandlers(a)}
+            onClick={(e) => {
+              e.stopPropagation();
+              if (consumeSkipClickAfterDrag()) return;
+              openAppointmentDetail(a.id);
+            }}
+          />
+        ))}
+        {!fits ? (
+          <AgendaDayOverflowMenu
+            className="hub-agenda-overflow--stays"
+            appointments={stays}
+            hiddenCount={stays.length - shown.length}
+            label={`+${stays.length - shown.length} no dia todo`}
+            hasConflict={stays.some((a) => a.conflict)}
+            onSelect={openAppointmentDetail}
+          />
+        ) : null}
+      </div>
+    );
+  };
+
+  const dayLaneData = new Map<
+    string,
+    { list: AgendaAppointment[]; layouts: ReturnType<typeof layoutDayLaneAppointments>; basisPx: number }
+  >();
+  if (view === 'day') {
+    for (const col of dayColumns) {
+      const list = apptsForDayColumn(col.key).filter((a) => !isAgendaDayStay(a, dayStart, dayGridMinutes));
+      const layouts = layoutDayLaneAppointments(list, { dayStart, dayMinutes: dayGridMinutes });
+      const maxCols = Math.max(0, ...[...layouts.values()].map((l) => l.columnCount));
+      const empty = list.length === 0 && !dayStaysByCol.has(col.key);
+      const basisPx = empty
+        ? DAY_COL_EMPTY_W
+        : Math.max(DAY_LANE_DEFAULT_WIDTH_PX, Math.min(maxCols, DAY_MAX_VISIBLE_COLUMNS) * DAY_COL_PER_CARD_W + 16);
+      dayLaneData.set(col.key, { list, layouts, basisPx });
+    }
+  }
+
   const renderDayLane = (colKey: string) => {
-    const list = apptsForDayColumn(colKey);
-    const dayMinutes = (endHour - startHour) * 60;
-    const laneLayouts = layoutDayLaneAppointments(list, { dayStart, dayMinutes });
+    const dayMinutes = dayGridMinutes;
+    const data = dayLaneData.get(colKey);
+    const list = data?.list ?? [];
+    const laneLayouts = data?.layouts ?? new Map();
+    const laneWidthPx = dayColWidths[colKey] ?? data?.basisPx ?? DAY_LANE_DEFAULT_WIDTH_PX;
+    let railPx = 0;
+    let lanePlan = planDayLaneOverflowDisplay(list, laneLayouts, { laneWidthPx });
+    if (lanePlan.overflows.length > 0) {
+      railPx = DAY_OVERFLOW_RAIL_PX;
+      lanePlan = planDayLaneOverflowDisplay(list, laneLayouts, { laneWidthPx: laneWidthPx - railPx });
+    }
+    const { display, overflows } = lanePlan;
+    const byId = new Map(list.map((a) => [a.id, a]));
     const lines: React.ReactNode[] = [];
     const hoverKey = `day:${colKey}`;
     const slotCount = Math.round(dayMinutes / SLOT_MIN);
@@ -1769,13 +1981,14 @@ const HubAgendaPage: React.FC = () => {
         {lines}
         {nowLineTop !== null ? <div className="hub-agenda-day__now-line" style={{ top: nowLineTop }} /> : null}
         {list.map((a) => {
+          const pack = display.get(a.id);
+          if (!pack) return null;
           const clamped = clampAppointmentToDayLane(a.start, a.end, dayStart, dayMinutes);
           if (!clamped) return null;
           const top = clamped.startMins * pxPerMin;
           const h = Math.max((clamped.endMins - clamped.startMins) * pxPerMin, 22);
-          const pack = laneLayouts.get(a.id) ?? { column: 0, columnCount: 1 };
-          const widthPct = 100 / pack.columnCount;
-          const leftPct = pack.column * widthPct;
+          const frac = 1 / pack.columnCount;
+          const estimatedWidthPx = (laneWidthPx - railPx) * frac - 6;
           const selected = selectedId === a.id;
           return (
             <div
@@ -1784,14 +1997,15 @@ const HubAgendaPage: React.FC = () => {
               style={{
                 top,
                 height: h,
-                left: `calc(${leftPct}% + 3px)`,
-                width: `calc(${widthPct}% - 6px)`,
-                zIndex: selected ? 3 : pack.column + 1,
+                left: `calc((100% - ${railPx}px) * ${pack.column * frac} + 3px)`,
+                width: `calc((100% - ${railPx}px) * ${frac} - 6px)`,
+                zIndex: selected ? 6 : pack.column + 1,
               }}
             >
               <AgendaAppointmentCard
                 appointment={a}
                 heightPx={h}
+                widthPx={estimatedWidthPx}
                 selected={selected}
                 showProfessional={groupMode !== 'professional'}
                 {...appointmentDragHandlers(a)}
@@ -1800,6 +2014,33 @@ const HubAgendaPage: React.FC = () => {
                   if (consumeSkipClickAfterDrag()) return;
                   openAppointmentDetail(a.id);
                 }}
+              />
+            </div>
+          );
+        })}
+        {overflows.map((ov) => {
+          const startMins = Math.max(0, (ov.startMs - dayStart.getTime()) / 60_000);
+          const endMins = Math.min(dayMinutes, (ov.endMs - dayStart.getTime()) / 60_000);
+          const top = startMins * pxPerMin;
+          const height = Math.max((endMins - startMins) * pxPerMin - 4, 28);
+          const clusterAppts = ov.allIds.map((id) => byId.get(id)!).filter(Boolean);
+          return (
+            <div
+              key={`ov-${ov.hiddenIds.join('-')}`}
+              className="hub-agenda-day__overflow-wrap"
+              style={{
+                top: top + 2,
+                height,
+                right: 2,
+                width: railPx - 4,
+              }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <AgendaDayOverflowMenu
+                appointments={clusterAppts}
+                hiddenCount={ov.hiddenIds.length}
+                hasConflict={ov.hasConflict}
+                onSelect={openAppointmentDetail}
               />
             </div>
           );
@@ -1936,93 +2177,29 @@ const HubAgendaPage: React.FC = () => {
             </div>
           ) : null}
 
-          <div className="hub-agenda__toolbar">
-            <div className="hub-agenda__view-switch" role="tablist" aria-label="Tipo de vista">
-              {(['day', 'week', 'month'] as const).map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  role="tab"
-                  aria-selected={view === v}
-                  className={`hub-agenda__view-btn ${view === v ? 'hub-agenda__view-btn--active' : ''}`}
-                  onClick={() => setView(v)}
-                >
-                  {v === 'day' ? 'Dia' : v === 'week' ? 'Semana' : 'Mês'}
-                </button>
-              ))}
-            </div>
-
-            <div className="hub-agenda__nav-cluster">
-              <button
-                type="button"
-                className="hub-agenda__icon-btn"
-                aria-label={view === 'day' ? 'Dia anterior' : view === 'week' ? 'Semana anterior' : 'Mês anterior'}
-                onClick={() => (view === 'day' ? shiftDay(-1) : view === 'week' ? shiftWeek(-1) : shiftMonth(-1))}
-              >
-                <ChevronLeft size={18} />
-              </button>
-              <button
-                type="button"
-                className="hub-agenda__icon-btn"
-                aria-label={view === 'day' ? 'Próximo dia' : view === 'week' ? 'Próxima semana' : 'Próximo mês'}
-                onClick={() => (view === 'day' ? shiftDay(1) : view === 'week' ? shiftWeek(1) : shiftMonth(1))}
-              >
-                <ChevronRight size={18} />
-              </button>
-              <HubDateField
-                id="hub-agenda-date"
-                className="hub-agenda__date-field"
-                valueIso={toYmd(cursorDate)}
-                onChangeIso={(iso) => {
-                  if (!iso) return;
-                  const d = parseYmd(iso);
-                  if (d) setCursorDate(d);
-                }}
-              />
-              <button type="button" className="hub-agenda__now-btn" onClick={goNow}>
-                Agora
-              </button>
-            </div>
-
-            {canWrite && (
-              <div className="hub-agenda__new-btn-group">
-                <AgendaNewEntryMenu
-                  onNewAppointment={() => openCreateModal({ date: toYmd(cursorDate) })}
-                  onWalkIn={() => openCreateModal({ date: toYmd(new Date()) }, 'walk_in')}
-                />
-              </div>
-            )}
-
-            <div className="hub-agenda__search">
-              <label htmlFor="hub-agenda-search" className="hub-agenda__sr-only">
-                Busca global
-              </label>
-              <div style={{ position: 'relative' }}>
-                <Search
-                  size={16}
-                  style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', opacity: 0.45 }}
-                />
-                <input
-                  id="hub-agenda-search"
-                  placeholder="Pet, tutor, serviço…"
-                  value={searchQ}
-                  onChange={(e) => setSearchQ(e.target.value)}
-                  style={{ paddingLeft: 34 }}
-                />
-              </div>
-            </div>
-
-            {accessAllowed ? (
-              <Link
-                to={printAgendaHref}
-                className="hub-agenda__print-btn"
-                title="Imprimir agenda do dia com os filtros ativos"
-              >
-                <Printer size={16} aria-hidden />
-                Imprimir
-              </Link>
-            ) : null}
-          </div>
+          <AgendaToolbar
+            view={view}
+            onViewChange={setView}
+            cursorYmd={toYmd(cursorDate)}
+            onCursorYmd={(iso) => {
+              const d = parseYmd(iso);
+              if (d) setCursorDate(d);
+            }}
+            onShiftPrev={() => (view === 'day' ? shiftDay(-1) : view === 'week' ? shiftWeek(-1) : shiftMonth(-1))}
+            onShiftNext={() => (view === 'day' ? shiftDay(1) : view === 'week' ? shiftWeek(1) : shiftMonth(1))}
+            onToday={goToday}
+            onNow={goNow}
+            density={density}
+            onDensityChange={setDensity}
+            searchQ={searchQ}
+            onSearchQ={setSearchQ}
+            canWrite={canWrite}
+            onNewAppointment={() => openCreateModal({ date: toYmd(cursorDate) })}
+            onWalkIn={() => openCreateModal({ date: toYmd(new Date()) }, 'walk_in')}
+            printHref={accessAllowed ? printAgendaHref : null}
+            prevLabel={view === 'day' ? 'Dia anterior' : view === 'week' ? 'Semana anterior' : 'Mês anterior'}
+            nextLabel={view === 'day' ? 'Próximo dia' : view === 'week' ? 'Próxima semana' : 'Próximo mês'}
+          />
 
           {!remoteLoading && !appointmentsError ? (
             <div className="hub-agenda__view-metrics" aria-label="Resumo da vista">
@@ -2040,166 +2217,43 @@ const HubAgendaPage: React.FC = () => {
                   <span className="hub-agenda__view-metrics-sep" aria-hidden>
                     ·
                   </span>
-                  <span className="hub-agenda__view-metrics--warn">
-                    {sidebarMetrics.conflicts} conflito{sidebarMetrics.conflicts !== 1 ? 's' : ''}
-                  </span>
+                  <AgendaConflictSummary
+                    conflictIds={conflictIdsView}
+                    appointments={metricsList}
+                    onSelect={openAppointmentDetail}
+                  />
                 </>
               ) : null}
             </div>
           ) : null}
 
-          <details className="hub-agenda__filters-details" open={!isMobile ? true : undefined}>
-            <summary className="hub-agenda__filters-summary">
-              <span>Filtros</span>
-              {activeFilterCount > 0 ? (
-                <span className="hub-agenda__filters-badge">{activeFilterCount}</span>
-              ) : null}
-            </summary>
-            <div className="hub-agenda__filters">
-            <div className="hub-servicos__filter-field hub-agenda__filter-combo">
-              <label className="hub-clientes__label" htmlFor="ag-unit">
-                Unidade
-              </label>
-              <HubSearchableCombobox
-                id="ag-unit"
-                className="hub-combobox--clientes"
-                options={unitComboOptions}
-                value={unitFilter}
-                onChange={setUnitFilter}
-                placeholder="Todas"
-                searchPlaceholder="Buscar unidade…"
-                allowCreate={false}
-                clearable={false}
-                ariaLabel="Filtrar por unidade"
-              />
-            </div>
-            <div className="hub-servicos__filter-field hub-agenda__filter-combo">
-              <label className="hub-clientes__label" htmlFor="ag-prof">
-                Profissional
-              </label>
-              <HubSearchableCombobox
-                id="ag-prof"
-                className="hub-combobox--clientes"
-                options={professionalComboOptions}
-                value={professionalFilter}
-                onChange={setProfessionalFilter}
-                placeholder="Todos"
-                searchPlaceholder="Buscar profissional…"
-                allowCreate={false}
-                clearable={false}
-                ariaLabel="Filtrar por profissional"
-              />
-            </div>
-            <div className="hub-servicos__filter-field hub-agenda__filter-combo">
-              <label className="hub-clientes__label" htmlFor="ag-group">
-                Grupo de serviço
-              </label>
-              <HubSearchableCombobox
-                id="ag-group"
-                className="hub-combobox--clientes"
-                options={groupComboOptions}
-                value={groupFilter}
-                onChange={setGroupFilter}
-                placeholder="Todos"
-                searchPlaceholder="Buscar grupo…"
-                allowCreate={false}
-                clearable={false}
-                ariaLabel="Filtrar por grupo de serviço"
-              />
-            </div>
-            <div className="hub-servicos__filter-field hub-agenda__filter-combo">
-              <label className="hub-clientes__label" htmlFor="ag-res">
-                {resourceFieldLabel}
-              </label>
-              <HubSearchableCombobox
-                id="ag-res"
-                className="hub-combobox--clientes"
-                options={resourceComboOptions}
-                value={resourceFilter}
-                onChange={setResourceFilter}
-                placeholder="Todos"
-                searchPlaceholder="Buscar recurso…"
-                allowCreate={false}
-                clearable={false}
-                ariaLabel="Filtrar por recurso ou sala"
-              />
-            </div>
-            <div className="hub-servicos__filter-field hub-agenda__filter-combo">
-              <label className="hub-clientes__label" htmlFor="ag-svc-type">
-                Tipo de serviço
-              </label>
-              <HubSearchableCombobox
-                id="ag-svc-type"
-                className="hub-combobox--clientes"
-                options={serviceTypeComboOptions}
-                value={serviceTypeFilter}
-                onChange={setServiceTypeFilter}
-                placeholder="Todos"
-                searchPlaceholder="Buscar tipo de serviço…"
-                allowCreate={false}
-                clearable={false}
-                ariaLabel="Filtrar por tipo de serviço"
-              />
-            </div>
-            <div className="hub-servicos__filter-field hub-agenda__filter-combo">
-              <label className="hub-clientes__label" htmlFor="ag-status">
-                Status
-              </label>
-              <HubSearchableCombobox
-                id="ag-status"
-                className="hub-combobox--clientes"
-                options={statusComboOptions}
-                value={statusFilter}
-                onChange={setStatusFilter}
-                placeholder="Todos"
-                searchPlaceholder="Buscar status…"
-                allowCreate={false}
-                clearable={false}
-                ariaLabel="Filtrar por status"
-              />
-            </div>
-            <div className="hub-servicos__filter-field hub-agenda__filter-field--toggle">
-              <span className="hub-clientes__label">Colunas / linhas</span>
-              <div className="hub-agenda__group-toggle" role="group" aria-label="Agrupar por">
-                <button
-                  type="button"
-                  className={groupMode === 'professional' ? 'hub-agenda__group-toggle--on' : ''}
-                  onClick={() => setGroupMode('professional')}
-                >
-                  Profissional
-                </button>
-                <button
-                  type="button"
-                  className={groupMode === 'category' ? 'hub-agenda__group-toggle--on' : ''}
-                  onClick={() => setGroupMode('category')}
-                >
-                  Categoria
-                </button>
-                <button
-                  type="button"
-                  className={groupMode === 'resource' ? 'hub-agenda__group-toggle--on' : ''}
-                  onClick={() => setGroupMode('resource')}
-                >
-                  Recurso
-                </button>
-              </div>
-            </div>
-            </div>
-          </details>
-
-          <div className="hub-agenda__legend">
-            <span className="hub-agenda__legend-title">Grupos</span>
-            {SERVICE_GROUP_OPTIONS.map((g) => {
-              const hex = serviceGroupColors.get(g.value) ?? resolveServiceAccentColor(null, g.value);
-              return (
-                <span key={g.value} className="hub-agenda__legend-item">
-                  <span className="hub-agenda__legend-dot" style={{ background: hex }} />
-                  <ServiceGroupIcon group={g.value} color={hex} size={14} strokeWidth={2.1} />
-                  {g.label}
-                </span>
-              );
-            })}
-          </div>
+          <AgendaFiltersBar
+            activeFilterCount={activeFilterCount}
+            chips={filterChips}
+            onClearAll={clearAllFilters}
+            unitFilter={unitFilter}
+            onUnitFilter={setUnitFilter}
+            unitOptions={unitComboOptions}
+            professionalFilter={professionalFilter}
+            onProfessionalFilter={setProfessionalFilter}
+            professionalOptions={professionalComboOptions}
+            groupFilter={groupFilter}
+            onGroupFilter={setGroupFilter}
+            groupOptions={groupComboOptions}
+            resourceFilter={resourceFilter}
+            onResourceFilter={setResourceFilter}
+            resourceOptions={resourceComboOptions}
+            resourceFieldLabel={resourceFieldLabel}
+            serviceTypeFilter={serviceTypeFilter}
+            onServiceTypeFilter={setServiceTypeFilter}
+            serviceTypeOptions={serviceTypeComboOptions}
+            statusFilter={statusFilter}
+            onStatusFilter={setStatusFilter}
+            statusOptions={statusComboOptions}
+            groupMode={groupMode}
+            onGroupMode={setGroupMode}
+            serviceGroupColors={serviceGroupColors}
+          />
 
           <p className="hub-clientes__muted" style={{ margin: '0 0 12px', fontSize: 13 }}>
             <strong style={{ color: 'var(--hc-text, #4a3b3a)' }}>{navLabel}</strong>
@@ -2223,23 +2277,50 @@ const HubAgendaPage: React.FC = () => {
             >
               <div className="hub-agenda-day__flex">
                 <div className="hub-agenda-day__gutter">
-                  <div className="hub-agenda-day__gutter-spacer" style={{ height: HEADER_H }} />
-                  {slots.map((t) => (
-                    <div key={t.toISOString()} className="hub-agenda-day__gutter-time" style={{ height: SLOT_H }}>
-                      {formatHm(t)}
-                    </div>
-                  ))}
-                </div>
-                <div className="hub-agenda-day__cols">
-                  {dayColumns.map((col) => (
-                    <div key={col.key} className="hub-agenda-day__col">
+                  <div className="hub-agenda-day__gutter-spacer" style={{ height: dayTopH }}>
+                    {dayStaysH > 0 ? (
+                      <div className="hub-agenda-day__gutter-stays" style={{ height: dayStaysH }}>
+                        Dia todo
+                      </div>
+                    ) : null}
+                  </div>
+                  {slots.map((t) => {
+                    const slotMins = minutesSinceDayStart(t, dayStart);
+                    const nowMins = nowLineTop != null ? nowLineTop / pxPerMin : null;
+                    const isNowSlot =
+                      nowMins != null && nowMins >= slotMins && nowMins < slotMins + SLOT_MIN;
+                    return (
                       <div
-                        className="hub-agenda-day__col-head"
-                        style={{ height: HEADER_H }}
-                        title={`${col.title} — ${col.subtitle}`}
+                        key={t.toISOString()}
+                        className={`hub-agenda-day__gutter-time${isNowSlot ? ' hub-agenda-day__gutter-time--now' : ''}`}
+                        style={{ height: SLOT_H }}
                       >
-                        <span className="hub-agenda-day__col-head-title">{col.title}</span>
-                        <small className="hub-agenda-day__col-head-sub">{col.subtitle}</small>
+                        {formatHm(t)}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="hub-agenda-day__cols" ref={setDayColsEl}>
+                  {dayColumns.map((col) => (
+                    <div
+                      key={col.key}
+                      className="hub-agenda-day__col"
+                      data-col-key={col.key}
+                      style={(() => {
+                        const basis = dayLaneData.get(col.key)?.basisPx ?? DAY_LANE_DEFAULT_WIDTH_PX;
+                        return { flex: `1 0 ${basis}px`, minWidth: basis };
+                      })()}
+                    >
+                      <div className="hub-agenda-day__col-top" style={{ height: dayTopH }}>
+                        <div
+                          className="hub-agenda-day__col-head"
+                          style={{ height: HEADER_H }}
+                          title={`${col.title} — ${col.subtitle}`}
+                        >
+                          <span className="hub-agenda-day__col-head-title">{col.title}</span>
+                          <small className="hub-agenda-day__col-head-sub">{col.subtitle}</small>
+                        </div>
+                        {dayStaysH > 0 ? renderDayStays(col.key) : null}
                       </div>
                       {renderDayLane(col.key)}
                     </div>
@@ -2307,17 +2388,20 @@ const HubAgendaPage: React.FC = () => {
                                 />
                               ))}
                               {more > 0 ? (
-                                <button
-                                  type="button"
-                                  className="hub-agenda-week__more"
-                                  onClick={() => {
-                                    if (consumeSkipClickAfterDrag()) return;
+                                <AgendaDayOverflowMenu
+                                  appointments={cell}
+                                  hiddenCount={more}
+                                  label={`+${more} atendimento${more > 1 ? 's' : ''}`}
+                                  hasConflict={cell.some((a) => conflictIdsView.has(a.id))}
+                                  onSelect={(id) => {
+                                    openAppointmentDetail(id);
+                                    setCursorDate(startOfDay(d));
+                                  }}
+                                  onViewDay={() => {
                                     setCursorDate(startOfDay(d));
                                     setView('day');
                                   }}
-                                >
-                                  +{more} atendimento{more > 1 ? 's' : ''}
-                                </button>
+                                />
                               ) : null}
                               {(() => {
                                 const hotel = cell.filter((x) => x.appointment_kind === 'hotel_stay').length;
@@ -2400,18 +2484,19 @@ const HubAgendaPage: React.FC = () => {
                             />
                           ))}
                           {more > 0 ? (
-                            <button
-                              type="button"
-                              className="hub-agenda-week__more"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (consumeSkipClickAfterDrag()) return;
+                            <AgendaDayOverflowMenu
+                              appointments={sorted}
+                              hiddenCount={more}
+                              label={`+${more} atendimento${more > 1 ? 's' : ''}`}
+                              onSelect={(id) => {
+                                openAppointmentDetail(id);
+                                setCursorDate(startOfDay(d));
+                              }}
+                              onViewDay={() => {
                                 setCursorDate(startOfDay(d));
                                 setView('day');
                               }}
-                            >
-                              +{more} atendimento{more > 1 ? 's' : ''}
-                            </button>
+                            />
                           ) : null}
                         </div>
                       ) : (

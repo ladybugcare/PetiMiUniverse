@@ -1238,6 +1238,31 @@ async function loadConfirmedSurgeryServiceRows(opts: {
 }
 
 /** @internal exportado para testes de regressão da comanda cirúrgica */
+/**
+ * Mescla linhas cirúrgicas confirmadas no snapshot da comanda.
+ * Sem cirurgia, devolve **cópia** dos itens — o builder faz `allItems.length = 0; push(...merged)`,
+ * e devolver a mesma referência apagaria consulta/vacina (mesmo padrão de
+ * `dropAppointmentLinesReplacedByHospitalization`).
+ */
+export function resolveSurgeryMergeIntoComandaItems(opts: {
+  items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[];
+  subtotal: number;
+  petId: string | null;
+  surgSvcList: SurgeryComandaServiceRow[];
+}): { items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[]; subtotal: number } {
+  if (opts.surgSvcList.length === 0) {
+    return {
+      items: opts.items.map((it, i) => ({ ...it, sort_order: i })),
+      subtotal: round2(opts.subtotal),
+    };
+  }
+  return applySurgeryServiceLinesToComandaItems({
+    items: opts.items,
+    surgSvcList: opts.surgSvcList,
+    petId: opts.petId,
+  });
+}
+
 export function applySurgeryServiceLinesToComandaItems(opts: {
   items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[];
   surgSvcList: SurgeryComandaServiceRow[];
@@ -1245,8 +1270,12 @@ export function applySurgeryServiceLinesToComandaItems(opts: {
 }): { items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[]; subtotal: number } {
   const { items, surgSvcList, petId } = opts;
   if (surgSvcList.length === 0) {
-    const subtotal = round2(items.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
-    return { items, subtotal };
+    return resolveSurgeryMergeIntoComandaItems({
+      items,
+      subtotal: items.reduce((s, it) => s + Number(it.line_total ?? 0), 0),
+      petId,
+      surgSvcList: [],
+    });
   }
 
   const replaceApptIds = new Set(
@@ -1329,13 +1358,11 @@ async function mergeSurgeryServicesIntoComandaItems(opts: {
     encounterId: opts.encounterId,
     appointmentId: opts.appointmentId,
   });
-  if (surgSvcList.length === 0) {
-    return { items: opts.items, subtotal: round2(opts.subtotal) };
-  }
-  return applySurgeryServiceLinesToComandaItems({
+  return resolveSurgeryMergeIntoComandaItems({
     items: opts.items,
-    surgSvcList,
+    subtotal: opts.subtotal,
     petId: opts.petId,
+    surgSvcList,
   });
 }
 

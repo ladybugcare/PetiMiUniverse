@@ -30,6 +30,21 @@ test.describe('agenda', () => {
     await expect(pet.or(guardian).first()).toBeVisible({ timeout: 20_000 });
   });
 
+  test('chrome: Hoje/Agora, densidade e filtros fechados', async ({ page }) => {
+    if (!(await openAgendaAsCadmin(page))) return;
+
+    await expect(page.getByRole('button', { name: 'Hoje' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Agora' })).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Densidade da grade' })).toBeVisible();
+
+    const filters = page.locator('details.hub-agenda__filters-details');
+    await expect(filters).toBeVisible();
+    await expect(filters).not.toHaveJSProperty('open', true);
+    await filters.locator('summary').click();
+    await expect(filters).toHaveJSProperty('open', true);
+    await expect(page.getByLabel('Filtrar por unidade')).toBeVisible();
+  });
+
   test('CADMIN vê leva-e-traz no banho avulso das 14h', async ({ page }) => {
     if (!(await openAgendaAsCadmin(page))) return;
 
