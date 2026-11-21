@@ -235,11 +235,11 @@ export async function streamQuotePdf(res: Response, quote: QuoteFull): Promise<v
 
   const colGap = 14;
   const colW = (contentW - colGap) / 2;
+  // PDF é compartilhado com o tutor — sem CPF/CNPJ (mesmo critério do link público).
   const contactRows = prospect
     ? [
         { label: 'Nome', value: prospect.full_name },
         { label: 'Telefone', value: prospect.phone },
-        ...(prospect.tax_id ? [{ label: 'CPF', value: prospect.tax_id }] : []),
         ...(prospect.email ? [{ label: 'E-mail', value: prospect.email }] : []),
       ]
     : [];

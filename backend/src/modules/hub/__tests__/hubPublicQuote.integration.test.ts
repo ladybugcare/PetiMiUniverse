@@ -35,8 +35,22 @@ function quoteRow(overrides: Record<string, unknown> = {}) {
 }
 
 describe('orçamento público', () => {
-  it('GET público omite notas internas e dados de cobrança', async () => {
-    configureSupabaseMock({ tables: { hub_quotes: [quoteRow()] } });
+  it('GET público omite notas internas, dados de cobrança e CPF', async () => {
+    configureSupabaseMock({
+      tables: {
+        hub_quotes: [
+          quoteRow({
+            prospect: {
+              id: 'dddddddd-dddd-4ddd-8ddd-dddddddd0001',
+              full_name: 'Tutor QA',
+              tax_id: '52998224725',
+              phone: '11999990000',
+              email: 'tutor@qa.test',
+            },
+          }),
+        ],
+      },
+    });
 
     const res = await request(app).get(`/api/public/quotes/${PUBLIC_TOKEN}`);
 
@@ -47,6 +61,9 @@ describe('orçamento público', () => {
     expect(res.body.quote.billing_waived_at).toBeUndefined();
     expect(res.body.quote.billing_waive_reason).toBeUndefined();
     expect(res.body.quote.guardian_id).toBeUndefined();
+    expect(res.body.quote.prospect?.full_name).toBe('Tutor QA');
+    expect(res.body.quote.prospect?.tax_id).toBeUndefined();
+    expect(JSON.stringify(res.body)).not.toContain('52998224725');
   });
 
   it('rascunho com token responde 404', async () => {

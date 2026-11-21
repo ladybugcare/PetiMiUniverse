@@ -350,8 +350,16 @@ export function ComandaCheckoutDrawer({
 
   const chargeableTotal = useMemo(() => {
     if (isReceivableOnlyMode) return receivableBalance;
-    return round2(groupTotals.reduce((s, g) => s + g.total, 0));
-  }, [isReceivableOnlyMode, receivableBalance, groupTotals]);
+    const openGross = round2(groupTotals.reduce((s, g) => s + g.total, 0));
+    if (grouping !== 'all' || !detail) return openGross;
+    // Com agrupamento único, o valor cobrável deve refletir o saldo líquido (desconto de cabeçalho).
+    const headerDisc = Number((detail.comanda as { discount_amount?: number } | undefined)?.discount_amount ?? 0);
+    const allOpen = openItems.length > 0 && openItems.length === detail.items.length;
+    if (allOpen && headerDisc > 0) {
+      return round2(Math.max(0, openGross - headerDisc));
+    }
+    return openGross;
+  }, [isReceivableOnlyMode, receivableBalance, groupTotals, grouping, detail, openItems.length]);
 
   const canPartialPay = isReceivableOnlyMode || (grouping === 'all' && groupTotals.length <= 1);
   const allowMixedPayments = canPartialPay;
@@ -374,7 +382,14 @@ export function ComandaCheckoutDrawer({
     return [...names];
   }, [detail, openItems]);
 
-  const priorBalance = round2(Math.max(0, balanceDue - openItemsTotal));
+  const openItemsNet = useMemo(() => {
+    const headerDisc = Number((detail?.comanda as { discount_amount?: number } | undefined)?.discount_amount ?? 0);
+    const allOpen = Boolean(detail && openItems.length > 0 && openItems.length === detail.items.length);
+    if (allOpen && headerDisc > 0) return round2(Math.max(0, openItemsTotal - headerDisc));
+    return openItemsTotal;
+  }, [detail, openItems.length, openItemsTotal]);
+
+  const priorBalance = round2(Math.max(0, balanceDue - openItemsNet));
 
   const notifyDataChanged = () => {
     onDataChanged?.();

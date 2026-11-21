@@ -23,7 +23,9 @@ import {
 } from './comandaEvents';
 import {
   canHandoffExistingReceivables,
+  computeBalanceDueFromParts,
   isSkippableLeavePendingHandoffError,
+  openLinesHeaderDiscount,
 } from './comandaFinanceHandoff';
 export { isSkippableLeavePendingHandoffError } from './comandaFinanceHandoff';
 import { notifyHubCancellationPending } from './hubNotifyEvents';
@@ -510,19 +512,20 @@ async function sumPaymentsForComandaReceivables(comandaId: string, clinicId: str
   return round2((pays ?? []).reduce((s, row) => s + Number(row.amount ?? 0), 0));
 }
 
-/** Saldo em linhas ainda não faturadas + resíduo dos recebíveis (pendente / parcial). */
+/** Saldo em linhas ainda não faturadas (líquidas do desconto de cabeçalho) + resíduo dos recebíveis. */
 async function computeComandaBalancePayload(
   comandaId: string,
   clinicId: string
 ): Promise<{ paid_total: number; balance_due: number; total_amount: number }> {
   const { data: comandaRow, error: cErr } = await supabaseAdmin
     .from('hub_comandas')
-    .select('total_amount')
+    .select('total_amount, discount_amount')
     .eq('id', comandaId)
     .eq('clinic_id', clinicId)
     .maybeSingle();
   if (cErr) throw new Error(cErr.message);
   const totalAmount = Number(comandaRow?.total_amount ?? 0);
+  const headerDiscount = Number(comandaRow?.discount_amount ?? 0);
 
   const { data: items, error: iErr } = await supabaseAdmin
     .from('hub_comanda_items')
@@ -551,11 +554,13 @@ async function computeComandaBalancePayload(
     if (cid && activeRecById.get(rid)) invoicedItemIds.add(cid);
   }
 
-  const openItemIds = (items ?? []).map((it) => it.id as string).filter((id) => !invoicedItemIds.has(id));
+  const allItems = items ?? [];
+  const openItemIds = allItems.map((it) => it.id as string).filter((id) => !invoicedItemIds.has(id));
   const openSet = new Set(openItemIds);
   const openLinesTotal = round2(
-    (items ?? []).filter((it) => openSet.has(it.id)).reduce((s, it) => s + Number(it.line_total ?? 0), 0)
+    allItems.filter((it) => openSet.has(it.id)).reduce((s, it) => s + Number(it.line_total ?? 0), 0)
   );
+  const allLinesTotal = round2(allItems.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
 
   const paid = await sumPaymentsForComandaReceivables(comandaId, clinicId);
 
@@ -579,7 +584,14 @@ async function computeComandaBalancePayload(
     receivableResidual += round2(Math.max(0, fa - paidRec));
   }
 
-  const balance_due = round2(openLinesTotal + receivableResidual);
+  const balance_due = computeBalanceDueFromParts({
+    openLinesTotal,
+    allLinesTotal,
+    headerDiscount,
+    openItemsCount: openItemIds.length,
+    allItemsCount: allItems.length,
+    receivableResidual,
+  });
   return { paid_total: paid, balance_due, total_amount: totalAmount };
 }
 
@@ -3168,6 +3180,19 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
     if (!unitId) unitId = await resolveClinicDefaultUnitId(clinic_id);
     const guardianId = comanda.guardian_id as string;
 
+    const allComandaItems = detail.items as Record<string, unknown>[];
+    const openLinesGross = round2(items.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+    const allLinesGross = round2(allComandaItems.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+    const headerDiscount = Number(comanda.discount_amount ?? 0);
+    const checkoutDiscountPool = openLinesHeaderDiscount({
+      openLinesTotal: openLinesGross,
+      allLinesTotal: allLinesGross,
+      headerDiscount,
+      openItemsCount: items.length,
+      allItemsCount: allComandaItems.length,
+    });
+    let discountRemaining = checkoutDiscountPool;
+
     const rollbackReceivables = async () => {
       for (const mid of stockMovementIds) {
         await supabaseAdmin.from('hub_stock_movements').delete().eq('id', mid);
@@ -3198,11 +3223,27 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
       }
     };
 
+    const billableGroupSubtotals = groups.map((gids) =>
+      round2(gids.map((id) => itemById.get(id)!).reduce((s, it) => s + Number(it.line_total ?? 0), 0))
+    );
+    const billableGross = round2(billableGroupSubtotals.reduce((s, v) => s + Math.max(0, v), 0));
+
     for (let gi = 0; gi < groups.length; gi++) {
       const gids = groups[gi];
       const groupItems = gids.map((id) => itemById.get(id)!);
-      const subtotal = round2(groupItems.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+      const subtotal = billableGroupSubtotals[gi] ?? 0;
       if (subtotal <= 0.009) continue;
+
+      let groupDiscount = 0;
+      if (discountRemaining > 0 && billableGross > 0) {
+        const isLastBillable =
+          groups.slice(gi + 1).every((ids, idx) => (billableGroupSubtotals[gi + 1 + idx] ?? 0) <= 0.009);
+        groupDiscount = isLastBillable
+          ? discountRemaining
+          : round2(Math.min(discountRemaining, (checkoutDiscountPool * subtotal) / billableGross));
+        discountRemaining = round2(Math.max(0, discountRemaining - groupDiscount));
+      }
+      const finalAmount = round2(Math.max(0, subtotal - groupDiscount));
 
       const manualSourceId = randomUUID();
       const { data: rec, error: rErr } = await supabaseAdmin
@@ -3215,7 +3256,7 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
           source_id: manualSourceId,
           comanda_id: comandaId,
           original_amount: subtotal,
-          final_amount: subtotal,
+          final_amount: finalAmount,
           status: 'pending',
           due_date: action === 'leave_pending' ? due_date : null,
           notes: null,
@@ -3384,9 +3425,23 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
       }
 
       const expectedByGroup = new Map<number, number>();
-      for (let gi = 0; gi < groups.length; gi++) {
-        const sub = round2(groups[gi].map((id) => itemById.get(id)!).reduce((s, it) => s + Number(it.line_total ?? 0), 0));
-        if (sub > 0.009) expectedByGroup.set(gi, sub);
+      {
+        let payDiscountRemaining = checkoutDiscountPool;
+        for (let gi = 0; gi < groups.length; gi++) {
+          const sub = billableGroupSubtotals[gi] ?? 0;
+          if (sub <= 0.009) continue;
+          let groupDiscount = 0;
+          if (payDiscountRemaining > 0 && billableGross > 0) {
+            const isLastBillable = groups
+              .slice(gi + 1)
+              .every((_ids, idx) => (billableGroupSubtotals[gi + 1 + idx] ?? 0) <= 0.009);
+            groupDiscount = isLastBillable
+              ? payDiscountRemaining
+              : round2(Math.min(payDiscountRemaining, (checkoutDiscountPool * sub) / billableGross));
+            payDiscountRemaining = round2(Math.max(0, payDiscountRemaining - groupDiscount));
+          }
+          expectedByGroup.set(gi, round2(Math.max(0, sub - groupDiscount)));
+        }
       }
       const paidByGroup = new Map<number, number>();
       for (const pay of payments) {
@@ -3624,6 +3679,17 @@ export async function leavePendingHandoffComanda(
     if (!unitId) unitId = await resolveClinicDefaultUnitId(clinicId);
     const guardianId = comanda.guardian_id as string;
     const subtotal = round2(items.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+    const allComandaItems = detail.items as Record<string, unknown>[];
+    const allLinesGross = round2(allComandaItems.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+    const headerDiscount = Number(comanda.discount_amount ?? 0);
+    const handoffDiscount = openLinesHeaderDiscount({
+      openLinesTotal: subtotal,
+      allLinesTotal: allLinesGross,
+      headerDiscount,
+      openItemsCount: items.length,
+      allItemsCount: allComandaItems.length,
+    });
+    const finalAmount = round2(Math.max(0, subtotal - handoffDiscount));
 
     if (subtotal <= 0.009) {
       const hasPackageCoverage = items.some((it) => it.package_balance_id);
@@ -3660,7 +3726,7 @@ export async function leavePendingHandoffComanda(
         source_id: manualSourceId,
         comanda_id: comandaId,
         original_amount: subtotal,
-        final_amount: subtotal,
+        final_amount: finalAmount,
         status: 'pending',
         due_date: dueDate,
         notes: null,

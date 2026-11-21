@@ -1161,7 +1161,7 @@ const PUBLIC_QUOTE_SELECT = `
   id, clinic_id, status, client_notes, total_amount, subtotal_amount,
   discount_kind, discount_value, currency, valid_days, sent_at, expires_at, created_at,
   clinic:clinics(name, photo_url),
-  prospect:hub_prospects(id, full_name, tax_id, phone, email),
+  prospect:hub_prospects(id, full_name, phone, email),
   pets:hub_quote_pets(id, quote_id, display_name, species, breed, size_tier, coat_type, age_months, sex, sort_order),
   lines:hub_quote_lines(id, quote_id, hub_service_type_id, description, quantity, unit_price, discount_amount, line_total, sort_order, pricing_variant,
     hub_service_types(name, service_group, description),
@@ -1198,7 +1198,7 @@ function toPublicQuote(row: Record<string, unknown>) {
       ? {
           id: prospect.id,
           full_name: prospect.full_name,
-          tax_id: prospect.tax_id ?? null,
+          // CPF/CNPJ omitido no link público — disponível só na ficha autenticada.
           phone: prospect.phone,
           email: prospect.email ?? null,
         }

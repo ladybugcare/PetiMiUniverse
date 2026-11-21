@@ -28,7 +28,8 @@ export type HubQuotePricingVariant = {
 export interface HubQuoteProspectEmbed {
   id: string;
   full_name: string;
-  tax_id: string | null;
+  /** Presente na ficha autenticada; omitido no link público. */
+  tax_id?: string | null;
   phone: string;
   email?: string | null;
 }
