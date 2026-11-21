@@ -1187,14 +1187,20 @@ const HubAgendaPage: React.FC = () => {
       cols.push({ key: '__na__', title: 'Não atribuído', subtitle: 'Recepção define depois' });
       return cols;
     }
+    const source = view === 'day' ? dayAppointments : weekAppointments;
     if (groupMode === 'category') {
-      return SERVICE_GROUP_OPTIONS.map((g) => ({
+      const used = new Set(source.map((a) => a.group));
+      const withAppts = SERVICE_GROUP_OPTIONS.filter((g) => used.has(g.value));
+      const groups =
+        withAppts.length > 0
+          ? withAppts
+          : SERVICE_GROUP_OPTIONS.filter((g) => groupFilter === 'all' || g.value === groupFilter);
+      return groups.map((g) => ({
         key: g.value,
         title: g.label,
         subtitle: 'Grupo de serviço',
       }));
     }
-    const source = view === 'day' ? dayAppointments : weekAppointments;
     const unitNameById = new Map(clinicUnits.map((u) => [u.id, u.name]));
     if (visibleCatalogResources.length > 0) {
       const cols = visibleCatalogResources.map((r) => {
@@ -1237,6 +1243,7 @@ const HubAgendaPage: React.FC = () => {
     visibleCatalogResources,
     unitFilter,
     clinicUnits,
+    groupFilter,
   ]);
 
   const weekRows = dayColumns;
