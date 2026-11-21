@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
 import '../pages/clientes/clientes.css';
 
@@ -54,6 +54,7 @@ export const HubTabs: React.FC<HubTabsProps> = ({
   className = '',
 }) => {
   const { pathname } = useLocation();
+  const navRef = useRef<HTMLElement>(null);
   const isDetail = variant === 'detail';
   const containerClass = [
     isDetail ? 'hub-clientes__detail-tabs' : 'hub-clientes__tabs',
@@ -74,8 +75,17 @@ export const HubTabs: React.FC<HubTabsProps> = ({
       .filter(Boolean)
       .join(' ');
 
+  useEffect(() => {
+    const root = navRef.current;
+    if (!root) return;
+    const active = root.querySelector<HTMLElement>(
+      '.hub-clientes__tab--active, .hub-clientes__detail-tab--active, [aria-current="page"]',
+    );
+    active?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+  }, [pathname, activeId, items]);
+
   return (
-    <nav className={containerClass} aria-label={ariaLabel}>
+    <nav ref={navRef} className={containerClass} aria-label={ariaLabel}>
       {items.map((item, index) => {
         if (isNavItem(item)) {
           return (

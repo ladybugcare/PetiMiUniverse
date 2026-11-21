@@ -28,7 +28,69 @@
 @media (max-width: 900px) {
   .hub-estoque-page .hub-servicos__metrics,
   .hub-estoque-page .hub-estoque__metrics {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .hub-estoque-page .hub-estoque__metrics:has(> :nth-child(3):last-child) > :last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Mobile: KPIs compactos (padrão Orçamento / Clientes / Pets) */
+@media (max-width: 640px) {
+  .hub-estoque-page .hub-servicos__metrics,
+  .hub-estoque-page .hub-estoque__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .hub-estoque-page .hub-servicos__metric-card {
+    position: relative;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: 12px 12px 10px;
+    min-height: 0;
+  }
+
+  .hub-estoque-page .hub-servicos__metric-card__text {
+    padding-right: 40px;
+  }
+
+  .hub-estoque-page .hub-servicos__metric-label {
+    font-size: 10px;
+    letter-spacing: 0.03em;
+    margin-bottom: 2px;
+    line-height: 1.25;
+  }
+
+  .hub-estoque-page .hub-servicos__metric-value {
+    font-size: 22px;
+  }
+
+  .hub-estoque-page .hub-servicos__metric-sub {
+    font-size: 11px;
+    margin-top: 2px;
+    line-height: 1.3;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .hub-estoque-page .hub-servicos__metric-icon {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+  }
+
+  .hub-estoque-page .hub-servicos__metric-icon svg {
+    width: 16px;
+    height: 16px;
   }
 }
 

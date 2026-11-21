@@ -1083,14 +1083,6 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
                 <Save size={16} /> Salvar rascunho
               </button>
             ) : null}
-            {canCreateReceivable && encounter.status !== 'completed' ? (
-              <Link
-                to="/hub/caixa"
-                className="hub-clientes__btn hub-clientes__btn--ghost hub-cws-footer__btn"
-              >
-                Abrir Caixa
-              </Link>
-            ) : null}
             {canWrite && encounter.status !== 'completed' ? (
               <button
                 type="button"

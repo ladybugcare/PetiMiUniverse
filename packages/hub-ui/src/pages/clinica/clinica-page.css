@@ -3616,6 +3616,7 @@ button.hub-clinic-case-page__generic-hint:focus-visible {
 .hub-cws-footer__btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
 }
 
@@ -3885,6 +3886,29 @@ button.hub-clinic-case-page__generic-hint:focus-visible {
 
   .hub-cws-rx-form select {
     grid-column: span 1;
+  }
+
+  .hub-cws-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+    padding: 12px 16px calc(12px + env(safe-area-inset-bottom, 0));
+  }
+
+  .hub-cws-footer__left {
+    width: 100%;
+  }
+
+  .hub-cws-footer__actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .hub-cws-footer__btn {
+    width: 100%;
+    min-height: 44px;
   }
 }
 

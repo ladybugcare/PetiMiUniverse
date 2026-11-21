@@ -1,0 +1,16 @@
+/* Configurações do Sistema — abas no mobile */
+
+.hub-config-shell .hub-config-tabs {
+  /* herda .hub-servicos-shell--tabs; reforço visual da faixa de abas */
+  background: #fff;
+}
+
+@media (max-width: 900px) {
+  .hub-config-shell .hub-config-tabs {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background: #fff;
+    box-shadow: 0 1px 0 rgba(74, 59, 58, 0.08);
+  }
+}

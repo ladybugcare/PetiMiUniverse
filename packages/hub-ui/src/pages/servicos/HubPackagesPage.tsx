@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Calendar, Layers, Package, PauseCircle, Pencil, PlayCircle, Plus, Search } from 'lucide-react';
+import { Boxes, Calendar, Layers, Package, PauseCircle, Pencil, PlayCircle, Plus, Search } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
 import { hubPackagesApi, type HubPackage, type HubPackageItem } from '../../api/hubPackagesApi';
 import { HubCheckbox } from '../../components/HubCheckbox';
@@ -150,14 +150,22 @@ const HubPackagesPage: React.FC = () => {
               <div className="hub-servicos__metric-value">
                 {loading ? '—' : metrics.sessions.toLocaleString('pt-BR')}
               </div>
-              <div className="hub-servicos__metric-sub">
-                {metrics.combos > 0
-                  ? `${metrics.combos} combo${metrics.combos === 1 ? '' : 's'} no catálogo`
-                  : 'Soma das sessões de todos os pacotes'}
-              </div>
+              <div className="hub-servicos__metric-sub">Soma das sessões de todos os pacotes</div>
             </div>
             <div className="hub-servicos__metric-icon hub-servicos__metric-icon--muted" aria-hidden>
               <Calendar size={22} strokeWidth={1.75} />
+            </div>
+          </div>
+          <div className="hub-servicos__metric-card">
+            <div className="hub-servicos__metric-card__text">
+              <div className="hub-servicos__metric-label">Combos</div>
+              <div className="hub-servicos__metric-value">
+                {loading ? '—' : metrics.combos.toLocaleString('pt-BR')}
+              </div>
+              <div className="hub-servicos__metric-sub">Pacotes do tipo combo</div>
+            </div>
+            <div className={`hub-servicos__metric-icon${metrics.combos > 0 ? '' : ' hub-servicos__metric-icon--muted'}`} aria-hidden>
+              <Boxes size={22} strokeWidth={1.75} />
             </div>
           </div>
         </div>
