@@ -156,6 +156,14 @@ function translateAuthError(
   if (normalized.includes('signup is disabled') || normalized.includes('signups not allowed')) {
     return 'O cadastro está indisponível no momento.';
   }
+  if (
+    normalized.includes('fetch failed') ||
+    normalized.includes('temporariamente indisponível') ||
+    normalized.includes('serviço de autenticação') ||
+    normalized.includes('auth_upstream_unavailable')
+  ) {
+    return 'Não foi possível conectar ao serviço de autenticação. Tente novamente em alguns segundos.';
+  }
 
   const minPassword = normalized.match(/at least (\d+) characters/);
   if (minPassword && normalized.includes('password')) {

@@ -190,13 +190,21 @@ async function executeApiRequest(
           endpoint.includes('/notifications/unread-count') ||
           /\/support\/tickets\/unread-count\b/.test(endpoint) ||
           /\/unread-count\?/.test(endpoint);
+        // Não tratar falha de rede/upstream (503/502) como sessão inválida.
+        const isUpstreamAuthBlip =
+          response.status === 503 ||
+          response.status === 502 ||
+          errorMessage?.includes('temporariamente indisponível') ||
+          errorMessage?.includes('fetch failed') ||
+          /AUTH_UPSTREAM_UNAVAILABLE|EXTERNAL_SERVICE_ERROR/i.test(String(errorText));
         const isTokenError =
-          errorMessage?.includes('expirado') ||
-          errorMessage?.includes('Token inválido') ||
-          errorMessage?.includes('JWT') ||
-          errorMessage?.includes('expired') ||
-          errorMessage?.includes('signature') ||
-          /token.*expir|jwt.*invalid|signature.*invalid/i.test(String(errorText));
+          !isUpstreamAuthBlip &&
+          (errorMessage?.includes('expirado') ||
+            errorMessage?.includes('Token inválido') ||
+            errorMessage?.includes('JWT') ||
+            errorMessage?.includes('expired') ||
+            errorMessage?.includes('signature') ||
+            /token.*expir|jwt.*invalid|signature.*invalid/i.test(String(errorText)));
 
         if (isTokenError && !isLoginEndpoint && !isBestEffortAuthProbe) {
           console.warn('[web-core] Token inválido ou expirado. Limpando sessão...');

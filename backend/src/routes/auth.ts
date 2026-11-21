@@ -1,8 +1,13 @@
 import express from 'express';
-import { supabase, supabaseAdmin } from '../config/supabase';
+import { createAuthClient, supabaseAdmin } from '../config/supabase';
 import { authLimiter } from '../middleware/rateLimiter.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
-import { UnauthorizedError, ValidationError, DatabaseError } from '../utils/errors.js';
+import {
+  UnauthorizedError,
+  ValidationError,
+  DatabaseError,
+  ExternalServiceError,
+} from '../utils/errors.js';
 import { logger } from '../utils/logger.js';
 
 const router = express.Router();
@@ -15,7 +20,8 @@ router.post('/login', authLimiter, asyncHandler(async (req, res) => {
     throw new ValidationError('Email e senha são obrigatórios');
   }
 
-  const { data, error } = await supabase.auth.signInWithPassword({
+  // Client efêmero: evita contaminar o singleton anon usado em outras rotas.
+  const { data, error } = await createAuthClient().auth.signInWithPassword({
     email,
     password,
   });
@@ -26,6 +32,15 @@ router.post('/login', authLimiter, asyncHandler(async (req, res) => {
       error: error.message,
       correlationId: req.correlationId,
     });
+    const msg = String(error.message || '');
+    // Intermitência de rede com o Supabase Auth não é "credencial inválida".
+    if (/fetch failed|network|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket|aborted|timeout/i.test(msg)) {
+      throw new ExternalServiceError(
+        'Não foi possível conectar ao serviço de autenticação. Tente novamente em alguns segundos.',
+        'supabase-auth',
+        error,
+      );
+    }
     throw new UnauthorizedError(error.message);
   }
 
@@ -432,7 +447,7 @@ router.post('/signup', authLimiter, asyncHandler(async (req, res) => {
     throw new ValidationError('Email e senha são obrigatórios');
   }
 
-  const { data, error } = await supabase.auth.signUp({
+  const { data, error } = await createAuthClient().auth.signUp({
     email,
     password,
     options: {
