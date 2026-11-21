@@ -698,8 +698,13 @@ export const patchHubBoardingReservation = async (req: Request, res: Response) =
     }
 
     if (
-      (rest.daily_rate_cents !== undefined || pricingChanged) &&
-      (newStatus ?? previousStatus) === 'checked_out'
+      rest.daily_rate_cents !== undefined ||
+      pricingChanged ||
+      rest.expected_check_in !== undefined ||
+      rest.expected_check_out !== undefined ||
+      rest.checked_in_at !== undefined ||
+      rest.checked_out_at !== undefined ||
+      (newStatus != null && newStatus !== previousStatus)
     ) {
       void syncOpenComandasAfterBoardingCheckedOut(clinic_id, id);
     }

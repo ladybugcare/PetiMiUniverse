@@ -8,9 +8,13 @@ import app from '../../../app';
 import { configureSupabaseMock, getMockSupabaseClient } from '../../../__tests__/helpers/supabaseTestDouble';
 import {
   baseBoardingFixture,
+  boardingAppointment,
+  checkedInHotelReservation,
   emptyBoardingTables,
   hotelReservationCheckedOut,
   hotelServiceType,
+  reservedHotelReservation,
+  TEST_APPOINTMENT_ID,
   TEST_CLINIC_ID,
   TEST_GUARDIAN_ID,
   TEST_HOTEL_SERVICE_TYPE_ID,
@@ -43,11 +47,53 @@ describe('POST /api/hub/comandas/open (boarding)', () => {
     expect(res.body.items[0].line_total).toBe(450);
   });
 
-  it('retorna 409 quando reserva não está checked_out', async () => {
+  it('abre comanda antecipada com reserva checked_in (diárias pelas datas previstas)', async () => {
     configureSupabaseMock({
       tables: {
         ...emptyBoardingTables(),
-        hub_boarding_reservations: [hotelReservationCheckedOut({ status: 'checked_in' })],
+        hub_boarding_reservations: [checkedInHotelReservation()],
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/hub/comandas/open')
+      .send({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'boarding_reservation',
+        origin_id: TEST_RESERVATION_ID,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].quantity).toBe(3);
+    expect(res.body.items[0].line_total).toBe(450);
+  });
+
+  it('abre comanda antecipada com reserva reserved', async () => {
+    configureSupabaseMock({
+      tables: {
+        ...emptyBoardingTables(),
+        hub_boarding_reservations: [reservedHotelReservation()],
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/hub/comandas/open')
+      .send({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'boarding_reservation',
+        origin_id: TEST_RESERVATION_ID,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.items[0].quantity).toBe(3);
+  });
+
+  it('retorna 409 quando reserva cancelled', async () => {
+    configureSupabaseMock({
+      tables: {
+        ...emptyBoardingTables(),
+        hub_boarding_reservations: [hotelReservationCheckedOut({ status: 'cancelled' })],
       },
     });
 
@@ -61,6 +107,71 @@ describe('POST /api/hub/comandas/open (boarding)', () => {
 
     expect(res.status).toBe(409);
     expect(res.body.error).toMatch(/não está pronta/i);
+  });
+
+  it('retorna 409 quando reserva waived', async () => {
+    configureSupabaseMock({
+      tables: {
+        ...emptyBoardingTables(),
+        hub_boarding_reservations: [
+          checkedInHotelReservation({ billing_waived_at: '2026-06-01T12:00:00.000Z' }),
+        ],
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/hub/comandas/open')
+      .send({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'boarding_reservation',
+        origin_id: TEST_RESERVATION_ID,
+      });
+
+    expect(res.status).toBe(409);
+    expect(res.body.error).toMatch(/sem cobrança/i);
+  });
+
+  it('ao abrir via appointment com reserva ativa, reescreve para boarding_reservation', async () => {
+    configureSupabaseMock({
+      tables: {
+        ...emptyBoardingTables(),
+        hub_service_types: [hotelServiceType()],
+        hub_appointments: [boardingAppointment()],
+        hub_appointment_services: [
+          {
+            id: 'appt-svc-1',
+            clinic_id: TEST_CLINIC_ID,
+            hub_appointment_id: TEST_APPOINTMENT_ID,
+            hub_service_type_id: TEST_HOTEL_SERVICE_TYPE_ID,
+            quantity: 1,
+            unit_price: 150,
+            sale_amount_applied: 150,
+            deleted_at: null,
+          },
+        ],
+        hub_boarding_reservations: [
+          checkedInHotelReservation({
+            hub_appointment_id: TEST_APPOINTMENT_ID,
+            hub_service_type_id: TEST_HOTEL_SERVICE_TYPE_ID,
+          }),
+        ],
+      },
+    });
+
+    const res = await request(app)
+      .post('/api/hub/comandas/open')
+      .send({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'appointment',
+        origin_id: TEST_APPOINTMENT_ID,
+      });
+
+    expect(res.status).toBe(201);
+    expect(res.body.comanda.origin_type).toBe('boarding_reservation');
+    expect(res.body.comanda.origin_id).toBe(TEST_RESERVATION_ID);
+    expect(res.body.items).toHaveLength(1);
+    expect(res.body.items[0].origin_type).toBe('boarding_reservation');
+    expect(res.body.items[0].quantity).toBe(3);
   });
 
   it('retorna 409 quando reserva sem tutor', async () => {
@@ -136,6 +247,7 @@ describe('POST /api/hub/comandas/open (boarding)', () => {
             expires_at: null,
             purchased_at: '2026-01-01T00:00:00.000Z',
             pricing_variant: null,
+            status: 'active',
             hub_packages: [{ id: TEST_HOTEL_PACKAGE_ID, name: 'Pacote Hotel 5 diárias' }],
           },
         ],

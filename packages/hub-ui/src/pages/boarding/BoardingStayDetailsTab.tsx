@@ -159,8 +159,14 @@ const BoardingStayDetailsTab: React.FC<Props> = ({
   const [packageBusy, setPackageBusy] = useState(false);
   const petId = drawer.pet?.id ?? rsv.pet_id ?? null;
   const serviceTypeId = rsv.hub_service_type_id ?? null;
+  const packageEligibleStage =
+    stage === 'reserved' ||
+    stage === 'checked_in' ||
+    stage === 'checkout_preparing' ||
+    stage === 'ready_for_handoff' ||
+    stage === 'checked_out';
   const canApplyPackage =
-    canManage && canViewFinancial && stage === 'checked_out' && Boolean(petId) && Boolean(serviceTypeId);
+    canManage && canViewFinancial && packageEligibleStage && Boolean(petId) && Boolean(serviceTypeId);
 
   useEffect(() => {
     if (!canApplyPackage || !petId) {
@@ -560,8 +566,6 @@ const BoardingStayDetailsTab: React.FC<Props> = ({
                 </p>
               )}
             </div>
-          ) : canManage && canViewFinancial && stage !== 'checked_out' && serviceTypeId ? (
-            <p className="hub-grooming-drawer__hint">Aplicar pacote na hospedagem fica disponível após o check-out.</p>
           ) : null}
 
           {canManage && canViewFinancial && (active || stage === 'checked_out') ? (

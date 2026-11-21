@@ -150,7 +150,7 @@ Lote: atividade coletiva (recreação) pode ser registrada para vários pets de 
 - **Creche:** 1 período por reserva, valor conforme `daycare_period` (integral ou meio período).
 - **Adicionais** (`hub_boarding_extras`) entram como linhas próprias na comanda.
 - Quando a reserva vem de um agendamento, a linha do serviço de hospedagem do agendamento **não** é somada de novo: as diárias substituem a linha.
-- Cobrança nunca automática: o check-out operacional **não** abre cobrança nem mostra checkout com valor (paridade Banho & Tosa). Após `checked_out`, sincroniza comanda já aberta se houver; sem comanda, a estadia aparece em **Atendimentos sem cobrança** no Caixa. Desconto e dispensa seguem o fluxo do Caixa. Preço/adicionais/pacote na aba Hospedagem (gestão), não no painel de saída.
+- Cobrança nunca automática: o check-out operacional **não** abre cobrança nem mostra checkout com valor (paridade Banho & Tosa). A comanda de `boarding_reservation` **pode ser aberta no Caixa desde a reserva** (`reserved` / hospedado / saída em andamento), com diárias estimadas pelas datas previstas; após `checked_out`, sincroniza quantidade real (e gera linha de ajuste se as diárias já tiverem sido faturadas e a quantidade subir). Sem comanda após a entrega, a estadia aparece no relatório de **Atendimentos sem cobrança**. Desconto e dispensa seguem o fluxo do Caixa. Preço/adicionais/pacote na aba Hospedagem (gestão), não no painel de saída. A setting `block_exit_if_charge_pending` passa a importar de verdade se a comanda for aberta cedo.
 - Lotação: padrão é **alertar**; a unidade pode configurar **bloquear** o check-in quando exceder a capacidade (`overbooking_policy`).
 
 ## 8. Contrato de UI/UX

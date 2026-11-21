@@ -38,11 +38,13 @@ import {
 import {
   buildBoardingComandaLine,
   buildBoardingExtraLines,
+  estimateBoardingStayTotal,
   estimateBoardingUnbilledAmount,
   shouldIncludeInUnbilledBoarding,
   type BoardingExtraInput,
   type DayBoardBilling,
 } from './boardingBilling';
+import { isBoardingStatusReadyForComanda } from './boardingOperational';
 import {
   HOSPITALIZATION_CLOSED_STATUSES,
   isHospitalizationClosed,
@@ -351,22 +353,38 @@ async function buildPreviewForBoardingReservation(
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!res) throw new Error('NOT_FOUND');
-  if (res.status !== 'checked_out') throw new Error('NOT_READY');
+  if (!isBoardingStatusReadyForComanda(String(res.status ?? ''), { allowIncomplete: true })) {
+    throw new Error('NOT_READY');
+  }
   if (res.billing_waived_at) throw new Error('WAIVED');
 
   const guardianId = res.guardian_id as string | null;
   if (!guardianId) throw new Error('NO_GUARDIAN');
 
-  const { line, subtotal: baseSubtotal } = buildBoardingComandaLine({
-    id: res.id as string,
-    mode: res.mode as string,
-    pet_id: res.pet_id as string | null,
-    expected_check_in: res.expected_check_in as string | null,
-    expected_check_out: res.expected_check_out as string | null,
-    checked_in_at: res.checked_in_at as string | null,
-    checked_out_at: res.checked_out_at as string | null,
-    daily_rate_cents: res.daily_rate_cents as number | null,
-  });
+  const unitIdForCutoff = (res.unit_id as string | null) ?? null;
+  let cutoffTime: string | null = null;
+  if (unitIdForCutoff) {
+    const { data: settings } = await supabaseAdmin
+      .from('hub_unit_boarding_settings')
+      .select('checkout_cutoff_time')
+      .eq('unit_id', unitIdForCutoff)
+      .maybeSingle();
+    cutoffTime = (settings?.checkout_cutoff_time as string | null | undefined) ?? null;
+  }
+
+  const { line, subtotal: baseSubtotal } = buildBoardingComandaLine(
+    {
+      id: res.id as string,
+      mode: res.mode as string,
+      pet_id: res.pet_id as string | null,
+      expected_check_in: res.expected_check_in as string | null,
+      expected_check_out: res.expected_check_out as string | null,
+      checked_in_at: res.checked_in_at as string | null,
+      checked_out_at: res.checked_out_at as string | null,
+      daily_rate_cents: res.daily_rate_cents as number | null,
+    },
+    { cutoffTime },
+  );
 
   const { data: extraRows } = await supabaseAdmin
     .from('hub_boarding_extras')
@@ -1036,8 +1054,8 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
         .is('deleted_at', null)
         .maybeSingle();
       if (bErr || !b) return res.status(404).json({ error: 'Reserva não encontrada' });
-      if (b.status !== 'checked_out') {
-        return res.status(409).json({ error: 'Só é possível gerar cobrança com reserva com check-out realizado' });
+      if (!isBoardingStatusReadyForComanda(String(b.status ?? ''), { allowIncomplete: true })) {
+        return res.status(409).json({ error: 'Reserva não está pronta para cobrança' });
       }
       if (b.billing_waived_at) return res.status(409).json({ error: 'Reserva marcada sem cobrança' });
     } else {
@@ -3798,7 +3816,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       let bq = supabaseAdmin
         .from('hub_boarding_reservations')
         .select(
-          `id, unit_id, hub_appointment_id, expected_check_in, expected_check_out, checked_out_at, status, guardian_id, pet_id, mode, daily_rate_cents,
+          `id, unit_id, hub_appointment_id, expected_check_in, expected_check_out, checked_in_at, checked_out_at, status, guardian_id, pet_id, mode, daily_rate_cents,
           pet:hub_pets(id, name),
           guardian:hub_guardians(id, full_name)`
         )
@@ -3837,7 +3855,18 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
       const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
       const dailyRateCents = (row.daily_rate_cents as number | null) ?? 0;
-      const estimated = Math.round(dailyRateCents) / 100;
+      const estimated = estimateBoardingStayTotal(
+        {
+          id,
+          mode: String(row.mode ?? 'hotel'),
+          expected_check_in: expectedCheckIn,
+          expected_check_out: expectedCheckOut,
+          checked_in_at: (row.checked_in_at as string | null) ?? null,
+          checked_out_at: (row.checked_out_at as string | null) ?? null,
+          daily_rate_cents: dailyRateCents,
+        },
+        [],
+      ).total;
       originKeys.push({ origin_type: 'boarding_reservation', origin_id: id });
       items.push({
         origin_type: 'boarding_reservation',

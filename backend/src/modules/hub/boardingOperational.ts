@@ -20,6 +20,27 @@ export const BOARDING_ACTIVE_CUSTODY_STATUSES = [
   'ready_for_handoff',
 ] as const;
 
+/**
+ * Status em que a comanda de hospedagem pode ser aberta antes do check-out
+ * (cobrança antecipada no Caixa). Cancelada/no-show ficam de fora.
+ */
+export const BOARDING_COMANDA_INCOMPLETE_STATUSES = [
+  'reserved',
+  'checked_in',
+  'checkout_preparing',
+  'ready_for_handoff',
+] as const;
+
+/** Reserva apta a gerar/sincronizar comanda (completa ou antecipada). */
+export function isBoardingStatusReadyForComanda(
+  status: string,
+  opts?: { allowIncomplete?: boolean },
+): boolean {
+  if (status === 'checked_out') return true;
+  if (!opts?.allowIncomplete) return false;
+  return (BOARDING_COMANDA_INCOMPLETE_STATUSES as readonly string[]).includes(status);
+}
+
 export const VALID_STATUS_TRANSITIONS: Record<string, string[]> = {
   reserved: ['checked_in', 'cancelled', 'no_show'],
   checked_in: ['checkout_preparing', 'ready_for_handoff', 'checked_out', 'reserved'],

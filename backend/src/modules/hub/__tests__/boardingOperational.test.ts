@@ -2,6 +2,7 @@ import {
   appointmentMatchesBoardingTypes,
   calcBoardingNights,
   dayBoundsFromYmdSaoPaulo,
+  isBoardingStatusReadyForComanda,
   isValidStatusTransition,
   modeFromAppointmentKind,
   reservationOverlapsRange,
@@ -194,6 +195,24 @@ describe('boardingOperational', () => {
 
     it('rejeita reserved → checked_out direto', () => {
       expect(isValidStatusTransition('reserved', 'checked_out')).toBe(false);
+    });
+  });
+
+  describe('isBoardingStatusReadyForComanda', () => {
+    it('checked_out sempre pronto', () => {
+      expect(isBoardingStatusReadyForComanda('checked_out')).toBe(true);
+      expect(isBoardingStatusReadyForComanda('checked_out', { allowIncomplete: false })).toBe(true);
+    });
+
+    it('status ativos só com allowIncomplete', () => {
+      expect(isBoardingStatusReadyForComanda('reserved')).toBe(false);
+      expect(isBoardingStatusReadyForComanda('checked_in', { allowIncomplete: true })).toBe(true);
+      expect(isBoardingStatusReadyForComanda('ready_for_handoff', { allowIncomplete: true })).toBe(true);
+    });
+
+    it('cancelled e no_show nunca', () => {
+      expect(isBoardingStatusReadyForComanda('cancelled', { allowIncomplete: true })).toBe(false);
+      expect(isBoardingStatusReadyForComanda('no_show', { allowIncomplete: true })).toBe(false);
     });
   });
 });

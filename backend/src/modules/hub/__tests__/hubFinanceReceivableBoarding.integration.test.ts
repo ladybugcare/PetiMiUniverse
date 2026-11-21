@@ -65,11 +65,31 @@ describe('Financeiro boarding — preview, receivable e waive', () => {
     expect(state?.billing_waive_reason).toBe('Cortesia promocional');
   });
 
-  it('preview retorna 409 para reserva não checked_out', async () => {
+  it('preview aceita reserva checked_in (cobrança antecipada)', async () => {
     configureSupabaseMock({
       tables: {
         ...emptyBoardingTables(),
-        hub_boarding_reservations: [hotelReservationCheckedOut({ status: 'checked_in' })],
+        hub_boarding_reservations: [hotelReservationCheckedOut({ status: 'checked_in', checked_out_at: null })],
+      },
+    });
+
+    const res = await request(app)
+      .get('/api/hub/finance/preview')
+      .query({
+        clinic_id: TEST_CLINIC_ID,
+        source_type: 'boarding_reservation',
+        source_id: TEST_RESERVATION_ID,
+      });
+
+    expect(res.status).toBe(200);
+    expect(res.body.preview.estimated_amount).toBe(450);
+  });
+
+  it('preview retorna 409 para reserva cancelled', async () => {
+    configureSupabaseMock({
+      tables: {
+        ...emptyBoardingTables(),
+        hub_boarding_reservations: [hotelReservationCheckedOut({ status: 'cancelled' })],
       },
     });
 

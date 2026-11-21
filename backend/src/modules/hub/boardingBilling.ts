@@ -126,7 +126,7 @@ export type BoardingComandaLine = {
   discount_amount: number;
   line_total: number;
   service_date: string | null;
-  origin_type: 'boarding_reservation' | 'boarding_extra';
+  origin_type: 'boarding_reservation' | 'boarding_extra' | 'boarding_reservation_adjustment';
   origin_id: string;
   sort_order: number;
 };
@@ -179,6 +179,44 @@ export function buildBoardingComandaLine(
   };
 
   return { line, subtotal: lineTotal };
+}
+
+/** Linha aberta de ajuste quando diárias já faturadas e a quantidade sobe (ex.: late checkout). */
+export function buildBoardingQuantityAdjustmentLine(input: {
+  reservationId: string;
+  mode: string;
+  petId: string | null;
+  hubServiceTypeId?: string | null;
+  daycarePeriod?: string | null;
+  deltaQuantity: number;
+  unitAmount: number;
+  serviceDate?: string | null;
+  sortOrder?: number;
+}): BoardingComandaLine | null {
+  const delta = Math.max(0, round2(Number(input.deltaQuantity) || 0));
+  if (delta <= 0) return null;
+  const unitAmount = round2(Number(input.unitAmount) || 0);
+  const lineTotal = round2(delta * unitAmount);
+  const baseLabel =
+    input.mode === 'hotel'
+      ? `Hotel — ajuste (+${delta} ${delta === 1 ? 'diária' : 'diárias'})`
+      : `Creche — ajuste (+${delta} ${delta === 1 ? 'período' : 'períodos'})`;
+  return {
+    pet_id: input.petId,
+    item_kind: 'service',
+    hub_service_type_id: input.hubServiceTypeId ?? null,
+    hub_inventory_item_id: null,
+    hub_inventory_lot_id: null,
+    description: baseLabel,
+    quantity: delta,
+    unit_amount: unitAmount,
+    discount_amount: 0,
+    line_total: lineTotal,
+    service_date: input.serviceDate ?? null,
+    origin_type: 'boarding_reservation_adjustment',
+    origin_id: input.reservationId,
+    sort_order: input.sortOrder ?? 0,
+  };
 }
 
 /** Adicionais da estadia como linhas próprias da comanda (após a linha das diárias). */

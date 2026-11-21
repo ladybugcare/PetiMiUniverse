@@ -1,6 +1,7 @@
 import {
   buildBoardingComandaLine,
   buildBoardingExtraLines,
+  buildBoardingQuantityAdjustmentLine,
   computeBoardingLineAmount,
   estimateBoardingStayTotal,
   isAppointmentLineReplacedByBoarding,
@@ -82,6 +83,35 @@ describe('boardingBilling', () => {
       expect(line.description).toBe('Hotel — 3 diárias');
       expect(subtotal).toBe(450);
       expect(line.origin_type).toBe('boarding_reservation');
+    });
+  });
+
+  describe('buildBoardingQuantityAdjustmentLine', () => {
+    it('monta ajuste positivo de diárias', () => {
+      const line = buildBoardingQuantityAdjustmentLine({
+        reservationId: 'res-1',
+        mode: 'hotel',
+        petId: 'pet-1',
+        deltaQuantity: 1,
+        unitAmount: 150,
+      });
+      expect(line).not.toBeNull();
+      expect(line!.quantity).toBe(1);
+      expect(line!.line_total).toBe(150);
+      expect(line!.origin_type).toBe('boarding_reservation_adjustment');
+      expect(line!.description).toMatch(/ajuste \(\+1 diária\)/);
+    });
+
+    it('retorna null quando delta ≤ 0', () => {
+      expect(
+        buildBoardingQuantityAdjustmentLine({
+          reservationId: 'res-1',
+          mode: 'hotel',
+          petId: null,
+          deltaQuantity: 0,
+          unitAmount: 150,
+        }),
+      ).toBeNull();
     });
   });
 

@@ -114,9 +114,11 @@ function round2(n: number): number {
 import {
   buildBoardingComandaLine,
   buildBoardingExtraLines,
+  buildBoardingQuantityAdjustmentLine,
   isAppointmentLineReplacedByBoarding,
   type BoardingExtraInput,
 } from './boardingBilling';
+import { isBoardingStatusReadyForComanda } from './boardingOperational';
 import {
   dropAppointmentLinesReplacedByHospitalization,
   loadHospitalizationComandaItems,
@@ -376,22 +378,27 @@ async function findLatestEncounterIdForAppointment(
   return (data?.id as string) ?? null;
 }
 
-async function findCheckedOutBoardingReservationForAppointment(
+/** Reserva de hotel/creche cobrável ligada ao agendamento (ativa ou já com check-out). */
+async function findBillableBoardingReservationForAppointment(
   clinicId: string,
   appointmentId: string
 ): Promise<string | null> {
   const { data, error } = await supabaseAdmin
     .from('hub_boarding_reservations')
-    .select('id')
+    .select('id, status, checked_out_at, created_at')
     .eq('clinic_id', clinicId)
     .eq('hub_appointment_id', appointmentId)
-    .eq('status', 'checked_out')
     .is('deleted_at', null)
+    .not('status', 'in', '("cancelled","no_show")')
     .order('checked_out_at', { ascending: false, nullsFirst: false })
+    .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
   if (error) throw new Error(error.message);
-  return (data?.id as string) ?? null;
+  if (!data?.id) return null;
+  const st = String(data.status ?? '');
+  if (!isBoardingStatusReadyForComanda(st, { allowIncomplete: true })) return null;
+  return data.id as string;
 }
 
 async function findAnyBoardingReservationForAppointment(
@@ -1658,7 +1665,8 @@ async function buildComandaItemsFromEncounter(
 
 async function buildComandaItemsFromBoardingReservation(
   clinicId: string,
-  reservationId: string
+  reservationId: string,
+  opts?: { allowIncomplete?: boolean },
 ): Promise<{
   items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[];
   subtotal: number;
@@ -1677,7 +1685,10 @@ async function buildComandaItemsFromBoardingReservation(
 
   const guardianId = res.guardian_id as string | null;
   if (!guardianId) throw new Error('NO_GUARDIAN');
-  if (res.status !== 'checked_out') throw new Error('NOT_READY');
+  if (res.billing_waived_at) throw new Error('WAIVED');
+  if (!isBoardingStatusReadyForComanda(String(res.status ?? ''), opts)) {
+    throw new Error('NOT_READY');
+  }
 
   const unitId = (res.unit_id as string | null) ?? null;
   let cutoffTime: string | null = null;
@@ -1842,9 +1853,11 @@ async function buildDesiredComandaSnapshot(
       snapshot = mergeHospitalizationItemsIntoSnapshot(snapshot, hospForEnc.items, groupById);
     }
 
-    const boardingId = await findCheckedOutBoardingReservationForAppointment(clinicId, oid);
+    const boardingId = await findBillableBoardingReservationForAppointment(clinicId, oid);
     if (boardingId) {
-      const boardingBuilt = await buildComandaItemsFromBoardingReservation(clinicId, boardingId);
+      const boardingBuilt = await buildComandaItemsFromBoardingReservation(clinicId, boardingId, {
+        allowIncomplete: true,
+      });
       const { items: apptItems, removedTotal } = await dropAppointmentLinesReplacedByBoarding(
         clinicId,
         boardingId,
@@ -1897,7 +1910,7 @@ async function buildDesiredComandaSnapshot(
     return { ...q, pet_id: null };
   }
   if (ot === 'boarding_reservation') {
-    return await buildComandaItemsFromBoardingReservation(clinicId, oid);
+    return await buildComandaItemsFromBoardingReservation(clinicId, oid, { allowIncomplete: true });
   }
   throw new Error('NOT_FOUND');
 }
@@ -2006,8 +2019,8 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
           ? (b.origin_id ?? newPurchaseGroupId())
           : (b.origin_id as string);
 
-    // Hotel/Creche: após check-out, novas comandas usam boarding_reservation (não appointment),
-    // reutilizando comanda appointment já aberta quando existir.
+    // Hotel/Creche: com reserva cobrável (ativa ou checked_out), preferir boarding_reservation
+    // e reutilizar comanda appointment já aberta quando existir.
     if (origin_type === 'appointment') {
       const existingApptOrBoard = await resolveExistingOpenComandaIdForOpen(
         clinic_id,
@@ -2018,13 +2031,13 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
         const detail = await getHubComandaDetailPayload(existingApptOrBoard, clinic_id);
         return res.status(200).json(detail);
       }
-      const checkedOutBoarding = await findCheckedOutBoardingReservationForAppointment(
+      const billableBoarding = await findBillableBoardingReservationForAppointment(
         clinic_id,
         effectiveOriginId,
       );
-      if (checkedOutBoarding) {
+      if (billableBoarding) {
         origin_type = 'boarding_reservation';
-        effectiveOriginId = checkedOutBoarding;
+        effectiveOriginId = billableBoarding;
       }
     }
 
@@ -2176,7 +2189,10 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
     } else if (origin_type === 'quote') {
       built = await buildComandaItemsFromQuote(clinic_id, effectiveOriginId);
     } else if (origin_type === 'boarding_reservation') {
-      built = await buildComandaItemsFromBoardingReservation(clinic_id, effectiveOriginId);
+      // Hotel/Creche: permite comanda antecipada (antes do check-out operacional)
+      built = await buildComandaItemsFromBoardingReservation(clinic_id, effectiveOriginId, {
+        allowIncomplete: true,
+      });
     } else if (origin_type === 'package') {
       const pkgBuilt = await buildComandaItemsFromPackagePurchase({
         clinicId: clinic_id,
@@ -3857,8 +3873,46 @@ async function applySyncComandaFromOrigin(
     return !invoicedOriginKeys.has(`${ot}:${oid}`);
   });
 
-  // Preserva itens adicionados manualmente pelo Caixa — só deleta os que vieram da origem operacional
+  // Diárias já faturadas + quantity maior (late checkout etc.): linha aberta de ajuste (não estorna se cair).
   const allItems = detail.items as Record<string, unknown>[];
+  const boardingDesiredById = new Map<string, (typeof built.items)[number]>();
+  for (const row of built.items) {
+    if (row.origin_type === 'boarding_reservation' && row.origin_id) {
+      boardingDesiredById.set(String(row.origin_id), row);
+    }
+  }
+  for (const [reservationId, desiredLine] of boardingDesiredById) {
+    const mainKey = `boarding_reservation:${reservationId}`;
+    if (!invoicedOriginKeys.has(mainKey)) continue;
+    let invoicedQty = 0;
+    let invoicedUnit = Number(desiredLine.unit_amount);
+    for (const it of allItems) {
+      if (!invoiced.has(it.id as string)) continue;
+      const ot = String(it.origin_type ?? '');
+      const oid = String(it.origin_id ?? '');
+      if (oid !== reservationId) continue;
+      if (ot !== 'boarding_reservation' && ot !== 'boarding_reservation_adjustment') continue;
+      invoicedQty = round2(invoicedQty + Number(it.quantity ?? 0));
+      if (ot === 'boarding_reservation') invoicedUnit = Number(it.unit_amount ?? invoicedUnit);
+    }
+    const delta = round2(Number(desiredLine.quantity) - invoicedQty);
+    if (delta <= 0) continue;
+    const desc = String(desiredLine.description ?? '');
+    const mode = desc.startsWith('Creche') ? 'daycare' : 'hotel';
+    const adj = buildBoardingQuantityAdjustmentLine({
+      reservationId,
+      mode,
+      petId: (desiredLine.pet_id as string | null) ?? null,
+      hubServiceTypeId: (desiredLine.hub_service_type_id as string | null) ?? null,
+      deltaQuantity: delta,
+      unitAmount: invoicedUnit,
+      serviceDate: (desiredLine.service_date as string | null) ?? null,
+      sortOrder: desiredFiltered.length,
+    });
+    if (adj) desiredFiltered.push(adj);
+  }
+
+  // Preserva itens adicionados manualmente pelo Caixa — só deleta os que vieram da origem operacional
   const openIdsSet = new Set(detail.open_item_ids as string[]);
   const manualOpenIds = new Set(
     allItems
