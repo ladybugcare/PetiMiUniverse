@@ -76,17 +76,23 @@ function ExamCountRow({
   available: number;
 }) {
   return (
-    <div className="vet-cockpit-exam-groups">
+    <div className="vet-cockpit-exam-groups" aria-label="Contagem de exames">
       <div>
-        <span className="vet-cockpit-panel__k">Solicitados</span>
+        <span className="vet-cockpit-panel__k" title="Solicitados">
+          Solicitados
+        </span>
         <strong>{requested}</strong>
       </div>
       <div>
-        <span className="vet-cockpit-panel__k">Aguardando</span>
+        <span className="vet-cockpit-panel__k" title="Aguardando">
+          Aguardando
+        </span>
         <strong>{awaiting}</strong>
       </div>
       <div>
-        <span className="vet-cockpit-panel__k">Prontos</span>
+        <span className="vet-cockpit-panel__k" title="Prontos">
+          Prontos
+        </span>
         <strong className={available > 0 ? 'vet-cockpit-panel__accent-value' : undefined}>{available}</strong>
       </div>
     </div>

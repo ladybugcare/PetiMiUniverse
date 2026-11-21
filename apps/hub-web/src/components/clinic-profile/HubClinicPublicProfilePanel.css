@@ -266,16 +266,23 @@
 
 .hub-cpp-editor__thumbs {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 0.5rem;
 }
 
 .hub-cpp-editor__thumbs img {
-  width: 88px;
+  width: 56px;
   height: 56px;
   object-fit: cover;
   border-radius: 8px;
   border: 1px solid var(--hc-border);
+}
+
+.hub-cpp-editor__thumbs .hub-cpp-editor__thumb-cover {
+  width: 140px;
+  height: 56px;
+  aspect-ratio: 2.5 / 1;
 }
 
 .hub-cpp-editor__hours {

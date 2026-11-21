@@ -35,6 +35,7 @@ import type {
   HubPublicThemePreset,
 } from '../../types/hubClinicPublicProfile';
 import { HubAccountProfileCard } from '../profile';
+import HubCoverCropModal from './HubCoverCropModal';
 import './HubClinicPublicProfilePanel.css';
 
 const DAY_KEYS = ['0', '1', '2', '3', '4', '5', '6'] as const;
@@ -161,6 +162,8 @@ const HubClinicPublicProfilePanel: React.FC<HubClinicPublicProfilePanelProps> = 
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [coverCropSrc, setCoverCropSrc] = useState<string | null>(null);
+  const [coverUploading, setCoverUploading] = useState(false);
   const [profile, setProfile] = useState<HubClinicPublicProfileRow | null>(null);
   const [services, setServices] = useState<HubClinicPublicServiceEditorRow[]>([]);
   const [serviceGroups, setServiceGroups] = useState<HubClinicPublicGroupEditorRow[]>([]);
@@ -396,15 +399,43 @@ const HubClinicPublicProfilePanel: React.FC<HubClinicPublicProfilePanelProps> = 
     }
   };
 
-  const onUpload = async (kind: 'cover' | 'logo', file: File | undefined) => {
+  const closeCoverCrop = () => {
+    setCoverCropSrc((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    if (coverInputRef.current) coverInputRef.current.value = '';
+  };
+
+  const onPickCover = (file: File | undefined) => {
+    if (!file || !canEdit) return;
+    setCoverCropSrc((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return URL.createObjectURL(file);
+    });
+  };
+
+  const onConfirmCoverCrop = async (file: File) => {
+    if (!canEdit) return;
+    setCoverUploading(true);
+    try {
+      const res = await hubClinicPublicProfileApi.uploadCover(clinicId, file);
+      setProfile(res.profile);
+      showSuccess('Capa atualizada.');
+      closeCoverCrop();
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro no upload da capa');
+    } finally {
+      setCoverUploading(false);
+    }
+  };
+
+  const onUploadLogo = async (file: File | undefined) => {
     if (!file || !canEdit) return;
     try {
-      const res =
-        kind === 'cover'
-          ? await hubClinicPublicProfileApi.uploadCover(clinicId, file)
-          : await hubClinicPublicProfileApi.uploadLogo(clinicId, file);
+      const res = await hubClinicPublicProfileApi.uploadLogo(clinicId, file);
       setProfile(res.profile);
-      showSuccess(kind === 'cover' ? 'Capa atualizada.' : 'Logo da página atualizado.');
+      showSuccess('Logo da página atualizado.');
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro no upload');
     }
@@ -641,20 +672,30 @@ const HubClinicPublicProfilePanel: React.FC<HubClinicPublicProfilePanelProps> = 
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
                   hidden
-                  onChange={(e) => void onUpload('cover', e.target.files?.[0])}
+                  onChange={(e) => {
+                    onPickCover(e.target.files?.[0]);
+                    e.target.value = '';
+                  }}
                 />
                 <input
                   ref={logoInputRef}
                   type="file"
                   accept="image/png,image/jpeg,image/webp"
                   hidden
-                  onChange={(e) => void onUpload('logo', e.target.files?.[0])}
+                  onChange={(e) => void onUploadLogo(e.target.files?.[0])}
                 />
               </div>
+              <p className="hub-cpp-editor__hint">
+                A capa usa proporção 2,5∶1. Depois de escolher a foto, você ajusta o recorte.
+              </p>
               {(profile?.cover_image_url || profile?.logo_override_url) && (
                 <div className="hub-cpp-editor__thumbs">
                   {profile.cover_image_url ? (
-                    <img src={profile.cover_image_url} alt="Capa" />
+                    <img
+                      className="hub-cpp-editor__thumb-cover"
+                      src={profile.cover_image_url}
+                      alt="Capa"
+                    />
                   ) : null}
                   {profile.logo_override_url ? (
                     <img src={profile.logo_override_url} alt="Logo" />
@@ -664,6 +705,14 @@ const HubClinicPublicProfilePanel: React.FC<HubClinicPublicProfilePanelProps> = 
             </div>
           </div>
         </EditorSection>
+
+        <HubCoverCropModal
+          open={Boolean(coverCropSrc)}
+          imageSrc={coverCropSrc}
+          busy={coverUploading}
+          onClose={closeCoverCrop}
+          onConfirm={onConfirmCoverCrop}
+        />
 
         <EditorSection
           id="contact"

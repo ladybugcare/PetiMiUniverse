@@ -1,0 +1,97 @@
+.hub-cover-crop {
+  display: grid;
+  gap: 14px;
+}
+
+.hub-cover-crop__stage {
+  position: relative;
+  width: 100%;
+  height: min(52vh, 420px);
+  background: #1a1614;
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.hub-cover-crop__controls {
+  display: grid;
+  gap: 8px;
+}
+
+.hub-cover-crop__zoom-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-cover-crop__zoom {
+  width: 100%;
+  accent-color: var(--hc-brand, #f0642f);
+}
+
+.hub-cover-crop__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--hc-text-muted, #8e6e67);
+  line-height: 1.4;
+}
+
+.hub-cover-crop__footer {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  width: 100%;
+}
+
+.hub-cover-crop__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 10px 18px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.hub-cover-crop__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hub-cover-crop__btn--ghost {
+  border: 1px solid #e5dcd6;
+  background: #fff;
+  color: #4a3b3a;
+}
+
+.hub-cover-crop__btn--ghost:hover:not(:disabled) {
+  background: #faf7f4;
+  border-color: #d4c6bf;
+}
+
+.hub-cover-crop__btn--primary {
+  border: 1px solid #c86a4d;
+  background: #c86a4d;
+  color: #fff;
+}
+
+.hub-cover-crop__btn--primary:hover:not(:disabled) {
+  background: #a85a40;
+  border-color: #a85a40;
+}
+
+@media (max-width: 640px) {
+  .hub-cover-crop__stage {
+    height: min(42vh, 280px);
+  }
+}

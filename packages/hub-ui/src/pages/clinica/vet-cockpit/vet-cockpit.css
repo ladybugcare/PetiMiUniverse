@@ -556,6 +556,13 @@
 @media (max-width: 960px) {
   .vet-cockpit-layout {
     grid-template-columns: 1fr;
+    min-height: 0;
+    gap: 12px;
+  }
+
+  .vet-cockpit-queue,
+  .vet-cockpit-panel {
+    max-height: none;
   }
 
   .vet-cockpit-panel__snapshot {
@@ -1031,9 +1038,20 @@ button.vet-cockpit-snapshot-card:hover {
 }
 
 .vet-cockpit-exam-groups {
-  display: flex;
-  gap: 14px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
   margin-top: 4px;
+}
+
+.vet-cockpit-exam-groups > div {
+  min-width: 0;
+}
+
+.vet-cockpit-exam-groups .vet-cockpit-panel__k {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .vet-cockpit-actions {
@@ -1200,4 +1218,187 @@ button.vet-cockpit-snapshot-card:hover {
 
 .hub-clinic-workspace--drawer .hub-cws-stepper {
   overflow-x: auto;
+}
+
+/* —— Operação do dia / painel do paciente no mobile —— */
+@media (max-width: 720px) {
+  .vet-cockpit-page__pad {
+    padding: 12px;
+  }
+
+  .vet-cockpit-toolbar {
+    margin-bottom: 12px;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .vet-cockpit-toolbar__actions {
+    width: 100%;
+    margin-left: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .vet-cockpit-toolbar__actions .hub-clientes__btn {
+    width: 100%;
+    justify-content: center;
+    min-height: 40px;
+    padding: 8px 10px;
+    font-size: 13px;
+  }
+
+  .vet-cockpit-toolbar__actions .hub-clientes__btn--primary {
+    grid-column: 1 / -1;
+  }
+
+  .vet-cockpit-tabs {
+    margin-bottom: 12px;
+  }
+
+  .vet-cockpit-summary {
+    margin-bottom: 10px;
+  }
+
+  .vet-cockpit-summary__date {
+    font-size: 0.85rem;
+    margin-bottom: 6px;
+  }
+
+  .vet-cockpit-summary__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .vet-cockpit-summary .hub-clientes__metric-card {
+    padding: 10px;
+  }
+
+  .vet-cockpit-summary .hub-clientes__metric-label {
+    font-size: 10px;
+    margin-bottom: 2px;
+  }
+
+  .vet-cockpit-summary .hub-clientes__metric-value,
+  .vet-cockpit-summary__metric-name {
+    font-size: 1rem;
+  }
+
+  .vet-cockpit-ops__header {
+    padding: 10px 12px;
+  }
+
+  .vet-cockpit-queue {
+    padding: 10px;
+  }
+
+  .vet-cockpit-queue__item {
+    gap: 6px;
+    padding: 10px;
+  }
+
+  .vet-cockpit-panel__scroll {
+    padding: 14px;
+  }
+
+  .vet-cockpit-panel__pet-name {
+    font-size: 1.2rem;
+  }
+
+  .vet-cockpit-panel__subtitle-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+
+  .vet-cockpit-panel__pet-line {
+    font-size: 0.8125rem;
+  }
+
+  .vet-cockpit-panel__facts {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-top: 10px;
+    padding: 10px 12px;
+  }
+
+  .vet-cockpit-panel__facts strong {
+    font-size: 0.875rem;
+    overflow-wrap: anywhere;
+  }
+
+  .vet-cockpit-panel__snapshot {
+    grid-template-columns: 1fr;
+    gap: 8px;
+    margin-top: 12px;
+  }
+
+  .vet-cockpit-snapshot-card {
+    padding: 10px;
+  }
+
+  .vet-cockpit-exam-groups {
+    gap: 6px;
+  }
+
+  .vet-cockpit-exam-groups .vet-cockpit-panel__k {
+    font-size: 0.65rem;
+  }
+
+  .vet-cockpit-panel__section {
+    margin-top: 12px;
+    padding-top: 12px;
+  }
+
+  .vet-cockpit-panel__history-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  /* Ações clínicas em grade regular (em atendimento) */
+  .vet-cockpit-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px 14px 0;
+  }
+
+  .vet-cockpit-actions .vet-cockpit-action-btn {
+    width: 100%;
+    min-height: 44px;
+    padding: 10px 8px;
+    font-size: 0.75rem;
+    gap: 5px;
+  }
+
+  .vet-cockpit-actions .vet-cockpit-action-btn svg {
+    flex-shrink: 0;
+  }
+
+  /* Fluxo operacional (exames / retorno) ocupa a linha inteira */
+  .vet-cockpit-actions .vet-cockpit-action-btn--phase {
+    grid-column: 1 / -1;
+  }
+
+  /* CTAs principais lado a lado */
+  .vet-cockpit-panel__footer {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 10px 14px 14px;
+  }
+
+  .vet-cockpit-panel__footer .vet-cockpit-action-btn {
+    min-height: 46px;
+    padding: 10px 8px;
+    font-size: 0.75rem;
+  }
+
+  .vet-cockpit-panel__footer:has(> :only-child) {
+    grid-template-columns: 1fr;
+  }
+
+  .vet-cockpit-panel__footer:has(> :nth-child(3)) > :last-child {
+    grid-column: 1 / -1;
+  }
 }
