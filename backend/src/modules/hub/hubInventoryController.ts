@@ -621,7 +621,7 @@ export const createHubInventoryItem = async (req: Request, res: Response) => {
       name: d.name,
       unit_label: d.unit_label ?? null,
       manufacturer_id: d.manufacturer_id ?? null,
-      allow_fractional: content.content_qty != null ? true : (d.allow_fractional ?? false),
+      allow_fractional: d.allow_fractional ?? false,
       store_sku: d.store_sku?.trim() || null,
       sale_purpose: d.sale_purpose ?? null,
       product_group: d.product_group ?? null,
@@ -792,7 +792,6 @@ export const patchHubInventoryItem = async (req: Request, res: Response) => {
       if (content.error) return res.status(400).json({ error: content.error });
       patch.content_qty = content.content_qty;
       patch.content_unit = content.content_unit;
-      if (content.content_qty != null) patch.allow_fractional = true;
     }
 
     const wantsQtyAdjust = d.qty_on_hand !== undefined;

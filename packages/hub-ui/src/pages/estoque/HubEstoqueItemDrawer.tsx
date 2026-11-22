@@ -352,7 +352,7 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
             ) : null}
             <div className="hub-clientes__field">
               <HubCheckbox
-                checked={form.allow_fractional || Boolean(form.content_qty.trim())}
+                checked={form.allow_fractional}
                 onChange={(allow_fractional) => setForm((f) => ({ ...f, allow_fractional }))}
               >
                 Permite quantidades fracionadas
