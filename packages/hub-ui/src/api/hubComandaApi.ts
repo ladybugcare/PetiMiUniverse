@@ -505,10 +505,49 @@ export async function downloadHubComandaPdf(comandaId: string, clinicId: string)
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
 }
 
-/** Abre o cupom térmico (largura conforme Configurações → Impressão). */
+/**
+ * Abre o cupom térmico (largura conforme Configurações → Impressão) e aciona
+ * o diálogo de impressão do navegador. O SO ainda pede confirmação — o web não
+ * permite envio silencioso à impressora.
+ */
 export async function openHubComandaCupomPdf(comandaId: string, clinicId: string): Promise<void> {
   const blob = await fetchHubComandaCupomPdfBlob(comandaId, clinicId);
   const objectUrl = URL.createObjectURL(blob);
-  window.open(objectUrl, '_blank', 'noopener,noreferrer');
+
+  // Sem noopener: precisamos da referência da janela para chamar print().
+  const printWindow = window.open(objectUrl, '_blank');
+  if (!printWindow) {
+    URL.revokeObjectURL(objectUrl);
+    throw new Error('Pop-up bloqueado. Permita pop-ups para este site e tente de novo.');
+  }
+
+  try {
+    printWindow.opener = null;
+  } catch {
+    /* ignore */
+  }
+
+  let printed = false;
+  const triggerPrint = () => {
+    if (printed || printWindow.closed) return;
+    printed = true;
+    try {
+      printWindow.focus();
+      printWindow.print();
+    } catch {
+      // Visualizador de PDF pode restringir print(); a aba permanece aberta para impressão manual.
+    }
+  };
+
+  try {
+    printWindow.addEventListener('load', () => {
+      window.setTimeout(triggerPrint, 300);
+    });
+  } catch {
+    /* ignore — alguns viewers não expõem addEventListener de forma confiável */
+  }
+  // Fallback: blob PDF às vezes não dispara load de forma confiável.
+  window.setTimeout(triggerPrint, 1000);
+
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
 }

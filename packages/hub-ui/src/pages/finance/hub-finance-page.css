@@ -5652,8 +5652,9 @@ h3.hub-caixa-page__card-title {
 .hub-checkout-drawer__advanced {
   margin-top: 4px;
   border: 1px solid var(--hub-border-subtle, #ebe6e1);
-  border-radius: 8px;
-  padding: 0 12px 12px;
+  border-radius: 10px;
+  padding: 0 14px 14px;
+  background: var(--hub-surface-muted, #faf8f6);
 }
 
 .hub-checkout-drawer__advanced-summary {
@@ -5663,6 +5664,24 @@ h3.hub-caixa-page__card-title {
   padding: 12px 0;
   color: var(--hub-text-secondary, #6b6560);
   list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hub-checkout-drawer__advanced-summary::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.hub-checkout-drawer__advanced[open] > .hub-checkout-drawer__advanced-summary::before {
+  transform: rotate(45deg);
 }
 
 .hub-checkout-drawer__advanced-summary::-webkit-details-marker {
@@ -5672,7 +5691,118 @@ h3.hub-caixa-page__card-title {
 .hub-checkout-drawer__advanced-body {
   display: flex;
   flex-direction: column;
+  gap: 14px;
+  padding-top: 2px;
+}
+
+.hub-checkout-drawer__choice-group {
+  border: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hub-checkout-drawer__choice-group > .hub-clientes__label {
+  margin-bottom: 0;
+}
+
+.hub-checkout-drawer__choice {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  padding: 11px 12px;
+  border: 1px solid var(--hub-border-subtle, #ebe6e1);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--hub-text, #3d3834);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.hub-checkout-drawer__choice:hover:not(.hub-checkout-drawer__choice--selected) {
+  background: #fff;
+  border-color: #d9cdc5;
+}
+
+.hub-checkout-drawer__choice--selected {
+  border-color: var(--hub-brand, #c45c26);
+  background: #fff7f3;
+  box-shadow: inset 0 0 0 1px var(--hub-brand, #c45c26);
+}
+
+.hub-checkout-drawer__choice:focus-within {
+  outline: 2px solid var(--hub-brand, #c45c26);
+  outline-offset: 2px;
+}
+
+.hub-checkout-drawer__choice input {
+  position: absolute;
+  opacity: 0;
+  width: 1px;
+  height: 1px;
+  margin: 0;
+  pointer-events: none;
+}
+
+.hub-checkout-drawer__choice-radio {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1.5px solid #cbb8b0;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.hub-checkout-drawer__choice--selected .hub-checkout-drawer__choice-radio {
+  border-color: var(--hub-brand, #c45c26);
+  background:
+    radial-gradient(circle at center, var(--hub-brand, #c45c26) 0 4px, #fff 5px);
+}
+
+.hub-checkout-drawer__choice-label {
+  flex: 1;
+  min-width: 0;
+  line-height: 1.35;
+}
+
+.hub-checkout-drawer__charge-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hub-checkout-drawer__charge-summary-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hub-checkout-drawer__charge-summary-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
   gap: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fff;
+  border: 1px solid var(--hub-border-subtle, #ebe6e1);
+  font-size: 13px;
+  color: var(--hub-text-secondary, #6b6560);
+}
+
+.hub-checkout-drawer__charge-summary-row strong {
+  color: var(--hub-text, #3d3834);
+  font-variant-numeric: tabular-nums;
 }
 
 /* —— Comanda: serviços e produtos —— */

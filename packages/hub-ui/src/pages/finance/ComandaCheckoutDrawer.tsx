@@ -137,6 +137,7 @@ export function ComandaCheckoutDrawer({
     receivableIds: string[];
   } | null>(null);
   const [shareBusy, setShareBusy] = useState(false);
+  const [successActionError, setSuccessActionError] = useState<string | null>(null);
   /** Uma chave por linha de pagamento nesta abertura do drawer (retry ≠ nova intenção). */
   const paymentIdempotencyKeysRef = useRef<Record<string, string>>({});
 
@@ -204,6 +205,7 @@ export function ComandaCheckoutDrawer({
       setDetail(null);
       setError(null);
       setSuccessState(null);
+      setSuccessActionError(null);
       setReceivableDetail(null);
       setPaymentLines([]);
       paymentIdempotencyKeysRef.current = {};
@@ -701,8 +703,11 @@ export function ComandaCheckoutDrawer({
   const openSuccessCupom = async () => {
     if (!successState) return;
     setShareBusy(true);
+    setSuccessActionError(null);
     try {
       await openHubComandaCupomPdf(successState.comandaId, clinicId);
+    } catch (e: unknown) {
+      setSuccessActionError((e as Error)?.message || 'Erro ao abrir cupom');
     } finally {
       setShareBusy(false);
     }
@@ -841,6 +846,11 @@ export function ComandaCheckoutDrawer({
             {!guardianPhone ? (
               <p className="hub-checkout-drawer__success-hint">
                 Sem telefone no tutor — use o PDF ou copie a mensagem na ficha da comanda.
+              </p>
+            ) : null}
+            {successActionError ? (
+              <p className="hub-clientes__error" role="alert">
+                {successActionError}
               </p>
             ) : null}
           </section>
@@ -1058,25 +1068,31 @@ export function ComandaCheckoutDrawer({
                   <details className="hub-checkout-drawer__advanced">
                     <summary className="hub-checkout-drawer__advanced-summary">Opções avançadas</summary>
                     <div className="hub-checkout-drawer__advanced-body">
-                      <fieldset className="hub-finance-page__resolve-options">
+                      <fieldset className="hub-checkout-drawer__choice-group">
                         <legend className="hub-clientes__label">Agrupamento</legend>
-                        <label className="hub-finance-page__resolve-option">
+                        <label
+                          className={`hub-checkout-drawer__choice${grouping === 'all' ? ' hub-checkout-drawer__choice--selected' : ''}`}
+                        >
                           <input
                             type="radio"
                             name="checkout-grp"
                             checked={grouping === 'all'}
                             onChange={() => setGrouping('all')}
                           />
-                          Tudo em uma cobrança
+                          <span className="hub-checkout-drawer__choice-radio" aria-hidden />
+                          <span className="hub-checkout-drawer__choice-label">Tudo em uma cobrança</span>
                         </label>
-                        <label className="hub-finance-page__resolve-option">
+                        <label
+                          className={`hub-checkout-drawer__choice${grouping === 'by_pet' ? ' hub-checkout-drawer__choice--selected' : ''}`}
+                        >
                           <input
                             type="radio"
                             name="checkout-grp"
                             checked={grouping === 'by_pet'}
                             onChange={() => setGrouping('by_pet')}
                           />
-                          Separar por pet
+                          <span className="hub-checkout-drawer__choice-radio" aria-hidden />
+                          <span className="hub-checkout-drawer__choice-label">Separar por pet</span>
                         </label>
                         {grouping === 'by_pet' && (
                           <div className="hub-clientes__field">
@@ -1097,35 +1113,45 @@ export function ComandaCheckoutDrawer({
                       </fieldset>
 
                       {action === 'receive_now' && (
-                        <fieldset className="hub-finance-page__resolve-options">
+                        <fieldset className="hub-checkout-drawer__choice-group">
                           <legend className="hub-clientes__label">Momento do pagamento</legend>
-                          <label className="hub-finance-page__resolve-option">
+                          <label
+                            className={`hub-checkout-drawer__choice${paymentTiming === 'on_checkout' ? ' hub-checkout-drawer__choice--selected' : ''}`}
+                          >
                             <input
                               type="radio"
                               name="checkout-pt"
                               checked={paymentTiming === 'on_checkout'}
                               onChange={() => setPaymentTiming('on_checkout')}
                             />
-                            No fecho (após o serviço)
+                            <span className="hub-checkout-drawer__choice-radio" aria-hidden />
+                            <span className="hub-checkout-drawer__choice-label">
+                              No fechamento (após o serviço)
+                            </span>
                           </label>
-                          <label className="hub-finance-page__resolve-option">
+                          <label
+                            className={`hub-checkout-drawer__choice${paymentTiming === 'advance' ? ' hub-checkout-drawer__choice--selected' : ''}`}
+                          >
                             <input
                               type="radio"
                               name="checkout-pt"
                               checked={paymentTiming === 'advance'}
                               onChange={() => setPaymentTiming('advance')}
                             />
-                            Antecipado (antes de concluir o serviço)
+                            <span className="hub-checkout-drawer__choice-radio" aria-hidden />
+                            <span className="hub-checkout-drawer__choice-label">
+                              Antecipado (antes de concluir o serviço)
+                            </span>
                           </label>
                         </fieldset>
                       )}
 
                       {groupTotals.length > 0 && (
-                        <div>
+                        <div className="hub-checkout-drawer__charge-summary">
                           <p className="hub-clientes__label">Resumo por cobrança</p>
-                          <ul className="hub-finance-page__item-list">
+                          <ul className="hub-checkout-drawer__charge-summary-list">
                             {groupTotals.map((g) => (
-                              <li key={g.groupIndex} className="hub-finance-page__item-list-row">
+                              <li key={g.groupIndex} className="hub-checkout-drawer__charge-summary-row">
                                 <span>{g.label}</span>
                                 <strong>{formatBrl(g.total)}</strong>
                               </li>
