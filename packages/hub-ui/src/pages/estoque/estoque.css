@@ -150,6 +150,18 @@
   line-height: 1.4;
 }
 
+.hub-estoque-drawer__btn-delete {
+  margin-right: auto;
+  color: #b91c1c;
+  border-color: #fecaca;
+  background: #fff;
+}
+
+.hub-estoque-drawer__btn-delete:hover:not(:disabled) {
+  background: #fef2f2;
+  border-color: #fca5a5;
+}
+
 .hub-estoque-drawer__row {
   display: grid;
   grid-template-columns: 1fr 1fr;

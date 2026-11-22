@@ -297,6 +297,8 @@ export const hubInventoryApi = {
         expiry_alert_policy?: HubExpiryAlertPolicy;
         content_qty?: number | null;
         content_unit?: string | null;
+        /** Saldo desejado; o backend gera ajuste de entrada/saída. */
+        qty_on_hand?: number;
         active?: boolean;
         archived?: boolean;
       }

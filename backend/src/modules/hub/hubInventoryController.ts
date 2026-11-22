@@ -34,13 +34,31 @@ export function movementSign(t: string): number {
   return 0;
 }
 
+/** PostgREST/Supabase limita a 1000 linhas por request; paginar evita saldo zerado. */
+const MOVEMENT_PAGE_SIZE = 1000;
+
 async function fetchMovementRows(clinicId: string) {
-  const { data, error } = await supabaseAdmin
-    .from('hub_stock_movements')
-    .select('item_id, lot_id, movement_type, qty')
-    .eq('clinic_id', clinicId);
-  if (error) throw error;
-  return data ?? [];
+  const rows: Array<{
+    item_id: string;
+    lot_id: string | null;
+    movement_type: string;
+    qty: number | string;
+  }> = [];
+  for (let from = 0; ; from += MOVEMENT_PAGE_SIZE) {
+    const to = from + MOVEMENT_PAGE_SIZE - 1;
+    const { data, error } = await supabaseAdmin
+      .from('hub_stock_movements')
+      .select('item_id, lot_id, movement_type, qty')
+      .eq('clinic_id', clinicId)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(from, to);
+    if (error) throw error;
+    const chunk = data ?? [];
+    rows.push(...chunk);
+    if (chunk.length < MOVEMENT_PAGE_SIZE) break;
+  }
+  return rows;
 }
 
 export async function computeBalances(clinicId: string) {
@@ -83,6 +101,166 @@ async function assertClinicLot(clinicId: string, lotId: string) {
     .maybeSingle();
   if (error || !data || data.clinic_id !== clinicId) return null;
   return data;
+}
+
+function todayYmdLocal(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+/**
+ * Ajusta o saldo do item até `targetQty` via adjustment_in / adjustment_out
+ * (entrada no lote mais recente; saída FIFO por validade).
+ */
+async function applyItemQtyOnHandTarget(opts: {
+  clinicId: string;
+  itemId: string;
+  targetQty: number;
+  userId: string | null;
+  itemName: string;
+  minQty: number;
+}): Promise<{ ok: true; qtyBefore: number; qtyAfter: number } | { ok: false; status: number; error: string }> {
+  const { byItem, byLot } = await computeBalances(opts.clinicId);
+  const qtyBefore = roundStockQty(byItem.get(opts.itemId) ?? 0);
+  const qtyAfter = roundStockQty(opts.targetQty);
+  if (qtyAfter < 0) return { ok: false, status: 400, error: 'Quantidade em estoque não pode ser negativa' };
+  const delta = roundStockQty(qtyAfter - qtyBefore);
+  if (delta === 0) return { ok: true, qtyBefore, qtyAfter };
+
+  const notes = 'Ajuste de quantidade no cadastro do item';
+
+  if (delta > 0) {
+    const { data: lots, error: lotsErr } = await supabaseAdmin
+      .from('hub_inventory_lots')
+      .select('id, received_at')
+      .eq('clinic_id', opts.clinicId)
+      .eq('item_id', opts.itemId)
+      .order('received_at', { ascending: false });
+    if (lotsErr) {
+      console.error('[hub_inventory] set qty list lots', lotsErr);
+      return { ok: false, status: 500, error: 'Erro ao ajustar quantidade' };
+    }
+
+    let lotId: string | null = null;
+    for (const l of lots ?? []) {
+      if ((byLot.get(l.id as string) ?? 0) > 0) {
+        lotId = l.id as string;
+        break;
+      }
+    }
+    if (!lotId && (lots?.length ?? 0) > 0) lotId = lots![0].id as string;
+
+    if (!lotId) {
+      const { data: lot, error: lotErr } = await supabaseAdmin
+        .from('hub_inventory_lots')
+        .insert([
+          {
+            clinic_id: opts.clinicId,
+            item_id: opts.itemId,
+            lot_code: null,
+            expiry_date: null,
+            received_at: todayYmdLocal(),
+          },
+        ])
+        .select('id')
+        .single();
+      if (lotErr || !lot) {
+        console.error('[hub_inventory] set qty create lot', lotErr);
+        return { ok: false, status: 500, error: 'Erro ao criar lote para ajuste' };
+      }
+      lotId = lot.id as string;
+    }
+
+    const { error: movErr } = await supabaseAdmin.from('hub_stock_movements').insert([
+      {
+        clinic_id: opts.clinicId,
+        item_id: opts.itemId,
+        lot_id: lotId,
+        movement_type: 'adjustment_in',
+        qty: delta,
+        unit_cost: null,
+        notes,
+        reference_type: 'item_qty_edit',
+        reference_id: opts.itemId,
+        created_by: opts.userId,
+      },
+    ]);
+    if (movErr) {
+      console.error('[hub_inventory] set qty adjustment_in', movErr);
+      return { ok: false, status: 500, error: 'Erro ao registrar ajuste de entrada' };
+    }
+    return { ok: true, qtyBefore, qtyAfter };
+  }
+
+  let remaining = roundStockQty(Math.abs(delta));
+  const { data: lots, error: lotsErr } = await supabaseAdmin
+    .from('hub_inventory_lots')
+    .select('id, expiry_date, received_at')
+    .eq('clinic_id', opts.clinicId)
+    .eq('item_id', opts.itemId)
+    .order('expiry_date', { ascending: true, nullsFirst: false })
+    .order('received_at', { ascending: true });
+  if (lotsErr) {
+    console.error('[hub_inventory] set qty list lots out', lotsErr);
+    return { ok: false, status: 500, error: 'Erro ao ajustar quantidade' };
+  }
+
+  const withStock = (lots ?? [])
+    .map((l) => ({
+      id: l.id as string,
+      bal: roundStockQty(byLot.get(l.id as string) ?? 0),
+    }))
+    .filter((l) => l.bal > 0);
+
+  const movements: Array<Record<string, unknown>> = [];
+  for (const lot of withStock) {
+    if (remaining <= 0) break;
+    const take = roundStockQty(Math.min(lot.bal, remaining));
+    if (take <= 0) continue;
+    movements.push({
+      clinic_id: opts.clinicId,
+      item_id: opts.itemId,
+      lot_id: lot.id,
+      movement_type: 'adjustment_out',
+      qty: take,
+      unit_cost: null,
+      notes,
+      reference_type: 'item_qty_edit',
+      reference_id: opts.itemId,
+      created_by: opts.userId,
+    });
+    remaining = roundStockQty(remaining - take);
+  }
+
+  if (remaining > 0) {
+    return {
+      ok: false,
+      status: 400,
+      error: `Quantidade insuficiente nos lotes para reduzir o estoque (faltam ${remaining})`,
+    };
+  }
+
+  if (movements.length) {
+    const { error: movErr } = await supabaseAdmin.from('hub_stock_movements').insert(movements);
+    if (movErr) {
+      console.error('[hub_inventory] set qty adjustment_out', movErr);
+      return { ok: false, status: 500, error: 'Erro ao registrar ajuste de saída' };
+    }
+  }
+
+  void notifyLowStockIfCrossed({
+    clinicId: opts.clinicId,
+    itemId: opts.itemId,
+    itemName: opts.itemName,
+    minQty: opts.minQty,
+    qtyBefore,
+    qtyAfter,
+  });
+
+  return { ok: true, qtyBefore, qtyAfter };
 }
 
 // --- Suppliers ---
@@ -548,6 +726,8 @@ const patchItemSchema = z
       z.union([z.coerce.number().finite().positive(), z.null()]).optional(),
     ),
     content_unit: z.string().trim().max(64).optional().nullable(),
+    /** Saldo desejado; gera adjustment_in/out automaticamente. */
+    qty_on_hand: z.coerce.number().finite().min(0).optional(),
     active: z.boolean().optional(),
     archived: z.boolean().optional(),
   })
@@ -615,22 +795,56 @@ export const patchHubInventoryItem = async (req: Request, res: Response) => {
       if (content.content_qty != null) patch.allow_fractional = true;
     }
 
-    if (Object.keys(patch).length === 0) return res.status(400).json({ error: 'Nada para atualizar' });
-
-    const { data, error } = await supabaseAdmin
-      .from('hub_inventory_items')
-      .update(patch)
-      .eq('id', idParsed.data)
-      .eq('clinic_id', d.clinic_id)
-      .select(ITEM_SELECT)
-      .single();
-    if (error) {
-      if (error.code === '23505') return res.status(409).json({ error: 'EAN ou SKU da loja já existe nesta clínica' });
-      console.error('[hub_inventory] patch item', error);
-      return res.status(500).json({ error: 'Erro ao atualizar item' });
+    const wantsQtyAdjust = d.qty_on_hand !== undefined;
+    if (Object.keys(patch).length === 0 && !wantsQtyAdjust) {
+      return res.status(400).json({ error: 'Nada para atualizar' });
     }
+
+    let data = existing as Record<string, unknown>;
+    if (Object.keys(patch).length > 0) {
+      const { data: updated, error } = await supabaseAdmin
+        .from('hub_inventory_items')
+        .update(patch)
+        .eq('id', idParsed.data)
+        .eq('clinic_id', d.clinic_id)
+        .select(ITEM_SELECT)
+        .single();
+      if (error) {
+        if (error.code === '23505') return res.status(409).json({ error: 'EAN ou SKU da loja já existe nesta clínica' });
+        console.error('[hub_inventory] patch item', error);
+        return res.status(500).json({ error: 'Erro ao atualizar item' });
+      }
+      data = updated as Record<string, unknown>;
+    } else {
+      const { data: current, error } = await supabaseAdmin
+        .from('hub_inventory_items')
+        .select(ITEM_SELECT)
+        .eq('id', idParsed.data)
+        .eq('clinic_id', d.clinic_id)
+        .single();
+      if (error || !current) {
+        console.error('[hub_inventory] patch item reload', error);
+        return res.status(500).json({ error: 'Erro ao atualizar item' });
+      }
+      data = current as Record<string, unknown>;
+    }
+
+    if (wantsQtyAdjust) {
+      const adj = await applyItemQtyOnHandTarget({
+        clinicId: d.clinic_id,
+        itemId: idParsed.data,
+        targetQty: d.qty_on_hand!,
+        userId: req.user?.id ?? null,
+        itemName: String(data.name ?? existing.name ?? 'Item'),
+        minQty: Number(
+          d.min_stock_qty !== undefined ? d.min_stock_qty : (data.min_stock_qty ?? existing.min_stock_qty ?? 0),
+        ),
+      });
+      if (!adj.ok) return res.status(adj.status).json({ error: adj.error });
+    }
+
     const { byItem } = await computeBalances(d.clinic_id);
-    return res.json({ item: { ...data, qty_on_hand: byItem.get(data!.id as string) ?? 0 } });
+    return res.json({ item: { ...data, qty_on_hand: byItem.get(data.id as string) ?? 0 } });
   } catch (e) {
     console.error('[hub_inventory] patch item', e);
     return res.status(500).json({ error: 'Erro interno' });

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useSearchParams } from 'react-router-dom';
-import { AlertTriangle, Archive, Package, Pencil, Plus, Search } from 'lucide-react';
+import { AlertTriangle, Package, Pencil, Plus, Search, Trash2 } from 'lucide-react';
 import { getStoredClinicId, useAuth, usePermissions, type AppRole } from '@petimi/web-core';
 import {
   hubInventoryApi,
@@ -69,6 +69,14 @@ function isLikelyUuid(s: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s.trim());
 }
 
+function todayLocalYmd(): string {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 type PanelMode = 'none' | 'create' | 'edit';
 
 const emptyForm = (itemKind: InventoryFormState['item_kind'] = 'product'): InventoryFormState => ({
@@ -93,10 +101,11 @@ const emptyForm = (itemKind: InventoryFormState['item_kind'] = 'product'): Inven
   expiry_alert_policy: 'none',
   content_qty: '',
   content_unit: '',
-  initial_received_at: new Date().toISOString().slice(0, 10),
+  initial_received_at: todayLocalYmd(),
   initial_expiry_date: '',
   initial_qty: '',
   initial_lot_code: '',
+  qty_on_hand: '',
 });
 
 const fromRow = (t: HubInventoryItem): InventoryFormState => ({
@@ -121,10 +130,11 @@ const fromRow = (t: HubInventoryItem): InventoryFormState => ({
   expiry_alert_policy: (t.expiry_alert_policy as HubExpiryAlertPolicy) || 'none',
   content_qty: t.content_qty != null ? String(t.content_qty) : '',
   content_unit: t.content_unit ?? '',
-  initial_received_at: new Date().toISOString().slice(0, 10),
+  initial_received_at: todayLocalYmd(),
   initial_expiry_date: '',
   initial_qty: '',
   initial_lot_code: '',
+  qty_on_hand: String(t.qty_on_hand ?? 0),
 });
 
 const KIND_FILTERS: { id: EstoqueKindFilter; label: string }[] = [
@@ -461,25 +471,36 @@ const HubEstoqueItemsPage: React.FC = () => {
       qty: number;
       lot_code?: string | null;
     } | null = null;
+    let qtyOnHand: number | undefined;
     if (panelMode === 'create') {
       const qStr = form.initial_qty.trim();
-      if (qStr) {
-        const q = Number(String(qStr).replace(',', '.'));
-        if (!Number.isFinite(q) || q <= 0) {
-          showError('Quantidade do lote inicial deve ser maior que zero.');
-          return;
-        }
-        if (!form.initial_received_at) {
-          showError('Data de entrada do lote inicial é obrigatória quando há quantidade.');
-          return;
-        }
-        initial_lot = {
-          received_at: form.initial_received_at,
-          expiry_date: form.initial_expiry_date.trim() || null,
-          qty: q,
-          lot_code: form.initial_lot_code.trim() || null,
-        };
+      if (!qStr) {
+        showError('Informe a quantidade inicial. Sem ela o item fica com estoque 0.');
+        return;
       }
+      const q = Number(String(qStr).replace(',', '.'));
+      if (!Number.isFinite(q) || q <= 0) {
+        showError('Quantidade inicial deve ser maior que zero.');
+        return;
+      }
+      if (!form.initial_received_at) {
+        showError('Data de entrada é obrigatória para registrar a quantidade inicial.');
+        return;
+      }
+      initial_lot = {
+        received_at: form.initial_received_at,
+        expiry_date: form.initial_expiry_date.trim() || null,
+        qty: q,
+        lot_code: form.initial_lot_code.trim() || null,
+      };
+    } else if (panelMode === 'edit') {
+      const qtyStr = form.qty_on_hand.trim();
+      const q = Number(String(qtyStr).replace(',', '.'));
+      if (!Number.isFinite(q) || q < 0) {
+        showError('Quantidade em estoque inválida.');
+        return;
+      }
+      qtyOnHand = q;
     }
 
     setSaving(true);
@@ -511,7 +532,7 @@ const HubEstoqueItemsPage: React.FC = () => {
           initial_lot,
         });
         showSuccess('Produto criado');
-      } else if (panelMode === 'edit' && editingId) {
+      } else if (panelMode === 'edit' && editingId && qtyOnHand !== undefined) {
         await hubInventoryApi.items.patch(editingId, {
           clinic_id: clinicId,
           ean: form.ean.trim() || null,
@@ -534,6 +555,7 @@ const HubEstoqueItemsPage: React.FC = () => {
           expiry_alert_policy: form.expiry_alert_policy,
           content_qty,
           content_unit,
+          qty_on_hand: qtyOnHand,
         });
         showSuccess('Produto atualizado');
       }
@@ -547,18 +569,22 @@ const HubEstoqueItemsPage: React.FC = () => {
     }
   };
 
-  const archiveItem = (t: HubInventoryItem) => {
+  const deleteItem = (t: HubInventoryItem) => {
     if (!clinicId || !canWrite) return;
-    showConfirm(`Arquivar "${t.name}"?`, async () => {
-      try {
-        await hubInventoryApi.items.patch(t.id, { clinic_id: clinicId, archived: true });
-        showSuccess('Arquivado');
-        await loadItems();
-        if (editingId === t.id) closePanel();
-      } catch (e: unknown) {
-        showError((e as Error)?.message || 'Erro');
-      }
-    }, 'Arquivar');
+    showConfirm(
+      `Excluir "${t.name}" do estoque? O item deixa de aparecer na lista (pode ser recuperado pelo suporte se necessário).`,
+      async () => {
+        try {
+          await hubInventoryApi.items.patch(t.id, { clinic_id: clinicId, archived: true });
+          showSuccess('Item excluído');
+          await loadItems();
+          if (editingId === t.id) closePanel();
+        } catch (e: unknown) {
+          showError((e as Error)?.message || 'Erro ao excluir');
+        }
+      },
+      'Excluir',
+    );
   };
 
   if (!user) return <Navigate to="/login" replace />;
@@ -809,12 +835,12 @@ const HubEstoqueItemsPage: React.FC = () => {
                                 </button>
                                 <button
                                   type="button"
-                                  className="hub-servicos__icon-btn"
-                                  title="Arquivar"
-                                  aria-label="Arquivar item"
-                                  onClick={() => archiveItem(t)}
+                                  className="hub-servicos__icon-btn hub-servicos__icon-btn--danger"
+                                  title="Excluir"
+                                  aria-label="Excluir item"
+                                  onClick={() => deleteItem(t)}
                                 >
-                                  <Archive size={18} strokeWidth={2} />
+                                  <Trash2 size={18} strokeWidth={2} />
                                 </button>
                               </div>
                             </td>
@@ -898,6 +924,13 @@ const HubEstoqueItemsPage: React.FC = () => {
             ? () => {
                 setMovementItemId(editingId);
                 setMovementDrawerOpen(true);
+              }
+            : undefined
+        }
+        onDelete={
+          editingItem
+            ? () => {
+                deleteItem(editingItem);
               }
             : undefined
         }

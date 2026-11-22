@@ -46,6 +46,8 @@ export type InventoryFormState = {
   initial_expiry_date: string;
   initial_qty: string;
   initial_lot_code: string;
+  /** Quantidade em estoque (edição); no create use initial_qty. */
+  qty_on_hand: string;
 };
 
 const KIND_OPTIONS: { id: HubItemKind; label: string }[] = [
@@ -112,6 +114,8 @@ export type HubEstoqueItemDrawerProps = {
   onSubmit: (e: React.FormEvent) => void;
   /** Abre o drawer de entrada/ajuste para o item em edição. */
   onRegisterMovement?: () => void;
+  /** Exclui (arquiva) o item em edição. */
+  onDelete?: () => void;
 };
 
 export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
@@ -132,6 +136,7 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
   onSupplierChange,
   onSubmit,
   onRegisterMovement,
+  onDelete,
 }) => {
   const activeKind = form.item_kind || itemKind;
   const title = mode === 'create' ? kindNewLabel(activeKind) : 'Editar item';
@@ -160,6 +165,16 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
       contentKey={mode === 'edit' ? editingItem?.id ?? 'edit' : 'create'}
       footer={
         <div className="hub-finance-page__drawer-footer">
+          {mode === 'edit' && canWrite && onDelete ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-estoque-drawer__btn-delete"
+              disabled={saving}
+              onClick={onDelete}
+            >
+              Excluir
+            </button>
+          ) : null}
           <HubCancelButton onClick={onClose} disabled={saving} />
           {mode === 'edit' && canWrite && onRegisterMovement ? (
             <button
@@ -515,101 +530,161 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
             </div>
           </section>
 
-          <section className="hub-estoque-drawer__section">
+          <section
+            className={`hub-estoque-drawer__section${mode === 'create' ? ' hub-estoque-drawer__section--lot' : ''}`}
+          >
             <h3 className="hub-estoque-drawer__section-title">Estoque</h3>
-            <div className="hub-estoque-drawer__row">
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-min">
-                  Estoque mínimo
-                </label>
-                <input
-                  id="inv-min"
-                  className="hub-clientes__input"
-                  value={form.min_stock_qty}
-                  onChange={(e) => setForm((f) => ({ ...f, min_stock_qty: e.target.value }))}
-                />
-              </div>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-alert">
-                  Alerta de vencimento
-                </label>
-                <HubSearchableCombobox
-                  id="inv-alert"
-                  className="hub-combobox--clientes"
-                  options={ALERT_OPTIONS}
-                  value={form.expiry_alert_policy}
-                  onChange={(v) =>
-                    setForm((f) => ({ ...f, expiry_alert_policy: (v || 'none') as HubExpiryAlertPolicy }))
-                  }
-                  placeholder="Selecionar alerta"
-                  searchPlaceholder="Buscar política…"
-                  clearable={false}
-                  ariaLabel="Alerta de vencimento"
-                />
-              </div>
-            </div>
-          </section>
-
-          {mode === 'create' && (
-            <section className="hub-estoque-drawer__section hub-estoque-drawer__section--lot">
-              <h3 className="hub-estoque-drawer__section-title">Lote inicial</h3>
-              <p className="hub-estoque-drawer__section-lead">
-                Opcional. Preencha a quantidade para já entrar com estoque.
-              </p>
-              <div className="hub-estoque-drawer__row">
+            {mode === 'create' ? (
+              <>
+                <p className="hub-estoque-drawer__section-lead">
+                  A quantidade abaixo é o saldo que o item terá ao salvar. Estoque mínimo só dispara alerta.
+                </p>
+                <div className="hub-estoque-drawer__row">
+                  <div className="hub-clientes__field">
+                    <label className="hub-clientes__label" htmlFor="inv-iqty">
+                      Quantidade inicial *
+                    </label>
+                    <input
+                      id="inv-iqty"
+                      className="hub-clientes__input"
+                      inputMode="decimal"
+                      value={form.initial_qty}
+                      onChange={(e) => setForm((f) => ({ ...f, initial_qty: e.target.value }))}
+                      placeholder="Ex.: 10"
+                    />
+                  </div>
+                  <div className="hub-clientes__field">
+                    <label className="hub-clientes__label" htmlFor="inv-min">
+                      Estoque mínimo (alerta)
+                    </label>
+                    <input
+                      id="inv-min"
+                      className="hub-clientes__input"
+                      inputMode="decimal"
+                      value={form.min_stock_qty}
+                      onChange={(e) => setForm((f) => ({ ...f, min_stock_qty: e.target.value }))}
+                    />
+                  </div>
+                </div>
+                <div className="hub-estoque-drawer__row">
+                  <div className="hub-clientes__field">
+                    <label className="hub-clientes__label" htmlFor="inv-recv">
+                      Data de entrada
+                    </label>
+                    <HubDateField
+                      id="inv-recv"
+                      valueIso={form.initial_received_at}
+                      onChangeIso={(iso) => {
+                        if (iso) {
+                          setForm((f) => ({ ...f, initial_received_at: iso }));
+                          return;
+                        }
+                        const d = new Date();
+                        const ymd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+                        setForm((f) => ({ ...f, initial_received_at: ymd }));
+                      }}
+                      showTodayButton={false}
+                    />
+                  </div>
+                  <div className="hub-clientes__field">
+                    <label className="hub-clientes__label" htmlFor="inv-exp">
+                      Data de validade
+                    </label>
+                    <HubDateField
+                      id="inv-exp"
+                      valueIso={form.initial_expiry_date}
+                      onChangeIso={(iso) => setForm((f) => ({ ...f, initial_expiry_date: iso }))}
+                      showTodayButton={false}
+                    />
+                  </div>
+                </div>
+                <div className="hub-estoque-drawer__row">
+                  <div className="hub-clientes__field">
+                    <label className="hub-clientes__label" htmlFor="inv-lot">
+                      Número do lote
+                    </label>
+                    <input
+                      id="inv-lot"
+                      className="hub-clientes__input"
+                      value={form.initial_lot_code}
+                      onChange={(e) => setForm((f) => ({ ...f, initial_lot_code: e.target.value }))}
+                      placeholder="Opcional"
+                    />
+                  </div>
+                  <div className="hub-clientes__field">
+                    <label className="hub-clientes__label" htmlFor="inv-alert">
+                      Alerta de vencimento
+                    </label>
+                    <HubSearchableCombobox
+                      id="inv-alert"
+                      className="hub-combobox--clientes"
+                      options={ALERT_OPTIONS}
+                      value={form.expiry_alert_policy}
+                      onChange={(v) =>
+                        setForm((f) => ({ ...f, expiry_alert_policy: (v || 'none') as HubExpiryAlertPolicy }))
+                      }
+                      placeholder="Selecionar alerta"
+                      searchPlaceholder="Buscar política…"
+                      clearable={false}
+                      ariaLabel="Alerta de vencimento"
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="hub-estoque-drawer__section-lead">
+                  Altere a quantidade em estoque abaixo. A diferença vira um ajuste automático nos lotes.
+                </p>
+                <div className="hub-estoque-drawer__row">
+                  <div className="hub-clientes__field">
+                    <label className="hub-clientes__label" htmlFor="inv-qty-hand">
+                      Quantidade em estoque *
+                    </label>
+                    <input
+                      id="inv-qty-hand"
+                      className="hub-clientes__input"
+                      inputMode="decimal"
+                      required
+                      value={form.qty_on_hand}
+                      onChange={(e) => setForm((f) => ({ ...f, qty_on_hand: e.target.value }))}
+                      placeholder="Ex.: 10"
+                    />
+                  </div>
+                  <div className="hub-clientes__field">
+                    <label className="hub-clientes__label" htmlFor="inv-min">
+                      Estoque mínimo (alerta)
+                    </label>
+                    <input
+                      id="inv-min"
+                      className="hub-clientes__input"
+                      inputMode="decimal"
+                      value={form.min_stock_qty}
+                      onChange={(e) => setForm((f) => ({ ...f, min_stock_qty: e.target.value }))}
+                    />
+                  </div>
+                </div>
                 <div className="hub-clientes__field">
-                  <label className="hub-clientes__label" htmlFor="inv-recv">
-                    Data de entrada
+                  <label className="hub-clientes__label" htmlFor="inv-alert">
+                    Alerta de vencimento
                   </label>
-                  <HubDateField
-                    id="inv-recv"
-                    valueIso={form.initial_received_at}
-                    onChangeIso={(iso) =>
-                      setForm((f) => ({ ...f, initial_received_at: iso || new Date().toISOString().slice(0, 10) }))
+                  <HubSearchableCombobox
+                    id="inv-alert"
+                    className="hub-combobox--clientes"
+                    options={ALERT_OPTIONS}
+                    value={form.expiry_alert_policy}
+                    onChange={(v) =>
+                      setForm((f) => ({ ...f, expiry_alert_policy: (v || 'none') as HubExpiryAlertPolicy }))
                     }
-                    showTodayButton={false}
+                    placeholder="Selecionar alerta"
+                    searchPlaceholder="Buscar política…"
+                    clearable={false}
+                    ariaLabel="Alerta de vencimento"
                   />
                 </div>
-                <div className="hub-clientes__field">
-                  <label className="hub-clientes__label" htmlFor="inv-exp">
-                    Data de validade
-                  </label>
-                  <HubDateField
-                    id="inv-exp"
-                    valueIso={form.initial_expiry_date}
-                    onChangeIso={(iso) => setForm((f) => ({ ...f, initial_expiry_date: iso }))}
-                    showTodayButton={false}
-                  />
-                </div>
-              </div>
-              <div className="hub-estoque-drawer__row">
-                <div className="hub-clientes__field">
-                  <label className="hub-clientes__label" htmlFor="inv-iqty">
-                    Quantidade
-                  </label>
-                  <input
-                    id="inv-iqty"
-                    className="hub-clientes__input"
-                    value={form.initial_qty}
-                    onChange={(e) => setForm((f) => ({ ...f, initial_qty: e.target.value }))}
-                    placeholder="Deixe vazio para cadastrar sem estoque"
-                  />
-                </div>
-                <div className="hub-clientes__field">
-                  <label className="hub-clientes__label" htmlFor="inv-lot">
-                    Número do lote
-                  </label>
-                  <input
-                    id="inv-lot"
-                    className="hub-clientes__input"
-                    value={form.initial_lot_code}
-                    onChange={(e) => setForm((f) => ({ ...f, initial_lot_code: e.target.value }))}
-                    placeholder="Opcional"
-                  />
-                </div>
-              </div>
-            </section>
-          )}
+              </>
+            )}
+          </section>
         </form>
       </div>
     </HubSidePanel>
