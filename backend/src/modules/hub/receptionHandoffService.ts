@@ -15,6 +15,7 @@ import {
   type ReceptionContext,
   type StoredHandoff,
 } from './receptionCustody';
+import { inferPickupLegDirection } from './pickupLegDirection';
 
 const CLINICAL_GROUPS = new Set(['clinica', 'internacao', 'cirurgia']);
 const GROOMING_GROUP = 'banho_tosa';
@@ -27,11 +28,62 @@ type ApptRow = {
   status: string;
   appointment_kind: string | null;
   starts_at: string | null;
+  ends_at?: string | null;
   parent_appointment_id: string | null;
   visit_group_id?: string | null;
   hub_service_type_id: string | null;
   deleted_at?: string | null;
 };
+
+function buildCustodyLegs(
+  appointments: ApptRow[],
+  stopByAppt: Map<string, Record<string, unknown>>,
+  driverByRoute: Map<string, string | null>,
+): CustodySnapshot['legs'] {
+  const pickupLegs = appointments.filter(
+    (a) => a.appointment_kind === 'pickup_route' && a.parent_appointment_id && a.status !== 'cancelled',
+  );
+  const siblingStartsByParent = new Map<string, string[]>();
+  for (const a of pickupLegs) {
+    const parentId = a.parent_appointment_id as string;
+    const list = siblingStartsByParent.get(parentId) ?? [];
+    if (a.starts_at) list.push(a.starts_at);
+    siblingStartsByParent.set(parentId, list);
+  }
+  const parentStartsById = new Map<string, string | null>();
+  for (const a of appointments) {
+    if (a.appointment_kind === 'pickup_route') continue;
+    parentStartsById.set(a.id, a.starts_at);
+  }
+
+  return appointments
+    .filter((a) => a.appointment_kind === 'pickup_route' && a.parent_appointment_id)
+    .map((a) => {
+      const stop = stopByAppt.get(a.id);
+      const routeId = (stop?.hub_pickup_route_id as string | null) ?? null;
+      const parentId = a.parent_appointment_id as string;
+      const explicit = (stop?.direction as string | null) ?? null;
+      const direction = inferPickupLegDirection({
+        explicitDirection: explicit,
+        legStartsAt: a.starts_at,
+        siblingLegStartsAts: siblingStartsByParent.get(parentId) ?? [],
+        parentStartsAt: parentStartsById.get(parentId) ?? null,
+      });
+      return {
+        parent_appointment_id: a.parent_appointment_id,
+        appointment_status: a.status,
+        direction,
+        stop_status: (stop?.status as string | null) ?? null,
+        route_id: routeId,
+        driver_id: routeId ? driverByRoute.get(routeId) ?? null : null,
+        boarded_at: (stop?.boarded_at as string | null) ?? null,
+        boarded_by_staff_id: (stop?.boarded_by_staff_id as string | null) ?? null,
+        boarded_source: boardingSourceOf(stop),
+        boarded_late: Boolean(stop?.boarded_late),
+        failure_outcome: failureOutcomeOf(stop),
+      };
+    });
+}
 
 /** Pet já tem destino operacional no dia (não só leva e traz / perna de rota). */
 function petHasDestinationService(
@@ -266,7 +318,7 @@ async function loadSnapshot(clinicId: string, petId: string, dayYmd: string): Pr
   const { data: apptRows, error: apptErr } = await supabaseAdmin
     .from('hub_appointments')
     .select(
-      'id, unit_id, guardian_id, pet_id, status, appointment_kind, starts_at, parent_appointment_id, visit_group_id, hub_service_type_id',
+      'id, unit_id, guardian_id, pet_id, status, appointment_kind, starts_at, ends_at, parent_appointment_id, visit_group_id, hub_service_type_id',
     )
     .eq('clinic_id', clinicId)
     .eq('pet_id', petId)
@@ -392,26 +444,7 @@ async function loadSnapshot(clinicId: string, petId: string, dayYmd: string): Pr
     if (apptId) stopByAppt.set(apptId, stop);
   }
 
-  const legs = appointments
-    .filter((a) => a.appointment_kind === 'pickup_route' && a.parent_appointment_id)
-    .map((a) => {
-      const stop = stopByAppt.get(a.id);
-      const routeId = (stop?.hub_pickup_route_id as string | null) ?? null;
-      const direction = (stop?.direction as 'pickup' | 'delivery' | 'clinic_return' | null) ?? null;
-      return {
-        parent_appointment_id: a.parent_appointment_id,
-        appointment_status: a.status,
-        direction,
-        stop_status: (stop?.status as string | null) ?? null,
-        route_id: routeId,
-        driver_id: routeId ? driverByRoute.get(routeId) ?? null : null,
-        boarded_at: (stop?.boarded_at as string | null) ?? null,
-        boarded_by_staff_id: (stop?.boarded_by_staff_id as string | null) ?? null,
-        boarded_source: boardingSourceOf(stop),
-        boarded_late: Boolean(stop?.boarded_late),
-        failure_outcome: failureOutcomeOf(stop),
-      };
-    });
+  const legs = buildCustodyLegs(appointments, stopByAppt, driverByRoute);
 
   const nowIso = new Date().toISOString();
   const failedReturns = buildFailedReturns(appointments, stops, await loadReturnStops(clinicId, stops), nowIso);
@@ -640,7 +673,7 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
       'hub_appointments',
       clinicId,
       petIds,
-      'id, unit_id, guardian_id, pet_id, status, appointment_kind, starts_at, parent_appointment_id, visit_group_id, hub_service_type_id',
+      'id, unit_id, guardian_id, pet_id, status, appointment_kind, starts_at, ends_at, parent_appointment_id, visit_group_id, hub_service_type_id',
       { activeOnly: true },
     ),
     selectByPetIds<{
@@ -838,25 +871,7 @@ export async function syncReceptionUnit(clinicId: string, unitId: string, dayYmd
 
   for (const petId of petIds) {
     const appointments = apptsByPet.get(petId) ?? [];
-    const legs = appointments
-      .filter((a) => a.appointment_kind === 'pickup_route' && a.parent_appointment_id)
-      .map((a) => {
-        const stop = stopByAppt.get(a.id);
-        const routeId = (stop?.hub_pickup_route_id as string | null) ?? null;
-        return {
-          parent_appointment_id: a.parent_appointment_id,
-          appointment_status: a.status,
-          direction: (stop?.direction as 'pickup' | 'delivery' | 'clinic_return' | null) ?? null,
-          stop_status: (stop?.status as string | null) ?? null,
-          route_id: routeId,
-          driver_id: routeId ? driverByRoute.get(routeId) ?? null : null,
-          boarded_at: (stop?.boarded_at as string | null) ?? null,
-          boarded_by_staff_id: (stop?.boarded_by_staff_id as string | null) ?? null,
-          boarded_source: boardingSourceOf(stop),
-          boarded_late: Boolean(stop?.boarded_late),
-          failure_outcome: failureOutcomeOf(stop),
-        };
-      });
+    const legs = buildCustodyLegs(appointments, stopByAppt, driverByRoute);
     await recoverBoardedEmbarqueHandoffs(clinicId, petId, legs);
     const apptIdSet = new Set(appointments.map((a) => a.id));
     const failedReturns = buildFailedReturns(

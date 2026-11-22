@@ -151,7 +151,11 @@ export function ComandaCheckoutDrawer({
           setDetail(d);
         } catch (openErr: unknown) {
           const msg = (openErr as Error)?.message ?? '';
-          if (msg.includes('Já existe comanda aberta')) {
+          if (
+            /Já existe comanda aberta/i.test(msg) ||
+            /uniq_hub_comandas_active_origin/i.test(msg) ||
+            (/duplicate key/i.test(msg) && /origin/i.test(msg))
+          ) {
             const d = await hubComandaApi.getComandaByOrigin({
               clinic_id: clinicId,
               origin_type: originType,

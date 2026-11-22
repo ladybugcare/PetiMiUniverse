@@ -265,6 +265,11 @@ export { maskTaxIdForList } from './utils/maskTaxId';
 export { buildWhatsappLink, normalizeBrPhone } from './utils/whatsappLink';
 export { formatBrPhoneInput, formatBrPhoneFromApi, formatBrPhoneDisplay, digitsOnlyBrPhone } from './utils/formatBrPhone';
 export {
+  allowsPublicServicePrice,
+  PUBLIC_PRICE_ALLOWED_SERVICE_GROUPS,
+  PUBLIC_PRICE_EVALUATION_NOTE,
+} from './utils/serviceTypeSlug';
+export {
   formatBrTaxIdInput,
   formatBrTaxIdFromApi,
   formatBrTaxIdDisplay,

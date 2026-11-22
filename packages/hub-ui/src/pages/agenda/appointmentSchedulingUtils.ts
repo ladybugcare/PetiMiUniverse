@@ -216,6 +216,34 @@ export function toEndIsoTs(dateYmd: string, startHm: string, endHm: string): str
   return toIsoTs(endDate, endHm);
 }
 
+/**
+ * Resolve `ends_at` de um atendimento de serviço (banho, clínica, etc.).
+ *
+ * `toEndIsoTs` avança o dia quando `endsHm <= startsHm` (meia-noite legítima ou Hotel).
+ * No formulário, mudar só o início e salvar no mesmo clique pode deixar `endsHm` obsoleto
+ * (ex.: 16:00 com fim ainda em 10:00) e gravar o fim no dia seguinte.
+ *
+ * Quando o overnight não foi pedido manualmente e há duração conhecida, recalcula
+ * `startsHm + durationMin` (ainda passando por `toEndIsoTs` para cruzar meia-noite de verdade).
+ */
+export function resolveServiceEndsAt(opts: {
+  dateYmd: string;
+  startsHm: string;
+  endsHm: string;
+  durationMin: number;
+  /** Hotel/creche multi-dia ou fim editado de propósito para overnight. */
+  allowOvernight: boolean;
+}): string {
+  const { dateYmd, startsHm, endsHm, durationMin, allowOvernight } = opts;
+  if (allowOvernight || durationMin <= 0) {
+    return toEndIsoTs(dateYmd, startsHm, endsHm);
+  }
+  if (hmToMinutes(endsHm) <= hmToMinutes(startsHm)) {
+    return toEndIsoTs(dateYmd, startsHm, addMinutes(startsHm, durationMin));
+  }
+  return toEndIsoTs(dateYmd, startsHm, endsHm);
+}
+
 /** Primeiro instante em dateYmd+HM que não seja anterior a anchorIso. */
 export function toIsoTsOnOrAfter(dateYmd: string, hm: string, anchorIso: string): string {
   let candDate = dateYmd;

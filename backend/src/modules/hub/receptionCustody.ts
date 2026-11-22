@@ -34,6 +34,8 @@ export type ReceptionContext = {
   preparing?: boolean;
   boarding_mode?: 'hotel' | 'daycare' | null;
   boarding_reservation_id?: string | null;
+  /** Volta L&T contratada sem direção/parada identificável — não liberar balcão. */
+  needs_return_config?: boolean;
 };
 
 export type DesiredHandoff = {
@@ -451,7 +453,8 @@ function planBoardingExits(
 
     if (stay.status !== 'ready_for_handoff') continue;
 
-    const outcome = deliveryOutcome(legsFor(snap, appointmentId));
+    const legs = legsFor(snap, appointmentId);
+    const outcome = deliveryOutcome(legs);
     if (outcome === 'delivered') {
       completeBoardingReservationIds.push(stay.id);
       continue;
@@ -459,8 +462,34 @@ function planBoardingExits(
     // Pet já com o motorista: sem tarefa de embarque; checkout só após entrega.
     if (outcome === 'boarded') continue;
 
-    const kind = outcome === 'needs_boarding' ? 'embarque' : 'retirada_balcao';
     const openedAt = stay.handoff_ready_at || snap.nowIso;
+    const liveLegs = legs.filter((l) => l.appointment_status !== 'cancelled');
+
+    // Volta contratada (há perna L&T do pai) sem devolução identificável:
+    // não abrir balcão — manter pendente até configurar a devolução.
+    if (outcome === 'none' && liveLegs.length > 0) {
+      handoffs.push({
+        kind: 'saida_prevista',
+        source_type: 'boarding_reservation',
+        source_id: stay.id,
+        pet_id: snap.petId,
+        guardian_id: stay.guardian_id ?? null,
+        unit_id: stay.unit_id,
+        opened_at: openedAt,
+        context: {
+          label,
+          starts_at: expected,
+          appointment_id: appointmentId,
+          preparing: true,
+          boarding_mode: stay.mode ?? null,
+          boarding_reservation_id: stay.id,
+          needs_return_config: true,
+        },
+      });
+      continue;
+    }
+
+    const kind = outcome === 'needs_boarding' ? 'embarque' : 'retirada_balcao';
     pushExit(
       handoffs,
       snap,

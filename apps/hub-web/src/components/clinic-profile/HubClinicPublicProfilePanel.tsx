@@ -19,6 +19,7 @@ import {
   HubLoading,
   HubSearchableCombobox,
   HubTimeField,
+  allowsPublicServicePrice,
   formatBrPhoneFromApi,
   useAlert,
 } from '@petimi/hub-ui';
@@ -363,7 +364,8 @@ const HubClinicPublicProfilePanel: React.FC<HubClinicPublicProfilePanelProps> = 
           show_on_public_profile: !!s.show_on_public_profile,
           public_sort_order: s.public_sort_order ?? idx,
           public_blurb: s.public_blurb ?? null,
-          show_public_price: !!s.show_public_price,
+          show_public_price:
+            allowsPublicServicePrice(s.service_group) && !!s.show_public_price,
         })),
         service_groups: serviceGroups.map((g, idx) => ({
           id: g.id,
@@ -1028,17 +1030,29 @@ const HubClinicPublicProfilePanel: React.FC<HubClinicPublicProfilePanelProps> = 
           {showServicesPicker ? (
             <div className="hub-cpp-editor__offer-block">
               <h4 className="hub-cpp-editor__offer-title">Serviços</h4>
+              <p className="hub-cpp-editor__hint">
+                Preço público só para serviços padronizados (banho, hotel, creche, leva e traz),
+                conforme regras do CFMV. Serviços clínicos aparecem como “Valor sob avaliação
+                veterinária.”
+              </p>
               {services.length === 0 ? (
                 <p className="hub-cpp-editor__empty">
                   Nenhum serviço no catálogo. Cadastre serviços em Serviços para listá-los aqui.
                 </p>
               ) : (
                 <ul className="hub-cpp-editor__list">
-                  {services.map((s) => (
+                  {services.map((s) => {
+                    const priceAllowed = allowsPublicServicePrice(s.service_group);
+                    return (
                     <li key={s.id}>
                       <HubCheckbox
                         checked={!!s.show_on_public_profile}
-                        onChange={(c) => updateService(s.id, { show_on_public_profile: c })}
+                        onChange={(c) =>
+                          updateService(s.id, {
+                            show_on_public_profile: c,
+                            ...(c && !priceAllowed ? { show_public_price: false } : {}),
+                          })
+                        }
                         disabled={!canEdit || s.active === false}
                       >
                         {s.name}
@@ -1055,17 +1069,25 @@ const HubClinicPublicProfilePanel: React.FC<HubClinicPublicProfilePanelProps> = 
                             disabled={!canEdit}
                             placeholder="Texto curto sobre o serviço (opcional)"
                           />
-                          <HubCheckbox
-                            checked={!!s.show_public_price}
-                            onChange={(c) => updateService(s.id, { show_public_price: c })}
-                            disabled={!canEdit}
-                          >
-                            Mostrar preço
-                          </HubCheckbox>
+                          {priceAllowed ? (
+                            <HubCheckbox
+                              checked={!!s.show_public_price}
+                              onChange={(c) => updateService(s.id, { show_public_price: c })}
+                              disabled={!canEdit}
+                            >
+                              Mostrar preço
+                            </HubCheckbox>
+                          ) : (
+                            <p className="hub-cpp-editor__price-policy">
+                              Valor sob avaliação veterinária. (preço público não disponível
+                              para este tipo de serviço)
+                            </p>
+                          )}
                         </div>
                       ) : null}
                     </li>
-                  ))}
+                    );
+                  })}
                 </ul>
               )}
             </div>

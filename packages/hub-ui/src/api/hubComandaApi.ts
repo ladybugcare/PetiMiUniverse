@@ -148,6 +148,16 @@ export function isTransientComandaOpenError(error: unknown): boolean {
   );
 }
 
+/** Erros em que a comanda ativa já existe — deve reabrir por origem, não falhar o clique. */
+export function isExistingOpenComandaError(error: unknown): boolean {
+  const msg = String((error as Error)?.message ?? '');
+  return (
+    /Já existe comanda aberta/i.test(msg) ||
+    /uniq_hub_comandas_active_origin/i.test(msg) ||
+    (/duplicate key/i.test(msg) && /origin/i.test(msg))
+  );
+}
+
 async function postOpenComanda(body: HubComandaOpenBody): Promise<HubComandaDetailResponse> {
   return apiRequest(`${base}/open`, { method: 'POST', body: JSON.stringify(body) }) as Promise<HubComandaDetailResponse>;
 }
@@ -157,11 +167,25 @@ export const hubComandaApi = {
     try {
       return await postOpenComanda(body);
     } catch (error) {
+      if (body.origin_id && isExistingOpenComandaError(error)) {
+        return hubComandaApi.getComandaByOrigin({
+          clinic_id: body.clinic_id,
+          origin_type: body.origin_type,
+          origin_id: body.origin_id,
+        });
+      }
       if (!isTransientComandaOpenError(error) || !body.origin_id) throw error;
       await new Promise((resolve) => setTimeout(resolve, 500));
       try {
         return await postOpenComanda(body);
       } catch (retryError) {
+        if (isExistingOpenComandaError(retryError)) {
+          return hubComandaApi.getComandaByOrigin({
+            clinic_id: body.clinic_id,
+            origin_type: body.origin_type,
+            origin_id: body.origin_id,
+          });
+        }
         if (!isTransientComandaOpenError(retryError)) throw retryError;
         return hubComandaApi.getComandaByOrigin({
           clinic_id: body.clinic_id,

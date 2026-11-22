@@ -55,6 +55,7 @@ import {
   minutesToHm,
   petExtraBlocksDurationMin,
   todayYmd,
+  resolveServiceEndsAt,
   toEndIsoTs,
   toIsoTs,
   toIsoTsOnOrAfter,
@@ -424,6 +425,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [dateYmd, setDateYmd] = useState(todayYmd());
   const [startsHm, setStartsHm] = useState('09:00');
   const [endsHm, setEndsHm] = useState('10:00');
+  /** Fim editado à mão — não sobrescrever ao mudar o início (exceto Hotel). */
+  const endsHmManualRef = useRef(false);
   const [staffId, setStaffId] = useState('');
   const [resourceLabel, setResourceLabel] = useState('');
   const [hubResourceId, setHubResourceId] = useState<string | null>(null);
@@ -658,8 +661,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     if (!titleOverridden) setTitle(autoTitle);
   }, [autoTitle, titleOverridden]);
 
-  // When services change, recalc ends_hm
+  // Quando a duração dos serviços muda, recalcula o fim (início é sincronizado em handleStartsHmChange).
   useEffect(() => {
+    if (endsHmManualRef.current) return;
     if (isMultiPetSelection) {
       if (petVisitConfigs.some((c) => c.services.length > 0)) {
         setEndsHm(multiPetVisitEndHm);
@@ -669,7 +673,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     if (totalDurationMin > 0) {
       setEndsHm(addMinutes(startsHm, totalDurationMin));
     }
-  }, [totalDurationMin, startsHm, isMultiPetSelection, multiPetVisitEndHm, petVisitConfigs]);
+    // startsHm de propósito fora das deps: mudança de início atualiza ends no handler síncrono
+    // (evita corrida blur→salvar com ends_hm obsoleto e overnight indevido).
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- ver comentário acima
+  }, [totalDurationMin, isMultiPetSelection, multiPetVisitEndHm, petVisitConfigs]);
 
   /** Sem campo «Fim» na busca: o fim da perna acompanha sempre o início do primeiro bloco do dia. */
   useEffect(() => {
@@ -680,6 +687,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   // Apply initial values when modal opens
   useEffect(() => {
     if (!open) return;
+    endsHmManualRef.current = false;
     setSaveError(null);
     setConflicts([]);
     setTitleOverridden(false);
@@ -1032,6 +1040,24 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const mainIsHotelGroup = isHotelServiceGroup(mainBlockGroup);
   /** Blocos de 1ª classe: extras não compartilham série do pai. */
   const useIndependentExtraBlocks = true;
+
+  const totalDurationMinRef = useRef(totalDurationMin);
+  totalDurationMinRef.current = totalDurationMin;
+  const mainIsHotelGroupRef = useRef(mainIsHotelGroup);
+  mainIsHotelGroupRef.current = mainIsHotelGroup;
+
+  /** Atualiza início e, no mesmo tick, o fim pela duração — evita overnight por ends_hm obsoleto. */
+  const handleStartsHmChange = useCallback((hm: string) => {
+    setStartsHm(hm);
+    if (mainIsHotelGroupRef.current || endsHmManualRef.current) return;
+    const dur = totalDurationMinRef.current > 0 ? totalDurationMinRef.current : 60;
+    setEndsHm(addMinutes(hm, dur));
+  }, []);
+
+  const handleEndsHmChange = useCallback((hm: string) => {
+    endsHmManualRef.current = true;
+    setEndsHm(hm);
+  }, []);
 
   const allExtraBlocksForPickup = useMemo(() => {
     if (isMultiPetSelection) return petVisitConfigs.flatMap((c) => c.extraBlocks);
@@ -2333,7 +2359,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
     try {
       let startsAt = toIsoTs(dateYmd, startsHm);
-      let endsAt = toEndIsoTs(dateYmd, startsHm, isMultiPetSelection ? multiPetVisitEndHm : endsHm);
+      const endsHmForSave = isMultiPetSelection ? multiPetVisitEndHm : endsHm;
+      let endsAt = resolveServiceEndsAt({
+        dateYmd,
+        startsHm,
+        endsHm: endsHmForSave,
+        durationMin: totalDurationMin > 0 ? totalDurationMin : 60,
+        allowOvernight: mainIsHotelGroup || endsHmManualRef.current,
+      });
       if (mainIsHotelGroup && hotelCheckoutDateYmd && hotelCheckoutHm) {
         endsAt = toIsoTs(hotelCheckoutDateYmd, hotelCheckoutHm);
       }
@@ -3217,7 +3250,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                     id="nam-cr-time"
                     label="Horário"
                     valueHm={startsHm}
-                    onChangeHm={setStartsHm}
+                    onChangeHm={handleStartsHmChange}
                   />
                 </div>
               </div>
@@ -3883,7 +3916,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   id="nam-starts"
                   label="Início"
                   valueHm={startsHm}
-                  onChangeHm={setStartsHm}
+                  onChangeHm={handleStartsHmChange}
                 />
               </div>
               <div className="nam-field">
@@ -3891,7 +3924,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   id="nam-ends"
                   label="Fim previsto"
                   valueHm={endsHm}
-                  onChangeHm={setEndsHm}
+                  onChangeHm={handleEndsHmChange}
                 />
               </div>
             </div>

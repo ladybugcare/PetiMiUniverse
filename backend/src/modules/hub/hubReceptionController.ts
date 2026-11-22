@@ -470,16 +470,28 @@ async function buildReceptionCues(opts: {
       'Fale com o tutor: ele vem buscar no balcão ou agende um novo Leva e Traz (com ou sem cobrança da perna).';
   } else if (opts.kind === 'saida_prevista') {
     const preparing = opts.context.preparing === true;
-    cues.push({
-      key: preparing ? 'boarding_preparing' : 'boarding_planned',
-      label: preparing ? 'Aguardando liberação' : 'Aguardando serviço',
-      detail: preparing
-        ? 'O hotel/creche está conferindo pertences e pendências.'
-        : 'O pet ainda não foi liberado pelo hotel/creche.',
-    });
-    nextStep = preparing
-      ? 'Aguarde a liberação do setor. Não entregue o pet ainda.'
-      : 'Acompanhe o horário. A entrega só fica disponível depois que o setor liberar.';
+    const needsReturnConfig = opts.context.needs_return_config === true;
+    if (needsReturnConfig) {
+      cues.push({
+        key: 'lt_return_config',
+        label: 'Falta configurar a devolução',
+        detail:
+          'Há Leva e Traz contratado, mas a perna de volta ainda não está identificada como devolução (parada/rota).',
+      });
+      nextStep =
+        'Planeje a rota de devolução no L&T (direção entrega). A saída fica pendente de transporte — não use retirada no balcão.';
+    } else {
+      cues.push({
+        key: preparing ? 'boarding_preparing' : 'boarding_planned',
+        label: preparing ? 'Aguardando liberação' : 'Aguardando serviço',
+        detail: preparing
+          ? 'O hotel/creche está conferindo pertences e pendências.'
+          : 'O pet ainda não foi liberado pelo hotel/creche.',
+      });
+      nextStep = preparing
+        ? 'Aguarde a liberação do setor. Não entregue o pet ainda.'
+        : 'Acompanhe o horário. A entrega só fica disponível depois que o setor liberar.';
+    }
     appointmentId =
       typeof opts.context.appointment_id === 'string' ? opts.context.appointment_id : appointmentId;
   }

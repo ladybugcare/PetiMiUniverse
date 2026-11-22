@@ -193,7 +193,9 @@ async function fetchOpenComandaOriginKeys(clinicId: string): Promise<Set<string>
     if (oid) set.add(`${row.origin_type as string}:${oid}`);
   }
   const { expandBoardingAppointmentOriginKeys } = await import('./boardingOriginKeys');
-  return expandBoardingAppointmentOriginKeys(clinicId, set);
+  const { expandGroomingAppointmentOriginKeys } = await import('./groomingOriginKeys');
+  const withBoarding = await expandBoardingAppointmentOriginKeys(clinicId, set);
+  return expandGroomingAppointmentOriginKeys(clinicId, withBoarding);
 }
 
 /** Origens de comandas não canceladas que já têm recebível (source_type do recebível pode ser manual). */
@@ -225,7 +227,9 @@ async function fetchBilledComandaOriginKeys(clinicId: string): Promise<Set<strin
     }
   }
   const { expandBoardingAppointmentOriginKeys } = await import('./boardingOriginKeys');
-  return expandBoardingAppointmentOriginKeys(clinicId, keys);
+  const { expandGroomingAppointmentOriginKeys } = await import('./groomingOriginKeys');
+  const withBoarding = await expandBoardingAppointmentOriginKeys(clinicId, keys);
+  return expandGroomingAppointmentOriginKeys(clinicId, withBoarding);
 }
 
 async function findOpenComandaIdByOrigin(
@@ -265,6 +269,24 @@ async function findOpenEncounterComandaIdForAppointment(
   return null;
 }
 
+async function findOpenGroomingComandaIdForAppointment(
+  clinicId: string,
+  appointmentId: string
+): Promise<string | null> {
+  const { data: sessions } = await supabaseAdmin
+    .from('hub_grooming_sessions')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('hub_appointment_id', appointmentId)
+    .is('deleted_at', null)
+    .order('created_at', { ascending: false });
+  for (const sess of sessions ?? []) {
+    const bySess = await findOpenComandaIdByOrigin(clinicId, 'grooming_session', sess.id as string);
+    if (bySess) return bySess;
+  }
+  return null;
+}
+
 /** Reutiliza comanda aberta do agendamento ao abrir checkout pela sessão B&T ou pelo encounter. */
 async function resolveExistingOpenComandaIdForOpen(
   clinicId: string,
@@ -272,6 +294,8 @@ async function resolveExistingOpenComandaIdForOpen(
   originId: string
 ): Promise<string | null> {
   if (originType === 'grooming_session') {
+    const bySess = await findOpenComandaIdByOrigin(clinicId, 'grooming_session', originId);
+    if (bySess) return bySess;
     const { data: session } = await supabaseAdmin
       .from('hub_grooming_sessions')
       .select('hub_appointment_id')
@@ -304,6 +328,8 @@ async function resolveExistingOpenComandaIdForOpen(
   if (originType === 'appointment') {
     const byAppt = await findOpenComandaIdByOrigin(clinicId, 'appointment', originId);
     if (byAppt) return byAppt;
+    const byGroom = await findOpenGroomingComandaIdForAppointment(clinicId, originId);
+    if (byGroom) return byGroom;
     const boardingId = await findAnyBoardingReservationForAppointment(clinicId, originId);
     if (boardingId) {
       const byBoard = await findOpenComandaIdByOrigin(clinicId, 'boarding_reservation', boardingId);
@@ -2033,14 +2059,15 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
 
     // Hotel/Creche: com reserva cobrável (ativa ou checked_out), preferir boarding_reservation
     // e reutilizar comanda appointment já aberta quando existir.
+    // Banho: com sessão ligada, preferir grooming_session (origem canônica) para colidir no unique index.
     if (origin_type === 'appointment') {
-      const existingApptOrBoard = await resolveExistingOpenComandaIdForOpen(
+      const existingApptOrLinked = await resolveExistingOpenComandaIdForOpen(
         clinic_id,
         'appointment',
         effectiveOriginId,
       );
-      if (existingApptOrBoard) {
-        const detail = await getHubComandaDetailPayload(existingApptOrBoard, clinic_id);
+      if (existingApptOrLinked) {
+        const detail = await getHubComandaDetailPayload(existingApptOrLinked, clinic_id);
         return res.status(200).json(detail);
       }
       const billableBoarding = await findBillableBoardingReservationForAppointment(
@@ -2050,13 +2077,25 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
       if (billableBoarding) {
         origin_type = 'boarding_reservation';
         effectiveOriginId = billableBoarding;
+      } else {
+        const { findLinkedGroomingSessionIdForAppointment } = await import('./groomingOriginKeys');
+        const linkedSession = await findLinkedGroomingSessionIdForAppointment(
+          clinic_id,
+          effectiveOriginId,
+        );
+        if (linkedSession) {
+          origin_type = 'grooming_session';
+          effectiveOriginId = linkedSession;
+        }
       }
     }
 
     if (origin_type !== 'manual') {
       const keys = await fetchActiveReceivableKeys(clinic_id);
       const { expandBoardingAppointmentOriginKeys } = await import('./boardingOriginKeys');
-      const expanded = await expandBoardingAppointmentOriginKeys(clinic_id, new Set(keys));
+      const { expandGroomingAppointmentOriginKeys } = await import('./groomingOriginKeys');
+      const withBoarding = await expandBoardingAppointmentOriginKeys(clinic_id, new Set(keys));
+      const expanded = await expandGroomingAppointmentOriginKeys(clinic_id, withBoarding);
       // Recebível pode nascer como source_type=manual; a origem efetiva está na comanda.
       const billedViaComanda = await fetchBilledComandaOriginKeys(clinic_id);
       if (
@@ -2071,7 +2110,8 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
       origin_type === 'appointment' ||
       origin_type === 'grooming_session' ||
       origin_type === 'encounter' ||
-      origin_type === 'boarding_reservation'
+      origin_type === 'boarding_reservation' ||
+      origin_type === 'quote'
     ) {
       const existingId = await resolveExistingOpenComandaIdForOpen(clinic_id, origin_type, effectiveOriginId);
       if (existingId) {
@@ -2091,9 +2131,14 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
         .eq('status', 'aberta')
         .is('deleted_at', null)
         .maybeSingle();
+      if (existing?.id) {
+        // Idempotente: reabrir a mesma comanda ativa (evita 409/500 no 2º «Gerar venda»).
+        const detail = await getHubComandaDetailPayload(existing.id as string, clinic_id);
+        return res.status(200).json(detail);
+      }
       return res.status(409).json({
         error: 'Já existe comanda aberta para esta origem',
-        comanda_id: existing?.id ?? null,
+        comanda_id: null,
       });
     }
 
@@ -2275,6 +2320,17 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
       .select('id')
       .single();
     if (cErr || !comanda) {
+      const errMsg = String(cErr?.message ?? '');
+      const isActiveOriginRace =
+        /uniq_hub_comandas_active_origin/i.test(errMsg) ||
+        (/duplicate key/i.test(errMsg) && /active_origin|origin/i.test(errMsg));
+      if (isActiveOriginRace && origin_type !== 'manual') {
+        const racedId = await resolveExistingOpenComandaIdForOpen(clinic_id, origin_type, effectiveOriginId);
+        if (racedId) {
+          const detail = await getHubComandaDetailPayload(racedId, clinic_id);
+          return res.status(200).json(detail);
+        }
+      }
       console.error('postHubComandaOpen', cErr);
       return res.status(500).json({ error: cErr?.message || 'Erro ao criar comanda' });
     }
@@ -4804,7 +4860,10 @@ export const getHubComandaByOrigin = async (req: Request, res: Response) => {
     }
 
     if (!rowId && origin_type === 'appointment') {
-      rowId = await findOpenEncounterComandaIdForAppointment(clinic_id, origin_id);
+      rowId = await findOpenGroomingComandaIdForAppointment(clinic_id, origin_id);
+      if (!rowId) {
+        rowId = await findOpenEncounterComandaIdForAppointment(clinic_id, origin_id);
+      }
     }
 
     if (!rowId) return res.status(404).json({ error: 'Comanda aberta não encontrada' });

@@ -7,7 +7,7 @@ vi.mock('@petimi/web-core', () => ({
 }));
 
 import { apiRequest } from '@petimi/web-core';
-import { hubComandaApi, isTransientComandaOpenError } from './hubComandaApi';
+import { hubComandaApi, isExistingOpenComandaError, isTransientComandaOpenError } from './hubComandaApi';
 
 const apiRequestMock = vi.mocked(apiRequest);
 
@@ -25,6 +25,18 @@ describe('isTransientComandaOpenError', () => {
       ),
     ).toBe(true);
     expect(isTransientComandaOpenError(new Error('Já existe comanda aberta para esta origem'))).toBe(false);
+  });
+});
+
+describe('isExistingOpenComandaError', () => {
+  it('reconhece 409 e corrida de unique constraint', () => {
+    expect(isExistingOpenComandaError(new Error('Já existe comanda aberta para esta origem'))).toBe(true);
+    expect(
+      isExistingOpenComandaError(
+        new Error('duplicate key value violates unique constraint "uniq_hub_comandas_active_origin"'),
+      ),
+    ).toBe(true);
+    expect(isExistingOpenComandaError(new Error('Já existe cobrança para esta origem'))).toBe(false);
   });
 });
 
@@ -52,6 +64,22 @@ describe('hubComandaApi.openComanda', () => {
     expect(apiRequestMock).toHaveBeenCalledTimes(3);
     expect(String(apiRequestMock.mock.calls[2]?.[0])).toContain('/by-origin');
     vi.useRealTimers();
+  });
+
+  it('reabre por origem quando o open bate em unique constraint', async () => {
+    apiRequestMock
+      .mockRejectedValueOnce(
+        new Error('duplicate key value violates unique constraint "uniq_hub_comandas_active_origin"'),
+      )
+      .mockResolvedValueOnce({ comanda: { id: 'comanda-ativa' }, items: [{ id: 'i1' }] });
+
+    const detail = await hubComandaApi.openComanda({
+      ...OPEN_BODY,
+      origin_type: 'quote',
+    });
+    expect(detail.comanda).toMatchObject({ id: 'comanda-ativa' });
+    expect(apiRequestMock).toHaveBeenCalledTimes(2);
+    expect(String(apiRequestMock.mock.calls[1]?.[0])).toContain('/by-origin');
   });
 
   it('não tenta recuperar erro de negócio', async () => {

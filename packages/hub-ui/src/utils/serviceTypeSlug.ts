@@ -36,10 +36,30 @@ export const OPERATIONAL_GROOMING_SERVICE_GROUP = 'banho_tosa' as const;
 /** Grupos de Hotel & Creche (estadia / turno). */
 export const BOARDING_SERVICE_GROUPS = ['hotel', 'creche'] as const;
 
+/**
+ * Grupos em que a landing pública pode exibir preço (serviço padronizado).
+ * Alinhado à Resolução CFMV nº 1.649/2025 art. 6º, V.
+ */
+export const PUBLIC_PRICE_ALLOWED_SERVICE_GROUPS = [
+  'banho_tosa',
+  'hotel',
+  'creche',
+  'leva_traz',
+] as const;
+
+export const PUBLIC_PRICE_EVALUATION_NOTE = 'Valor sob avaliação veterinária.';
+
 export type OperationalClinicalServiceGroup = (typeof OPERATIONAL_CLINICAL_SERVICE_GROUPS)[number];
+export type PublicPriceAllowedServiceGroup = (typeof PUBLIC_PRICE_ALLOWED_SERVICE_GROUPS)[number];
 
 export function isOperationalClinicalGroup(group: string): group is OperationalClinicalServiceGroup {
   return (OPERATIONAL_CLINICAL_SERVICE_GROUPS as readonly string[]).includes(group);
+}
+
+/** Se o grupo pode ter preço numérico na página pública. */
+export function allowsPublicServicePrice(group: string | null | undefined): boolean {
+  const g = normalizeServiceGroupSlug(group);
+  return (PUBLIC_PRICE_ALLOWED_SERVICE_GROUPS as readonly string[]).includes(g);
 }
 
 function humanizeGroupSlug(slug: string): string {

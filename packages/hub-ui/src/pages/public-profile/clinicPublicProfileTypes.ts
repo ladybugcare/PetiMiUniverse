@@ -51,6 +51,8 @@ export type HubClinicPublicLandingData = {
     default_duration_minutes: number | null;
     blurb: string | null;
     price: number | null;
+    /** Texto quando o preço numérico não pode ser divulgado (ex.: clínico). */
+    price_note?: string | null;
   }>;
   service_groups?: Array<{
     id: string;

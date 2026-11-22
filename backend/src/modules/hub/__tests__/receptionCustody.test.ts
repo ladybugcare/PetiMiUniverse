@@ -164,6 +164,37 @@ describe('planCustody', () => {
     expect(plan.handoffs.map((h) => h.kind)).toEqual(['embarque']);
   });
 
+  it('ready_for_handoff com perna L&T sem direção não vira balcão (falta configurar devolução)', () => {
+    const plan = planCustody(
+      snap({
+        boarding: [
+          {
+            id: 'b1',
+            unit_id: 'u1',
+            status: 'ready_for_handoff',
+            guardian_id: 'g1',
+            hub_appointment_id: 'a-hotel',
+            mode: 'hotel',
+            handoff_ready_at: '2026-11-06T16:00:00.000Z',
+          },
+        ],
+        legs: [
+          {
+            parent_appointment_id: 'a-hotel',
+            appointment_status: 'confirmed',
+            direction: null,
+            stop_status: null,
+            route_id: null,
+            driver_id: null,
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs.map((h) => h.kind)).toEqual(['saida_prevista']);
+    expect(plan.handoffs[0].context.needs_return_config).toBe(true);
+    expect(plan.handoffs.some((h) => h.kind === 'retirada_balcao')).toBe(false);
+  });
+
   it('ready_for_handoff com motorista na rota ainda cria embarque até boarded', () => {
     const plan = planCustody(
       snap({

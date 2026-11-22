@@ -331,6 +331,104 @@ describe('Matriz Caixa — open → checkout por origem', () => {
     });
   });
 
+  describe('banho agendado: appointment ↔ grooming_session (mesma cobrança)', () => {
+    function linkedBathTables() {
+      return baseFinanceTables({
+        hub_service_types: [serviceType(BATH_SERVICE_ID, 'banho_tosa', 'Banho')],
+        hub_appointments: [appointmentRow(APPT_BATH_ID, BATH_SERVICE_ID, 'Banho')],
+        hub_appointment_services: [
+          appointmentService(`${APPT_BATH_ID}-svc`, APPT_BATH_ID, BATH_SERVICE_ID, 80),
+        ],
+        hub_grooming_sessions: [
+          {
+            id: GROOMING_SESSION_ID,
+            clinic_id: TEST_CLINIC_ID,
+            unit_id: TEST_UNIT_ID,
+            guardian_id: TEST_GUARDIAN_ID,
+            pet_id: TEST_PET_ID,
+            hub_appointment_id: APPT_BATH_ID,
+            grooming_stage: 'closed',
+            billing_waived_at: null,
+            deleted_at: null,
+            created_at: '2026-06-15T14:30:00.000Z',
+          },
+        ],
+      });
+    }
+
+    it('abre pela sessão e reusa ao abrir pelo agendamento', async () => {
+      configureSupabaseMock({ tables: linkedBathTables() });
+      const first = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'grooming_session',
+        origin_id: GROOMING_SESSION_ID,
+      });
+      expect(first.status).toBe(201);
+      const comandaId = first.body.comanda.id as string;
+      expect(Number(first.body.comanda.total_amount)).toBe(80);
+
+      const second = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'appointment',
+        origin_id: APPT_BATH_ID,
+      });
+      expect(second.status).toBe(200);
+      expect(second.body.comanda.id).toBe(comandaId);
+      expect(
+        (getMockSupabaseClient()._state.tables.hub_comandas ?? []).filter(
+          (c) => !c.deleted_at && c.status === 'aberta',
+        ),
+      ).toHaveLength(1);
+    });
+
+    it('abre pelo agendamento e reusa ao abrir pela sessão', async () => {
+      configureSupabaseMock({ tables: linkedBathTables() });
+      const first = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'appointment',
+        origin_id: APPT_BATH_ID,
+      });
+      expect(first.status).toBe(201);
+      const comandaId = first.body.comanda.id as string;
+
+      const second = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'grooming_session',
+        origin_id: GROOMING_SESSION_ID,
+      });
+      expect(second.status).toBe(200);
+      expect(second.body.comanda.id).toBe(comandaId);
+      expect(
+        (getMockSupabaseClient()._state.tables.hub_comandas ?? []).filter(
+          (c) => !c.deleted_at && c.status === 'aberta',
+        ),
+      ).toHaveLength(1);
+    });
+
+    it('opens paralelos appointment + sessão geram uma única comanda', async () => {
+      configureSupabaseMock({ tables: linkedBathTables() });
+      const [a, b] = await Promise.all([
+        openComanda({
+          clinic_id: TEST_CLINIC_ID,
+          origin_type: 'appointment',
+          origin_id: APPT_BATH_ID,
+        }),
+        openComanda({
+          clinic_id: TEST_CLINIC_ID,
+          origin_type: 'grooming_session',
+          origin_id: GROOMING_SESSION_ID,
+        }),
+      ]);
+      expect([a.status, b.status].every((s) => s === 200 || s === 201)).toBe(true);
+      expect(a.body.comanda.id).toBe(b.body.comanda.id);
+      expect(
+        (getMockSupabaseClient()._state.tables.hub_comandas ?? []).filter(
+          (c) => !c.deleted_at && c.status === 'aberta',
+        ),
+      ).toHaveLength(1);
+    });
+  });
+
   describe('encounter (completed + exame)', () => {
     beforeEach(() => {
       configureSupabaseMock({
@@ -548,6 +646,82 @@ describe('Matriz Caixa — open → checkout por origem', () => {
       expect(rec.status).toBe(201);
       expect(Number(rec.body.receivable.original_amount)).toBe(90);
       expect(Number(rec.body.receivable.final_amount)).toBe(75);
+    });
+
+    it('reabrir quote (2º open e concorrentes) devolve a mesma comanda com desconto', async () => {
+      configureSupabaseMock({
+        tables: baseFinanceTables({
+          hub_quotes: [
+            {
+              id: QUOTE_ID,
+              clinic_id: TEST_CLINIC_ID,
+              unit_id: TEST_UNIT_ID,
+              guardian_id: TEST_GUARDIAN_ID,
+              status: 'accepted',
+              billing_state: 'awaiting_billing',
+              billing_waived_at: null,
+              client_notes: null,
+              discount_kind: 'fixed',
+              discount_value: 10,
+              total_amount: 95,
+              deleted_at: null,
+            },
+          ],
+          hub_quote_lines: [
+            {
+              id: QUOTE_LINE_ID,
+              quote_id: QUOTE_ID,
+              hub_service_type_id: BATH_SERVICE_ID,
+              description: 'Banho',
+              quantity: 1,
+              unit_price: 80,
+              discount_amount: 0,
+              line_total: 80,
+              sort_order: 0,
+            },
+            {
+              id: 'ffffffff-ffff-4fff-8fff-ffffffffff03',
+              quote_id: QUOTE_ID,
+              hub_service_type_id: BATH_SERVICE_ID,
+              description: 'Hidratação',
+              quantity: 1,
+              unit_price: 25,
+              discount_amount: 0,
+              line_total: 25,
+              sort_order: 1,
+            },
+          ],
+          hub_service_types: [serviceType(BATH_SERVICE_ID, 'banho_tosa', 'Banho')],
+        }),
+      });
+
+      const body = {
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'quote',
+        origin_id: QUOTE_ID,
+        unit_id: TEST_UNIT_ID,
+      };
+
+      const first = await openComanda(body);
+      expect(first.status).toBe(201);
+      const comandaId = first.body.comanda.id as string;
+      expect(Number(first.body.comanda.discount_amount)).toBe(10);
+      expect(Number(first.body.comanda.total_amount)).toBe(95);
+      expect(Number(first.body.balance_due)).toBe(95);
+      expect((first.body.items as unknown[]).length).toBe(2);
+
+      const second = await openComanda(body);
+      expect(second.status).toBe(200);
+      expect(second.body.comanda.id).toBe(comandaId);
+      expect(Number(second.body.comanda.total_amount)).toBe(95);
+      expect(Number(second.body.balance_due)).toBe(95);
+      expect((second.body.items as unknown[]).length).toBe(2);
+
+      const [a, b] = await Promise.all([openComanda(body), openComanda(body)]);
+      expect([a.status, b.status].every((s) => s === 200 || s === 201)).toBe(true);
+      expect(a.body.comanda.id).toBe(comandaId);
+      expect(b.body.comanda.id).toBe(comandaId);
+      expect((getMockSupabaseClient()._state.tables.hub_comandas ?? []).filter((c) => c.origin_id === QUOTE_ID)).toHaveLength(1);
     });
   });
 

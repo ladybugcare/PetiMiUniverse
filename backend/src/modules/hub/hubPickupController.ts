@@ -339,10 +339,12 @@ function resolveDayBoardRange(query: {
  * Deriva o sentido da parada por heurística de ordem temporal.
  * Usado apenas para pernas que ainda não têm hub_pickup_stops (Fase 1 fallback).
  * Na Fase 2+ a direção vem diretamente de hub_pickup_stops.direction.
+ *
+ * Âncoras: serviços do mesmo pet no dia (banho standard, hotel_stay, daycare_block, etc.).
  */
 function deriveDirections(
   pickupAppts: Array<{ id: string; pet_id: string | null; starts_at: string }>,
-  standardAppts: Array<{ pet_id: string | null; starts_at: string }>,
+  serviceAppts: Array<{ pet_id: string | null; starts_at: string }>,
 ): Map<string, 'pickup' | 'delivery' | 'unknown'> {
   const result = new Map<string, 'pickup' | 'delivery' | 'unknown'>();
 
@@ -354,12 +356,12 @@ function deriveDirections(
     byPet.set(pid, list);
   }
 
-  const standardByPet = new Map<string, string[]>();
-  for (const a of standardAppts) {
+  const serviceByPet = new Map<string, string[]>();
+  for (const a of serviceAppts) {
     const pid = a.pet_id ?? '__no_pet__';
-    const list = standardByPet.get(pid) ?? [];
+    const list = serviceByPet.get(pid) ?? [];
     list.push(a.starts_at);
-    standardByPet.set(pid, list);
+    serviceByPet.set(pid, list);
   }
 
   for (const [pid, legs] of byPet.entries()) {
@@ -371,10 +373,10 @@ function deriveDirections(
       continue;
     }
     const leg = legs[0];
-    const stdTimes = standardByPet.get(pid) ?? [];
-    if (stdTimes.length > 0) {
-      stdTimes.sort();
-      result.set(leg.id, leg.starts_at < stdTimes[0] ? 'pickup' : 'delivery');
+    const serviceTimes = serviceByPet.get(pid) ?? [];
+    if (serviceTimes.length > 0) {
+      serviceTimes.sort();
+      result.set(leg.id, leg.starts_at < serviceTimes[0] ? 'pickup' : 'delivery');
     } else {
       result.set(leg.id, 'unknown');
     }
@@ -557,25 +559,25 @@ export const getHubPickupDayBoard = async (req: Request, res: Response) => {
         .filter(Boolean) as string[],
     )];
 
-    const standardAppts: Array<{ pet_id: string | null; starts_at: string }> = [];
+    const serviceAppts: Array<{ pet_id: string | null; starts_at: string }> = [];
     if (loosePetIds.length > 0) {
-      let stdQ = supabaseAdmin
+      let svcQ = supabaseAdmin
         .from('hub_appointments')
-        .select('pet_id, starts_at')
+        .select('pet_id, starts_at, appointment_kind')
         .eq('clinic_id', clinic_id)
-        .eq('appointment_kind', 'standard')
+        .in('appointment_kind', ['standard', 'hotel_stay', 'daycare_block'])
         .is('deleted_at', null)
         .neq('status', 'cancelled')
         .in('pet_id', loosePetIds)
         .lt('starts_at', to)
         .gt('ends_at', from);
-      if (unit_id) stdQ = stdQ.eq('unit_id', unit_id);
-      const { data: stdData } = await stdQ;
-      standardAppts.push(...((stdData ?? []) as Array<{ pet_id: string | null; starts_at: string }>));
+      if (unit_id) svcQ = svcQ.eq('unit_id', unit_id);
+      const { data: svcData } = await svcQ;
+      serviceAppts.push(...((svcData ?? []) as Array<{ pet_id: string | null; starts_at: string }>));
     }
 
     const looseAppts = pickupAppts.filter((a) => !stopByApptId.has(a.id));
-    const heuristicMap = deriveDirections(looseAppts, standardAppts);
+    const heuristicMap = deriveDirections(looseAppts, serviceAppts);
 
     // 4. Enriquecer com pet, tutor e tipo de serviço
     const petIdSet = new Set(pickupAppts.map((a) => a.pet_id).filter(Boolean) as string[]);

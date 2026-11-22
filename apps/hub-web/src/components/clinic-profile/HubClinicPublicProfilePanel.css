@@ -264,6 +264,13 @@
   gap: 0.5rem;
 }
 
+.hub-cpp-editor__price-policy {
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--hc-text-muted);
+}
+
 .hub-cpp-editor__thumbs {
   display: flex;
   flex-wrap: wrap;

@@ -6,6 +6,10 @@ import { checkClinicAccess } from '../../middleware/authMiddleware.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 import { ValidationError } from '../../utils/errors.js';
 import { uploadHubClinicPublicProfileAssetToStorage } from '../../utils/hubProfilePhotoUpload.js';
+import {
+  allowsPublicServicePrice,
+  PUBLIC_PRICE_EVALUATION_NOTE,
+} from './publicServicePricePolicy.js';
 
 const uuidStr = z.string().uuid();
 
@@ -370,12 +374,30 @@ export const patchHubClinicPublicProfile = asyncHandler(async (req: Request, res
   }
 
   if (servicePatches?.length) {
+    const patchIds = servicePatches.map((s) => s.id);
+    const { data: svcRows } = await supabaseAdmin
+      .from('hub_service_types')
+      .select('id, service_group')
+      .eq('clinic_id', clinicId)
+      .in('id', patchIds)
+      .is('deleted_at', null);
+    const groupById = new Map(
+      ((svcRows ?? []) as Array<{ id: string; service_group: string | null }>).map((r) => [
+        r.id,
+        r.service_group,
+      ]),
+    );
+
     for (const s of servicePatches) {
       const svcUpdate: Record<string, unknown> = { updated_at: new Date().toISOString() };
       if (s.show_on_public_profile !== undefined) svcUpdate.show_on_public_profile = s.show_on_public_profile;
       if (s.public_sort_order !== undefined) svcUpdate.public_sort_order = s.public_sort_order;
       if (s.public_blurb !== undefined) svcUpdate.public_blurb = s.public_blurb?.trim() || null;
-      if (s.show_public_price !== undefined) svcUpdate.show_public_price = s.show_public_price;
+      if (s.show_public_price !== undefined) {
+        const group = groupById.get(s.id);
+        svcUpdate.show_public_price =
+          allowsPublicServicePrice(group) && !!s.show_public_price;
+      }
       if (Object.keys(svcUpdate).length <= 1) continue;
       const { error } = await supabaseAdmin
         .from('hub_service_types')
@@ -636,16 +658,21 @@ export const getPublicClinicProfileBySlug = asyncHandler(async (req: Request, re
       : Promise.resolve({ data: [] as unknown[], error: null }),
   ]);
 
-  const services = ((servicesRes.data ?? []) as Array<Record<string, unknown>>).map((s) => ({
-    id: s.id as string,
-    name: s.name as string,
-    service_group: (s.service_group as string | null) ?? null,
-    default_duration_minutes: (s.default_duration_minutes as number | null) ?? null,
-    blurb: ((s.public_blurb as string | null) || (s.description as string | null) || null) as
-      | string
-      | null,
-    price: s.show_public_price ? formatPublicPrice(s.sale_amount) : null,
-  }));
+  const services = ((servicesRes.data ?? []) as Array<Record<string, unknown>>).map((s) => {
+    const serviceGroup = (s.service_group as string | null) ?? null;
+    const canShowPrice = allowsPublicServicePrice(serviceGroup) && !!s.show_public_price;
+    return {
+      id: s.id as string,
+      name: s.name as string,
+      service_group: serviceGroup,
+      default_duration_minutes: (s.default_duration_minutes as number | null) ?? null,
+      blurb: ((s.public_blurb as string | null) || (s.description as string | null) || null) as
+        | string
+        | null,
+      price: canShowPrice ? formatPublicPrice(s.sale_amount) : null,
+      price_note: allowsPublicServicePrice(serviceGroup) ? null : PUBLIC_PRICE_EVALUATION_NOTE,
+    };
+  });
 
   const service_groups = ((groupsRes.data ?? []) as Array<Record<string, unknown>>).map((g) => ({
     id: g.id as string,

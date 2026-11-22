@@ -36,6 +36,13 @@ import { defaultBodyPorteForBreed } from '../../data/breedDefaultSizeTier';
 import { serviceGroupLabel } from '../../utils/serviceTypeSlug';
 import { DiscountControl, resolveDiscountAmount, type DiscountKind } from '../../components/billing/DiscountControl';
 import { FinancialSummaryCard } from '../../components/billing/FinancialSummaryCard';
+import {
+  validateWorkspaceDraft,
+  type HubQuoteCreateContext,
+} from './hubQuoteWorkspaceDraft';
+
+export type { HubQuoteCreateContext } from './hubQuoteWorkspaceDraft';
+export { validateWorkspaceDraft } from './hubQuoteWorkspaceDraft';
 
 const SIZE_TIERS = [
   { value: 'mini', label: 'Mini' },
@@ -242,54 +249,6 @@ function round2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
-function taxDigitsOk(s: string): boolean {
-  const d = s.replace(/\D/g, '');
-  return d.length === 11 || d.length === 14;
-}
-
-function isUuid(s: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s.trim());
-}
-
-/** Valida rascunho antes de POST/PATCH (alinha com regras do backend). */
-function validateWorkspaceDraft(opts: {
-  createContext: HubQuoteCreateContext | null;
-  persistedQuoteId: string | null;
-  pets: QuotePetRow[];
-  lines: LineDraft[];
-  subtotal: number;
-}): string | null {
-  const { createContext, persistedQuoteId, pets, lines, subtotal } = opts;
-  const editing = Boolean(persistedQuoteId);
-
-  if (!editing) {
-    if (!createContext) {
-      return 'Preencha nome, telefone e CPF/CNPJ (11 ou 14 dígitos) do contato antes de salvar o rascunho.';
-    }
-    if (createContext.kind === 'inline_prospect') {
-      const pr = createContext.prospect;
-      if (!pr.full_name.trim()) return 'Informe o nome do contato.';
-      if (!pr.phone.trim()) return 'Informe o telefone do contato.';
-      if (!taxDigitsOk(pr.tax_id ?? '')) return 'Informe um CPF (11 dígitos) ou CNPJ (14 dígitos) válido para o contato.';
-    }
-  }
-
-  if (pets.length < 1) return 'Inclua pelo menos um pet no orçamento.';
-  for (let i = 0; i < pets.length; i++) {
-    if (!pets[i]?.species?.trim()) return `Pet ${i + 1}: selecione a espécie.`;
-  }
-
-  const hasService = lines.some((l) => {
-    const id = l.hub_service_type_id.trim();
-    return id.length > 0 && isUuid(id);
-  });
-  if (!hasService) return 'Adicione pelo menos uma linha de serviço e escolha o tipo de serviço.';
-
-  if (subtotal <= 0) return 'Informe valores (R$) superiores a zero para os serviços por pet.';
-
-  return null;
-}
-
 function ymdLocal(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -301,13 +260,6 @@ function endOfLocalDayIso(dateYmd: string): string {
   const [y, m, d] = dateYmd.split('-').map(Number);
   return new Date(y, m - 1, d, 23, 59, 59).toISOString();
 }
-
-export type HubQuoteCreateContext =
-  | { kind: 'prospect_id'; prospect_id: string }
-  | {
-      kind: 'inline_prospect';
-      prospect: { full_name: string; tax_id: string; phone: string; email?: string | null };
-    };
 
 type LineDraft = {
   key: string;
@@ -764,14 +716,24 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
         );
         return;
       }
+      const st = serviceTypes.find((x) => x.id === hubServiceTypeId);
+      const matrix = st ? coercePricingMatrixFromApi(st.pricing_matrix) : null;
+      let pricingVariant: HubQuotePricingVariant | null = null;
+      if (matrix && needsMatrixVariantChoice(matrix)) {
+        pricingVariant = defaultPricingVariant(matrix);
+      }
+      // Vincula o serviço de imediato — o suggest-price é só para preencher valores.
+      // Sem isso, «Salvar rascunho» no 1º clique falha com "escolha o tipo de serviço"
+      // enquanto a sugestão ainda está em voo (UI já parece selecionada só depois).
+      setLines((prev) =>
+        prev.map((row, j) =>
+          j === lineIndex
+            ? { ...row, hub_service_type_id: hubServiceTypeId, pricing_variant: pricingVariant }
+            : row,
+        ),
+      );
       void (async () => {
         const list = petsRef.current;
-        const st = serviceTypes.find((x) => x.id === hubServiceTypeId);
-        const matrix = st ? coercePricingMatrixFromApi(st.pricing_matrix) : null;
-        let pricingVariant: HubQuotePricingVariant | null = null;
-        if (matrix && needsMatrixVariantChoice(matrix)) {
-          pricingVariant = defaultPricingVariant(matrix);
-        }
         const nextPrices: string[] = [];
         const nextPorte: Array<string | null> = [];
         const nextCoat: Array<string | null> = [];
@@ -784,18 +746,18 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
           nextCoat.push(suggested.applied_coat_type);
         }
         setLines((prev) =>
-          prev.map((row, j) =>
-            j === lineIndex
-              ? {
-                  ...row,
-                  hub_service_type_id: hubServiceTypeId,
-                  unitPricesByPetIndex: nextPrices,
-                  appliedPorteByPetIndex: nextPorte,
-                  appliedCoatByPetIndex: nextCoat,
-                  pricing_variant: normalizedPv,
-                }
-              : row,
-          ),
+          prev.map((row, j) => {
+            if (j !== lineIndex) return row;
+            // Descarta sugestão atrasada se o usuário trocou o serviço de novo.
+            if (row.hub_service_type_id !== hubServiceTypeId) return row;
+            return {
+              ...row,
+              unitPricesByPetIndex: nextPrices,
+              appliedPorteByPetIndex: nextPorte,
+              appliedCoatByPetIndex: nextCoat,
+              pricing_variant: normalizedPv,
+            };
+          }),
         );
       })();
     },

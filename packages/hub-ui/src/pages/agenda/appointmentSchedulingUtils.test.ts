@@ -6,6 +6,8 @@ import {
   buildBlockTitleFromServices,
   buildServiceDescriptionBullets,
   createEmptyExtraBlock,
+  resolveServiceEndsAt,
+  toEndIsoTs,
   type ExtraBlock,
 } from './appointmentSchedulingUtils';
 
@@ -118,5 +120,56 @@ describe('applyExtraBlockAutoFields', () => {
     expect(next.block_title).toBe('Custom');
     expect(next.block_description).toBe('Nota manual');
     expect(next.ends_hm).toBe('15:00');
+  });
+});
+
+
+describe('resolveServiceEndsAt', () => {
+  it('corrige fim obsoleto (16:00 com ends 10:00) para duração de 60 min no mesmo dia', () => {
+    const iso = resolveServiceEndsAt({
+      dateYmd: '2026-11-22',
+      startsHm: '16:00',
+      endsHm: '10:00',
+      durationMin: 60,
+      allowOvernight: false,
+    });
+    // 17:00 BRT = 20:00 UTC (America/Sao_Paulo, sem DST em nov/2026)
+    expect(iso).toBe(toEndIsoTs('2026-11-22', '16:00', '17:00'));
+    expect(iso.slice(0, 10)).toBe(new Date(iso).toISOString().slice(0, 10));
+  });
+
+  it('preserva overnight quando allowOvernight=true (Hotel / fim manual)', () => {
+    const iso = resolveServiceEndsAt({
+      dateYmd: '2026-11-22',
+      startsHm: '16:00',
+      endsHm: '10:00',
+      durationMin: 60,
+      allowOvernight: true,
+    });
+    expect(iso).toBe(toEndIsoTs('2026-11-22', '16:00', '10:00'));
+    expect(new Date(iso).getUTCDate()).toBe(23);
+  });
+
+  it('mantém cruzamento legítimo de meia-noite via duração (23:00 + 60 min)', () => {
+    const iso = resolveServiceEndsAt({
+      dateYmd: '2026-11-22',
+      startsHm: '23:00',
+      endsHm: '10:00', // obsoleto
+      durationMin: 60,
+      allowOvernight: false,
+    });
+    expect(iso).toBe(toEndIsoTs('2026-11-22', '23:00', addMinutes('23:00', 60)));
+    expect(iso).toBe(toEndIsoTs('2026-11-22', '23:00', '00:00'));
+  });
+
+  it('não altera fim já coerente no mesmo dia', () => {
+    const iso = resolveServiceEndsAt({
+      dateYmd: '2026-11-22',
+      startsHm: '16:00',
+      endsHm: '17:00',
+      durationMin: 60,
+      allowOvernight: false,
+    });
+    expect(iso).toBe(toEndIsoTs('2026-11-22', '16:00', '17:00'));
   });
 });

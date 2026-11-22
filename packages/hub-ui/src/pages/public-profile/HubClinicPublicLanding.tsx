@@ -12,7 +12,12 @@ import {
 import { ServiceGroupIcon } from '../../components/ServiceGroupIcon';
 import { buildWhatsappLink } from '../../utils/whatsappLink';
 import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
-import { hexToSoftFill, resolveServiceAccentColor } from '../../utils/serviceTypeSlug';
+import {
+  allowsPublicServicePrice,
+  hexToSoftFill,
+  PUBLIC_PRICE_EVALUATION_NOTE,
+  resolveServiceAccentColor,
+} from '../../utils/serviceTypeSlug';
 import type { HubClinicPublicLandingData, HubPublicBusinessHours, HubPublicDayHours } from './clinicPublicProfileTypes';
 import './clinic-public-profile.css';
 
@@ -141,12 +146,20 @@ function addressQuery(data: HubClinicPublicLandingData): string | null {
 }
 
 function serviceMeta(s: {
+  service_group?: string | null;
   default_duration_minutes: number | null;
   price: number | null;
+  price_note?: string | null;
 }): string | null {
+  const canPrice = allowsPublicServicePrice(s.service_group);
+  const pricePart = canPrice
+    ? s.price != null
+      ? formatMoney(s.price)
+      : null
+    : s.price_note?.trim() || PUBLIC_PRICE_EVALUATION_NOTE;
   const meta = [
     s.default_duration_minutes ? `${s.default_duration_minutes} min` : null,
-    s.price != null ? formatMoney(s.price) : null,
+    pricePart,
   ]
     .filter(Boolean)
     .join(' · ');

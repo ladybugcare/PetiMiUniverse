@@ -175,6 +175,7 @@ export type HubPublicClinicLandingPayload = {
     default_duration_minutes: number | null;
     blurb: string | null;
     price: number | null;
+    price_note?: string | null;
   }>;
   service_groups: Array<{
     id: string;
