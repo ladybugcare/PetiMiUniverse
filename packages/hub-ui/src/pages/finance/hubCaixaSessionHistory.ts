@@ -1,9 +1,11 @@
 import type {
+  HubCashPaymentReceivableContext,
   HubCashSessionSummary,
   HubFinanceDayBoardItem,
   HubPaymentMethod,
 } from '../../api/hubFinancialApi';
 import { paymentMethodLabel } from '../../utils/hubPaymentMethods';
+import { COMANDA_ORIGIN_LABELS } from './comandaListPreview';
 
 export type CaixaHistoryIconKind =
   | HubPaymentMethod
@@ -13,6 +15,18 @@ export type CaixaHistoryIconKind =
   | 'billing';
 
 export type CaixaHistoryIconTone = 'green' | 'blue' | 'purple' | 'teal' | 'orange' | 'amber' | 'red';
+
+export type CaixaHistorySaleChannel = 'quick_sale' | 'agenda' | 'other';
+
+export type CaixaHistoryComposition = 'product' | 'service' | 'mixed';
+
+export type CaixaHistoryChipTone = 'quick' | 'agenda' | 'product' | 'service' | 'mixed' | 'other';
+
+export type CaixaHistoryChip = {
+  key: string;
+  label: string;
+  tone: CaixaHistoryChipTone;
+};
 
 export type CaixaSessionHistoryItem = {
   id: string;
@@ -26,6 +40,16 @@ export type CaixaSessionHistoryItem = {
   icon_kind: CaixaHistoryIconKind;
   icon_tone: CaixaHistoryIconTone;
   notes?: string | null;
+  /** Referências para abrir comanda / cobrança no clique. */
+  comanda_id?: string | null;
+  receivable_id?: string | null;
+  payment_id?: string | null;
+  movement_id?: string | null;
+  origin_type?: string | null;
+  origin_id?: string | null;
+  sale_channel?: CaixaHistorySaleChannel | null;
+  composition?: CaixaHistoryComposition | null;
+  chips?: CaixaHistoryChip[];
 };
 
 const PAYMENT_META: Record<
@@ -41,12 +65,69 @@ const PAYMENT_META: Record<
   customer_credit: { title: 'Crédito do tutor utilizado', tone: 'amber' },
 };
 
+const AGENDA_ORIGIN_TYPES = new Set([
+  'appointment',
+  'grooming_session',
+  'encounter',
+  'boarding_reservation',
+  'quote',
+  'hospitalization',
+  'package',
+]);
+
+export function resolveSaleChannel(originType: string | null | undefined): CaixaHistorySaleChannel | null {
+  if (!originType) return null;
+  if (originType === 'manual') return 'quick_sale';
+  if (AGENDA_ORIGIN_TYPES.has(originType)) return 'agenda';
+  return 'other';
+}
+
+export function resolveComposition(
+  hasProduct: boolean,
+  hasService: boolean,
+): CaixaHistoryComposition | null {
+  if (hasProduct && hasService) return 'mixed';
+  if (hasProduct) return 'product';
+  if (hasService) return 'service';
+  return null;
+}
+
+export function buildHistoryChips(opts: {
+  saleChannel?: CaixaHistorySaleChannel | null;
+  composition?: CaixaHistoryComposition | null;
+  originType?: string | null;
+}): CaixaHistoryChip[] {
+  const chips: CaixaHistoryChip[] = [];
+  if (opts.saleChannel === 'quick_sale') {
+    chips.push({ key: 'channel', label: 'Venda rápida', tone: 'quick' });
+  } else if (opts.saleChannel === 'agenda') {
+    const originLabel =
+      (opts.originType && COMANDA_ORIGIN_LABELS[opts.originType]) || 'Agenda';
+    chips.push({ key: 'channel', label: originLabel, tone: 'agenda' });
+  } else if (opts.saleChannel === 'other' && opts.originType) {
+    const originLabel = COMANDA_ORIGIN_LABELS[opts.originType] || opts.originType;
+    chips.push({ key: 'channel', label: originLabel, tone: 'other' });
+  }
+
+  if (opts.composition === 'product') {
+    chips.push({ key: 'composition', label: 'Produto', tone: 'product' });
+  } else if (opts.composition === 'service') {
+    chips.push({ key: 'composition', label: 'Serviço', tone: 'service' });
+  } else if (opts.composition === 'mixed') {
+    chips.push({ key: 'composition', label: 'Misto', tone: 'mixed' });
+  }
+  return chips;
+}
+
 function dayBoardPartyLabel(item: HubFinanceDayBoardItem): string {
   const who = [item.guardian?.full_name, item.pet?.name].filter(Boolean).join(' • ');
   return who || item.origin_label || 'Atendimento';
 }
 
-function dayBoardBillingMeta(item: HubFinanceDayBoardItem): Pick<CaixaSessionHistoryItem, 'title' | 'subtitle' | 'icon_kind' | 'icon_tone'> {
+function dayBoardBillingMeta(item: HubFinanceDayBoardItem): Pick<
+  CaixaSessionHistoryItem,
+  'title' | 'subtitle' | 'icon_kind' | 'icon_tone'
+> {
   const who = dayBoardPartyLabel(item);
   const services = (item.services ?? []).map((s) => s.name).filter(Boolean).join(' • ');
   const b = item.billing;
@@ -75,8 +156,8 @@ function dayBoardBillingMeta(item: HubFinanceDayBoardItem): Pick<CaixaSessionHis
     };
   }
   return {
-    title: 'Aguardando cobrança',
-    subtitle: who,
+    title: 'Sem comanda',
+    subtitle: services || who,
     icon_kind: 'billing',
     icon_tone: 'amber',
   };
@@ -86,10 +167,7 @@ function dayBoardTimestamp(item: HubFinanceDayBoardItem): string {
   return item.billing.finance_handoff_at ?? item.starts_at ?? new Date().toISOString();
 }
 
-function paymentSubtitle(
-  payment: Record<string, unknown>,
-): string {
-  const receivable = payment.receivable as Record<string, unknown> | null | undefined;
+function paymentDetailSubtitle(payment: Record<string, unknown>): string {
   const tendered = payment.tendered_amount != null ? Number(payment.tendered_amount) : null;
   const change = payment.change_amount != null ? Number(payment.change_amount) : null;
   if (
@@ -104,11 +182,23 @@ function paymentSubtitle(
   }
   const notes = String(payment.notes ?? '').trim();
   if (notes) return notes;
-  if (receivable?.id) {
-    const shortId = String(receivable.id).slice(0, 8);
-    return `Recebível #${shortId}`;
+  return '';
+}
+
+function compositionFromComandaRecord(comanda: Record<string, unknown>): {
+  has_product: boolean;
+  has_service: boolean;
+} {
+  const items = Array.isArray(comanda.items) ? comanda.items : [];
+  let has_product = false;
+  let has_service = false;
+  for (const raw of items) {
+    const it = raw as { item_kind?: string };
+    const kind = String(it?.item_kind ?? '');
+    if (kind === 'product') has_product = true;
+    else if (kind === 'service' || kind === 'fee') has_service = true;
   }
-  return 'Pagamento na sessão';
+  return { has_product, has_service };
 }
 
 export function sumDayBoardPendingAmount(items: HubFinanceDayBoardItem[]): number {
@@ -150,6 +240,12 @@ export function buildCaixaSessionHistoryItems(
   openComandas: Array<Record<string, unknown>>,
 ): CaixaSessionHistoryItem[] {
   const sessionPayments = cashSummary?.all_payments ?? cashSummary?.payments ?? [];
+  const openComandaById = new Map(
+    openComandas
+      .filter((c) => c?.id)
+      .map((c) => [String(c.id), c] as const),
+  );
+
   const paymentComandaIds = new Set(
     sessionPayments
       .map((p) => (p.receivable as { comanda_id?: string | null } | undefined)?.comanda_id)
@@ -164,17 +260,52 @@ export function buildCaixaSessionHistoryItems(
       title: `Recebimento (${paymentMethodLabel(method)})`,
       tone: 'green' as const,
     };
+    const receivable = (payment.receivable ?? null) as HubCashPaymentReceivableContext | null;
+    const receivableId =
+      (receivable?.id ? String(receivable.id) : null) ||
+      (payment.receivable_id ? String(payment.receivable_id) : null);
+    const comandaId = receivable?.comanda_id ? String(receivable.comanda_id) : null;
+    const openComanda = comandaId ? openComandaById.get(comandaId) : undefined;
+    const originType =
+      (receivable?.comanda_origin_type ? String(receivable.comanda_origin_type) : null) ||
+      (openComanda?.origin_type ? String(openComanda.origin_type) : null);
+
+    let hasProduct = Boolean(receivable?.has_product);
+    let hasService = Boolean(receivable?.has_service);
+    if (!hasProduct && !hasService && openComanda) {
+      const fromOpen = compositionFromComandaRecord(openComanda);
+      hasProduct = fromOpen.has_product;
+      hasService = fromOpen.has_service;
+    }
+
+    const saleChannel = resolveSaleChannel(originType);
+    const composition = resolveComposition(hasProduct, hasService);
+    const chips = buildHistoryChips({ saleChannel, composition, originType });
+    const detail = paymentDetailSubtitle(raw);
+    const fallbackId = comandaId
+      ? `Comanda #${comandaId.slice(0, 8)}`
+      : receivableId
+        ? `Recebível #${receivableId.slice(0, 8)}`
+        : 'Pagamento na sessão';
+
     return {
       id: `payment:${payment.id}`,
-      row_kind: 'payment',
+      row_kind: 'payment' as const,
       label: meta.title,
       title: meta.title,
-      subtitle: paymentSubtitle(raw),
+      subtitle: detail || (chips.length ? '' : fallbackId),
       signed_amount: Number(payment.amount ?? 0),
       happened_at: payment.payment_date,
       icon_kind: method,
       icon_tone: meta.tone,
       notes: payment.notes ?? null,
+      payment_id: String(payment.id),
+      receivable_id: receivableId,
+      comanda_id: comandaId,
+      origin_type: originType,
+      sale_channel: saleChannel,
+      composition,
+      chips,
     };
   });
 
@@ -182,15 +313,17 @@ export function buildCaixaSessionHistoryItems(
     const isDeposit = movement.movement_type === 'deposit';
     return {
       id: `movement:${movement.id}`,
-      row_kind: 'movement',
+      row_kind: 'movement' as const,
       label: isDeposit ? 'Suprimento' : 'Sangria',
       title: isDeposit ? 'Suprimento realizado' : 'Sangria realizada',
       subtitle: String(movement.notes ?? '').trim() || (isDeposit ? 'Entrada na gaveta' : 'Retirada da gaveta'),
       signed_amount: isDeposit ? Number(movement.amount ?? 0) : -Number(movement.amount ?? 0),
       happened_at: movement.created_at,
-      icon_kind: isDeposit ? 'deposit' : 'withdrawal',
-      icon_tone: isDeposit ? 'purple' : 'red',
+      icon_kind: (isDeposit ? 'deposit' : 'withdrawal') as CaixaHistoryIconKind,
+      icon_tone: (isDeposit ? 'purple' : 'red') as CaixaHistoryIconTone,
       notes: movement.notes ?? null,
+      movement_id: String(movement.id),
+      chips: [],
     };
   });
 
@@ -202,6 +335,14 @@ export function buildCaixaSessionHistoryItems(
     .filter((item) => item.billing.receivable_status !== 'paid' && !item.billing.finance_handoff_at)
     .map((item) => {
       const meta = dayBoardBillingMeta(item);
+      const saleChannel = resolveSaleChannel(item.origin_type);
+      const hasService = (item.services ?? []).length > 0;
+      const composition = resolveComposition(false, hasService) ?? (saleChannel === 'agenda' ? 'service' : null);
+      const chips = buildHistoryChips({
+        saleChannel: saleChannel ?? 'agenda',
+        composition,
+        originType: item.origin_type,
+      });
       return {
         id: `billing:dayboard:${item.origin_type}:${item.origin_id}`,
         row_kind: 'billing' as const,
@@ -213,6 +354,15 @@ export function buildCaixaSessionHistoryItems(
         is_pending: true,
         icon_kind: meta.icon_kind,
         icon_tone: meta.icon_tone,
+        comanda_id: item.billing.comanda_id ? String(item.billing.comanda_id) : null,
+        receivable_id: item.billing.active_receivable_id
+          ? String(item.billing.active_receivable_id)
+          : null,
+        origin_type: item.origin_type,
+        origin_id: item.origin_id,
+        sale_channel: saleChannel ?? 'agenda',
+        composition,
+        chips,
       };
     });
 
@@ -228,17 +378,34 @@ export function buildCaixaSessionHistoryItems(
       const pet = comanda.pet as { name?: string } | null;
       const who = [guardian?.full_name, pet?.name].filter(Boolean).join(' • ') || 'Comanda';
       const shortId = String(comanda.id ?? '').slice(0, 8);
+      const comandaId = String(comanda.id);
+      const originType = comanda.origin_type ? String(comanda.origin_type) : null;
+      const saleChannel = resolveSaleChannel(originType);
+      const { has_product, has_service } = compositionFromComandaRecord(comanda);
+      const composition = resolveComposition(has_product, has_service);
+      const chips = buildHistoryChips({ saleChannel, composition, originType });
+      const title =
+        saleChannel === 'quick_sale'
+          ? 'Venda rápida'
+          : saleChannel === 'agenda'
+            ? 'Comanda aberta'
+            : 'Comanda criada';
       return {
-        id: `billing:comanda:${String(comanda.id)}`,
+        id: `billing:comanda:${comandaId}`,
         row_kind: 'billing' as const,
-        label: `Comanda aberta — ${who}`,
-        title: 'Comanda criada',
+        label: `${title} — ${who}`,
+        title,
         subtitle: `#${shortId} • ${who}`,
         signed_amount: Number(comanda.total_amount ?? 0),
         happened_at: String(comanda.opened_at ?? new Date().toISOString()),
         is_pending: true,
-        icon_kind: 'comanda',
-        icon_tone: 'orange',
+        icon_kind: 'comanda' as const,
+        icon_tone: (saleChannel === 'quick_sale' ? 'teal' : 'orange') as CaixaHistoryIconTone,
+        comanda_id: comandaId,
+        origin_type: originType,
+        sale_channel: saleChannel,
+        composition,
+        chips,
       };
     });
 

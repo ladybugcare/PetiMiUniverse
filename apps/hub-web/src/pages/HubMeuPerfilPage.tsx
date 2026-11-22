@@ -69,7 +69,7 @@ const PREF_ROWS: Array<{
   {
     key: 'alertas',
     title: 'Alertas',
-    subtitle: 'Estoque baixo, validade próxima e avisos semelhantes.',
+    subtitle: 'Estoque baixo, validade próxima, séries a renovar e avisos semelhantes.',
   },
 ];
 

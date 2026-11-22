@@ -22,6 +22,7 @@ const TYPE_TO_CATEGORY: Record<HubStaffNotificationType, HubNotificationPrefCate
   hub_boarding_checkin: 'operacao',
   hub_boarding_checkout: 'operacao',
   hub_stock_alert: 'alertas',
+  hub_series_ending_soon: 'alertas',
 };
 
 export function hubNotificationCategoryForType(

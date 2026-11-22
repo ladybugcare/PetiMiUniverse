@@ -248,7 +248,12 @@ const SHOWCASE = {
 };
 
 async function fetchJson(url, options = {}) {
-  const res = await fetch(url, options);
+  const headers = { ...(options.headers || {}) };
+  // API de produção exige Origin do Hub (CORS).
+  if (/api\.petmi\.app/i.test(url) && !headers.Origin && !headers.origin) {
+    headers.Origin = process.env.HUB_SEED_ORIGIN || 'https://hub.petmi.app';
+  }
+  const res = await fetch(url, { ...options, headers });
   const text = await res.text();
   let data;
   try {

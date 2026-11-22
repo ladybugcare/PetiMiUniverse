@@ -251,6 +251,7 @@ const HubTodayDashboardPage: React.FC = () => {
     (alerts?.due_today_payables_count ?? 0) > 0 ||
     (alerts?.vaccines_due ?? 0) > 0 ||
     (alerts?.low_stock ?? 0) > 0 ||
+    (canAppointments && (alerts?.series_ending_soon ?? 0) > 0) ||
     Boolean(summary?.boarding?.hotel.over_capacity) ||
     Boolean(summary?.boarding?.daycare.over_capacity) ||
     (summary?.pickup?.routes_without_driver ?? 0) > 0;
@@ -464,6 +465,24 @@ const HubTodayDashboardPage: React.FC = () => {
                   </div>
                   <Link className="hub-dash__alert-cta" to={reportHref('vaccines-due', { days: '30' })}>
                     Vacinas a vencer <ArrowRight size={14} />
+                  </Link>
+                </div>
+              ) : null}
+
+              {canAppointments && (alerts?.series_ending_soon ?? 0) > 0 ? (
+                <div className="hub-dash__alert-card">
+                  <CalendarDays size={20} strokeWidth={1.75} aria-hidden />
+                  <div>
+                    <div className="hub-dash__alert-title">Séries recorrentes a terminar</div>
+                    <div className="hub-dash__alert-meta">
+                      {alerts?.series_ending_soon}{' '}
+                      {(alerts?.series_ending_soon ?? 0) === 1
+                        ? 'série precisa de renovação'
+                        : 'séries precisam de renovação'}
+                    </div>
+                  </div>
+                  <Link className="hub-dash__alert-cta" to="/hub/agenda">
+                    Abrir agenda <ArrowRight size={14} />
                   </Link>
                 </div>
               ) : null}

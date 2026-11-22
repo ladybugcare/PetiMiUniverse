@@ -1,6 +1,15 @@
 import { Plus, Trash2 } from 'lucide-react';
 import type { HubPaymentMethod } from '../../api/hubFinancialApi';
 import {
+  HubSearchableCombobox,
+  type HubComboboxOption,
+} from '../../components/HubSearchableCombobox';
+import {
+  emptyCardMachineFees,
+  previewCardFee,
+  type CardMachineFees,
+} from '../../utils/hubCardMachineFees';
+import {
   HUB_PAYMENT_METHOD_LABELS,
 } from '../../utils/hubPaymentMethods';
 
@@ -9,6 +18,8 @@ export type CheckoutPaymentLine = {
   method: HubPaymentMethod;
   amountStr: string;
   tenderedStr: string;
+  /** Parcelas (crédito). Débito e demais métodos usam 1. */
+  installments: number;
 };
 
 function round2(n: number): number {
@@ -39,6 +50,7 @@ export function createDefaultPaymentLine(
     method,
     amountStr: amount > 0 ? amount.toFixed(2).replace('.', ',') : '',
     tenderedStr: '',
+    installments: 1,
   };
 }
 
@@ -63,6 +75,23 @@ export function totalChangeDue(lines: CheckoutPaymentLine[]): number {
   );
 }
 
+export function totalCardFeeEstimate(
+  lines: CheckoutPaymentLine[],
+  fees: CardMachineFees,
+): number {
+  return round2(
+    lines.reduce((s, line) => {
+      const amount = parseAmount(line.amountStr);
+      if (!(amount > 0)) return s;
+      const installments = line.method === 'debit_card' ? 1 : line.installments || 1;
+      const preview = previewCardFee(fees, line.method, amount, installments);
+      return s + (preview?.fee_amount ?? 0);
+    }, 0),
+  );
+}
+
+const CREDIT_INSTALLMENT_OPTIONS = Array.from({ length: 18 }, (_, i) => i + 1);
+
 type Props = {
   due: number;
   lines: CheckoutPaymentLine[];
@@ -72,6 +101,7 @@ type Props = {
   /** Quando false, só permite uma linha (ex.: agrupamento by_pet sem parcial). */
   allowMultiple?: boolean;
   disabled?: boolean;
+  cardMachineFees?: CardMachineFees;
 };
 
 export function CheckoutPaymentLinesEditor({
@@ -82,11 +112,22 @@ export function CheckoutPaymentLinesEditor({
   cashSessionOpen,
   allowMultiple = true,
   disabled = false,
+  cardMachineFees,
 }: Props) {
+  const fees = cardMachineFees ?? emptyCardMachineFees();
   const distributed = sumPaymentLines(lines);
   const remaining = round2(Math.max(0, due - distributed));
   const change = totalChangeDue(lines);
+  const feeTotal = totalCardFeeEstimate(lines, fees);
   const methods = acceptedMethods.length ? acceptedMethods : (['pix'] as HubPaymentMethod[]);
+  const methodOptions: HubComboboxOption[] = methods.map((m) => ({
+    value: m,
+    label: HUB_PAYMENT_METHOD_LABELS[m] ?? m,
+  }));
+  const installmentOptions: HubComboboxOption[] = CREDIT_INSTALLMENT_OPTIONS.map((n) => ({
+    value: String(n),
+    label: `${n}x`,
+  }));
 
   const updateLine = (id: string, patch: Partial<CheckoutPaymentLine>) => {
     onChange(lines.map((l) => (l.id === id ? { ...l, ...patch } : l)));
@@ -125,85 +166,133 @@ export function CheckoutPaymentLinesEditor({
             <strong>{formatBrl(change)}</strong>
           </div>
         ) : null}
+        {feeTotal > 0.009 ? (
+          <div>
+            <span className="ui-label">Taxa maq.</span>
+            <strong>{formatBrl(feeTotal)}</strong>
+          </div>
+        ) : null}
       </div>
 
       <ul className="hub-checkout-payment-lines__list">
-        {lines.map((line, idx) => (
-          <li key={line.id} className="hub-checkout-payment-lines__row">
-            <label className="hub-clientes__field">
-              <span className="ui-label">Forma {lines.length > 1 ? idx + 1 : ''}</span>
-              <select
-                className="hub-clientes__input"
-                value={line.method}
-                disabled={disabled}
-                onChange={(e) =>
-                  updateLine(line.id, {
-                    method: e.target.value as HubPaymentMethod,
-                    tenderedStr: e.target.value === 'cash' ? line.tenderedStr : '',
-                  })
-                }
-              >
-                {methods.map((m) => (
-                  <option key={m} value={m}>
-                    {HUB_PAYMENT_METHOD_LABELS[m] ?? m}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="hub-clientes__field">
-              <span className="ui-label">Valor</span>
-              <input
-                className="hub-clientes__input"
-                inputMode="decimal"
-                value={line.amountStr}
-                disabled={disabled}
-                onChange={(e) => updateLine(line.id, { amountStr: e.target.value })}
-                placeholder="0,00"
-              />
-            </label>
-            {line.method === 'cash' ? (
+        {lines.map((line, idx) => {
+          const amount = parseAmount(line.amountStr);
+          const installments = line.method === 'debit_card' ? 1 : line.installments || 1;
+          const feePreview =
+            Number.isFinite(amount) && amount > 0
+              ? previewCardFee(fees, line.method, amount, installments)
+              : null;
+
+          return (
+            <li key={line.id} className="hub-checkout-payment-lines__row">
+              <div className="hub-clientes__field">
+                <label className="ui-label" htmlFor={`checkout-pay-method-${line.id}`}>
+                  Forma {lines.length > 1 ? idx + 1 : ''}
+                </label>
+                <HubSearchableCombobox
+                  id={`checkout-pay-method-${line.id}`}
+                  className="hub-combobox--clientes"
+                  options={methodOptions}
+                  value={line.method}
+                  disabled={disabled}
+                  clearable={false}
+                  allowCreate={false}
+                  placeholder="Selecionar forma"
+                  searchPlaceholder="Buscar…"
+                  ariaLabel={`Forma de pagamento${lines.length > 1 ? ` ${idx + 1}` : ''}`}
+                  onChange={(v) => {
+                    if (!v) return;
+                    const method = v as HubPaymentMethod;
+                    updateLine(line.id, {
+                      method,
+                      tenderedStr: method === 'cash' ? line.tenderedStr : '',
+                      installments: method === 'credit_card' ? line.installments || 1 : 1,
+                    });
+                  }}
+                />
+              </div>
               <label className="hub-clientes__field">
-                <span className="ui-label">Recebido</span>
+                <span className="ui-label">Valor</span>
                 <input
                   className="hub-clientes__input"
                   inputMode="decimal"
-                  value={line.tenderedStr}
+                  value={line.amountStr}
                   disabled={disabled}
-                  onChange={(e) => updateLine(line.id, { tenderedStr: e.target.value })}
-                  placeholder="opcional"
+                  onChange={(e) => updateLine(line.id, { amountStr: e.target.value })}
+                  placeholder="0,00"
                 />
               </label>
-            ) : (
-              <div className="hub-checkout-payment-lines__spacer" />
-            )}
-            {allowMultiple && lines.length > 1 ? (
-              <button
-                type="button"
-                className="hub-btn hub-btn--ghost hub-btn--icon"
-                aria-label="Remover forma de pagamento"
-                disabled={disabled}
-                onClick={() => removeLine(line.id)}
-              >
-                <Trash2 size={16} />
-              </button>
-            ) : (
-              <span className="hub-checkout-payment-lines__spacer" />
-            )}
-            {line.method === 'cash' && !cashSessionOpen ? (
-              <p className="hub-checkout-payment-lines__hint hub-checkout-payment-lines__hint--warn">
-                Abra o caixa nesta unidade para receber em dinheiro.
-              </p>
-            ) : null}
-            {line.method === 'cash' && line.tenderedStr.trim() ? (
-              <p className="hub-checkout-payment-lines__hint">
-                Troco desta linha:{' '}
-                {formatBrl(
-                  Math.max(0, round2(parseAmount(line.tenderedStr) - parseAmount(line.amountStr))),
-                )}
-              </p>
-            ) : null}
-          </li>
-        ))}
+              {line.method === 'credit_card' ? (
+                <div className="hub-clientes__field">
+                  <label className="ui-label" htmlFor={`checkout-pay-installments-${line.id}`}>
+                    Parcelas
+                  </label>
+                  <HubSearchableCombobox
+                    id={`checkout-pay-installments-${line.id}`}
+                    className="hub-combobox--clientes"
+                    options={installmentOptions}
+                    value={String(line.installments || 1)}
+                    disabled={disabled}
+                    clearable={false}
+                    allowCreate={false}
+                    placeholder="Parcelas"
+                    searchPlaceholder="Buscar…"
+                    ariaLabel={`Parcelas${lines.length > 1 ? ` da forma ${idx + 1}` : ''}`}
+                    onChange={(v) =>
+                      updateLine(line.id, { installments: Number(v) || 1 })
+                    }
+                  />
+                </div>
+              ) : line.method === 'cash' ? (
+                <label className="hub-clientes__field">
+                  <span className="ui-label">Recebido</span>
+                  <input
+                    className="hub-clientes__input"
+                    inputMode="decimal"
+                    value={line.tenderedStr}
+                    disabled={disabled}
+                    onChange={(e) => updateLine(line.id, { tenderedStr: e.target.value })}
+                    placeholder="opcional"
+                  />
+                </label>
+              ) : (
+                <div className="hub-checkout-payment-lines__spacer" />
+              )}
+              {allowMultiple && lines.length > 1 ? (
+                <button
+                  type="button"
+                  className="hub-btn hub-btn--ghost hub-btn--icon"
+                  aria-label="Remover forma de pagamento"
+                  disabled={disabled}
+                  onClick={() => removeLine(line.id)}
+                >
+                  <Trash2 size={16} />
+                </button>
+              ) : (
+                <span className="hub-checkout-payment-lines__spacer" />
+              )}
+              {line.method === 'cash' && !cashSessionOpen ? (
+                <p className="hub-checkout-payment-lines__hint hub-checkout-payment-lines__hint--warn">
+                  Abra o caixa nesta unidade para receber em dinheiro.
+                </p>
+              ) : null}
+              {line.method === 'cash' && line.tenderedStr.trim() ? (
+                <p className="hub-checkout-payment-lines__hint">
+                  Troco desta linha:{' '}
+                  {formatBrl(
+                    Math.max(0, round2(parseAmount(line.tenderedStr) - parseAmount(line.amountStr))),
+                  )}
+                </p>
+              ) : null}
+              {feePreview ? (
+                <p className="hub-checkout-payment-lines__hint">
+                  Taxa maq. {String(feePreview.rate_percent).replace('.', ',')}% · líquido{' '}
+                  {formatBrl(feePreview.net_amount)} (perde {formatBrl(feePreview.fee_amount)})
+                </p>
+              ) : null}
+            </li>
+          );
+        })}
       </ul>
 
       {allowMultiple && remaining > 0.009 ? (

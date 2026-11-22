@@ -87,6 +87,11 @@ export type HubComandaDetailResponse = {
   active_receivable_ids?: string[];
   paid_total?: number;
   balance_due?: number;
+  /** Totais internos de taxa da maquininha (não expor ao tutor). */
+  card_gross_total?: number;
+  card_fee_total?: number;
+  card_net_total?: number;
+  card_without_fee_gross_total?: number;
   operational_complete?: boolean;
   edit_scopes?: HubComandaEditScopes;
   allowed_guardians?: HubComandaAllowedGuardian[];
@@ -131,7 +136,8 @@ export type HubComandaOpenBody = {
   pet_ids?: string[];
   /** Linhas pet + pacote — permite pacotes diferentes na mesma venda. */
   package_lines?: HubComandaPackageLine[];
-  guardian_id?: string;
+  /** Null/omit = venda avulsa de balcão (sem tutor). */
+  guardian_id?: string | null;
   unit_id?: string | null;
   manual_lines?: HubComandaManualLine[];
   hub_case_id?: string | null;

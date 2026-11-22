@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Dog, ShoppingBag, User, UserPlus } from 'lucide-react';
+import { ChevronDown, ChevronUp, Dog, ScanLine, ShoppingBag, User, UserPlus } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
 import { hubGuardiansApi, type HubGuardian } from '../../api/hubGuardiansApi';
 import { hubPetsApi, type HubPet } from '../../api/hubPetsApi';
@@ -10,7 +10,7 @@ import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
-import { ComandaItemsSection } from './ComandaItemsSection';
+import { QuickSaleCart } from './QuickSaleCart';
 import {
   computeLineTotal,
   newProductDraft,
@@ -40,6 +40,37 @@ function formatBrl(n: number): string {
   return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function isSellableProduct(p: HubInventoryItem): boolean {
+  if (p.deleted_at) return false;
+  if (p.active === false) return false;
+  if (p.item_kind !== 'product') return false;
+  const purpose = (p.sale_purpose ?? '').trim().toUpperCase();
+  return !purpose || purpose === 'SALE';
+}
+
+function normalizeCode(raw: string): string {
+  return raw.trim().toLowerCase();
+}
+
+function matchInventoryByCode(items: HubInventoryItem[], code: string): HubInventoryItem | null {
+  const raw = code.trim();
+  if (!raw) return null;
+  const norm = normalizeCode(raw);
+  const digits = digitsOnly(raw);
+  const exact =
+    items.find((p) => p.ean && digitsOnly(p.ean) === digits && digits.length >= 8) ||
+    items.find((p) => p.store_sku && normalizeCode(p.store_sku) === norm) ||
+    items.find((p) => p.ean && normalizeCode(p.ean) === norm);
+  return exact ?? null;
+}
+
+function pickLotWithStock(lots: HubInventoryLotRow[], itemId: string): HubInventoryLotRow | undefined {
+  return (
+    lots.find((l) => l.item_id === itemId && Number(l.qty_on_hand ?? 0) > 0) ??
+    lots.find((l) => l.item_id === itemId)
+  );
+}
+
 export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpened, onCheckout }) => {
   const clinicId = getStoredClinicId();
   const { showError } = useAlert();
@@ -49,6 +80,7 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
   const [pets, setPets] = useState<HubPet[]>([]);
   const [guardianId, setGuardianId] = useState('');
   const [petId, setPetId] = useState('');
+  const [showClientSection, setShowClientSection] = useState(false);
   const [showQuickCreate, setShowQuickCreate] = useState(false);
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
@@ -56,23 +88,39 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
   const [createError, setCreateError] = useState<string | null>(null);
   const [creatingGuardian, setCreatingGuardian] = useState(false);
   const [items, setItems] = useState<ComandaItemDraft[]>([]);
-  const [catalogSearch, setCatalogSearch] = useState('');
   const [serviceTypes, setServiceTypes] = useState<HubServiceType[]>([]);
   const [inventoryItems, setInventoryItems] = useState<HubInventoryItem[]>([]);
   const [inventoryLots, setInventoryLots] = useState<HubInventoryLotRow[]>([]);
+  const [scanCode, setScanCode] = useState('');
+  const [scanFeedback, setScanFeedback] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null);
+  const [scanning, setScanning] = useState(false);
   const newItemCounterRef = useRef(0);
+  const scanInputRef = useRef<HTMLInputElement>(null);
+  const inventoryItemsRef = useRef<HubInventoryItem[]>([]);
+  const inventoryLotsRef = useRef<HubInventoryLotRow[]>([]);
+
+  useEffect(() => {
+    inventoryItemsRef.current = inventoryItems;
+  }, [inventoryItems]);
+  useEffect(() => {
+    inventoryLotsRef.current = inventoryLots;
+  }, [inventoryLots]);
+
+  const sellableProducts = useMemo(() => inventoryItems.filter(isSellableProduct), [inventoryItems]);
 
   const resetForm = useCallback(() => {
     setGuardianId('');
     setPetId('');
     setPets([]);
+    setShowClientSection(false);
     setShowQuickCreate(false);
     setFullName('');
     setPhone('');
     setTaxId('');
     setCreateError(null);
     setItems([]);
-    setCatalogSearch('');
+    setScanCode('');
+    setScanFeedback(null);
     newItemCounterRef.current = 0;
   }, []);
 
@@ -83,7 +131,7 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
       const [guRes, svcRes, invRes] = await Promise.all([
         hubGuardiansApi.list(clinicId, true, { status: 'active' }),
         hubServiceTypesApi.list(clinicId, false),
-        hubInventoryApi.items.list(clinicId),
+        hubInventoryApi.items.list(clinicId, false, 'product'),
       ]);
       setGuardians(guRes.guardians ?? []);
       setServiceTypes(svcRes.service_types ?? []);
@@ -110,6 +158,12 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
   }, [open, resetForm]);
 
   useEffect(() => {
+    if (!open || loading) return;
+    const t = window.setTimeout(() => scanInputRef.current?.focus(), 80);
+    return () => window.clearTimeout(t);
+  }, [open, loading]);
+
+  useEffect(() => {
     if (!clinicId || !guardianId) {
       setPets([]);
       setPetId('');
@@ -133,7 +187,7 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
 
   const guardianOptions = useMemo(
     () => [
-      { value: '', label: '— Selecionar tutor —' },
+      { value: '', label: '— Cliente avulso (sem tutor) —' },
       ...guardians.map((g) => ({
         value: g.id,
         label: g.phone ? `${g.full_name} · ${g.phone}` : g.full_name,
@@ -145,7 +199,7 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
 
   const petOptions = useMemo(
     () => [
-      { value: '', label: '— Sem pet (só tutor) —' },
+      { value: '', label: '— Sem pet —' },
       ...pets.map((p) => ({
         value: p.id,
         label: p.name,
@@ -164,16 +218,28 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
     () =>
       items.filter((it) => {
         const desc = it.description.trim();
-        const hasCatalog =
-          it.item_kind === 'product'
-            ? Boolean(it.hub_inventory_item_id)
-            : Boolean(it.hub_service_type_id);
-        return desc && hasCatalog && parseMoney(it.quantity) > 0;
+        if (!desc || parseMoney(it.quantity) <= 0) return false;
+        if (it.item_kind === 'product') {
+          return Boolean(it.hub_inventory_item_id && it.hub_inventory_lot_id);
+        }
+        return Boolean(it.hub_service_type_id);
       }),
     [items],
   );
 
-  const canSubmitBase = Boolean(clinicId && guardianId && unitId && !submitting);
+  const productMissingLot = useMemo(
+    () =>
+      items.some(
+        (it) =>
+          it.item_kind === 'product' &&
+          it.hub_inventory_item_id &&
+          !it.hub_inventory_lot_id &&
+          parseMoney(it.quantity) > 0,
+      ),
+    [items],
+  );
+
+  const canSubmitBase = Boolean(clinicId && unitId && !submitting);
 
   const updateItem = (idx: number, patch: Partial<ComandaItemDraft>) => {
     setItems((prev) =>
@@ -186,44 +252,118 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
     );
   };
 
-  const addNewService = () => {
-    const key = `${NEW_ITEM_KEY_PREFIX}svc-${newItemCounterRef.current++}`;
-    setItems((prev) => [...prev, { ...newServiceDraft(), id: key }]);
-  };
-
-  const addNewProduct = () => {
-    const key = `${NEW_ITEM_KEY_PREFIX}prd-${newItemCounterRef.current++}`;
-    setItems((prev) => [...prev, { ...newProductDraft(), id: key }]);
-  };
-
   const removeItem = (idx: number) => {
     setItems((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const applyService = (idx: number, serviceTypeId: string) => {
+  const bumpQty = (idx: number, delta: number) => {
+    setItems((prev) =>
+      prev.map((it, i) => {
+        if (i !== idx) return it;
+        const nextQty = Math.max(1, parseMoney(it.quantity) + delta);
+        const next = { ...it, quantity: String(nextQty) };
+        next.line_total = computeLineTotal(next);
+        return next;
+      }),
+    );
+  };
+
+  const addServiceById = (serviceTypeId: string) => {
     const st = serviceTypes.find((s) => s.id === serviceTypeId);
     if (!st) return;
-    updateItem(idx, {
+    const key = `${NEW_ITEM_KEY_PREFIX}svc-${newItemCounterRef.current++}`;
+    const draft: ComandaItemDraft = {
+      ...newServiceDraft(),
+      id: key,
       hub_service_type_id: st.id,
       description: st.name,
       unit_amount: String(st.sale_amount ?? 0),
-      item_kind: 'service',
-    });
+      quantity: '1',
+    };
+    draft.line_total = computeLineTotal(draft);
+    setItems((prev) => [...prev, draft]);
   };
 
-  const applyProduct = (idx: number, inventoryItemId: string) => {
-    const inv = inventoryItems.find((i) => i.id === inventoryItemId);
-    if (!inv) return;
-    const lot =
-      inventoryLots.find((l) => l.item_id === inventoryItemId && Number(l.qty_on_hand ?? 0) > 0) ??
-      inventoryLots.find((l) => l.item_id === inventoryItemId);
-    updateItem(idx, {
-      hub_inventory_item_id: inv.id,
-      hub_inventory_lot_id: lot?.id ?? null,
-      description: inv.name,
-      unit_amount: String(inv.sale_amount ?? 0),
-      item_kind: 'product',
+  const addOrIncrementProduct = useCallback((inv: HubInventoryItem, lots: HubInventoryLotRow[]) => {
+    const lot = pickLotWithStock(lots, inv.id);
+    const onHand = Number(inv.qty_on_hand ?? lot?.qty_on_hand ?? 0);
+    if (onHand <= 0 || !lot) {
+      setScanFeedback({ tone: 'err', text: `${inv.name}: sem estoque disponível` });
+      return false;
+    }
+    setItems((prev) => {
+      const existingIdx = prev.findIndex(
+        (it) =>
+          it.item_kind === 'product' &&
+          it.hub_inventory_item_id === inv.id &&
+          (it.hub_inventory_lot_id === lot.id || !it.hub_inventory_lot_id),
+      );
+      if (existingIdx >= 0) {
+        return prev.map((it, i) => {
+          if (i !== existingIdx) return it;
+          const qty = parseMoney(it.quantity) + 1;
+          const next = {
+            ...it,
+            quantity: String(qty),
+            hub_inventory_lot_id: it.hub_inventory_lot_id || lot.id,
+          };
+          next.line_total = computeLineTotal(next);
+          return next;
+        });
+      }
+      const key = `${NEW_ITEM_KEY_PREFIX}prd-${newItemCounterRef.current++}`;
+      const draft: ComandaItemDraft = {
+        ...newProductDraft(),
+        id: key,
+        hub_inventory_item_id: inv.id,
+        hub_inventory_lot_id: lot.id,
+        description: inv.name,
+        unit_amount: String(inv.sale_amount ?? 0),
+        quantity: '1',
+      };
+      draft.line_total = computeLineTotal(draft);
+      return [...prev, draft];
     });
+    setScanFeedback({ tone: 'ok', text: `${inv.name} adicionado` });
+    return true;
+  }, []);
+
+  const addProductById = (inventoryItemId: string) => {
+    const inv =
+      sellableProducts.find((i) => i.id === inventoryItemId) ??
+      inventoryItems.find((i) => i.id === inventoryItemId);
+    if (!inv) return;
+    const ok = addOrIncrementProduct(inv, inventoryLots);
+    if (!ok) showError(`${inv.name}: sem estoque disponível`);
+  };
+
+  const handleScanSubmit = async () => {
+    const code = scanCode.trim();
+    if (!code || !clinicId || scanning) return;
+    setScanning(true);
+    setScanFeedback(null);
+    try {
+      let hit = matchInventoryByCode(sellableProducts, code);
+      if (!hit) {
+        const res = await hubInventoryApi.items.list(clinicId, true, 'product', code);
+        const found = (res.items ?? []).filter(isSellableProduct);
+        hit = matchInventoryByCode(found, code) ?? found[0] ?? null;
+        if (hit && !inventoryItemsRef.current.some((i) => i.id === hit!.id)) {
+          setInventoryItems((prev) => [...prev, hit!]);
+        }
+      }
+      if (!hit) {
+        setScanFeedback({ tone: 'err', text: 'Código não encontrado' });
+        return;
+      }
+      addOrIncrementProduct(hit, inventoryLotsRef.current);
+    } catch (e: unknown) {
+      setScanFeedback({ tone: 'err', text: (e as Error)?.message || 'Erro na leitura' });
+    } finally {
+      setScanCode('');
+      setScanning(false);
+      scanInputRef.current?.focus();
+    }
   };
 
   const handleQuickCreate = async () => {
@@ -279,13 +419,14 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
   };
 
   const openComandaWithItems = async (): Promise<string> => {
-    if (!clinicId || !guardianId || !unitId) throw new Error('Selecione tutor e unidade.');
+    if (!clinicId || !unitId) throw new Error('Selecione a unidade.');
     if (readyItems.length === 0) throw new Error('Adicione ao menos um produto ou serviço.');
+    if (productMissingLot) throw new Error('Selecione o lote de cada produto.');
 
     const detail = await hubComandaApi.openComanda({
       clinic_id: clinicId,
       origin_type: 'manual',
-      guardian_id: guardianId,
+      guardian_id: guardianId || null,
       pet_id: petId || null,
       unit_id: unitId,
       manual_lines: [],
@@ -339,7 +480,7 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
               await hubComandaApi.openComanda({
                 clinic_id: clinicId!,
                 origin_type: 'manual',
-                guardian_id: guardianId,
+                guardian_id: guardianId || null,
                 pet_id: petId || null,
                 unit_id: unitId!,
                 manual_lines: [],
@@ -354,13 +495,17 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
     }
   };
 
+  const clientSummary = guardianId
+    ? guardians.find((g) => g.id === guardianId)?.full_name ?? 'Tutor selecionado'
+    : 'Cliente avulso';
+
   return (
     <HubSidePanel
       open={open}
       onClose={onClose}
       title="Venda rápida"
       titleIcon={<ShoppingBag size={20} strokeWidth={1.75} />}
-      subtitle="Monte a venda no balcão, escolha o pagamento e finalize sem sair desta tela."
+      subtitle="Passe o código, monte o carrinho e cobre — tutor e pet são opcionais."
       footer={
         <div className="hub-sell-package__footer">
           <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={onClose} disabled={submitting}>
@@ -377,8 +522,9 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
           <button
             type="button"
             className="hub-clientes__btn hub-clientes__btn--primary"
-            disabled={!canSubmitBase || readyItems.length === 0}
+            disabled={!canSubmitBase || readyItems.length === 0 || productMissingLot}
             onClick={() => void handleCheckout()}
+            title={productMissingLot ? 'Selecione o lote dos produtos' : undefined}
           >
             <ShoppingBag size={16} aria-hidden />
             {submitting ? 'Abrindo…' : `Cobrar ${formatBrl(cartTotal)}`}
@@ -389,147 +535,209 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
       {loading ? (
         <HubLoading variant="inline" label="Carregando catálogo…" />
       ) : (
-        <div className="hub-sell-package__form">
-          <div className="hub-clientes__field">
-            <div className="hub-sell-package__pets-head">
-              <label className="hub-clientes__label" htmlFor="quick-sale-guardian">
-                Tutor
-              </label>
-              {!showQuickCreate ? (
-                <button
-                  type="button"
-                  className="hub-clientes__link-btn hub-clientes__link-btn--with-icon"
-                  onClick={() => {
-                    setShowQuickCreate(true);
-                    setCreateError(null);
-                  }}
-                >
-                  <UserPlus size={14} strokeWidth={2.25} aria-hidden />
-                  Cadastrar rápido
-                </button>
-              ) : null}
+        <div className="hub-sell-package__form hub-quick-sale">
+          <div className="hub-quick-sale__scan">
+            <label className="hub-clientes__label" htmlFor="quick-sale-scan">
+              Código de barras / SKU
+            </label>
+            <div className="hub-quick-sale__scan-row">
+              <ScanLine size={18} strokeWidth={2} aria-hidden className="hub-quick-sale__scan-icon" />
+              <input
+                ref={scanInputRef}
+                id="quick-sale-scan"
+                className="hub-clientes__input hub-quick-sale__scan-input"
+                value={scanCode}
+                onChange={(e) => {
+                  setScanCode(e.target.value);
+                  if (scanFeedback) setScanFeedback(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleScanSubmit();
+                  }
+                }}
+                placeholder="Passe o leitor ou digite e Enter"
+                autoComplete="off"
+                inputMode="text"
+                disabled={scanning}
+                aria-describedby={scanFeedback ? 'quick-sale-scan-feedback' : undefined}
+              />
             </div>
-            <HubSearchableCombobox
-              id="quick-sale-guardian"
-              options={guardianOptions}
-              value={guardianId}
-              onChange={(id) => {
-                setGuardianId(id);
-                setShowQuickCreate(false);
-              }}
-              placeholder="Buscar tutor…"
-              searchPlaceholder="Nome, telefone ou CPF"
-              ariaLabel="Tutor"
-              triggerIcon={<User size={18} strokeWidth={2} aria-hidden />}
-            />
+            {scanFeedback ? (
+              <p
+                id="quick-sale-scan-feedback"
+                className={
+                  scanFeedback.tone === 'ok'
+                    ? 'hub-quick-sale__scan-feedback hub-quick-sale__scan-feedback--ok'
+                    : 'hub-quick-sale__scan-feedback hub-quick-sale__scan-feedback--err'
+                }
+                role="status"
+              >
+                {scanFeedback.text}
+              </p>
+            ) : (
+              <p className="hub-clientes__muted hub-sell-package__hint" style={{ marginTop: 6 }}>
+                Leitores USB digitam o código e enviam Enter automaticamente.
+              </p>
+            )}
           </div>
 
-          {showQuickCreate ? (
-            <div className="hub-sell-package__line-card" style={{ marginBottom: 12 }}>
-              <p className="hub-clientes__muted hub-sell-package__hint" style={{ marginTop: 0 }}>
-                Cadastro mínimo para venda no balcão. Depois você pode completar a ficha do cliente.
-              </p>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="quick-sale-name">
-                  Nome
-                </label>
-                <input
-                  id="quick-sale-name"
-                  className="hub-clientes__input"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  autoComplete="name"
-                />
-              </div>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="quick-sale-phone">
-                  Telefone
-                </label>
-                <input
-                  id="quick-sale-phone"
-                  className="hub-clientes__input"
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                  autoComplete="tel"
-                />
-              </div>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="quick-sale-tax">
-                  CPF
-                </label>
-                <input
-                  id="quick-sale-tax"
-                  className="hub-clientes__input"
-                  value={taxId}
-                  onChange={(e) => setTaxId(e.target.value)}
-                  autoComplete="off"
-                />
-              </div>
-              {createError ? <p className="hub-clientes__error">{createError}</p> : null}
-              <div className="hub-sell-package__footer" style={{ padding: 0, marginTop: 8 }}>
-                <button
-                  type="button"
-                  className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-                  onClick={() => {
-                    setShowQuickCreate(false);
-                    setCreateError(null);
-                  }}
-                  disabled={creatingGuardian}
-                >
-                  Fechar
-                </button>
-                <button
-                  type="button"
-                  className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-                  onClick={() => void handleQuickCreate()}
-                  disabled={creatingGuardian}
-                >
-                  {creatingGuardian ? 'Salvando…' : 'Salvar tutor'}
-                </button>
-              </div>
-            </div>
+          <QuickSaleCart
+            items={items}
+            serviceTypes={serviceTypes}
+            inventoryItems={sellableProducts}
+            inventoryLots={inventoryLots}
+            cartTotal={cartTotal}
+            onAddProductById={addProductById}
+            onAddServiceById={addServiceById}
+            onUpdateItem={updateItem}
+            onRemoveItem={removeItem}
+            onBumpQty={bumpQty}
+          />
+          {productMissingLot ? (
+            <p className="hub-clientes__error" style={{ marginTop: 0 }}>
+              Selecione o lote de cada produto antes de cobrar.
+            </p>
           ) : null}
 
-          <div className="hub-clientes__field">
-            <label className="hub-clientes__label" htmlFor="quick-sale-pet">
-              Pet (opcional)
-            </label>
-            <HubSearchableCombobox
-              id="quick-sale-pet"
-              options={petOptions}
-              value={petId}
-              onChange={setPetId}
-              placeholder={guardianId ? 'Sem pet ou escolher…' : 'Escolha o tutor primeiro'}
-              searchPlaceholder="Nome do pet"
-              ariaLabel="Pet"
-              disabled={!guardianId}
-              triggerIcon={<Dog size={18} strokeWidth={2} aria-hidden />}
-            />
-          </div>
+          <div className="hub-quick-sale__client">
+            <button
+              type="button"
+              className="hub-quick-sale__client-toggle"
+              onClick={() => setShowClientSection((v) => !v)}
+              aria-expanded={showClientSection}
+            >
+              <span>
+                <User size={16} strokeWidth={2} aria-hidden />
+                Cliente (opcional)
+              </span>
+              <span className="hub-quick-sale__client-summary">
+                {clientSummary}
+                {showClientSection ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
+              </span>
+            </button>
 
-          <div className="hub-quick-sale__cart">
-            <div className="hub-sell-package__pets-head">
-              <h3 className="hub-clientes__section-title" style={{ margin: 0 }}>
-                Itens
-              </h3>
-              <strong>{formatBrl(cartTotal)}</strong>
-            </div>
-            <ComandaItemsSection
-              items={items}
-              canEdit
-              catalogSearch={catalogSearch}
-              onCatalogSearchChange={setCatalogSearch}
-              serviceTypes={serviceTypes}
-              inventoryItems={inventoryItems}
-              inventoryLots={inventoryLots}
-              computeLineTotal={computeLineTotal}
-              onAddService={addNewService}
-              onAddProduct={addNewProduct}
-              onUpdateItem={updateItem}
-              onRemoveItem={removeItem}
-              onApplyService={applyService}
-              onApplyProduct={applyProduct}
-            />
+            {showClientSection ? (
+              <div className="hub-quick-sale__client-body">
+                <div className="hub-clientes__field">
+                  <div className="hub-sell-package__pets-head">
+                    <label className="hub-clientes__label" htmlFor="quick-sale-guardian">
+                      Tutor
+                    </label>
+                    {!showQuickCreate ? (
+                      <button
+                        type="button"
+                        className="hub-clientes__link-btn hub-clientes__link-btn--with-icon"
+                        onClick={() => {
+                          setShowQuickCreate(true);
+                          setCreateError(null);
+                        }}
+                      >
+                        <UserPlus size={14} strokeWidth={2.25} aria-hidden />
+                        Cadastrar rápido
+                      </button>
+                    ) : null}
+                  </div>
+                  <HubSearchableCombobox
+                    id="quick-sale-guardian"
+                    options={guardianOptions}
+                    value={guardianId}
+                    onChange={(id) => {
+                      setGuardianId(id);
+                      setShowQuickCreate(false);
+                    }}
+                    placeholder="Avulso ou buscar tutor…"
+                    searchPlaceholder="Nome, telefone ou CPF"
+                    ariaLabel="Tutor"
+                    triggerIcon={<User size={18} strokeWidth={2} aria-hidden />}
+                  />
+                </div>
+
+                {showQuickCreate ? (
+                  <div className="hub-sell-package__line-card" style={{ marginBottom: 12 }}>
+                    <p className="hub-clientes__muted hub-sell-package__hint" style={{ marginTop: 0 }}>
+                      Cadastro mínimo para vincular a venda. Depois você completa a ficha.
+                    </p>
+                    <div className="hub-clientes__field">
+                      <label className="hub-clientes__label" htmlFor="quick-sale-name">
+                        Nome
+                      </label>
+                      <input
+                        id="quick-sale-name"
+                        className="hub-clientes__input"
+                        value={fullName}
+                        onChange={(e) => setFullName(e.target.value)}
+                        autoComplete="name"
+                      />
+                    </div>
+                    <div className="hub-clientes__field">
+                      <label className="hub-clientes__label" htmlFor="quick-sale-phone">
+                        Telefone
+                      </label>
+                      <input
+                        id="quick-sale-phone"
+                        className="hub-clientes__input"
+                        value={phone}
+                        onChange={(e) => setPhone(e.target.value)}
+                        autoComplete="tel"
+                      />
+                    </div>
+                    <div className="hub-clientes__field">
+                      <label className="hub-clientes__label" htmlFor="quick-sale-tax">
+                        CPF
+                      </label>
+                      <input
+                        id="quick-sale-tax"
+                        className="hub-clientes__input"
+                        value={taxId}
+                        onChange={(e) => setTaxId(e.target.value)}
+                        autoComplete="off"
+                      />
+                    </div>
+                    {createError ? <p className="hub-clientes__error">{createError}</p> : null}
+                    <div className="hub-sell-package__footer" style={{ padding: 0, marginTop: 8 }}>
+                      <button
+                        type="button"
+                        className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                        onClick={() => {
+                          setShowQuickCreate(false);
+                          setCreateError(null);
+                        }}
+                        disabled={creatingGuardian}
+                      >
+                        Fechar
+                      </button>
+                      <button
+                        type="button"
+                        className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                        onClick={() => void handleQuickCreate()}
+                        disabled={creatingGuardian}
+                      >
+                        {creatingGuardian ? 'Salvando…' : 'Salvar tutor'}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="hub-clientes__field">
+                  <label className="hub-clientes__label" htmlFor="quick-sale-pet">
+                    Pet (opcional)
+                  </label>
+                  <HubSearchableCombobox
+                    id="quick-sale-pet"
+                    options={petOptions}
+                    value={petId}
+                    onChange={setPetId}
+                    placeholder={guardianId ? 'Sem pet ou escolher…' : 'Só com tutor selecionado'}
+                    searchPlaceholder="Nome do pet"
+                    ariaLabel="Pet"
+                    disabled={!guardianId}
+                    triggerIcon={<Dog size={18} strokeWidth={2} aria-hidden />}
+                  />
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       )}

@@ -35,6 +35,9 @@ type Props = {
   canApprovePrices?: boolean;
   approvingPriceId?: string | null;
   onApprovePrice?: (item: HubComandaPendingPriceApproval) => void;
+  emptyServicesLabel?: string;
+  emptyProductsLabel?: string;
+  productSearchHint?: string;
 };
 
 export const ComandaItemsSection: React.FC<Props> = ({
@@ -58,6 +61,9 @@ export const ComandaItemsSection: React.FC<Props> = ({
   canApprovePrices = false,
   approvingPriceId = null,
   onApprovePrice,
+  emptyServicesLabel = 'Nenhum serviço nesta comanda.',
+  emptyProductsLabel = 'Nenhum produto de estoque nesta comanda.',
+  productSearchHint = 'Buscar por nome, EAN ou SKU…',
 }) => {
   const serviceRows = useMemo(
     () => items.map((it, idx) => ({ it, idx })).filter(({ it }) => !isProductItem(it)),
@@ -86,14 +92,30 @@ export const ComandaItemsSection: React.FC<Props> = ({
   }, [serviceTypes, q]);
 
   const productComboOptions = useMemo((): HubComboboxOption[] => {
-    const active = inventoryItems.filter((p) => !p.deleted_at);
-    const filtered = q ? active.filter((p) => p.name.toLowerCase().includes(q)) : active;
+    const active = inventoryItems.filter((p) => {
+      if (p.deleted_at || p.active === false) return false;
+      if (p.item_kind && p.item_kind !== 'product') return false;
+      const purpose = (p.sale_purpose ?? '').trim().toUpperCase();
+      return !purpose || purpose === 'SALE';
+    });
+    const filtered = q
+      ? active.filter((p) => {
+          const name = (p.name ?? '').toLowerCase();
+          const ean = (p.ean ?? '').toLowerCase();
+          const sku = (p.store_sku ?? '').toLowerCase();
+          return name.includes(q) || ean.includes(q) || sku.includes(q);
+        })
+      : active;
     return [
       { value: '', label: '— Selecionar produto —' },
-      ...filtered.map((p) => ({
-        value: p.id,
-        label: `${p.name} · estoque ${Number(p.qty_on_hand ?? 0)}`,
-      })),
+      ...filtered.map((p) => {
+        const qty = Number(p.qty_on_hand ?? 0);
+        const code = p.store_sku || p.ean;
+        return {
+          value: p.id,
+          label: code ? `${p.name} · ${code} · estoque ${qty}` : `${p.name} · estoque ${qty}`,
+        };
+      }),
     ];
   }, [inventoryItems, q]);
 
@@ -278,6 +300,14 @@ export const ComandaItemsSection: React.FC<Props> = ({
   const renderProductRow = ({ it, idx }: { it: ComandaItemDraft; idx: number }) => {
     const editable = canEdit && !it.invoiced;
     const isManual = it.origin_type === 'manual' || it.origin_type === 'manual_line';
+    const inv = it.hub_inventory_item_id
+      ? inventoryItems.find((p) => p.id === it.hub_inventory_item_id)
+      : null;
+    const priceLocked = Boolean(inv && !inv.allow_price_override_on_sale);
+    const maxDiscountPct = Math.max(0, Math.min(100, Number(inv?.max_sale_discount_pct ?? 0)));
+    const qtyNum = Number(String(it.quantity).replace(',', '.')) || 0;
+    const unitNum = Number(String(it.unit_amount).replace(',', '.')) || 0;
+    const maxDiscountAmount = Math.round(((qtyNum * unitNum * maxDiscountPct) / 100) * 100) / 100;
     return (
       <tr key={it.id ?? `prd-${idx}`} className={it.invoiced ? 'hub-comanda-row--invoiced' : ''}>
         <td style={{ minWidth: 220 }}>
@@ -289,7 +319,7 @@ export const ComandaItemsSection: React.FC<Props> = ({
               value={it.hub_inventory_item_id ?? ''}
               onChange={(v) => void onApplyProduct(idx, v)}
               placeholder="— Selecionar produto —"
-              searchPlaceholder="Buscar na lista…"
+              searchPlaceholder={productSearchHint}
               ariaLabel="Produto"
             />
           ) : (
@@ -335,7 +365,16 @@ export const ComandaItemsSection: React.FC<Props> = ({
               className="hub-orcamento-novo__input"
               style={{ textAlign: 'right', maxWidth: 96 }}
               value={it.unit_amount}
-              onChange={(e) => onUpdateItem(idx, { unit_amount: e.target.value })}
+              readOnly={priceLocked}
+              title={
+                priceLocked
+                  ? 'Preço fixo no catálogo (override desabilitado neste produto).'
+                  : undefined
+              }
+              onChange={(e) => {
+                if (priceLocked) return;
+                onUpdateItem(idx, { unit_amount: e.target.value });
+              }}
             />
           ) : (
             fmtBrl(Number(it.unit_amount))
@@ -347,7 +386,22 @@ export const ComandaItemsSection: React.FC<Props> = ({
               className="hub-orcamento-novo__input"
               style={{ textAlign: 'right', maxWidth: 96 }}
               value={it.discount_amount}
-              onChange={(e) => onUpdateItem(idx, { discount_amount: e.target.value })}
+              title={
+                inv
+                  ? maxDiscountPct > 0
+                    ? `Desconto máximo: ${maxDiscountPct}% (${fmtBrl(maxDiscountAmount)})`
+                    : 'Este produto não permite desconto'
+                  : undefined
+              }
+              onChange={(e) => {
+                const raw = e.target.value;
+                const next = Number(String(raw).replace(',', '.'));
+                if (Number.isFinite(next) && next > maxDiscountAmount + 0.009) {
+                  onUpdateItem(idx, { discount_amount: String(maxDiscountAmount) });
+                  return;
+                }
+                onUpdateItem(idx, { discount_amount: raw });
+              }}
             />
           ) : (
             fmtBrl(Number(it.discount_amount))
@@ -446,7 +500,7 @@ export const ComandaItemsSection: React.FC<Props> = ({
           ) : null}
         </div>
         {serviceRows.length === 0 ? (
-          <p className="hub-comanda-items__empty">Nenhum serviço nesta comanda.</p>
+          <p className="hub-comanda-items__empty">{emptyServicesLabel}</p>
         ) : (
           <div className="hub-comanda-items__table-wrap">
             <table className="hub-orcamento-novo__services-table hub-quote-detail__svc-table">
@@ -482,7 +536,7 @@ export const ComandaItemsSection: React.FC<Props> = ({
           ) : null}
         </div>
         {productRows.length === 0 ? (
-          <p className="hub-comanda-items__empty">Nenhum produto de estoque nesta comanda.</p>
+          <p className="hub-comanda-items__empty">{emptyProductsLabel}</p>
         ) : (
           <div className="hub-comanda-items__table-wrap">
             <table className="hub-orcamento-novo__services-table hub-quote-detail__svc-table">

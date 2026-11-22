@@ -78,13 +78,18 @@ export function CheckoutDrawerSummaryGrid({ children, columns = 3 }: CheckoutDra
 export type CheckoutDrawerSectionProps = {
   title: string;
   hint?: string;
+  /** Ação opcional alinhada ao título (ex.: botão Incluir produto). */
+  action?: React.ReactNode;
   children: React.ReactNode;
 };
 
-export function CheckoutDrawerSection({ title, hint, children }: CheckoutDrawerSectionProps) {
+export function CheckoutDrawerSection({ title, hint, action, children }: CheckoutDrawerSectionProps) {
   return (
     <section className="hub-checkout-drawer__section">
-      <h3 className="hub-checkout-drawer__section-title">{title}</h3>
+      <div className="hub-checkout-drawer__section-head">
+        <h3 className="hub-checkout-drawer__section-title">{title}</h3>
+        {action ? <div className="hub-checkout-drawer__section-action">{action}</div> : null}
+      </div>
       {hint ? <p className="hub-clientes__muted hub-checkout-drawer__hint">{hint}</p> : null}
       {children}
     </section>

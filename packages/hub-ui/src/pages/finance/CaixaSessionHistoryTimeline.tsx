@@ -6,14 +6,18 @@ import {
   CreditCard,
   FileText,
   Link2,
+  Package,
   QrCode,
   Repeat,
+  Scissors,
+  ShoppingBag,
   User,
   Wallet,
 } from 'lucide-react';
 import {
   formatHistoryAmount,
   formatHistoryTime,
+  type CaixaHistoryChip,
   type CaixaHistoryIconKind,
   type CaixaHistoryIconTone,
   type CaixaSessionHistoryItem,
@@ -63,6 +67,32 @@ function HistoryIcon({ kind, tone }: { kind: CaixaHistoryIconKind; tone: CaixaHi
   );
 }
 
+function ChipIcon({ tone }: { tone: CaixaHistoryChip['tone'] }) {
+  const iconProps = { size: 10, strokeWidth: 2.4, 'aria-hidden': true as const };
+  if (tone === 'quick') return <ShoppingBag {...iconProps} />;
+  if (tone === 'product') return <Package {...iconProps} />;
+  if (tone === 'service') return <Scissors {...iconProps} />;
+  if (tone === 'mixed') return <Package {...iconProps} />;
+  return <FileText {...iconProps} />;
+}
+
+function HistoryChips({ chips }: { chips: CaixaHistoryChip[] }) {
+  if (!chips.length) return null;
+  return (
+    <span className="hub-caixa-timeline__chips" aria-label="Origem e tipo da venda">
+      {chips.map((chip) => (
+        <span
+          key={chip.key}
+          className={`hub-caixa-timeline__chip hub-caixa-timeline__chip--${chip.tone}`}
+        >
+          <ChipIcon tone={chip.tone} />
+          {chip.label}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function amountTone(item: CaixaSessionHistoryItem): 'pos' | 'neg' | 'neutral' | 'pending' {
   if (item.is_pending) return 'pending';
   if (item.signed_amount < -0.009) return 'neg';
@@ -92,6 +122,7 @@ export const CaixaSessionHistoryTimeline: React.FC<CaixaSessionHistoryTimelinePr
         {visibleItems.map((item, index) => {
           const tone = amountTone(item);
           const isLast = index === visibleItems.length - 1;
+          const chips = item.chips ?? [];
           return (
             <li key={item.id} className="hub-caixa-timeline__item">
               <time className="hub-caixa-timeline__time" dateTime={item.happened_at}>
@@ -107,6 +138,7 @@ export const CaixaSessionHistoryTimeline: React.FC<CaixaSessionHistoryTimelinePr
                 onClick={() => onSelect(item)}
               >
                 <span className="hub-caixa-timeline__title">{item.title}</span>
+                <HistoryChips chips={chips} />
                 {item.subtitle ? (
                   <span className="hub-caixa-timeline__subtitle">{item.subtitle}</span>
                 ) : null}

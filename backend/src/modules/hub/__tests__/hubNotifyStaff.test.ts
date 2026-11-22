@@ -127,6 +127,7 @@ describe('hubNotificationPrefs', () => {
     expect(hubNotificationCategoryForType('hub_pet_arrived')).toBe('operacao');
     expect(hubNotificationCategoryForType('hub_boarding_checkout')).toBe('operacao');
     expect(hubNotificationCategoryForType('hub_stock_alert')).toBe('alertas');
+    expect(hubNotificationCategoryForType('hub_series_ending_soon')).toBe('alertas');
   });
 
   it('remove destinatários com a categoria desligada (opt-out)', () => {

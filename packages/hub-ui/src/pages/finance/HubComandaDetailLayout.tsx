@@ -18,6 +18,10 @@ import {
   User,
   Dog,
 } from 'lucide-react';
+import {
+  CARD_FEE_PARTIAL_COVERAGE_HINT,
+  cardFeeTotalCentsPositive,
+} from '../../utils/hubCardMachineFees';
 
 function fmtBrl(n: number): string {
   return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -48,6 +52,9 @@ export interface HubComandaDetailLayoutProps {
   total: number;
   paidTotal?: number;
   balanceDue?: number;
+  cardFeeTotal?: number;
+  cardNetTotal?: number;
+  cardWithoutFeeGrossTotal?: number;
   events?: HubComandaEvent[];
   canWrite: boolean;
   canEdit?: boolean;
@@ -84,6 +91,9 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
   total,
   paidTotal = 0,
   balanceDue = 0,
+  cardFeeTotal = 0,
+  cardNetTotal = 0,
+  cardWithoutFeeGrossTotal = 0,
   events = [],
   canWrite,
   canEdit: canEditProp,
@@ -413,6 +423,21 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
                     <span>Pendente</span>
                     <span>{fmtBrl(balanceDue)}</span>
                   </div>
+                ) : null}
+                {cardFeeTotalCentsPositive(cardFeeTotal) ? (
+                  <>
+                    <div className="hub-quote-detail__money-row">
+                      <span>Taxa da maquininha</span>
+                      <span>{fmtBrl(cardFeeTotal)}</span>
+                    </div>
+                    <div className="hub-quote-detail__money-row">
+                      <span>Líquido estimado do cartão</span>
+                      <span>{fmtBrl(cardNetTotal)}</span>
+                    </div>
+                    {cardWithoutFeeGrossTotal > 0.009 ? (
+                      <p className="hub-quote-detail__money-hint">{CARD_FEE_PARTIAL_COVERAGE_HINT}</p>
+                    ) : null}
+                  </>
                 ) : null}
               </div>
             </section>

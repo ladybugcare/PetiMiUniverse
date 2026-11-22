@@ -1,6 +1,10 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import {
+  normalizeCardMachineFees,
+  type CardMachineFees,
+} from './hubCardMachineFees';
 import { HUB_PAYMENT_METHODS, normalizeAcceptedPaymentMethods, type HubPaymentMethod } from './hubPaymentMethods';
 
 const uuidStr = z.string().uuid();
@@ -27,6 +31,7 @@ export type HubClinicSettingsRow = {
   message_templates: Record<string, string>;
   accepted_payment_methods: HubPaymentMethod[];
   cupom_width_mm: HubCupomWidthMm;
+  card_machine_fees: CardMachineFees;
 };
 
 function normalizeCupomWidthMm(raw: unknown): HubCupomWidthMm {
@@ -37,7 +42,7 @@ function normalizeCupomWidthMm(raw: unknown): HubCupomWidthMm {
 /** Garante linha de settings por clínica (defaults: 8 meses, templates vazios, todos os métodos). */
 export async function getOrCreateHubClinicSettings(clinicId: string): Promise<HubClinicSettingsRow> {
   const selectCols =
-    'pet_puppy_max_months, message_templates, accepted_payment_methods, cupom_width_mm';
+    'pet_puppy_max_months, message_templates, accepted_payment_methods, cupom_width_mm, card_machine_fees';
   const { data: row, error: selErr } = await supabaseAdmin
     .from('hub_clinic_settings')
     .select(selectCols)
@@ -49,12 +54,14 @@ export async function getOrCreateHubClinicSettings(clinicId: string): Promise<Hu
       message_templates: Record<string, string> | null;
       accepted_payment_methods: string[] | null;
       cupom_width_mm?: number | null;
+      card_machine_fees?: unknown;
     };
     return {
       pet_puppy_max_months: Number(r.pet_puppy_max_months) || 8,
       message_templates: r.message_templates ?? {},
       accepted_payment_methods: normalizeAcceptedPaymentMethods(r.accepted_payment_methods),
       cupom_width_mm: normalizeCupomWidthMm(r.cupom_width_mm),
+      card_machine_fees: normalizeCardMachineFees(r.card_machine_fees),
     };
   }
   const { data: ins, error: insErr } = await supabaseAdmin
@@ -68,6 +75,7 @@ export async function getOrCreateHubClinicSettings(clinicId: string): Promise<Hu
       message_templates: {},
       accepted_payment_methods: [...HUB_PAYMENT_METHODS],
       cupom_width_mm: 80,
+      card_machine_fees: { debit_card: [], credit_card: [] },
     };
   }
   const i = ins as {
@@ -75,12 +83,14 @@ export async function getOrCreateHubClinicSettings(clinicId: string): Promise<Hu
     message_templates: Record<string, string> | null;
     accepted_payment_methods: string[] | null;
     cupom_width_mm?: number | null;
+    card_machine_fees?: unknown;
   };
   return {
     pet_puppy_max_months: Number(i.pet_puppy_max_months) || 8,
     message_templates: i.message_templates ?? {},
     accepted_payment_methods: normalizeAcceptedPaymentMethods(i.accepted_payment_methods),
     cupom_width_mm: normalizeCupomWidthMm(i.cupom_width_mm),
+    card_machine_fees: normalizeCardMachineFees(i.card_machine_fees),
   };
 }
 

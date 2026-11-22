@@ -468,3 +468,18 @@ export function requiresCoatPricing(serviceType: ServiceTypePricingRow): boolean
   const m = parseMatrix(serviceType.pricing_matrix);
   return m?.kind === 'pelagem' || m?.kind === 'porte_pelagem';
 }
+
+/**
+ * Preço de venda de uma linha de agendamento.
+ * `sale_amount_applied` null = sem snapshot → usa catálogo;
+ * `0` explícito permanece 0 (cobertura/cortesia).
+ */
+export function resolveAppliedSaleAmount(
+  saleAmountApplied: number | null | undefined,
+  catalogSaleAmount: number | null | undefined
+): number {
+  if (saleAmountApplied != null && Number.isFinite(Number(saleAmountApplied))) {
+    return roundMoney2(Number(saleAmountApplied));
+  }
+  return roundMoney2(Number(catalogSaleAmount ?? 0));
+}

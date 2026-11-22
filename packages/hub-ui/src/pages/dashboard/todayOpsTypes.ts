@@ -45,6 +45,7 @@ export type HubDayOpsSummary = {
   alerts?: {
     low_stock: number;
     vaccines_due: number;
+    series_ending_soon?: number;
     overdue_receivables_count: number;
     overdue_receivables_total: number;
     overdue_payables_count?: number;

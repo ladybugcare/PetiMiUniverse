@@ -1,4 +1,5 @@
 import { hubAppointmentsApi } from '../../api/hubAppointmentsApi';
+import { hubAgendaApi } from '../../api/hubAgendaApi';
 import { hubEncountersApi } from '../../api/hubClinicalApi';
 import { hubGroomingApi } from '../../api/hubGroomingApi';
 import { hubBoardingApi } from '../../api/hubBoardingApi';
@@ -53,6 +54,22 @@ export async function loadDayOpsSummaryClient(
         })
         .then((r) => {
           summary.agenda = aggregateAgendaStats(r.items ?? []);
+        })
+        .catch(() => undefined),
+    );
+    tasks.push(
+      hubAgendaApi
+        .listSeriesEndingSoon({ clinic_id: clinicId })
+        .then((r) => {
+          summary.alerts = {
+            ...(summary.alerts ?? {
+              low_stock: 0,
+              vaccines_due: 0,
+              overdue_receivables_count: 0,
+              overdue_receivables_total: 0,
+            }),
+            series_ending_soon: (r.series ?? []).length,
+          };
         })
         .catch(() => undefined),
     );
@@ -191,6 +208,7 @@ export async function loadDayOpsSummaryClient(
           summary.alerts = {
             low_stock: summary.alerts?.low_stock ?? 0,
             vaccines_due: (r.alerts ?? []).length,
+            series_ending_soon: summary.alerts?.series_ending_soon ?? 0,
             overdue_receivables_count: summary.alerts?.overdue_receivables_count ?? 0,
             overdue_receivables_total: summary.alerts?.overdue_receivables_total ?? 0,
             overdue_payables_count: summary.alerts?.overdue_payables_count ?? 0,
@@ -215,6 +233,7 @@ export async function loadDayOpsSummaryClient(
           summary.alerts = {
             low_stock: (r.items ?? []).length,
             vaccines_due: summary.alerts?.vaccines_due ?? 0,
+            series_ending_soon: summary.alerts?.series_ending_soon ?? 0,
             overdue_receivables_count: summary.alerts?.overdue_receivables_count ?? 0,
             overdue_receivables_total: summary.alerts?.overdue_receivables_total ?? 0,
             overdue_payables_count: summary.alerts?.overdue_payables_count ?? 0,

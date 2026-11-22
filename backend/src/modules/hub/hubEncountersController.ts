@@ -299,7 +299,7 @@ async function createClinicalAgendaAppointment(params: {
 }): Promise<string> {
   const { data: st, error: stErr } = await supabaseAdmin
     .from('hub_service_types')
-    .select('id, name, default_duration_minutes')
+    .select('id, name, default_duration_minutes, sale_amount, cost_amount')
     .eq('id', params.hub_service_type_id)
     .eq('clinic_id', params.clinic_id)
     .is('deleted_at', null)
@@ -314,6 +314,8 @@ async function createClinicalAgendaAppointment(params: {
   const cc = params.chief_complaint?.trim() ?? '';
   const title =
     cc.length > 0 ? cc.slice(0, 240) : String((st as { name?: string }).name || 'Atendimento clínico');
+  const catalogSale = Number((st as { sale_amount?: number | null }).sale_amount ?? 0);
+  const catalogCost = Number((st as { cost_amount?: number | null }).cost_amount ?? 0);
 
   const insertAppt: Record<string, unknown> = {
     clinic_id: params.clinic_id,
@@ -354,6 +356,9 @@ async function createClinicalAgendaAppointment(params: {
     hub_service_type_id: params.hub_service_type_id,
     duration_minutes: durMin,
     order_index: 0,
+    sale_amount_applied: catalogSale,
+    cost_amount_applied: catalogCost,
+    pricing_source: 'catalog',
   });
   if (svcErr) {
     await supabaseAdmin.from('hub_appointments').delete().eq('id', apptId);

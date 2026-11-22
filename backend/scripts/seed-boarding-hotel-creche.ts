@@ -243,23 +243,29 @@ async function ensureServiceType(
   group: 'hotel' | 'creche',
   preferredCodes: string[],
   createSpec: { code: string; name: string; sale_amount: number; agenda_color: string },
-): Promise<{ id: string; name: string }> {
+): Promise<{ id: string; name: string; sale_amount: number }> {
   const rows = must(
     await supabaseAdmin
       .from('hub_service_types')
-      .select('id, name, code')
+      .select('id, name, code, sale_amount')
       .eq('clinic_id', clinicId)
       .eq('service_group', group)
       .eq('is_addon', false)
       .is('deleted_at', null),
     `tipos ${group}`,
-  ) as { id: string; name: string; code: string }[];
+  ) as { id: string; name: string; code: string; sale_amount: number | null }[];
 
   for (const code of preferredCodes) {
     const hit = rows.find((r) => r.code === code);
-    if (hit) return hit;
+    if (hit) return { id: hit.id, name: hit.name, sale_amount: Number(hit.sale_amount ?? createSpec.sale_amount) };
   }
-  if (rows[0]) return rows[0];
+  if (rows[0]) {
+    return {
+      id: rows[0].id,
+      name: rows[0].name,
+      sale_amount: Number(rows[0].sale_amount ?? createSpec.sale_amount),
+    };
+  }
 
   const created = must(
     await supabaseAdmin
@@ -276,12 +282,12 @@ async function ensureServiceType(
         agenda_color: createSpec.agenda_color,
         internal_notes: MARKER,
       })
-      .select('id, name')
+      .select('id, name, sale_amount')
       .single(),
     `criar tipo ${group}`,
-  ) as { id: string; name: string };
+  ) as { id: string; name: string; sale_amount: number | null };
   console.log(`Tipo de serviço criado (${group}):`, created.name);
-  return created;
+  return { id: created.id, name: created.name, sale_amount: Number(created.sale_amount ?? createSpec.sale_amount) };
 }
 
 async function ensureUnitSettings() {
@@ -614,6 +620,9 @@ async function main() {
         hub_service_type_id: serviceType.id,
         duration_minutes: Math.min(durationMin, 24 * 60),
         order_index: 0,
+        sale_amount_applied: serviceType.sale_amount,
+        cost_amount_applied: Math.round(serviceType.sale_amount * 0.3),
+        pricing_source: 'catalog',
       });
       if (lineErr) console.log(`Aviso: linha de serviço de ${sc.pet.name} não criada (${lineErr.message}).`);
     }

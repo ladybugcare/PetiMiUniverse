@@ -134,4 +134,46 @@ describe('POST /api/hub/comandas/open (appointment + boarding checked_out)', () 
     expect(openRes.status).toBe(200);
     expect(openRes.body.comanda?.id).toBe(existingComandaId);
   });
+
+  it('abre comanda com preço do catálogo quando sale_amount_applied é null', async () => {
+    configureSupabaseMock({
+      tables: {
+        ...emptyBoardingTables(),
+        hub_service_types: [hotelServiceType()],
+        hub_appointments: [
+          boardingAppointment({
+            status: 'confirmed',
+            title: 'Tosa higiênica · Sofia',
+          }),
+        ],
+        hub_appointment_services: [
+          {
+            id: 'svc-null-price-1',
+            appointment_id: TEST_APPOINTMENT_ID,
+            hub_service_type_id: TEST_HOTEL_SERVICE_TYPE_ID,
+            sale_amount_applied: null,
+            order_index: 0,
+            // Mock não resolve embeds PostgREST; espelha o join hub_service_types(...).
+            hub_service_types: { name: 'Hotel', sale_amount: 150 },
+          },
+        ],
+      },
+    });
+
+    const openRes = await request(app)
+      .post('/api/hub/comandas/open')
+      .send({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'appointment',
+        origin_id: TEST_APPOINTMENT_ID,
+      });
+
+    expect(openRes.status).toBe(201);
+    const serviceItems = (openRes.body.items as Array<{ item_kind?: string; unit_amount?: number }>).filter(
+      (it) => it.item_kind === 'service'
+    );
+    expect(serviceItems.length).toBeGreaterThan(0);
+    expect(Number(serviceItems[0]?.unit_amount)).toBe(150);
+    expect(Number(openRes.body.comanda?.total_amount)).toBeGreaterThan(0);
+  });
 });

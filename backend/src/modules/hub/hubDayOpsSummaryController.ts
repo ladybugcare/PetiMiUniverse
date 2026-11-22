@@ -5,6 +5,8 @@ import { checkPermission } from '../../middleware/authMiddleware';
 import { dayBoundsFromYmdSaoPaulo } from './boardingOperational';
 import { computeBalances } from './hubInventoryController';
 import { ensurePayableScheduleHorizon, summarizePayableDueAlerts } from './hubPayablesService';
+import { loadClinicSeriesEndingSoon } from './hubSeriesEndingSoonQuery';
+import { notifyHubSeriesEndingSoonBatch } from './hubNotifyEvents';
 
 const uuidStr = z.string().uuid();
 const dateYmdStr = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
@@ -139,6 +141,27 @@ export const getHubDayOpsSummary = async (req: Request, res: Response) => {
             total: by_group.reduce((a, g) => a + g.count, 0),
             by_group,
           };
+        })(),
+      );
+
+      tasks.push(
+        (async () => {
+          try {
+            const series = await loadClinicSeriesEndingSoon(clinic_id);
+            const prev = (out.alerts as Record<string, number> | undefined) ?? {
+              low_stock: 0,
+              vaccines_due: 0,
+              overdue_receivables_count: 0,
+              overdue_receivables_total: 0,
+              series_ending_soon: 0,
+            };
+            out.alerts = { ...prev, series_ending_soon: series.length };
+            if (series.length > 0) {
+              void notifyHubSeriesEndingSoonBatch({ clinicId: clinic_id, series });
+            }
+          } catch (e) {
+            console.error('day-ops series_ending_soon', e);
+          }
         })(),
       );
     }

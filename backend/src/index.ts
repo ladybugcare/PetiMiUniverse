@@ -48,12 +48,9 @@ const normalizedOrigins = allowedOrigins.map((origin) =>
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Permite requisições sem origem apenas em desenvolvimento/staging
+      // Sem Origin = server-to-server (cron curl, healthchecks, Postman).
       if (!origin) {
-        if (process.env.NODE_ENV === 'development' || process.env.NODE_ENV === 'staging') {
-          return callback(null, true);
-        }
-        return callback(new Error('Not allowed by CORS'));
+        return callback(null, true);
       }
       
       const normalizedOrigin = origin.replace(/\/$/, '');
@@ -81,7 +78,7 @@ app.use(
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Cron-Secret'],
     exposedHeaders: ['Content-Range', 'X-Content-Range'],
     maxAge: 86400, // 24h
   })

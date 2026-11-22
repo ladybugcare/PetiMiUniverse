@@ -2463,6 +2463,13 @@ a.hub-doc-party__phone-link:hover {
   color: var(--qd-brand);
 }
 
+.hub-quote-detail__money-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--qd-muted, #8e6e67);
+}
+
 .hub-quote-detail__timeline {
   margin: 0;
   padding: 0 0 0 8px;

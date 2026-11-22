@@ -24,7 +24,8 @@ export type HubStaffNotificationType =
   | 'hub_stock_alert'
   | 'hub_boarding_checkin'
   | 'hub_boarding_checkout'
-  | 'hub_grooming_extra_request';
+  | 'hub_grooming_extra_request'
+  | 'hub_series_ending_soon';
 
 /** Papéis de governança que acompanham tudo que é crítico na unidade. */
 export const HUB_MANAGER_ROLES = ['CADMIN', 'CMANAGER'] as const;

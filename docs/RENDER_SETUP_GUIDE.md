@@ -286,6 +286,8 @@ Após a meia-noite em `America/Sao_Paulo`, o Hub fecha sessões de caixa ainda a
 
 **Staging (Railway — atual):** serviço `cash-auto-close-cron` no environment `staging`, schedule `5 3 * * *` (03:05 UTC ≈ 00:05 BRT), chama `POST $BACKEND_URL/api/hub/finance/cash-sessions/auto-close-overdue` com `CRON_SECRET`. Disparo manual: `railway cron run --service cash-auto-close-cron --environment staging --yes`.
 
+**Production (Railway):** serviço `cash-auto-close-cron-prod`, mesmo schedule. O backend precisa aceitar POST sem header `Origin` (curl do cron); se CORS bloquear no-origin, o job retorna 500 e marca CRASHED.
+
 Alternativa genérica (Render Cron / [cron-job.org](https://cron-job.org)):
 
 1. Adicione a env var `CRON_SECRET` no Web Service do backend (valor longo e aleatório).

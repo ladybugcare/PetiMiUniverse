@@ -2,6 +2,7 @@
  * Faturamento periódico de séries de agendamento (ciclo mês calendário).
  */
 import { supabaseAdmin } from '../../config/supabase';
+import { resolveAppliedSaleAmount } from './hubPricingResolve';
 import { roundMoney2 } from './hubServiceTypesPricingMatrix';
 
 export type SeriesBillingMode = 'per_occurrence' | 'periodic_invoice';
@@ -231,7 +232,7 @@ export async function issueSeriesInvoiceForPeriod(input: {
     .from('hub_appointments')
     .select(
       `id, guardian_id, pet_id, unit_id, starts_at, status, title,
-       appointment_services:hub_appointment_services(id, hub_service_type_id, sale_amount_applied, order_index, hub_service_types(name))`
+       appointment_services:hub_appointment_services(id, hub_service_type_id, sale_amount_applied, order_index, hub_service_types(name, sale_amount))`
     )
     .eq('clinic_id', input.clinicId)
     .eq('series_id', input.seriesId)
@@ -275,7 +276,10 @@ export async function issueSeriesInvoiceForPeriod(input: {
         id: string;
         hub_service_type_id?: string | null;
         sale_amount_applied?: number | null;
-        hub_service_types?: { name?: string } | { name?: string }[] | null;
+        hub_service_types?:
+          | { name?: string; sale_amount?: number | null }
+          | { name?: string; sale_amount?: number | null }[]
+          | null;
       }> | null) ?? [];
     const starts = String(appt.starts_at ?? '').slice(0, 10);
     if (!svcs.length) {
@@ -291,12 +295,12 @@ export async function issueSeriesInvoiceForPeriod(input: {
     }
     for (const svc of svcs) {
       const st = svc.hub_service_types;
-      const name = Array.isArray(st) ? st[0]?.name : st?.name;
+      const stRow = Array.isArray(st) ? st[0] : st;
       lines.push({
         appointment_id: appt.id as string,
         appointment_service_id: svc.id,
-        description: `${name || 'Serviço'} (${starts})`,
-        sale_amount: roundMoney2(Number(svc.sale_amount_applied ?? 0)),
+        description: `${stRow?.name || 'Serviço'} (${starts})`,
+        sale_amount: resolveAppliedSaleAmount(svc.sale_amount_applied, stRow?.sale_amount),
         pet_id: (appt.pet_id as string | null) ?? petId,
         hub_service_type_id: (svc.hub_service_type_id as string | null) ?? null,
       });

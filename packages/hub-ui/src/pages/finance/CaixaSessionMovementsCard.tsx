@@ -12,6 +12,10 @@ import {
 } from 'lucide-react';
 import type { HubPaymentMethod } from '../../api/hubFinancialApi';
 import { HubLoading } from '../../components/HubLoading';
+import {
+  CARD_FEE_PARTIAL_COVERAGE_HINT,
+  cardFeeTotalCentsPositive,
+} from '../../utils/hubCardMachineFees';
 import { HUB_PAYMENT_METHOD_LABELS } from '../../utils/hubPaymentMethods';
 
 function formatBrl(n: number): string {
@@ -89,6 +93,9 @@ export type CaixaSessionMovementsCardProps = {
   depositsTotal: number;
   withdrawalsTotal: number;
   dayPendingTotal: number;
+  cardFeeTotal?: number;
+  cardNetTotal?: number;
+  cardWithoutFeeGrossTotal?: number;
 };
 
 export const CaixaSessionMovementsCard: React.FC<CaixaSessionMovementsCardProps> = ({
@@ -99,8 +106,12 @@ export const CaixaSessionMovementsCard: React.FC<CaixaSessionMovementsCardProps>
   depositsTotal,
   withdrawalsTotal,
   dayPendingTotal,
+  cardFeeTotal = 0,
+  cardNetTotal = 0,
+  cardWithoutFeeGrossTotal = 0,
 }) => {
   const outflowsNet = round2(depositsTotal - withdrawalsTotal);
+  const showCardFees = cardFeeTotalCentsPositive(cardFeeTotal);
 
   return (
     <div className="hub-caixa-page__card hub-caixa-page__card--ops">
@@ -125,6 +136,28 @@ export const CaixaSessionMovementsCard: React.FC<CaixaSessionMovementsCardProps>
               );
             })}
           </MovementsSection>
+
+          {showCardFees ? (
+            <div className="hub-caixa-page__card-fees" aria-label="Taxas da maquininha">
+              <div className="hub-caixa-page__movements-footer-row">
+                <span className="hub-caixa-page__movements-footer-icon hub-caixa-page__movements-icon hub-caixa-page__movements-icon--blue">
+                  <CreditCard size={14} strokeWidth={2} />
+                </span>
+                <span className="hub-caixa-page__movements-label">Taxa da maquininha</span>
+                <strong className="hub-caixa-page__movements-value">{formatBrl(cardFeeTotal)}</strong>
+              </div>
+              <div className="hub-caixa-page__movements-footer-row">
+                <span className="hub-caixa-page__movements-footer-icon hub-caixa-page__movements-icon hub-caixa-page__movements-icon--teal">
+                  <CreditCard size={14} strokeWidth={2} />
+                </span>
+                <span className="hub-caixa-page__movements-label">Líquido estimado do cartão</span>
+                <strong className="hub-caixa-page__movements-value">{formatBrl(cardNetTotal)}</strong>
+              </div>
+              {cardWithoutFeeGrossTotal > 0.009 ? (
+                <p className="hub-caixa-page__card-fees-hint">{CARD_FEE_PARTIAL_COVERAGE_HINT}</p>
+              ) : null}
+            </div>
+          ) : null}
 
           <MovementsSection title="Saídas" total={outflowsNet} variant="out">
             <MovementRow

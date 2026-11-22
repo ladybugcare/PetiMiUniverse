@@ -1094,6 +1094,83 @@ describe('Matriz Caixa — open → checkout por origem', () => {
       });
     });
 
+    it('venda avulsa sem tutor: open + checkout cash gera sale_out e recebível sem guardian', async () => {
+      configureSupabaseMock({ tables: productStockTables(5) });
+
+      const open = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'manual',
+        unit_id: TEST_UNIT_ID,
+        manual_lines: [],
+      });
+      expect(open.status).toBe(201);
+      expect(open.body.comanda.guardian_id == null).toBe(true);
+      const comandaId = open.body.comanda.id as string;
+
+      const add = await request(app)
+        .post(`/api/hub/comandas/${comandaId}/items`)
+        .send({
+          clinic_id: TEST_CLINIC_ID,
+          items: [
+            {
+              description: 'Coleira',
+              quantity: 1,
+              unit_amount: 45,
+              item_kind: 'product',
+              hub_inventory_item_id: INV_ITEM_ID,
+              hub_inventory_lot_id: INV_LOT_ID,
+            },
+          ],
+        });
+      expect(add.status).toBe(201);
+
+      const pay = await checkoutReceiveNow(comandaId, 45);
+      expect(pay.status).toBe(201);
+
+      const receivables = getMockSupabaseClient()._state.tables.hub_receivables ?? [];
+      expect(receivables).toHaveLength(1);
+      expect(receivables[0].guardian_id == null).toBe(true);
+
+      const saleOuts = (getMockSupabaseClient()._state.tables.hub_stock_movements ?? []).filter(
+        (m) => m.movement_type === 'sale_out',
+      );
+      expect(saleOuts).toHaveLength(1);
+    });
+
+    it('venda avulsa sem tutor: crédito do cliente retorna 409', async () => {
+      configureSupabaseMock({ tables: productStockTables(5) });
+
+      const open = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'manual',
+        unit_id: TEST_UNIT_ID,
+        manual_lines: [],
+      });
+      expect(open.status).toBe(201);
+      const comandaId = open.body.comanda.id as string;
+
+      const add = await request(app)
+        .post(`/api/hub/comandas/${comandaId}/items`)
+        .send({
+          clinic_id: TEST_CLINIC_ID,
+          items: [
+            {
+              description: 'Coleira',
+              quantity: 1,
+              unit_amount: 45,
+              item_kind: 'product',
+              hub_inventory_item_id: INV_ITEM_ID,
+              hub_inventory_lot_id: INV_LOT_ID,
+            },
+          ],
+        });
+      expect(add.status).toBe(201);
+
+      const pay = await checkoutReceiveNow(comandaId, 45, { method: 'customer_credit' });
+      expect(pay.status).toBe(409);
+      expect(pay.body.error).toMatch(/sem tutor/i);
+    });
+
     it('checkout com estoque insuficiente retorna 400 sem recebível', async () => {
       configureSupabaseMock({ tables: productStockTables(1) });
 

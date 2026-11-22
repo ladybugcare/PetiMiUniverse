@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { computeBalances } from './hubInventoryController';
 import { createSaleStockOut } from './hubInventoryStockUtils';
+import { validateProductSalePricing } from './productSalePriceRules';
+import { resolveAppliedSaleAmount } from './hubPricingResolve';
 import { streamPaymentReceiptPdf } from './hubPaymentReceiptPdf';
 import {
   fetchOpenComandaOriginKeysExported,
@@ -35,6 +37,7 @@ import {
   patchPaymentMethodSettingsSchema,
   PaymentMethodNotAcceptedError,
 } from './hubPaymentMethods';
+import { aggregateCardFeeTotals } from './hubCardMachineFees';
 import {
   buildBoardingComandaLine,
   buildBoardingExtraLines,
@@ -275,7 +278,7 @@ async function sumAppointmentServicesSale(appointmentId: string): Promise<{
   const { data: svcRows, error } = await supabaseAdmin
     .from('hub_appointment_services')
     .select(
-      'id, hub_service_type_id, order_index, sale_amount_applied, hub_service_types(name)'
+      'id, hub_service_type_id, order_index, sale_amount_applied, hub_service_types(name, sale_amount)'
     )
     .eq('appointment_id', appointmentId)
     .order('order_index', { ascending: true });
@@ -284,10 +287,13 @@ async function sumAppointmentServicesSale(appointmentId: string): Promise<{
   let subtotal = 0;
   let idx = 0;
   for (const row of svcRows ?? []) {
-    const sale = Number(row.sale_amount_applied ?? 0);
-    const st = row.hub_service_types as { name?: string } | { name?: string }[] | null;
-    const name = Array.isArray(st) ? st[0]?.name : st?.name;
-    const desc = (name as string) || 'Serviço';
+    const st = row.hub_service_types as
+      | { name?: string; sale_amount?: number | null }
+      | { name?: string; sale_amount?: number | null }[]
+      | null;
+    const stRow = Array.isArray(st) ? st[0] : st;
+    const sale = resolveAppliedSaleAmount(row.sale_amount_applied, stRow?.sale_amount);
+    const desc = (stRow?.name as string) || 'Serviço';
     subtotal += sale;
     lines.push({
       clinic_id: '',
@@ -760,7 +766,10 @@ export const getHubFinancePaymentMethodSettings = async (req: Request, res: Resp
       return res.status(400).json({ error: 'clinic_id é obrigatório e deve ser UUID' });
     }
     const settings = await getOrCreateHubClinicSettings(parsed.data);
-    return res.json({ accepted_payment_methods: settings.accepted_payment_methods });
+    return res.json({
+      accepted_payment_methods: settings.accepted_payment_methods,
+      card_machine_fees: settings.card_machine_fees,
+    });
   } catch (e) {
     console.error('[hub_finance] getPaymentMethodSettings', e);
     return res.status(500).json({ error: 'Erro ao carregar formas de pagamento' });
@@ -773,13 +782,30 @@ export const patchHubFinancePaymentMethodSettings = async (req: Request, res: Re
     if (!body.success) {
       return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
     }
-    const { clinic_id, accepted_payment_methods } = body.data;
+    const { clinic_id, accepted_payment_methods, card_machine_fees: feesPatch } = body.data;
 
     await getOrCreateHubClinicSettings(clinic_id);
 
+    const patch: Record<string, unknown> = {};
+    if (accepted_payment_methods !== undefined) {
+      patch.accepted_payment_methods = accepted_payment_methods;
+    }
+    if (feesPatch !== undefined) {
+      const { parseCardMachineFeesInput } = await import('./hubCardMachineFees.js');
+      try {
+        const current = await getOrCreateHubClinicSettings(clinic_id);
+        patch.card_machine_fees = parseCardMachineFeesInput({
+          debit_card: feesPatch.debit_card ?? current.card_machine_fees.debit_card,
+          credit_card: feesPatch.credit_card ?? current.card_machine_fees.credit_card,
+        });
+      } catch (err) {
+        return res.status(400).json({ error: (err as Error).message || 'Taxas da maquininha inválidas' });
+      }
+    }
+
     const { error } = await supabaseAdmin
       .from('hub_clinic_settings')
-      .update({ accepted_payment_methods })
+      .update(patch)
       .eq('clinic_id', clinic_id);
     if (error) {
       console.error('[hub_finance] patchPaymentMethodSettings', error);
@@ -787,7 +813,10 @@ export const patchHubFinancePaymentMethodSettings = async (req: Request, res: Re
     }
 
     const settings = await getOrCreateHubClinicSettings(clinic_id);
-    return res.json({ accepted_payment_methods: settings.accepted_payment_methods });
+    return res.json({
+      accepted_payment_methods: settings.accepted_payment_methods,
+      card_machine_fees: settings.card_machine_fees,
+    });
   } catch (e) {
     console.error('[hub_finance] patchPaymentMethodSettings', e);
     return res.status(500).json({ error: 'Erro ao gravar formas de pagamento' });
@@ -1496,7 +1525,9 @@ export const postHubFinanceReceivableProductLine = async (req: Request, res: Res
 
     const { data: item, error: itemErr } = await supabaseAdmin
       .from('hub_inventory_items')
-      .select('id, clinic_id, name, sale_amount, deleted_at, active')
+      .select(
+        'id, clinic_id, name, sale_amount, max_sale_discount_pct, allow_price_override_on_sale, deleted_at, active',
+      )
       .eq('id', item_id)
       .maybeSingle();
     if (itemErr || !item || item.clinic_id !== clinic_id || item.deleted_at || item.active === false) {
@@ -1518,6 +1549,19 @@ export const postHubFinanceReceivableProductLine = async (req: Request, res: Res
     }
 
     const unitSale = round2(unit_sale_amount || Number(item.sale_amount ?? 0));
+    const priced = validateProductSalePricing({
+      item: item as {
+        id: string;
+        name?: string | null;
+        sale_amount: number | null;
+        max_sale_discount_pct: number | null;
+        allow_price_override_on_sale: boolean | null;
+      },
+      quantity,
+      unit_amount: unitSale,
+      discount_amount: 0,
+    });
+    if (!priced.ok) return res.status(400).json({ error: priced.error });
     const lineTotal = round2(unitSale * quantity);
     const [{ data: maxRows }, { data: line, error: lineErr }] = await Promise.all([
       supabaseAdmin
@@ -2620,7 +2664,7 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
     ] = await Promise.all([
       supabaseAdmin
         .from('hub_payments')
-        .select('*, receivable:hub_receivables(id, source_type, source_id, guardian_id, final_amount)')
+        .select('*, receivable:hub_receivables(id, comanda_id, source_type, source_id, guardian_id, final_amount, status)')
         .eq('clinic_id', clinicId.data)
         .eq('cash_session_id', sessionId.data)
         .eq('payment_method', 'cash')
@@ -2629,13 +2673,13 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
         .order('payment_date', { ascending: false }),
       supabaseAdmin
         .from('hub_payments')
-        .select('payment_method, amount')
+        .select('payment_method, amount, card_fee_amount, net_amount')
         .eq('clinic_id', clinicId.data)
         .eq('cash_session_id', sessionId.data)
         .eq('status', 'posted'),
       supabaseAdmin
         .from('hub_payments')
-        .select('*, receivable:hub_receivables(id, source_type, source_id, guardian_id, final_amount)')
+        .select('*, receivable:hub_receivables(id, comanda_id, source_type, source_id, guardian_id, final_amount, status)')
         .eq('clinic_id', clinicId.data)
         .eq('cash_session_id', sessionId.data)
         .eq('status', 'posted')
@@ -2660,7 +2704,65 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
     // Tabela pode não existir ainda em ambientes sem migration 137
     const postCloseAdjustments = postCloseErr ? [] : postCloseRows ?? [];
 
-    const cashInBase = round2((payments ?? []).reduce((sum, row) => sum + Number(row.amount ?? 0), 0));
+    // Enrich payments with comanda origin + product/service composition for Caixa history.
+    const enrichPaymentsWithComandaContext = async <T extends { receivable?: unknown }>(
+      rows: T[] | null | undefined,
+    ): Promise<T[]> => {
+      const list = rows ?? [];
+      if (!list.length) return list;
+      const comandaIds = Array.from(
+        new Set(
+          list
+            .map((row) => {
+              const receivable = row.receivable as { comanda_id?: string | null } | null | undefined;
+              return receivable?.comanda_id ? String(receivable.comanda_id) : '';
+            })
+            .filter(Boolean),
+        ),
+      );
+      if (!comandaIds.length) return list;
+
+      const [{ data: comandas }, { data: items }] = await Promise.all([
+        supabaseAdmin.from('hub_comandas').select('id, origin_type').in('id', comandaIds),
+        supabaseAdmin.from('hub_comanda_items').select('comanda_id, item_kind').in('comanda_id', comandaIds),
+      ]);
+
+      const originByComanda = new Map<string, string>();
+      for (const c of comandas ?? []) {
+        if (c?.id) originByComanda.set(String(c.id), String(c.origin_type ?? 'manual'));
+      }
+      const compositionByComanda = new Map<string, { has_product: boolean; has_service: boolean }>();
+      for (const it of items ?? []) {
+        const cid = String(it?.comanda_id ?? '');
+        if (!cid) continue;
+        const prev = compositionByComanda.get(cid) ?? { has_product: false, has_service: false };
+        const kind = String(it?.item_kind ?? '');
+        if (kind === 'product') prev.has_product = true;
+        else if (kind === 'service' || kind === 'fee') prev.has_service = true;
+        compositionByComanda.set(cid, prev);
+      }
+
+      return list.map((row) => {
+        const receivable = row.receivable as Record<string, unknown> | null | undefined;
+        if (!receivable?.comanda_id) return row;
+        const cid = String(receivable.comanda_id);
+        const composition = compositionByComanda.get(cid) ?? { has_product: false, has_service: false };
+        return {
+          ...row,
+          receivable: {
+            ...receivable,
+            comanda_origin_type: originByComanda.get(cid) ?? null,
+            has_product: composition.has_product,
+            has_service: composition.has_service,
+          },
+        };
+      });
+    };
+
+    const paymentsEnriched = await enrichPaymentsWithComandaContext(payments);
+    const allPaymentsDetailedEnriched = await enrichPaymentsWithComandaContext(allPaymentsDetailed);
+
+    const cashInBase = round2((paymentsEnriched ?? []).reduce((sum, row) => sum + Number(row.amount ?? 0), 0));
     const creditCashIn = await sumCreditCashInSession(clinicId.data, sessionId.data);
     const cashIn = round2(cashInBase + creditCashIn);
     const deposits = round2(
@@ -2686,10 +2788,27 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
     }
     const totals_by_method = Object.fromEntries(totalsMap.entries());
 
+    const cardFeeTotals = aggregateCardFeeTotals(
+      (allPayments ?? []).map((p) => ({
+        payment_method: String(p.payment_method ?? ''),
+        amount: Number(p.amount ?? 0),
+        card_fee_amount:
+          (p as { card_fee_amount?: unknown }).card_fee_amount == null ||
+          !Number.isFinite(Number((p as { card_fee_amount?: unknown }).card_fee_amount))
+            ? null
+            : Number((p as { card_fee_amount?: unknown }).card_fee_amount),
+        net_amount:
+          (p as { net_amount?: unknown }).net_amount == null ||
+          !Number.isFinite(Number((p as { net_amount?: unknown }).net_amount))
+            ? null
+            : Number((p as { net_amount?: unknown }).net_amount),
+      })),
+    );
+
     return res.json({
       cash_session: session,
-      payments: payments ?? [],
-      all_payments: allPaymentsDetailed ?? [],
+      payments: paymentsEnriched,
+      all_payments: allPaymentsDetailedEnriched,
       movements: movements ?? [],
       post_close_adjustments: postCloseAdjustments,
       summary: {
@@ -2704,6 +2823,10 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
         difference_amount: sessionClosed ? round2(Number(session.difference_amount ?? 0)) : null,
         snapshot_frozen: sessionClosed,
         totals_by_method,
+        card_gross_total: cardFeeTotals.card_gross_total,
+        card_fee_total: cardFeeTotals.card_fee_total,
+        card_net_total: cardFeeTotals.card_net_total,
+        card_without_fee_gross_total: cardFeeTotals.card_without_fee_gross_total,
       },
     });
   } catch (e: unknown) {
@@ -3532,7 +3655,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
           parent_appointment_id, visit_group_id, appointment_kind,
           pet:hub_pets(id, name),
           guardian:hub_guardians(id, full_name),
-          appointment_services:hub_appointment_services(id, hub_service_type_id, sale_amount_applied, service_type:hub_service_types(name, service_group))`
+          appointment_services:hub_appointment_services(id, hub_service_type_id, sale_amount_applied, service_type:hub_service_types(name, service_group, sale_amount))`
         )
         .eq('clinic_id', clinic_id)
         .not('status', 'in', '("cancelled","no_show")')
@@ -3560,17 +3683,21 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
         if (svc.hub_service_type_id) appointmentServiceTypeIds.add(svc.hub_service_type_id);
       }
     }
-    const serviceTypeMetaById = new Map<string, { name: string; service_group: string }>();
+    const serviceTypeMetaById = new Map<
+      string,
+      { name: string; service_group: string; sale_amount: number | null }
+    >();
     if (appointmentServiceTypeIds.size > 0) {
       const { data: serviceTypeRows, error: stErr } = await supabaseAdmin
         .from('hub_service_types')
-        .select('id, name, service_group')
+        .select('id, name, service_group, sale_amount')
         .in('id', [...appointmentServiceTypeIds]);
       if (stErr) throw new Error(stErr.message);
       for (const st of serviceTypeRows ?? []) {
         serviceTypeMetaById.set(String(st.id), {
           name: String(st.name ?? 'Serviço'),
           service_group: String(st.service_group ?? 'outros').trim() || 'outros',
+          sale_amount: st.sale_amount == null ? null : Number(st.sale_amount),
         });
       }
     }
@@ -3584,11 +3711,15 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
         (row.appointment_services as Array<{
           sale_amount_applied?: number | null;
           hub_service_type_id?: string | null;
-          service_type?: { name?: string; service_group?: string | null } | null;
+          service_type?: {
+            name?: string;
+            service_group?: string | null;
+            sale_amount?: number | null;
+          } | null;
         }>) ?? [];
       const servicesEnriched = services.map((sv) => {
         const embedded = sv.service_type;
-        if (embedded?.service_group) return sv;
+        if (embedded?.service_group != null && embedded?.sale_amount != null) return sv;
         const typeId = sv.hub_service_type_id as string | null | undefined;
         const meta = typeId ? serviceTypeMetaById.get(typeId) : undefined;
         if (!meta) return sv;
@@ -3597,10 +3728,16 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
           service_type: {
             name: embedded?.name ?? meta.name,
             service_group: embedded?.service_group ?? meta.service_group,
+            sale_amount: embedded?.sale_amount ?? meta.sale_amount,
           },
         };
       });
-      const estimated = round2(servicesEnriched.reduce((s, sv) => s + Number(sv.sale_amount_applied ?? 0), 0));
+      const estimated = round2(
+        servicesEnriched.reduce(
+          (s, sv) => s + resolveAppliedSaleAmount(sv.sale_amount_applied, sv.service_type?.sale_amount),
+          0
+        )
+      );
       const { service_group, origin_label } = resolveAppointmentDayBoardMeta(
         {
           title: row.title as string | null,
@@ -3624,7 +3761,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
         estimated_amount: estimated,
         services: servicesEnriched.map((sv) => ({
           name: String(sv.service_type?.name ?? 'Serviço'),
-          amount: round2(Number(sv.sale_amount_applied ?? 0)),
+          amount: resolveAppliedSaleAmount(sv.sale_amount_applied, sv.service_type?.sale_amount),
         })),
         billing: {
           comanda_id: null,

@@ -40,7 +40,7 @@ import {
   type CaixaSessionHistoryItem,
 } from './hubCaixaSessionHistory';
 import { CaixaSessionHistoryTimeline } from './CaixaSessionHistoryTimeline';
-import { FinanceDayBoardTable } from './FinanceDayBoardTable';
+import { FinanceDayBoardTable, operationalStatusLabel } from './FinanceDayBoardTable';
 import { BatchChargeDrawer } from './BatchChargeDrawer';
 import {
   applyVisitKeysToBatchItems,
@@ -53,6 +53,8 @@ import { SellPackageDrawer } from './SellPackageDrawer';
 import { QuickSaleDrawer } from './QuickSaleDrawer';
 import { EncerrarTurnoDrawer } from './EncerrarTurnoDrawer';
 import { IniciarTurnoDrawer } from './IniciarTurnoDrawer';
+import { HubComandaReceivableDrawer } from './HubComandaReceivableDrawer';
+import { HubSidePanel } from '../../components/HubSidePanel';
 import type { PackageSaleScheduleContext } from './packageSaleScheduleUtils';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { filterEnabledPaymentMethods } from '../../utils/hubPaymentMethods';
@@ -124,6 +126,12 @@ const HubCaixaPage: React.FC = () => {
   // Drawers
   const [checkoutComandaId, setCheckoutComandaId] = useState<string | null>(null);
   const [checkoutScheduleContext, setCheckoutScheduleContext] = useState<PackageSaleScheduleContext | null>(null);
+  const [receivableDrawer, setReceivableDrawer] = useState<{
+    comandaId: string;
+    receivableIds: string[];
+    selectedReceivableId: string;
+    highlightPayment?: boolean;
+  } | null>(null);
   const [showSellPackage, setShowSellPackage] = useState(false);
   const [showQuickSale, setShowQuickSale] = useState(false);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
@@ -269,6 +277,10 @@ const HubCaixaPage: React.FC = () => {
       cancelled = true;
     };
   }, [clinicId, cashOpen?.id]);
+
+  useEffect(() => {
+    if (!cashOpen) setCashMovementExpanded(false);
+  }, [cashOpen]);
 
   const dayBoardFiltered = useMemo(() => {
     const searchTerm = normalizeText(dayBoardSearch.trim());
@@ -653,6 +665,88 @@ const HubCaixaPage: React.FC = () => {
     if (item.billing.comanda_id) setCheckoutComandaId(item.billing.comanda_id);
   };
 
+  const openReceivableSidePanel = (
+    comandaId: string,
+    receivableId: string,
+    opts?: { highlightPayment?: boolean },
+  ) => {
+    setSelectedCashItem(null);
+    setReceivableDrawer({
+      comandaId,
+      receivableIds: [receivableId],
+      selectedReceivableId: receivableId,
+      highlightPayment: opts?.highlightPayment === true,
+    });
+  };
+
+  const openComandaFromHistory = (comandaId: string) => {
+    setSelectedCashItem(null);
+    setReceivableDrawer(null);
+    const open = openComandas.find((c) => String(c.id) === comandaId);
+    if (open?.finance_handoff_at) {
+      navigate(`/hub/financeiro/comanda/${comandaId}`);
+      return;
+    }
+    // Side panel da comanda (ComandaCheckoutDrawer / HubSidePanel).
+    setCheckoutComandaId(comandaId);
+  };
+
+  const findDayBoardItemForHistory = (item: CaixaSessionHistoryItem): HubFinanceDayBoardItem | null => {
+    if (item.comanda_id) {
+      const byComanda = dayBoardItems.find((it) => String(it.billing.comanda_id ?? '') === String(item.comanda_id));
+      if (byComanda) return byComanda;
+    }
+    if (item.origin_type && item.origin_id) {
+      return (
+        dayBoardItems.find(
+          (it) => it.origin_type === item.origin_type && String(it.origin_id) === String(item.origin_id),
+        ) ?? null
+      );
+    }
+    return null;
+  };
+
+  const onSelectSessionHistory = (item: CaixaSessionHistoryItem) => {
+    setReceivableDrawer(null);
+
+    const comandaId = item.comanda_id ? String(item.comanda_id) : '';
+    const receivableId = item.receivable_id ? String(item.receivable_id) : '';
+
+    // Pagamento / cobrança com recebível + comanda → side panel real da cobrança
+    if (receivableId && comandaId) {
+      openReceivableSidePanel(comandaId, receivableId, {
+        highlightPayment: item.row_kind === 'payment',
+      });
+      return;
+    }
+
+    // Pagamento com recebível sem comanda → financeiro (cobrança avulsa)
+    if (item.row_kind === 'payment' && receivableId && !comandaId) {
+      setSelectedCashItem(null);
+      navigate(`/hub/financeiro?receivable_id=${encodeURIComponent(receivableId)}`);
+      return;
+    }
+
+    // Comanda (aberta / criada) → side panel da comanda
+    if (comandaId) {
+      openComandaFromHistory(comandaId);
+      return;
+    }
+
+    // Billing com comanda descoberta no day board → abre a comanda
+    if (item.row_kind === 'billing' && item.origin_type && item.origin_id) {
+      const boardItem = findDayBoardItemForHistory(item);
+      if (boardItem?.billing.comanda_id) {
+        openComandaFromHistory(String(boardItem.billing.comanda_id));
+        return;
+      }
+      // Sem comanda: só o painel de detalhe (CTA “Abrir comanda” no footer).
+    }
+
+    // Sangria / suprimento / sem comanda → detalhe com ações no side panel
+    setSelectedCashItem(item);
+  };
+
   const toggleSelect = (item: HubFinanceDayBoardItem) => {
     const key = dayBoardItemKey(item);
     setSelectedKeys((prev) => {
@@ -784,43 +878,73 @@ const HubCaixaPage: React.FC = () => {
           Há um turno aberto de um dia anterior. Encerre o turno e inicie um novo para o dia de hoje.
         </div>
       )}
-      {cashOpen?.opened_by_staff && !isPreviousDaySession && (
-        <div
-          style={{
-            fontSize: 12,
-            color: '#888',
-            marginBottom: 8,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 6,
-          }}
-        >
-          <User size={13} aria-hidden />
-          Caixa aberto por{' '}
-          <strong>
-            {cashOpen.opened_by_staff.display_name ?? cashOpen.opened_by_staff.full_name ?? 'desconhecido'}
-          </strong>
-          {cashOpen.opened_at &&
-            ` às ${new Date(cashOpen.opened_at).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
+      <div className="hub-caixa-page__session-bar">
+        <div className="hub-caixa-page__session-meta">
+          {cashOpen?.opened_by_staff && !isPreviousDaySession ? (
+            <>
+              <User size={13} aria-hidden />
+              <span>
+                Caixa aberto por{' '}
+                <strong>
+                  {cashOpen.opened_by_staff.display_name ?? cashOpen.opened_by_staff.full_name ?? 'desconhecido'}
+                </strong>
+                {cashOpen.opened_at &&
+                  ` às ${new Date(cashOpen.opened_at).toLocaleString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
+              </span>
+            </>
+          ) : null}
         </div>
-      )}
-
-      <div className="hub-caixa-page__turno-bar">
-        {hasPermission('hub.cash.session') && (
-          cashOpen ? (
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--primary"
-              onClick={() => {
-                setShowEncerrarTurno(true);
-                // Atualiza o resumo ao abrir para não mostrar valores desatualizados/zerados.
-                void load();
-              }}
-            >
-              <Lock size={15} strokeWidth={2} />
-              Encerrar turno
-            </button>
-          ) : (
+        <div className="hub-caixa-page__session-actions">
+          {cashOpen ? (
+            <>
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary"
+                disabled={!canCreateReceivable}
+                onClick={() => setShowQuickSale(true)}
+              >
+                <ShoppingBag size={15} strokeWidth={2} />
+                Venda rápida
+              </button>
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--ghost"
+                disabled={!canCreateReceivable}
+                onClick={() => setShowSellPackage(true)}
+              >
+                <Package size={15} strokeWidth={2} />
+                Vender pacote
+              </button>
+              <button
+                type="button"
+                className={`hub-clientes__btn hub-clientes__btn--ghost${cashMovementExpanded ? ' hub-caixa-page__session-action--active' : ''}`}
+                aria-expanded={cashMovementExpanded}
+                title="Sangria: retirada de dinheiro da gaveta. Suprimento: entrada de dinheiro na gaveta."
+                onClick={() => setCashMovementExpanded((v) => !v)}
+              >
+                Sangria / Suprimento
+                {cashMovementExpanded ? (
+                  <ChevronUp size={15} strokeWidth={2} aria-hidden />
+                ) : (
+                  <ChevronDown size={15} strokeWidth={2} aria-hidden />
+                )}
+              </button>
+              {hasPermission('hub.cash.session') ? (
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--ghost"
+                  onClick={() => {
+                    setShowEncerrarTurno(true);
+                    // Atualiza o resumo ao abrir para não mostrar valores desatualizados/zerados.
+                    void load();
+                  }}
+                >
+                  <Lock size={15} strokeWidth={2} />
+                  Encerrar turno
+                </button>
+              ) : null}
+            </>
+          ) : hasPermission('hub.cash.session') ? (
             <button
               type="button"
               className="hub-clientes__btn hub-clientes__btn--primary"
@@ -829,9 +953,74 @@ const HubCaixaPage: React.FC = () => {
               <Unlock size={15} strokeWidth={2} />
               Iniciar turno
             </button>
-          )
-        )}
+          ) : null}
+        </div>
       </div>
+
+      {cashOpen && cashMovementExpanded ? (
+        <div className="hub-caixa-page__sangria-panel" role="region" aria-label="Sangria e suprimento">
+          <div className="hub-caixa-page__sangria-panel-head">
+            <span className="hub-caixa-page__card-title">
+              Sangria / Suprimento
+              <span
+                className="hub-caixa-page__card-title-help"
+                title="Sangria: retirada de dinheiro da gaveta. Suprimento: entrada de dinheiro na gaveta."
+                role="img"
+                aria-label="Ajuda sobre sangria e suprimento"
+              >
+                <HelpCircle size={15} strokeWidth={2} />
+              </span>
+            </span>
+          </div>
+          <div className="hub-caixa-page__form-row">
+            <div className="hub-clientes__field">
+              <span className="hub-clientes__label">Tipo</span>
+              <select
+                className="hub-clientes__select-input"
+                value={movType}
+                onChange={(e) => setMovType(e.target.value as 'withdrawal' | 'deposit')}
+                aria-label="Tipo de movimento"
+              >
+                <option value="withdrawal">Sangria (retirada)</option>
+                <option value="deposit">Suprimento (entrada)</option>
+              </select>
+            </div>
+            <div className="hub-clientes__field">
+              <label className="hub-clientes__label" htmlFor="caixa-mov-amt">Valor</label>
+              <div className="hub-caixa-page__money-field">
+                <span className="hub-caixa-page__money-prefix">R$</span>
+                <input
+                  id="caixa-mov-amt"
+                  className="hub-clientes__input"
+                  value={movAmount}
+                  onChange={(e) => setMovAmount(e.target.value)}
+                  inputMode="decimal"
+                  placeholder="0,00"
+                />
+              </div>
+            </div>
+          </div>
+          <div className="hub-caixa-page__form-row hub-caixa-page__form-row--single">
+            <div className="hub-clientes__field">
+              <label className="hub-clientes__label" htmlFor="caixa-mov-notes">Observação (opcional)</label>
+              <input
+                id="caixa-mov-notes"
+                className="hub-clientes__input"
+                value={movNotes}
+                onChange={(e) => setMovNotes(e.target.value)}
+                placeholder="Ex.: Pagamento de fornecedor"
+              />
+            </div>
+          </div>
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--primary hub-caixa-page__btn-register"
+            onClick={() => void onCashMovement()}
+          >
+            Registrar
+          </button>
+        </div>
+      ) : null}
 
       <CaixaMetricsRow
         loading={loading}
@@ -844,92 +1033,8 @@ const HubCaixaPage: React.FC = () => {
         dayBoardCount={dayBoardItems.length}
       />
 
-      {/* ── Colunas: Sangria (turno aberto) | Movimentações | Histórico ── */}
-      <div className={`hub-caixa-page__ops-row${cashOpen ? '' : ' hub-caixa-page__ops-row--closed'}`}>
-        {cashOpen ? (
-        <div className="hub-caixa-page__col">
-              <div className="hub-caixa-page__card">
-                <button
-                  type="button"
-                  className="hub-caixa-page__card-toggle"
-                  aria-expanded={cashMovementExpanded}
-                  onClick={() => setCashMovementExpanded((v) => !v)}
-                >
-                  <span className="hub-caixa-page__card-title">
-                    Sangria / Suprimento
-                    <span
-                      className="hub-caixa-page__card-title-help"
-                      title="Sangria: retirada de dinheiro da gaveta. Suprimento: entrada de dinheiro na gaveta."
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => e.stopPropagation()}
-                      role="img"
-                      aria-label="Ajuda sobre sangria e suprimento"
-                    >
-                      <HelpCircle size={15} strokeWidth={2} />
-                    </span>
-                  </span>
-                  {cashMovementExpanded ? (
-                    <ChevronUp size={18} strokeWidth={2} aria-hidden />
-                  ) : (
-                    <ChevronDown size={18} strokeWidth={2} aria-hidden />
-                  )}
-                </button>
-                {cashMovementExpanded && (
-                  <>
-                <div className="hub-caixa-page__form-row">
-                  <div className="hub-clientes__field">
-                    <span className="hub-clientes__label">Tipo</span>
-                    <select
-                      className="hub-clientes__select-input"
-                      value={movType}
-                      onChange={(e) => setMovType(e.target.value as 'withdrawal' | 'deposit')}
-                      aria-label="Tipo de movimento"
-                    >
-                      <option value="withdrawal">Sangria (retirada)</option>
-                      <option value="deposit">Suprimento (entrada)</option>
-                    </select>
-                  </div>
-                  <div className="hub-clientes__field">
-                    <label className="hub-clientes__label" htmlFor="caixa-mov-amt">Valor</label>
-                    <div className="hub-caixa-page__money-field">
-                      <span className="hub-caixa-page__money-prefix">R$</span>
-                      <input
-                        id="caixa-mov-amt"
-                        className="hub-clientes__input"
-                        value={movAmount}
-                        onChange={(e) => setMovAmount(e.target.value)}
-                        inputMode="decimal"
-                        placeholder="0,00"
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="hub-caixa-page__form-row hub-caixa-page__form-row--single">
-                  <div className="hub-clientes__field">
-                    <label className="hub-clientes__label" htmlFor="caixa-mov-notes">Observação (opcional)</label>
-                    <input
-                      id="caixa-mov-notes"
-                      className="hub-clientes__input"
-                      value={movNotes}
-                      onChange={(e) => setMovNotes(e.target.value)}
-                      placeholder="Ex.: Pagamento de fornecedor"
-                    />
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  className="hub-clientes__btn hub-clientes__btn--primary hub-caixa-page__btn-register"
-                  onClick={() => void onCashMovement()}
-                >
-                  Registrar
-                </button>
-                  </>
-                )}
-              </div>
-        </div>
-        ) : null}
-
-        {/* Coluna 2 — Movimentações da sessão */}
+      {/* ── Colunas: Movimentações | Histórico ── */}
+      <div className="hub-caixa-page__ops-row">
         <div className="hub-caixa-page__col">
           <CaixaSessionMovementsCard
             cashOpen={!!cashOpen}
@@ -939,10 +1044,12 @@ const HubCaixaPage: React.FC = () => {
             depositsTotal={cashSummary?.summary.deposits_total ?? 0}
             withdrawalsTotal={cashSummary?.summary.withdrawals_total ?? 0}
             dayPendingTotal={dayPendingTotal}
+            cardFeeTotal={cashSummary?.summary.card_fee_total ?? 0}
+            cardNetTotal={cashSummary?.summary.card_net_total ?? 0}
+            cardWithoutFeeGrossTotal={cashSummary?.summary.card_without_fee_gross_total ?? 0}
           />
         </div>
 
-        {/* Coluna 3 — Histórico da sessão */}
         <div className="hub-caixa-page__col">
           <div className="hub-caixa-page__card hub-caixa-page__card--ops">
             <h3
@@ -959,7 +1066,7 @@ const HubCaixaPage: React.FC = () => {
               <div className="hub-caixa-page__card-scroll hub-caixa-page__history-scroll">
                 <CaixaSessionHistoryTimeline
                   items={sessionHistoryItems}
-                  onSelect={setSelectedCashItem}
+                  onSelect={onSelectSessionHistory}
                 />
               </div>
             )}
@@ -1025,24 +1132,6 @@ const HubCaixaPage: React.FC = () => {
               </button>
             ))}
           </div>
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-            disabled={!canCreateReceivable}
-            onClick={() => setShowQuickSale(true)}
-          >
-            <ShoppingBag size={14} style={{ marginRight: 4 }} />
-            Venda rápida
-          </button>
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
-            disabled={!canCreateReceivable}
-            onClick={() => setShowSellPackage(true)}
-          >
-            <Package size={14} style={{ marginRight: 4 }} />
-            Vender pacote
-          </button>
           <button
             type="button"
             className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm hub-dayboard__refresh-btn"
@@ -1420,44 +1509,241 @@ const HubCaixaPage: React.FC = () => {
         />
       ) : null}
 
-      {selectedCashItem ? (
-        <aside className="hub-clientes__panel hub-finance-page__panel" aria-label="Detalhe do movimento de caixa">
-          <div className="hub-clientes__panel-scroll">
-            <div className="hub-clientes__panel-header">
-              <div>
-                <h2 className="hub-clientes__panel-title">{selectedCashItem.title}</h2>
-                <p className="hub-clientes__muted">{selectedCashItem.subtitle || `#${selectedCashItem.id.slice(0, 12)}`}</p>
-              </div>
-              <button type="button" className="hub-clientes__panel-close" aria-label="Fechar detalhe do movimento" onClick={() => setSelectedCashItem(null)}>
-                <X size={18} strokeWidth={2} />
-              </button>
-            </div>
-            <div className="hub-finance-page__detail-hero">
-              <strong>{formatBrl(Number(selectedCashItem.signed_amount))}</strong>
-              <span className="hub-clientes__muted">
-                {selectedCashItem.happened_at ? new Date(String(selectedCashItem.happened_at)).toLocaleString('pt-BR') : '—'}
-              </span>
-            </div>
-            <section className="hub-finance-page__panel-section">
-              <div className="hub-finance-page__detail-list">
-                <p><strong>Tipo:</strong> {selectedCashItem.title}</p>
-                <p><strong>Detalhe:</strong> {selectedCashItem.subtitle || '—'}</p>
-                <p><strong>Origem:</strong> {
-                  selectedCashItem.row_kind === 'payment'
-                    ? 'Pagamento recebido'
-                    : selectedCashItem.row_kind === 'billing'
-                      ? 'Cobrança do painel do dia'
-                      : 'Movimento manual do caixa'
-                }</p>
-                {selectedCashItem.is_pending ? (
-                  <p><strong>Status:</strong> Pendente / em aberto</p>
-                ) : null}
-                <p><strong>Observações:</strong> {selectedCashItem.notes ?? '—'}</p>
-              </div>
-            </section>
-          </div>
-        </aside>
+      {receivableDrawer ? (
+        <HubComandaReceivableDrawer
+          open={!!receivableDrawer}
+          onClose={() => setReceivableDrawer(null)}
+          comandaId={receivableDrawer.comandaId}
+          receivableIds={receivableDrawer.receivableIds}
+          selectedReceivableId={receivableDrawer.selectedReceivableId}
+          onSelectReceivable={(id) =>
+            setReceivableDrawer((prev) => (prev ? { ...prev, selectedReceivableId: id } : null))
+          }
+          onRefreshComanda={() => {
+            void load();
+            void loadDayBoard();
+          }}
+          highlightPayment={receivableDrawer.highlightPayment === true}
+        />
       ) : null}
+
+      <HubSidePanel
+        open={!!selectedCashItem}
+        title={(() => {
+          if (!selectedCashItem) return 'Detalhe';
+          if (
+            selectedCashItem.row_kind === 'billing' &&
+            !selectedCashItem.comanda_id
+          ) {
+            const board = findDayBoardItemForHistory(selectedCashItem);
+            const serviceNames = (board?.services ?? []).map((s) => s.name).filter(Boolean);
+            if (serviceNames.length === 1) return serviceNames[0];
+            if (serviceNames.length > 1) return `${serviceNames[0]} +${serviceNames.length - 1}`;
+            if (board?.origin_label?.trim()) return board.origin_label.trim();
+          }
+          return selectedCashItem.title || 'Detalhe';
+        })()}
+        subtitle={(() => {
+          if (!selectedCashItem) return undefined;
+          if (selectedCashItem.row_kind === 'billing' && !selectedCashItem.comanda_id) {
+            const board = findDayBoardItemForHistory(selectedCashItem);
+            const who = [board?.guardian?.full_name, board?.pet?.name].filter(Boolean).join(' • ');
+            return who || selectedCashItem.subtitle || 'Sem comanda';
+          }
+          return selectedCashItem.subtitle || undefined;
+        })()}
+        onClose={() => setSelectedCashItem(null)}
+        footer={
+          <div className="hub-finance-page__drawer-footer">
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost"
+              onClick={() => setSelectedCashItem(null)}
+            >
+              Fechar
+            </button>
+            {selectedCashItem?.receivable_id && selectedCashItem?.comanda_id ? (
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary"
+                onClick={() => {
+                  const rid = String(selectedCashItem.receivable_id);
+                  const cid = String(selectedCashItem.comanda_id);
+                  openReceivableSidePanel(cid, rid, {
+                    highlightPayment: selectedCashItem.row_kind === 'payment',
+                  });
+                }}
+              >
+                Ver cobrança
+              </button>
+            ) : null}
+            {selectedCashItem?.comanda_id && !selectedCashItem?.receivable_id ? (
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary"
+                onClick={() => openComandaFromHistory(String(selectedCashItem.comanda_id))}
+              >
+                Ver comanda
+              </button>
+            ) : null}
+            {selectedCashItem?.row_kind === 'billing' &&
+            !selectedCashItem?.comanda_id &&
+            selectedCashItem?.origin_type &&
+            selectedCashItem?.origin_id &&
+            canCreateReceivable ? (
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary"
+                disabled={dayBoardBusy}
+                onClick={() => {
+                  if (dayBoardBusy) return;
+                  const boardItem = findDayBoardItemForHistory(selectedCashItem);
+                  if (!boardItem) {
+                    showError('Atendimento não encontrado no painel do dia.');
+                    return;
+                  }
+                  setSelectedCashItem(null);
+                  void onOpenComanda(boardItem);
+                }}
+              >
+                {dayBoardBusy ? 'Abrindo…' : 'Abrir comanda'}
+              </button>
+            ) : null}
+            {selectedCashItem?.row_kind === 'payment' &&
+            selectedCashItem?.receivable_id &&
+            !selectedCashItem?.comanda_id ? (
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary"
+                onClick={() => {
+                  const rid = String(selectedCashItem.receivable_id);
+                  setSelectedCashItem(null);
+                  navigate(`/hub/financeiro?receivable_id=${encodeURIComponent(rid)}`);
+                }}
+              >
+                Ver cobrança
+              </button>
+            ) : null}
+          </div>
+        }
+      >
+        {selectedCashItem ? (() => {
+          const board =
+            selectedCashItem.row_kind === 'billing' && !selectedCashItem.comanda_id
+              ? findDayBoardItemForHistory(selectedCashItem)
+              : null;
+          const serviceNames = (board?.services ?? []).map((s) => s.name).filter(Boolean);
+          const originLabel = board
+            ? formatComandaOriginLabel(board.origin_type)
+            : selectedCashItem.origin_type
+              ? formatComandaOriginLabel(selectedCashItem.origin_type)
+              : null;
+          const startsAt = board?.starts_at || selectedCashItem.happened_at;
+          const isSemComanda = selectedCashItem.row_kind === 'billing' && !selectedCashItem.comanda_id;
+
+          return (
+            <div className="hub-finance-page__card-panel hub-finance-page__card-panel--stack">
+              <div className="hub-finance-page__detail-hero">
+                <strong>{formatBrl(Number(selectedCashItem.signed_amount))}</strong>
+                <span className="hub-clientes__muted">
+                  {startsAt ? new Date(String(startsAt)).toLocaleString('pt-BR') : '—'}
+                </span>
+              </div>
+
+              {(selectedCashItem.chips?.length ?? 0) > 0 ? (
+                <div className="hub-caixa-timeline__chips" style={{ marginBottom: 10 }}>
+                  {isSemComanda ? (
+                    <span className="hub-caixa-timeline__chip hub-caixa-timeline__chip--mixed">
+                      Sem comanda
+                    </span>
+                  ) : null}
+                  {selectedCashItem.chips!.map((chip) => (
+                    <span
+                      key={chip.key}
+                      className={`hub-caixa-timeline__chip hub-caixa-timeline__chip--${chip.tone}`}
+                    >
+                      {chip.label}
+                    </span>
+                  ))}
+                </div>
+              ) : isSemComanda ? (
+                <div className="hub-caixa-timeline__chips" style={{ marginBottom: 10 }}>
+                  <span className="hub-caixa-timeline__chip hub-caixa-timeline__chip--mixed">
+                    Sem comanda
+                  </span>
+                </div>
+              ) : null}
+
+              <section className="hub-finance-page__panel-section">
+                <div className="hub-finance-page__detail-list">
+                  {isSemComanda ? (
+                    <>
+                      <p>
+                        <strong>Canal:</strong>{' '}
+                        {originLabel || 'Atendimento'}
+                        {board?.origin_label ? ` · ${board.origin_label}` : ''}
+                      </p>
+                      {serviceNames.length > 0 ? (
+                        <p>
+                          <strong>Serviço{serviceNames.length > 1 ? 's' : ''}:</strong>{' '}
+                          {serviceNames.join(' · ')}
+                        </p>
+                      ) : (
+                        <p>
+                          <strong>Serviço:</strong> {board?.origin_label || 'Não informado'}
+                        </p>
+                      )}
+                      <p>
+                        <strong>Tutor:</strong> {board?.guardian?.full_name || '—'}
+                      </p>
+                      <p>
+                        <strong>Pet:</strong> {board?.pet?.name || '—'}
+                      </p>
+                      {board?.operational_status ? (
+                        <p>
+                          <strong>Status do atendimento:</strong>{' '}
+                          {operationalStatusLabel(board.operational_status, 'caixa')}
+                        </p>
+                      ) : null}
+                      <p>
+                        <strong>Situação no caixa:</strong> Ainda sem comanda
+                      </p>
+                      <p className="hub-clientes__muted" style={{ marginTop: 8 }}>
+                        Abra a comanda para registrar itens e seguir com a cobrança.
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <p><strong>Tipo:</strong> {selectedCashItem.title}</p>
+                      {selectedCashItem.subtitle ? (
+                        <p><strong>Detalhe:</strong> {selectedCashItem.subtitle}</p>
+                      ) : null}
+                      <p>
+                        <strong>Origem:</strong>{' '}
+                        {selectedCashItem.row_kind === 'payment'
+                          ? 'Pagamento recebido na sessão'
+                          : selectedCashItem.row_kind === 'billing'
+                            ? 'Cobrança / comanda do painel do dia'
+                            : 'Movimento manual do caixa'}
+                      </p>
+                      {selectedCashItem.is_pending ? (
+                        <p><strong>Status:</strong> Pendente / em aberto</p>
+                      ) : null}
+                      {selectedCashItem.comanda_id ? (
+                        <p><strong>Comanda:</strong> #{String(selectedCashItem.comanda_id).slice(0, 8)}</p>
+                      ) : null}
+                      {selectedCashItem.receivable_id ? (
+                        <p><strong>Recebível:</strong> #{String(selectedCashItem.receivable_id).slice(0, 8)}</p>
+                      ) : null}
+                      <p><strong>Observações:</strong> {selectedCashItem.notes ?? '—'}</p>
+                    </>
+                  )}
+                </div>
+              </section>
+            </div>
+          );
+        })() : null}
+      </HubSidePanel>
       <SellPackageDrawer
         open={showSellPackage}
         unitId={unitId}

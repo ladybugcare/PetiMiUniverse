@@ -736,6 +736,9 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
         total={summary.total}
         paidTotal={payload.paid_total}
         balanceDue={payload.balance_due}
+        cardFeeTotal={payload.card_fee_total}
+        cardNetTotal={payload.card_net_total}
+        cardWithoutFeeGrossTotal={payload.card_without_fee_gross_total}
         events={payload.events ?? []}
         canWrite={canWrite}
         canEdit={canEdit}

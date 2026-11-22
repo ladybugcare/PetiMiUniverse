@@ -108,6 +108,22 @@ export type HubFinanceReceivable = {
   }>;
 };
 
+export type HubCardMachineFeeTier = {
+  min_installments: number;
+  max_installments: number;
+  rate_percent: number;
+};
+
+export type HubCardMachineFees = {
+  debit_card: HubCardMachineFeeTier[];
+  credit_card: HubCardMachineFeeTier[];
+};
+
+export type HubPaymentMethodSettings = {
+  accepted_payment_methods: HubPaymentMethod[];
+  card_machine_fees: HubCardMachineFees;
+};
+
 export type HubFinancePayment = {
   id: string;
   clinic_id: string;
@@ -126,6 +142,9 @@ export type HubFinancePayment = {
   reversal_reason?: string | null;
   correction_reason?: string | null;
   effective_payment_date?: string | null;
+  card_fee_rate_percent?: number | null;
+  card_fee_amount?: number | null;
+  net_amount?: number | null;
 };
 
 export type HubFinancePaymentListItem = {
@@ -362,11 +381,18 @@ export type HubCashSessionPostCloseAdjustment = {
   created_at: string;
 };
 
+/** Campos extras do summary de caixa para histórico (origem/composição). */
+export type HubCashPaymentReceivableContext = Partial<HubFinanceReceivable> & {
+  comanda_origin_type?: string | null;
+  has_product?: boolean;
+  has_service?: boolean;
+};
+
 export type HubCashSessionSummary = {
   cash_session: HubCashSession;
-  payments: Array<HubFinancePayment & { receivable?: Partial<HubFinanceReceivable> | null }>;
+  payments: Array<HubFinancePayment & { receivable?: HubCashPaymentReceivableContext | null }>;
   /** Todos os pagamentos da sessão (todos os métodos), para histórico. */
-  all_payments?: Array<HubFinancePayment & { receivable?: Partial<HubFinanceReceivable> | null }>;
+  all_payments?: Array<HubFinancePayment & { receivable?: HubCashPaymentReceivableContext | null }>;
   movements: Array<{
     id: string;
     movement_type: 'withdrawal' | 'deposit' | 'opening_adjustment';
@@ -388,6 +414,11 @@ export type HubCashSessionSummary = {
     snapshot_frozen?: boolean;
     /** Totais por método de pagamento (pix, credit_card, etc.) — informativo, não entra no saldo da gaveta. */
     totals_by_method?: Record<string, number>;
+    /** Totais internos de taxa da maquininha (ao vivo; não entram na gaveta). */
+    card_gross_total?: number;
+    card_fee_total?: number;
+    card_net_total?: number;
+    card_without_fee_gross_total?: number;
   };
 };
 
@@ -1556,19 +1587,22 @@ export const hubFinancialApi = {
     return apiRequest(`${base}/credit-balance?${q}`) as Promise<{ balance: number; movements_count: number }>;
   },
 
-  async getPaymentMethodSettings(clinicId: string): Promise<{ accepted_payment_methods: HubPaymentMethod[] }> {
+  async getPaymentMethodSettings(clinicId: string): Promise<HubPaymentMethodSettings> {
     const q = new URLSearchParams({ clinic_id: clinicId });
-    return apiRequest(`${base}/payment-method-settings?${q}`) as Promise<{ accepted_payment_methods: HubPaymentMethod[] }>;
+    return apiRequest(`${base}/payment-method-settings?${q}`) as Promise<HubPaymentMethodSettings>;
   },
 
   async patchPaymentMethodSettings(
     clinicId: string,
-    acceptedPaymentMethods: HubPaymentMethod[],
-  ): Promise<{ accepted_payment_methods: HubPaymentMethod[] }> {
+    body: {
+      accepted_payment_methods?: HubPaymentMethod[];
+      card_machine_fees?: HubCardMachineFees;
+    },
+  ): Promise<HubPaymentMethodSettings> {
     return apiRequest(`${base}/payment-method-settings`, {
       method: 'PATCH',
-      body: JSON.stringify({ clinic_id: clinicId, accepted_payment_methods: acceptedPaymentMethods }),
-    }) as Promise<{ accepted_payment_methods: HubPaymentMethod[] }>;
+      body: JSON.stringify({ clinic_id: clinicId, ...body }),
+    }) as Promise<HubPaymentMethodSettings>;
   },
 
   async listPackages(clinicId: string): Promise<{ packages: Array<Record<string, unknown>> }> {

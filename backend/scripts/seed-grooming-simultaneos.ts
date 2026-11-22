@@ -139,20 +139,20 @@ async function cleanupPrevious() {
   console.log(`Limpeza: ${ids.length} agendamento(s) anterior(es) do seed removido(s).`);
 }
 
-async function ensureGroomingServiceType(): Promise<{ id: string; name: string }> {
+async function ensureGroomingServiceType(): Promise<{ id: string; name: string; sale_amount: number }> {
   const rows = must(
     await supabaseAdmin
       .from('hub_service_types')
-      .select('id, name, code')
+      .select('id, name, code, sale_amount')
       .eq('clinic_id', clinicId)
       .eq('service_group', 'banho_tosa')
       .eq('is_addon', false)
       .is('deleted_at', null),
     'tipos de serviço',
-  ) as { id: string; name: string; code: string }[];
+  ) as { id: string; name: string; code: string; sale_amount: number | null }[];
   const pick = rows.find((r) => r.code === 'banho') ?? rows[0];
   if (!pick) throw new Error('Nenhum tipo de serviço de Banho & Tosa na clínica.');
-  return pick;
+  return { id: pick.id, name: pick.name, sale_amount: Number(pick.sale_amount ?? 0) };
 }
 
 async function ensureStaff(): Promise<{ id: string; full_name: string }> {
@@ -324,6 +324,9 @@ async function main() {
       hub_service_type_id: serviceType.id,
       duration_minutes: sc.durationMin,
       order_index: 0,
+      sale_amount_applied: serviceType.sale_amount,
+      cost_amount_applied: Math.round(serviceType.sale_amount * 0.3),
+      pricing_source: 'catalog',
     });
     if (lineErr) console.log(`Aviso: linha de serviço de ${sc.pet.name} não criada (${lineErr.message}).`);
 

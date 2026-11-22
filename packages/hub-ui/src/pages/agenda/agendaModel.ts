@@ -125,17 +125,31 @@ export function isPartnerCareLocation(
   return appt.care_location_kind === 'partner_clinic';
 }
 
-const EDITABLE_AGENDA_STATUSES: AgendaStatus[] = ['pending_confirm', 'confirmed'];
+/** Statuses já encerrados — não permitem remarcar por arraste nem no painel. */
+const LOCKED_AGENDA_STATUSES: AgendaStatus[] = ['done', 'cancelled', 'paid'];
 
-/** Agendamento editável antes do horário marcado e antes de iniciar atendimento. */
+/**
+ * Motivo pelo qual o agendamento não pode ser remarcado/editado, ou `null` se pode.
+ * Aberto (inclui passado e “Aguardando” / em atendimento) continua editável até encerrar.
+ */
+export function agendaAppointmentEditBlockReason(
+  appt: Pick<AgendaAppointment, 'status'>,
+  opts: { canWrite: boolean },
+): string | null {
+  if (!opts.canWrite) return 'Você não tem permissão para remarcar';
+  if (LOCKED_AGENDA_STATUSES.includes(appt.status)) {
+    return `Não é possível remarcar com status “${STATUS_META[appt.status].label}”`;
+  }
+  return null;
+}
+
+/** Agendamento ainda aberto (não finalizado/cancelado/pago) e com permissão de escrita. */
 export function canEditAgendaAppointment(
   appt: Pick<AgendaAppointment, 'status' | 'start'>,
   opts: { canWrite: boolean; now?: Date },
 ): boolean {
-  if (!opts.canWrite) return false;
-  if (!EDITABLE_AGENDA_STATUSES.includes(appt.status)) return false;
-  const now = opts.now ?? new Date();
-  return now.getTime() < appt.start.getTime();
+  void opts.now;
+  return agendaAppointmentEditBlockReason(appt, opts) === null;
 }
 
 export const DEFAULT_AGENDA_START_HOUR = 7;

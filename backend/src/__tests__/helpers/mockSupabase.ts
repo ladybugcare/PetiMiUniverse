@@ -92,6 +92,8 @@ class MockQueryBuilder {
   private filters: Filter[] = [];
   private orderSpec: { col: string; ascending: boolean } | null = null;
   private limitN: number | null = null;
+  private rangeFrom: number | null = null;
+  private rangeTo: number | null = null;
   private op: 'select' | 'insert' | 'update' | 'upsert' | 'delete' = 'select';
   private payload: Row | Row[] | null = null;
   private countOnly = false;
@@ -199,6 +201,13 @@ class MockQueryBuilder {
     return this;
   }
 
+  /** PostgREST-style inclusive range (from..to). */
+  range(from: number, to: number): this {
+    this.rangeFrom = from;
+    this.rangeTo = to;
+    return this;
+  }
+
   private rows(): Row[] {
     return this.state.tables[this.table] ?? [];
   }
@@ -220,6 +229,9 @@ class MockQueryBuilder {
         const cmp = String(av).localeCompare(String(bv));
         return ascending ? cmp : -cmp;
       });
+    }
+    if (this.rangeFrom != null && this.rangeTo != null) {
+      out = out.slice(this.rangeFrom, this.rangeTo + 1);
     }
     if (this.limitN != null) out = out.slice(0, this.limitN);
     return out;

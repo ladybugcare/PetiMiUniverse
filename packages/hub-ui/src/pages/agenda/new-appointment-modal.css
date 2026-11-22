@@ -2060,13 +2060,9 @@
     padding: 16px;
   }
 
-  /* Formulário + resumo empilhados */
+  /* Formulário + resumo empilhados (resumo abaixo do form, não no topo) */
   .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__body {
     flex-direction: column;
-  }
-
-  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__aside {
-    order: -1;
   }
 
   .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__main--with-aside {
@@ -2074,13 +2070,15 @@
   }
 
   .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__aside {
+    order: 0; /* sobrescreve HubSidePanel order: -1 */
     width: 100%;
     flex-shrink: 0;
     border-left: none;
+    border-bottom: none;
     border-top: 1px solid #e8e4e0;
     padding: 16px;
-    max-height: none;
-    overflow: visible;
+    max-height: min(40vh, 320px);
+    overflow-y: auto;
   }
 
   /* Rodapé com botões em coluna */

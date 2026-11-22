@@ -1,6 +1,7 @@
 import {
   AlertTriangle,
   Bell,
+  CalendarDays,
   CircleDollarSign,
   LogIn,
   LifeBuoy,
@@ -41,6 +42,12 @@ const VISUALS: Record<string, HubNotificationVisual> = {
     tint: '#fee2e2',
   },
   hub_stock_alert: { Icon: PackageMinus, label: 'Estoque', color: '#c2410c', tint: '#ffedd5' },
+  hub_series_ending_soon: {
+    Icon: CalendarDays,
+    label: 'Série a renovar',
+    color: '#b45309',
+    tint: '#fef3c7',
+  },
   hub_boarding_checkin: { Icon: LogIn, label: 'Check-in', color: '#0f766e', tint: '#ccfbf1' },
   hub_boarding_checkout: { Icon: LogOut, label: 'Check-out', color: '#a16207', tint: '#fef9c3' },
   hub_grooming_extra_request: {

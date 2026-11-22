@@ -2,15 +2,23 @@ import { describe, expect, it } from 'vitest';
 import type { HubFinanceDayBoardItem } from '../../api/hubFinancialApi';
 import {
   buildCaixaSessionHistoryItems,
+  buildHistoryChips,
+  resolveComposition,
+  resolveSaleChannel,
   sumDayBoardPendingAmount,
   sumOpenComandasPendingAmount,
 } from './hubCaixaSessionHistory';
 
-function dayBoardItem(partial: Partial<HubFinanceDayBoardItem['billing']> & { estimated_amount?: number }): HubFinanceDayBoardItem {
-  const { estimated_amount, ...billing } = partial;
+function dayBoardItem(
+  partial: Partial<HubFinanceDayBoardItem['billing']> & {
+    estimated_amount?: number;
+    origin_id?: string;
+  } = {},
+): HubFinanceDayBoardItem {
+  const { estimated_amount, origin_id, ...billing } = partial;
   return {
     origin_type: 'appointment',
-    origin_id: 'appt-1',
+    origin_id: origin_id ?? 'appt-1',
     origin_label: 'Consulta',
     starts_at: '2026-09-04T10:00:00.000Z',
     guardian_id: null,
@@ -92,7 +100,7 @@ describe('buildCaixaSessionHistoryItems', () => {
             tendered_amount: 100,
             change_amount: 30,
             notes: null,
-            receivable: { id: 'rec-1' },
+            receivable: { id: 'rec-1', comanda_id: 'com-1' },
           },
         ],
         payments: [],
@@ -104,5 +112,210 @@ describe('buildCaixaSessionHistoryItems', () => {
     const pay = items.find((i) => i.row_kind === 'payment');
     expect(pay?.subtitle).toMatch(/Troco R\$ 30\.00/);
     expect(pay?.subtitle).toMatch(/recebido R\$ 100\.00/);
+    expect(pay?.payment_id).toBe('pay-1');
+    expect(pay?.receivable_id).toBe('rec-1');
+    expect(pay?.comanda_id).toBe('com-1');
+  });
+
+  it('propaga refs de comanda e recebível nos itens de billing', () => {
+    const items = buildCaixaSessionHistoryItems(
+      null,
+      [
+        dayBoardItem({
+          origin_id: 'appt-open',
+          comanda_id: 'c-open',
+          comanda_status: 'aberta',
+          active_receivable_id: null,
+          has_receivable: false,
+          receivable_status: null as never,
+        }),
+        dayBoardItem({
+          origin_id: 'appt-bill',
+          comanda_id: 'c-bill',
+          active_receivable_id: 'rec-9',
+          receivable_status: 'pending',
+        }),
+      ],
+      [{ id: 'c-extra', status: 'aberta', opened_at: '2026-09-04T11:00:00.000Z', total_amount: 55 }],
+    );
+
+    const openRow = items.find((i) => i.comanda_id === 'c-open');
+    const billingRow = items.find((i) => i.receivable_id === 'rec-9');
+    const extra = items.find((i) => i.comanda_id === 'c-extra');
+
+    expect(openRow?.comanda_id).toBe('c-open');
+    expect(openRow?.receivable_id).toBeNull();
+    expect(billingRow?.comanda_id).toBe('c-bill');
+    expect(billingRow?.receivable_id).toBe('rec-9');
+    expect(extra?.comanda_id).toBe('c-extra');
+  });
+
+  it('rotula atendimento sem comanda como Sem comanda', () => {
+    const items = buildCaixaSessionHistoryItems(
+      null,
+      [
+        {
+          ...dayBoardItem({
+            origin_id: 'appt-sem',
+            comanda_id: null,
+            comanda_status: null,
+            has_receivable: false,
+            receivable_status: null as never,
+            active_receivable_id: null,
+          }),
+          services: [{ name: 'Consulta', amount: 90 }],
+        },
+      ],
+      [],
+    );
+    const row = items.find((i) => i.origin_id === 'appt-sem');
+    expect(row?.title).toBe('Sem comanda');
+    expect(row?.subtitle).toBe('Consulta');
+    expect(row?.comanda_id).toBeNull();
+    expect(row?.origin_type).toBe('appointment');
+  });
+
+  it('fallback de subtítulo com comanda quando não há chips', () => {
+    const items = buildCaixaSessionHistoryItems(
+      {
+        id: 'sess-2',
+        clinic_id: 'c1',
+        unit_id: 'u1',
+        status: 'open',
+        opened_at: '2026-09-04T08:00:00.000Z',
+        opening_balance: 0,
+        all_payments: [
+          {
+            id: 'pay-2',
+            amount: 200,
+            payment_method: 'debit_card',
+            payment_date: '2026-09-04T09:00:00.000Z',
+            notes: null,
+            receivable: { id: 'rec-2', comanda_id: 'com-abc' },
+          },
+        ],
+        payments: [],
+        movements: [],
+      } as never,
+      [],
+      [],
+    );
+    const pay = items.find((i) => i.row_kind === 'payment');
+    expect(pay?.subtitle).toMatch(/Comanda #com-abc/);
+    expect(pay?.comanda_id).toBe('com-abc');
+  });
+
+  it('marca venda rápida de produto com chips e canal', () => {
+    const items = buildCaixaSessionHistoryItems(
+      {
+        id: 'sess-3',
+        clinic_id: 'c1',
+        unit_id: 'u1',
+        status: 'open',
+        opened_at: '2026-09-04T08:00:00.000Z',
+        opening_balance: 0,
+        all_payments: [
+          {
+            id: 'pay-3',
+            amount: 89.9,
+            payment_method: 'pix',
+            payment_date: '2026-09-04T09:30:00.000Z',
+            notes: null,
+            receivable: {
+              id: 'rec-3',
+              comanda_id: 'com-quick',
+              comanda_origin_type: 'manual',
+              has_product: true,
+              has_service: false,
+            },
+          },
+        ],
+        payments: [],
+        movements: [],
+      } as never,
+      [],
+      [],
+    );
+    const pay = items.find((i) => i.row_kind === 'payment');
+    expect(pay?.sale_channel).toBe('quick_sale');
+    expect(pay?.composition).toBe('product');
+    expect(pay?.chips?.map((c) => c.label)).toEqual(['Venda rápida', 'Produto']);
+    expect(pay?.subtitle).toBe('');
+  });
+
+  it('marca pagamento de agenda como serviço', () => {
+    const items = buildCaixaSessionHistoryItems(
+      {
+        id: 'sess-4',
+        clinic_id: 'c1',
+        unit_id: 'u1',
+        status: 'open',
+        opened_at: '2026-09-04T08:00:00.000Z',
+        opening_balance: 0,
+        all_payments: [
+          {
+            id: 'pay-4',
+            amount: 200,
+            payment_method: 'debit_card',
+            payment_date: '2026-09-04T10:00:00.000Z',
+            notes: null,
+            receivable: {
+              id: 'rec-4',
+              comanda_id: 'com-agenda',
+              comanda_origin_type: 'appointment',
+              has_product: false,
+              has_service: true,
+            },
+          },
+        ],
+        payments: [],
+        movements: [],
+      } as never,
+      [],
+      [],
+    );
+    const pay = items.find((i) => i.row_kind === 'payment');
+    expect(pay?.sale_channel).toBe('agenda');
+    expect(pay?.composition).toBe('service');
+    expect(pay?.chips?.map((c) => c.label)).toEqual(['Agenda', 'Serviço']);
+  });
+
+  it('comanda manual aberta vira Venda rápida', () => {
+    const items = buildCaixaSessionHistoryItems(
+      null,
+      [],
+      [
+        {
+          id: 'c-manual',
+          status: 'aberta',
+          origin_type: 'manual',
+          opened_at: '2026-09-04T11:00:00.000Z',
+          total_amount: 40,
+          items: [{ item_kind: 'product' }],
+          guardian: { full_name: 'Beatriz' },
+        },
+      ],
+    );
+    const row = items.find((i) => i.comanda_id === 'c-manual');
+    expect(row?.title).toBe('Venda rápida');
+    expect(row?.sale_channel).toBe('quick_sale');
+    expect(row?.composition).toBe('product');
+    expect(row?.chips?.map((c) => c.label)).toEqual(['Venda rápida', 'Produto']);
+  });
+});
+
+describe('resolveSaleChannel / composition / chips', () => {
+  it('resolve canais e composição', () => {
+    expect(resolveSaleChannel('manual')).toBe('quick_sale');
+    expect(resolveSaleChannel('appointment')).toBe('agenda');
+    expect(resolveComposition(true, false)).toBe('product');
+    expect(resolveComposition(false, true)).toBe('service');
+    expect(resolveComposition(true, true)).toBe('mixed');
+    expect(
+      buildHistoryChips({
+        saleChannel: 'quick_sale',
+        composition: 'mixed',
+      }).map((c) => c.label),
+    ).toEqual(['Venda rápida', 'Misto']);
   });
 });

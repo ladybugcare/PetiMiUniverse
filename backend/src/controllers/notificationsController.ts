@@ -44,7 +44,8 @@ interface NotificationData {
     | 'hub_stock_alert'
     | 'hub_boarding_checkin'
     | 'hub_boarding_checkout'
-    | 'hub_grooming_extra_request';
+    | 'hub_grooming_extra_request'
+    | 'hub_series_ending_soon';
   title: string;
   message: string;
   link?: string;

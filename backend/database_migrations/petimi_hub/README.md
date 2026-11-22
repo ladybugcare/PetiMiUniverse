@@ -322,3 +322,11 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 152. **`152_alter_hub_public_profile_service_groups.sql`** — `services_display_mode` (`groups` | `services` | `both`) em `hub_clinic_public_profiles` + flags públicas em `hub_service_groups`. Executar depois dos itens 017 e 151.
 
 153. **`153_alter_hub_clinic_settings_cupom_width.sql`** — `cupom_width_mm` (`58` | `80`, default `80`) em `hub_clinic_settings` para o cupom térmico de venda. Executar depois do item 16.
+
+154. **`154_alter_hub_card_machine_fees.sql`** — `card_machine_fees` (jsonb) em `hub_clinic_settings` + snapshot `card_fee_rate_percent` / `card_fee_amount` / `net_amount` em `hub_payments` (taxas da maquininha crédito/débito por faixa de parcelas). Executar depois dos itens 056 e 035.
+
+155. **`155_alter_hub_comandas_guardian_nullable.sql`** — permite `guardian_id` nulo em `hub_comandas` (venda avulsa sem tutor). Executar depois do item de criação de comandas.
+
+156. **`156_backfill_appointment_service_sale_snapshots.sql`** — preenche `sale_amount_applied` nulo a partir do catálogo e repara itens/totais de comandas abertas que ficaram em R$ 0 por causa do snapshot ausente. Executar depois dos itens 015/019a.
+
+157. **`157_alter_notifications_hub_series_ending.sql`** — amplia `notifications_type_check` com `hub_series_ending_soon` (série recorrente a renovar; aviso no sino + dashboard). Executar depois do item 112.

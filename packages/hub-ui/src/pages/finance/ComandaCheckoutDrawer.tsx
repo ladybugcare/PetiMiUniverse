@@ -25,6 +25,11 @@ import {
   waMeUrlWithText,
 } from './hubComandaShareUtils';
 import {
+  emptyCardMachineFees,
+  normalizeCardMachineFees,
+  type CardMachineFees,
+} from '../../utils/hubCardMachineFees';
+import {
   defaultPaymentMethod,
   filterEnabledPaymentMethods,
   paymentMethodLabel,
@@ -118,6 +123,7 @@ export function ComandaCheckoutDrawer({
   const [dueDate, setDueDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [paymentLines, setPaymentLines] = useState<CheckoutPaymentLine[]>([]);
   const [acceptedPaymentMethods, setAcceptedPaymentMethods] = useState<HubPaymentMethod[]>([]);
+  const [cardMachineFees, setCardMachineFees] = useState<CardMachineFees>(emptyCardMachineFees);
   const [cashSessionId, setCashSessionId] = useState<string | null>(null);
   const [paymentTiming, setPaymentTiming] = useState<'on_checkout' | 'advance'>('on_checkout');
   const [waiveReason, setWaiveReason] = useState('');
@@ -231,10 +237,12 @@ export function ComandaCheckoutDrawer({
         const methods = filterEnabledPaymentMethods(res.accepted_payment_methods ?? []);
         if (!cancelled) {
           setAcceptedPaymentMethods(methods);
+          setCardMachineFees(normalizeCardMachineFees(res.card_machine_fees));
         }
       } catch {
         if (!cancelled) {
           setAcceptedPaymentMethods(filterEnabledPaymentMethods([]));
+          setCardMachineFees(emptyCardMachineFees());
         }
       }
     })();
@@ -457,6 +465,7 @@ export function ComandaCheckoutDrawer({
             method: HubPaymentMethod;
             amount: number;
             tendered: number | null;
+            installments: number;
             lineId: string;
           }> }
         | { ok: false; error: string } => {
@@ -467,6 +476,7 @@ export function ComandaCheckoutDrawer({
           method: HubPaymentMethod;
           amount: number;
           tendered: number | null;
+          installments: number;
           lineId: string;
         }> = [];
         for (const line of paymentLines) {
@@ -490,7 +500,17 @@ export function ComandaCheckoutDrawer({
               };
             }
           }
-          out.push({ method: line.method, amount: round2(amount), tendered, lineId: line.id });
+          const installments =
+            line.method === 'credit_card'
+              ? Math.max(1, Math.min(99, Math.floor(Number(line.installments) || 1)))
+              : 1;
+          out.push({
+            method: line.method,
+            amount: round2(amount),
+            tendered,
+            installments,
+            lineId: line.id,
+          });
         }
         const totalPay = round2(out.reduce((s, l) => s + l.amount, 0));
         if (totalPay > chargeableTotal + 0.02) {
@@ -550,6 +570,7 @@ export function ComandaCheckoutDrawer({
             clinic_id: clinicId,
             amount: line.amount,
             payment_method: line.method,
+            installments: line.installments,
             cash_session_id: cashSessionId,
             idempotency_key: ensureIdemKey(line.lineId),
             tendered_amount: line.tendered,
@@ -573,6 +594,7 @@ export function ComandaCheckoutDrawer({
               group_index: groupTotals[0]?.groupIndex ?? 0,
               amount: line.amount,
               payment_method: line.method,
+              installments: line.installments,
               cash_session_id: cashSessionId,
               idempotency_key: ensureIdemKey(line.lineId),
               tendered_amount: line.tendered,
@@ -586,6 +608,7 @@ export function ComandaCheckoutDrawer({
                   group_index: g.groupIndex,
                   amount: g.total,
                   payment_method: line.method,
+                  installments: line.installments,
                   cash_session_id: cashSessionId,
                   idempotency_key: ensureIdemKey(lineId),
                   tendered_amount: line.tendered,
@@ -993,6 +1016,7 @@ export function ComandaCheckoutDrawer({
                         }
                       }}
                       acceptedMethods={acceptedPaymentMethods}
+                      cardMachineFees={cardMachineFees}
                       cashSessionOpen={Boolean(cashSessionId)}
                       allowMultiple={allowMixedPayments}
                       disabled={loading}

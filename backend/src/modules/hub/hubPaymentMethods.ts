@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { cardMachineFeesPatchSchema } from './hubCardMachineFees';
 
 export const HUB_PAYMENT_METHODS = [
   'pix',
@@ -32,10 +33,14 @@ const acceptedPaymentMethodsSchema = z
 export const patchPaymentMethodSettingsSchema = z
   .object({
     clinic_id: z.string().uuid(),
-    accepted_payment_methods: acceptedPaymentMethodsSchema,
+    accepted_payment_methods: acceptedPaymentMethodsSchema.optional(),
+    card_machine_fees: cardMachineFeesPatchSchema.optional(),
   })
-  .strict();
-
+  .strict()
+  .refine(
+    (b) => b.accepted_payment_methods !== undefined || b.card_machine_fees !== undefined,
+    { message: 'Informe accepted_payment_methods e/ou card_machine_fees' },
+  );
 /** Fallback para lista completa se vazio ou inválido. */
 export function normalizeAcceptedPaymentMethods(raw: unknown): HubPaymentMethod[] {
   if (!Array.isArray(raw) || raw.length === 0) {

@@ -3,6 +3,7 @@ import {
   createDefaultPaymentLine,
   parseAmount,
   sumPaymentLines,
+  totalCardFeeEstimate,
   totalChangeDue,
 } from './CheckoutPaymentLinesEditor';
 
@@ -22,5 +23,16 @@ describe('CheckoutPaymentLinesEditor helpers', () => {
 
   it('parseAmount aceita vírgula BR', () => {
     expect(parseAmount('1.234,56')).toBeCloseTo(1234.56);
+  });
+
+  it('estima taxa da maquininha por método e parcelas', () => {
+    const credit = createDefaultPaymentLine('credit_card', 100);
+    credit.installments = 3;
+    const debit = createDefaultPaymentLine('debit_card', 50);
+    const fees = {
+      debit_card: [{ min_installments: 1, max_installments: 1, rate_percent: 1.4 }],
+      credit_card: [{ min_installments: 2, max_installments: 6, rate_percent: 3.5 }],
+    };
+    expect(totalCardFeeEstimate([credit, debit], fees)).toBe(4.2);
   });
 });

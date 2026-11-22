@@ -421,11 +421,16 @@ async function ensureClinicalEncounter(args: {
 async function ensureClientsAndAgenda(staffId: string, unitId: string) {
   const { data: types } = await admin
     .from('hub_service_types')
-    .select('id, code, name, service_group')
+    .select('id, code, name, service_group, sale_amount')
     .eq('clinic_id', CLINIC_ID)
     .is('deleted_at', null);
   const byCode = new Map(
-    (types ?? []).map((t: { code: string; id: string; name: string; service_group: string }) => [t.code, t]),
+    (types ?? []).map(
+      (t: { code: string; id: string; name: string; service_group: string; sale_amount: number | null }) => [
+        t.code,
+        { ...t, sale_amount: Number(t.sale_amount ?? 0) },
+      ],
+    ),
   );
 
   const dayMs = 24 * 60 * 60 * 1000;
@@ -584,6 +589,9 @@ async function ensureClientsAndAgenda(staffId: string, unitId: string) {
           hub_service_type_id: st.id,
           duration_minutes: 60,
           order_index: 0,
+          sale_amount_applied: st.sale_amount,
+          cost_amount_applied: Math.round(st.sale_amount * 0.3),
+          pricing_source: 'catalog',
         });
 
         if (code === 'consulta' || code === 'retorno') {

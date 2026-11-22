@@ -300,4 +300,216 @@ describe('Financeiro × Caixa — independência e ledger', () => {
     const postClose = getMockSupabaseClient()._state.tables.hub_cash_session_post_close_adjustments ?? [];
     expect(postClose.length).toBeGreaterThanOrEqual(1);
   });
+
+  it('estorno de cartão pós-fechamento atualiza card_* e totals_by_method; gaveta permanece', async () => {
+    configureSupabaseMock({
+      tables: {
+        clinic_hub_subscriptions: [betaClinicSubscription(TEST_CLINIC_ID)],
+        hub_clinic_settings: [clinicSettings()],
+        hub_receivables: [pendingReceivable(RECEIVABLE_ID, 100, { status: 'paid' })],
+        hub_payments: [
+          {
+            id: PAYMENT_ID,
+            clinic_id: TEST_CLINIC_ID,
+            receivable_id: RECEIVABLE_ID,
+            amount: 100,
+            payment_method: 'credit_card',
+            cash_session_id: CASH_SESSION_ID,
+            status: 'posted',
+            posting_kind: 'operational',
+            card_fee_amount: 3,
+            net_amount: 97,
+            card_fee_rate_percent: 3,
+            installments: 1,
+          },
+        ],
+        hub_cash_sessions: [
+          cashSession({
+            status: 'closed',
+            expected_balance: 50,
+            closing_balance: 50,
+            difference_amount: 0,
+            opening_balance: 50,
+          }),
+        ],
+        hub_cash_movements: [],
+        hub_customer_credit_movements: [],
+        hub_financial_adjustments: [],
+        hub_cash_session_post_close_adjustments: [],
+        hub_comandas: [],
+        hub_charge_bundles: [],
+        hub_charge_bundle_items: [],
+        hub_customer_package_balances: [],
+        hub_package_redemptions: [],
+      },
+    });
+    authAsRole('CFINANCE');
+
+    const before = await request(app).get(
+      `/api/hub/finance/cash-sessions/${CASH_SESSION_ID}/summary?clinic_id=${TEST_CLINIC_ID}`,
+    );
+    expect(before.status).toBe(200);
+    expect(before.body.summary.card_fee_total).toBe(3);
+    expect(before.body.summary.card_net_total).toBe(97);
+    expect(before.body.summary.totals_by_method.credit_card).toBe(100);
+    expect(Number(before.body.summary.expected_balance)).toBe(50);
+    expect(Number(before.body.summary.closing_balance)).toBe(50);
+    expect(Number(before.body.summary.difference_amount)).toBe(0);
+
+    const reverse = await request(app)
+      .post(`/api/hub/finance/payments/${PAYMENT_ID}/reverse`)
+      .send({ clinic_id: TEST_CLINIC_ID, reason: 'Cartão estornado após fechar', mode: 'payment_reversal' });
+    expect(reverse.status).toBe(200);
+    expect(reverse.body.warning ?? null).toBeNull();
+
+    const after = await request(app).get(
+      `/api/hub/finance/cash-sessions/${CASH_SESSION_ID}/summary?clinic_id=${TEST_CLINIC_ID}`,
+    );
+    expect(after.status).toBe(200);
+    expect(after.body.summary.card_fee_total).toBe(0);
+    expect(after.body.summary.card_net_total).toBe(0);
+    expect(after.body.summary.card_gross_total).toBe(0);
+    expect(after.body.summary.totals_by_method.credit_card ?? 0).toBe(0);
+    expect(Number(after.body.summary.expected_balance)).toBe(50);
+    expect(Number(after.body.summary.closing_balance)).toBe(50);
+    expect(Number(after.body.summary.difference_amount)).toBe(0);
+
+    const session = getMockSupabaseClient()._state.tables.hub_cash_sessions?.[0];
+    expect(Number(session?.expected_balance)).toBe(50);
+    expect(Number(session?.closing_balance)).toBe(50);
+  });
+
+  it('estorno de 1 de 2 cartões posted deixa card_* só do restante', async () => {
+    configureSupabaseMock({
+      tables: {
+        clinic_hub_subscriptions: [betaClinicSubscription(TEST_CLINIC_ID)],
+        hub_clinic_settings: [clinicSettings()],
+        hub_receivables: [pendingReceivable(RECEIVABLE_ID, 200, { status: 'paid' })],
+        hub_payments: [
+          {
+            id: PAYMENT_ID,
+            clinic_id: TEST_CLINIC_ID,
+            receivable_id: RECEIVABLE_ID,
+            amount: 100,
+            payment_method: 'credit_card',
+            cash_session_id: CASH_SESSION_ID,
+            status: 'posted',
+            posting_kind: 'operational',
+            card_fee_amount: 3,
+            net_amount: 97,
+            card_fee_rate_percent: 3,
+            installments: 1,
+          },
+          {
+            id: PAYMENT_ID_2,
+            clinic_id: TEST_CLINIC_ID,
+            receivable_id: RECEIVABLE_ID,
+            amount: 100,
+            payment_method: 'debit_card',
+            cash_session_id: CASH_SESSION_ID,
+            status: 'posted',
+            posting_kind: 'operational',
+            card_fee_amount: 1.5,
+            net_amount: 98.5,
+            card_fee_rate_percent: 1.5,
+            installments: 1,
+          },
+        ],
+        hub_cash_sessions: [cashSession({ status: 'open', opening_balance: 0 })],
+        hub_cash_movements: [],
+        hub_customer_credit_movements: [],
+        hub_financial_adjustments: [],
+        hub_cash_session_post_close_adjustments: [],
+        hub_comandas: [],
+        hub_charge_bundles: [],
+        hub_charge_bundle_items: [],
+        hub_customer_package_balances: [],
+        hub_package_redemptions: [],
+      },
+    });
+    authAsRole('CFINANCE');
+
+    const before = await request(app).get(
+      `/api/hub/finance/cash-sessions/${CASH_SESSION_ID}/summary?clinic_id=${TEST_CLINIC_ID}`,
+    );
+    expect(before.status).toBe(200);
+    expect(before.body.summary.card_fee_total).toBe(4.5);
+    expect(before.body.summary.card_net_total).toBe(195.5);
+    expect(before.body.summary.card_gross_total).toBe(200);
+
+    const reverse = await request(app)
+      .post(`/api/hub/finance/payments/${PAYMENT_ID}/reverse`)
+      .send({ clinic_id: TEST_CLINIC_ID, reason: 'Estorno parcial cartão', mode: 'payment_reversal' });
+    expect(reverse.status).toBe(200);
+
+    const after = await request(app).get(
+      `/api/hub/finance/cash-sessions/${CASH_SESSION_ID}/summary?clinic_id=${TEST_CLINIC_ID}`,
+    );
+    expect(after.status).toBe(200);
+    expect(after.body.summary.card_fee_total).toBe(1.5);
+    expect(after.body.summary.card_net_total).toBe(98.5);
+    expect(after.body.summary.card_gross_total).toBe(100);
+    expect(after.body.summary.totals_by_method.debit_card).toBe(100);
+    expect(after.body.summary.totals_by_method.credit_card ?? 0).toBe(0);
+  });
+
+  it('cartão no Financeiro sem sessão não entra no summary do caixa', async () => {
+    configureSupabaseMock({
+      tables: {
+        clinic_hub_subscriptions: [betaClinicSubscription(TEST_CLINIC_ID)],
+        hub_clinic_settings: [clinicSettings()],
+        hub_receivables: [pendingReceivable(RECEIVABLE_ID, 150, { status: 'paid' })],
+        hub_payments: [
+          {
+            id: PAYMENT_ID,
+            clinic_id: TEST_CLINIC_ID,
+            receivable_id: RECEIVABLE_ID,
+            amount: 100,
+            payment_method: 'credit_card',
+            cash_session_id: null,
+            status: 'posted',
+            posting_kind: 'operational',
+            card_fee_amount: 3,
+            net_amount: 97,
+            card_fee_rate_percent: 3,
+            installments: 1,
+          },
+          {
+            id: PAYMENT_ID_2,
+            clinic_id: TEST_CLINIC_ID,
+            receivable_id: RECEIVABLE_ID,
+            amount: 50,
+            payment_method: 'credit_card',
+            cash_session_id: CASH_SESSION_ID,
+            status: 'posted',
+            posting_kind: 'operational',
+            card_fee_amount: 1.5,
+            net_amount: 48.5,
+            card_fee_rate_percent: 3,
+            installments: 1,
+          },
+        ],
+        hub_cash_sessions: [cashSession({ status: 'open', opening_balance: 0 })],
+        hub_cash_movements: [],
+        hub_customer_credit_movements: [],
+        hub_financial_adjustments: [],
+        hub_cash_session_post_close_adjustments: [],
+        hub_comandas: [],
+        hub_charge_bundles: [],
+        hub_charge_bundle_items: [],
+        hub_customer_package_balances: [],
+        hub_package_redemptions: [],
+      },
+    });
+    authAsRole('CFINANCE');
+
+    const res = await request(app).get(
+      `/api/hub/finance/cash-sessions/${CASH_SESSION_ID}/summary?clinic_id=${TEST_CLINIC_ID}`,
+    );
+    expect(res.status).toBe(200);
+    expect(res.body.summary.card_fee_total).toBe(1.5);
+    expect(res.body.summary.card_net_total).toBe(48.5);
+    expect(res.body.summary.card_gross_total).toBe(50);
+    expect(res.body.summary.totals_by_method.credit_card).toBe(50);
+  });
 });

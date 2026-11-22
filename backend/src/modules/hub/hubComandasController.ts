@@ -2,7 +2,11 @@ import type { Request, Response } from 'express';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
-import { resolveServiceLinePricing, type PetPricingFields } from './hubPricingResolve';
+import {
+  resolveAppliedSaleAmount,
+  resolveServiceLinePricing,
+  type PetPricingFields,
+} from './hubPricingResolve';
 import { quoteDiscountAmount } from './hubQuoteDiscount';
 import { createAuditLog, extractRequestMetadata } from '../../utils/auditLog';
 import { streamComandaPdf } from './hubComandaPdf';
@@ -13,6 +17,7 @@ import {
   hubPaymentMethodSchema,
   PaymentMethodNotAcceptedError,
 } from './hubPaymentMethods';
+import { aggregateCardFeeTotals, type CardFeeTotals } from './hubCardMachineFees';
 import {
   comandaItemEventTitle,
   comandaItemUpdateBody,
@@ -45,6 +50,7 @@ import {
   pricingVariantsEqual,
 } from './hubPackagesService';
 import { createSaleStockOut } from './hubInventoryStockUtils';
+import { validateProductSalePricing } from './productSalePriceRules';
 import {
   markHubAppointmentPaidFromReceivable,
   syncHubAppointmentPaidFromReceivable,
@@ -520,7 +526,11 @@ async function isOperationalCompleteForComanda(comanda: Record<string, unknown>)
   return true;
 }
 
-async function sumPaymentsForComandaReceivables(comandaId: string, clinicId: string): Promise<number> {
+async function listPostedPaymentsForComandaReceivables(
+  comandaId: string,
+  clinicId: string,
+  selectCols: string,
+): Promise<Record<string, unknown>[]> {
   const { data: recs, error: rErr } = await supabaseAdmin
     .from('hub_receivables')
     .select('id')
@@ -529,14 +539,52 @@ async function sumPaymentsForComandaReceivables(comandaId: string, clinicId: str
     .neq('status', 'cancelled');
   if (rErr) throw new Error(rErr.message);
   const ids = (recs ?? []).map((r) => r.id as string);
-  if (ids.length === 0) return 0;
+  if (ids.length === 0) return [];
   const { data: pays, error: pErr } = await supabaseAdmin
     .from('hub_payments')
-    .select('amount')
+    .select(selectCols)
     .in('receivable_id', ids)
     .eq('status', 'posted');
   if (pErr) throw new Error(pErr.message);
-  return round2((pays ?? []).reduce((s, row) => s + Number(row.amount ?? 0), 0));
+  return (pays ?? []) as unknown as Record<string, unknown>[];
+}
+
+async function sumPaymentsForComandaReceivables(comandaId: string, clinicId: string): Promise<number> {
+  const pays = await listPostedPaymentsForComandaReceivables(comandaId, clinicId, 'amount');
+  return round2(pays.reduce((s, row) => s + Number(row.amount ?? 0), 0));
+}
+
+const EMPTY_CARD_FEE_TOTALS: CardFeeTotals = {
+  card_gross_total: 0,
+  card_fee_total: 0,
+  card_net_total: 0,
+  card_without_fee_gross_total: 0,
+};
+
+/** Totais de taxa da maquininha na comanda (somente pagamentos posted). */
+async function computeComandaCardFeeTotals(
+  comandaId: string,
+  clinicId: string,
+): Promise<CardFeeTotals> {
+  const pays = await listPostedPaymentsForComandaReceivables(
+    comandaId,
+    clinicId,
+    'amount, payment_method, card_fee_amount, net_amount',
+  );
+  return aggregateCardFeeTotals(
+    pays.map((row) => ({
+      payment_method: String(row.payment_method ?? ''),
+      amount: Number(row.amount ?? 0),
+      card_fee_amount:
+        row.card_fee_amount == null || !Number.isFinite(Number(row.card_fee_amount))
+          ? null
+          : Number(row.card_fee_amount),
+      net_amount:
+        row.net_amount == null || !Number.isFinite(Number(row.net_amount))
+          ? null
+          : Number(row.net_amount),
+    })),
+  );
 }
 
 /** Saldo em linhas ainda não faturadas (líquidas do desconto de cabeçalho) + resíduo dos recebíveis. */
@@ -799,7 +847,9 @@ async function sumAppointmentServicesSaleForComanda(
 ): Promise<{ items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[]; subtotal: number }> {
   const { data: svcRows, error } = await supabaseAdmin
     .from('hub_appointment_services')
-    .select('id, hub_service_type_id, order_index, sale_amount_applied, hub_service_types(name)')
+    .select(
+      'id, hub_service_type_id, order_index, sale_amount_applied, hub_service_types(name, sale_amount)'
+    )
     .eq('appointment_id', appointmentId)
     .order('order_index', { ascending: true });
   if (error) throw new Error(error.message);
@@ -807,10 +857,13 @@ async function sumAppointmentServicesSaleForComanda(
   let subtotal = 0;
   let idx = 0;
   for (const row of svcRows ?? []) {
-    const sale = Number(row.sale_amount_applied ?? 0);
-    const st = row.hub_service_types as { name?: string } | { name?: string }[] | null;
-    const name = Array.isArray(st) ? st[0]?.name : st?.name;
-    const desc = (name as string) || 'Serviço';
+    const st = row.hub_service_types as
+      | { name?: string; sale_amount?: number | null }
+      | { name?: string; sale_amount?: number | null }[]
+      | null;
+    const stRow = Array.isArray(st) ? st[0] : st;
+    const sale = resolveAppliedSaleAmount(row.sale_amount_applied, stRow?.sale_amount);
+    const desc = (stRow?.name as string) || 'Serviço';
     subtotal += sale;
     items.push({
       pet_id: defaultPetId,
@@ -1982,7 +2035,7 @@ const openComandaBodySchema = z
       .min(1)
       .max(20)
       .optional(),
-    guardian_id: uuidStr.optional(),
+    guardian_id: uuidStr.optional().nullable(),
     unit_id: uuidStr.optional().nullable(),
     manual_lines: z
       .array(
@@ -2001,11 +2054,11 @@ const openComandaBodySchema = z
   })
   .strict()
   .superRefine((data, ctx) => {
+    // origin_type manual: guardian_id e origin_id opcionais (venda avulsa de balcão)
     if (data.origin_type === 'manual') {
-      if (!data.guardian_id) {
-        ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'guardian_id obrigatório para comanda manual' });
-      }
-    } else if (data.origin_type === 'package') {
+      return;
+    }
+    if (data.origin_type === 'package') {
       if (!data.guardian_id) {
         ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'guardian_id obrigatório para venda de pacote' });
       }
@@ -2147,7 +2200,7 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
       items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[];
       subtotal: number;
       unit_id: string | null;
-      guardian_id: string;
+      guardian_id: string | null;
       pet_id?: string | null;
     };
 
@@ -2185,7 +2238,7 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
         items,
         subtotal: round2(subtotal),
         unit_id: unitId,
-        guardian_id: b.guardian_id as string,
+        guardian_id: b.guardian_id ?? null,
         pet_id: contextPetId,
       };
     } else if (origin_type === 'appointment') {
@@ -2480,7 +2533,14 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
   const activeReceivableIds = recIds.filter((id) => activeRecById.get(id));
 
   const comandaRow = comanda as Record<string, unknown>;
-  const { paid_total, balance_due } = await computeComandaBalancePayload(comandaId, clinicId);
+  const [{ paid_total, balance_due }, cardFeeTotals] = await Promise.all([
+    computeComandaBalancePayload(comandaId, clinicId),
+    computeComandaCardFeeTotals(comandaId, clinicId).catch((e) => {
+      // Colunas de taxa ausentes (migration 154) → zera sem quebrar o detail.
+      console.warn('[hub_comandas] card fee totals skipped', e);
+      return EMPTY_CARD_FEE_TOTALS;
+    }),
+  ]);
   const operational_complete = await isOperationalCompleteForComanda(comandaRow);
   const edit_scopes = computeComandaEditScopes(comandaRow, operational_complete, balance_due);
 
@@ -2601,6 +2661,10 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
     active_receivable_ids: activeReceivableIds,
     paid_total,
     balance_due,
+    card_gross_total: cardFeeTotals.card_gross_total,
+    card_fee_total: cardFeeTotals.card_fee_total,
+    card_net_total: cardFeeTotals.card_net_total,
+    card_without_fee_gross_total: cardFeeTotals.card_without_fee_gross_total,
     operational_complete,
     edit_scopes,
     allowed_guardians: allowedGuardians,
@@ -2979,15 +3043,18 @@ export const postHubComandaApplyPackage = async (req: Request, res: Response) =>
     } else if (String(item.origin_type) === 'appointment_service' && item.origin_id) {
       const { data: svc } = await supabaseAdmin
         .from('hub_appointment_services')
-        .select('sale_amount_applied, hub_service_types(name)')
+        .select('sale_amount_applied, hub_service_types(name, sale_amount)')
         .eq('id', item.origin_id as string)
         .maybeSingle();
       if (svc) {
-        unitAmount = round2(Number(svc.sale_amount_applied ?? 0));
+        const st = svc.hub_service_types as
+          | { name?: string; sale_amount?: number | null }
+          | { name?: string; sale_amount?: number | null }[]
+          | null;
+        const stRow = Array.isArray(st) ? st[0] : st;
+        unitAmount = resolveAppliedSaleAmount(svc.sale_amount_applied, stRow?.sale_amount);
         lineTotal = unitAmount;
-        const st = svc.hub_service_types as { name?: string } | { name?: string }[] | null;
-        const name = Array.isArray(st) ? st[0]?.name : st?.name;
-        description = (name as string) || description.split(' — Pacote')[0].trim();
+        description = (stRow?.name as string) || description.split(' — Pacote')[0].trim();
       }
     } else if (String(item.origin_type) === 'grooming_extra' && item.origin_id) {
       const { data: extra } = await supabaseAdmin
@@ -3257,7 +3324,7 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
     const creditConsumptions: { guardianId: string; amount: number; receivableId: string }[] = [];
     let unitId = (comanda.unit_id as string | null) ?? null;
     if (!unitId) unitId = await resolveClinicDefaultUnitId(clinic_id);
-    const guardianId = comanda.guardian_id as string;
+    const guardianId = (comanda.guardian_id as string | null) ?? null;
 
     const allComandaItems = detail.items as Record<string, unknown>[];
     const openLinesGross = round2(items.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
@@ -3457,6 +3524,10 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
     }
 
     if (String(comanda.origin_type) === 'package' && comanda.origin_id) {
+      if (!guardianId) {
+        await rollbackReceivables();
+        return res.status(409).json({ error: 'Venda de pacote exige tutor na comanda.' });
+      }
       const packagePurchaseLines = items
         .filter((it) => String(it.origin_type) === 'package_purchase' && it.origin_id)
         .map((it) => ({
@@ -3488,6 +3559,11 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
       if (!payments?.length) {
         await rollbackReceivables();
         return res.status(400).json({ error: 'payments obrigatório para receber agora' });
+      }
+
+      if (payments.some((p) => p.payment_method === 'customer_credit') && !guardianId) {
+        await rollbackReceivables();
+        return res.status(409).json({ error: 'Comanda sem tutor — não é possível pagar com crédito.' });
       }
 
       const clinicSettings = await getOrCreateHubClinicSettings(clinic_id);
@@ -3756,7 +3832,7 @@ export async function leavePendingHandoffComanda(
 
     let unitId = (comanda.unit_id as string | null) ?? null;
     if (!unitId) unitId = await resolveClinicDefaultUnitId(clinicId);
-    const guardianId = comanda.guardian_id as string;
+    const guardianId = (comanda.guardian_id as string | null) ?? null;
     const subtotal = round2(items.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
     const allComandaItems = detail.items as Record<string, unknown>[];
     const allLinesGross = round2(allComandaItems.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
@@ -3893,6 +3969,13 @@ export async function leavePendingHandoffComanda(
     }
 
     if (String(comanda.origin_type) === 'package' && comanda.origin_id) {
+      if (!guardianId) {
+        return {
+          comanda_id: comandaId,
+          receivable_ids: receivableIds,
+          error: 'Venda de pacote exige tutor na comanda.',
+        };
+      }
       const packagePurchaseLines = items
         .filter((it) => String(it.origin_type) === 'package_purchase' && it.origin_id)
         .map((it) => ({
@@ -5177,6 +5260,50 @@ export const postHubComandaAddItems = async (req: Request, res: Response) => {
       .maybeSingle();
     let sortBase = Number(maxSortRow?.sort_order ?? -1) + 1;
 
+    const productItemIds = [
+      ...new Set(
+        items
+          .filter((it) => it.item_kind === 'product' && it.hub_inventory_item_id)
+          .map((it) => it.hub_inventory_item_id as string),
+      ),
+    ];
+    if (productItemIds.length > 0) {
+      const { data: invRows, error: invErr } = await supabaseAdmin
+        .from('hub_inventory_items')
+        .select('id, name, sale_amount, max_sale_discount_pct, allow_price_override_on_sale')
+        .eq('clinic_id', clinic_id)
+        .in('id', productItemIds)
+        .is('deleted_at', null);
+      if (invErr) return res.status(500).json({ error: invErr.message });
+      const invById = new Map((invRows ?? []).map((r) => [r.id as string, r]));
+      for (const it of items) {
+        if (it.item_kind !== 'product') continue;
+        if (!it.hub_inventory_item_id) {
+          return res.status(400).json({ error: 'Produto exige hub_inventory_item_id' });
+        }
+        if (!it.hub_inventory_lot_id) {
+          return res.status(400).json({ error: `Produto "${it.description}" exige lote` });
+        }
+        const inv = invById.get(it.hub_inventory_item_id);
+        if (!inv) {
+          return res.status(400).json({ error: `Produto não encontrado: ${it.description}` });
+        }
+        const priced = validateProductSalePricing({
+          item: inv as {
+            id: string;
+            name?: string | null;
+            sale_amount: number | null;
+            max_sale_discount_pct: number | null;
+            allow_price_override_on_sale: boolean | null;
+          },
+          quantity: it.quantity,
+          unit_amount: it.unit_amount,
+          discount_amount: it.discount_amount,
+        });
+        if (!priced.ok) return res.status(400).json({ error: priced.error });
+      }
+    }
+
     const defaultPetId = (comanda.pet_id as string | null) ?? null;
     const insertRows = items.map((it) => ({
       clinic_id,
@@ -5270,7 +5397,9 @@ export const patchHubComandaItem = async (req: Request, res: Response) => {
 
     const { data: item, error: iErr } = await supabaseAdmin
       .from('hub_comanda_items')
-      .select('id, comanda_id, origin_type, description, item_kind, quantity, unit_amount, discount_amount, line_total')
+      .select(
+        'id, comanda_id, origin_type, description, item_kind, quantity, unit_amount, discount_amount, line_total, hub_inventory_item_id',
+      )
       .eq('id', itemId)
       .eq('comanda_id', comandaId)
       .maybeSingle();
@@ -5294,6 +5423,32 @@ export const patchHubComandaItem = async (req: Request, res: Response) => {
     const qty = updates.quantity ?? Number(item.quantity ?? 1);
     const unit = updates.unit_amount ?? Number(item.unit_amount ?? 0);
     const disc = updates.discount_amount ?? Number(item.discount_amount ?? 0);
+
+    if (String(item.item_kind) === 'product' && item.hub_inventory_item_id) {
+      const { data: inv, error: invErr } = await supabaseAdmin
+        .from('hub_inventory_items')
+        .select('id, name, sale_amount, max_sale_discount_pct, allow_price_override_on_sale')
+        .eq('id', item.hub_inventory_item_id as string)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (invErr) return res.status(500).json({ error: invErr.message });
+      if (!inv) return res.status(400).json({ error: 'Produto de estoque não encontrado' });
+      const priced = validateProductSalePricing({
+        item: inv as {
+          id: string;
+          name?: string | null;
+          sale_amount: number | null;
+          max_sale_discount_pct: number | null;
+          allow_price_override_on_sale: boolean | null;
+        },
+        quantity: qty,
+        unit_amount: unit,
+        discount_amount: disc,
+      });
+      if (!priced.ok) return res.status(400).json({ error: priced.error });
+    }
+
     const line_total = round2(qty * unit - disc);
 
     const { error: upErr } = await supabaseAdmin

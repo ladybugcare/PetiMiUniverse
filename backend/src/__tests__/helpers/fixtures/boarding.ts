@@ -70,6 +70,8 @@ export function hotelServiceType() {
     clinic_id: TEST_CLINIC_ID,
     service_group: 'hotel',
     name: 'Hotel',
+    sale_amount: 150,
+    cost_amount: 45,
     deleted_at: null,
   };
 }

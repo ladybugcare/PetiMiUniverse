@@ -62,6 +62,7 @@ import {
   clampAppointmentToDayLane,
   computeAgendaHourRange,
   parseStaffWorkHours,
+  agendaAppointmentEditBlockReason,
   canEditAgendaAppointment,
   enrichAgendaCardsForGrid,
   isPartnerCareLocation,
@@ -73,6 +74,11 @@ import { AgendaToolbar } from './AgendaToolbar';
 import { AgendaFiltersBar, type AgendaFilterChip } from './AgendaFiltersBar';
 import { AgendaConflictSummary } from './AgendaConflictSummary';
 import { AgendaDayOverflowMenu } from './AgendaDayOverflowMenu';
+import {
+  AGENDA_DRAG_THRESHOLD_PX,
+  hitTestAgendaDrop,
+  minutesFromLanePointer,
+} from './agendaPointerDrag';
 import { hubEncountersApi, type DayBoardItem } from '../../api/hubClinicalApi';
 import { hubGroomingApi } from '../../api/hubGroomingApi';
 import { hubBoardingApi } from '../../api/hubBoardingApi';
@@ -205,10 +211,19 @@ const HubAgendaPage: React.FC = () => {
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropHoverKey, setDropHoverKey] = useState<string | null>(null);
   const skipClickAfterDragRef = useRef(false);
+  const skipClickUntilRef = useRef(0);
+  const pointerDragRef = useRef<{
+    id: string;
+    pointerId: number;
+    startX: number;
+    startY: number;
+    activated: boolean;
+  } | null>(null);
 
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [appointmentsError, setAppointmentsError] = useState<string | null>(null);
   const [seriesEndingSoon, setSeriesEndingSoon] = useState<HubSeriesEndingSoon[]>([]);
+  const [seriesBannerExpanded, setSeriesBannerExpanded] = useState(false);
   const [rawList, setRawList] = useState<AgendaAppointment[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
   const [pollTick, setPollTick] = useState(0);
@@ -808,9 +823,15 @@ const HubAgendaPage: React.FC = () => {
     (async () => {
       try {
         const { series } = await hubAgendaApi.listSeriesEndingSoon({ clinic_id: clinicId });
-        if (!cancelled) setSeriesEndingSoon(series ?? []);
+        if (!cancelled) {
+          setSeriesEndingSoon(series ?? []);
+          if ((series ?? []).length <= 2) setSeriesBannerExpanded(false);
+        }
       } catch {
-        if (!cancelled) setSeriesEndingSoon([]);
+        if (!cancelled) {
+          setSeriesEndingSoon([]);
+          setSeriesBannerExpanded(false);
+        }
       }
     })();
     return () => {
@@ -1712,13 +1733,11 @@ const HubAgendaPage: React.FC = () => {
   };
 
   const consumeSkipClickAfterDrag = () => {
-    if (!skipClickAfterDragRef.current) return false;
+    const gatedByTime = Date.now() < skipClickUntilRef.current;
+    if (!skipClickAfterDragRef.current && !gatedByTime) return false;
     skipClickAfterDragRef.current = false;
     return true;
   };
-
-  const readDraggedAppointmentId = (e: React.DragEvent) =>
-    e.dataTransfer.getData('text/appt-id') || e.dataTransfer.getData('text/plain') || draggingId;
 
   const assignmentPatchFromColKey = (
     colKey: string | undefined,
@@ -1735,104 +1754,126 @@ const HubAgendaPage: React.FC = () => {
     return {};
   };
 
+  const moveAppointmentTo = useCallback(
+    async (id: string, newStart: Date, newEnd: Date, colKey?: string) => {
+      if (!canWrite || !clinicId) return;
+      const ap = allAppointments.find((x) => x.id === id);
+      if (!ap || !canEditAgendaAppointment(ap, { canWrite })) return;
+      const assignment = assignmentPatchFromColKey(colKey);
+      const sameStart = ap.start.getTime() === newStart.getTime();
+      const sameEnd = ap.end.getTime() === newEnd.getTime();
+      const sameStaff =
+        assignment.hub_staff_member_id === undefined ||
+        (assignment.hub_staff_member_id ?? null) === (ap.professionalId ?? null);
+      const currentResource = ap.resourceLabel === '—' ? null : ap.resourceLabel;
+      const sameResource =
+        assignment.hub_resource_id !== undefined
+          ? (assignment.hub_resource_id ?? null) === (ap.hubResourceId ?? null)
+          : assignment.resource_label === undefined ||
+            ((assignment.resource_label ?? null) === currentResource && !ap.hubResourceId);
+      if (sameStart && sameEnd && sameStaff && sameResource) return;
+      await patchMoveWithOverlapConfirm(id, {
+        clinic_id: clinicId,
+        starts_at: newStart.toISOString(),
+        ends_at: newEnd.toISOString(),
+        ...assignment,
+      });
+    },
+    // patchMoveWithOverlapConfirm / assignmentPatchFromColKey fecham sobre estado atual.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [canWrite, clinicId, allAppointments, groupMode],
+  );
+
+  const markSkipClickAfterDrag = () => {
+    skipClickAfterDragRef.current = true;
+    skipClickUntilRef.current = Date.now() + 500;
+    window.setTimeout(() => {
+      skipClickAfterDragRef.current = false;
+    }, 500);
+  };
+
   const appointmentDragHandlers = (a: AgendaAppointment) => {
-    const canDrag = canWrite && canEditAgendaAppointment(a, { canWrite });
+    const blockReason = canWrite ? agendaAppointmentEditBlockReason(a, { canWrite }) : null;
+    const canDrag = canWrite && !blockReason;
     return {
       draggable: canDrag,
       dragging: draggingId === a.id,
-      onDragStart: canDrag
-        ? (e: React.DragEvent) => {
-            skipClickAfterDragRef.current = true;
-            e.dataTransfer.setData('text/appt-id', a.id);
-            e.dataTransfer.setData('text/plain', a.id);
-            e.dataTransfer.effectAllowed = 'move';
-            setDraggingId(a.id);
+      dragBlockedReason: canWrite ? blockReason : null,
+      onDragPointerDown: canDrag
+        ? (e: React.PointerEvent) => {
+            if (e.button !== 0) return;
+            pointerDragRef.current = {
+              id: a.id,
+              pointerId: e.pointerId,
+              startX: e.clientX,
+              startY: e.clientY,
+              activated: false,
+            };
           }
         : undefined,
-      onDragEnd: () => {
-        setDraggingId(null);
-        setDropHoverKey(null);
-      },
     };
   };
 
-  const moveAppointmentTo = async (
-    id: string,
-    newStart: Date,
-    newEnd: Date,
-    colKey?: string,
-  ) => {
-    if (!canWrite || !clinicId) return;
-    const ap = allAppointments.find((x) => x.id === id);
-    if (!ap || !canEditAgendaAppointment(ap, { canWrite })) return;
-    const assignment = assignmentPatchFromColKey(colKey);
-    const sameStart = ap.start.getTime() === newStart.getTime();
-    const sameEnd = ap.end.getTime() === newEnd.getTime();
-    const sameStaff =
-      assignment.hub_staff_member_id === undefined ||
-      (assignment.hub_staff_member_id ?? null) === (ap.professionalId ?? null);
-    const currentResource = ap.resourceLabel === '—' ? null : ap.resourceLabel;
-    const sameResource =
-      assignment.hub_resource_id !== undefined
-        ? (assignment.hub_resource_id ?? null) === (ap.hubResourceId ?? null)
-        : assignment.resource_label === undefined ||
-          ((assignment.resource_label ?? null) === currentResource && !ap.hubResourceId);
-    if (sameStart && sameEnd && sameStaff && sameResource) return;
-    await patchMoveWithOverlapConfirm(id, {
-      clinic_id: clinicId,
-      starts_at: newStart.toISOString(),
-      ends_at: newEnd.toISOString(),
-      ...assignment,
-    });
-  };
+  // Arraste por pointer (HTML5 DnD era intermitente nos cards da agenda).
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      const session = pointerDragRef.current;
+      if (!session || e.pointerId !== session.pointerId) return;
+      const dx = e.clientX - session.startX;
+      const dy = e.clientY - session.startY;
+      if (!session.activated) {
+        if (dx * dx + dy * dy < AGENDA_DRAG_THRESHOLD_PX * AGENDA_DRAG_THRESHOLD_PX) return;
+        session.activated = true;
+        markSkipClickAfterDrag();
+        setDraggingId(session.id);
+      }
+      const hit = hitTestAgendaDrop(e.clientX, e.clientY);
+      const key =
+        hit == null
+          ? null
+          : hit.kind === 'lane'
+            ? `day:${hit.colKey}`
+            : `cal:${hit.ymd}${hit.colKey ? `:${hit.colKey}` : ''}`;
+      setDropHoverKey((prev) => (prev === key ? prev : key));
+    };
 
-  const handleDropOnLane = async (e: React.DragEvent, colKey: string) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDropHoverKey(null);
-    const id = readDraggedAppointmentId(e);
-    if (!id) return;
-    const ap = allAppointments.find((x) => x.id === id);
-    if (!ap || !canEditAgendaAppointment(ap, { canWrite })) return;
-    const lane = (e.currentTarget as HTMLDivElement).getBoundingClientRect();
-    const y = e.clientY - lane.top;
-    let minutesFromStart = y / pxPerMin;
-    minutesFromStart = Math.max(0, Math.min(minutesFromStart, (endHour - startHour) * 60 - 15));
-    const snapped = Math.round(minutesFromStart / 15) * 15;
-    const newStart = new Date(dayStart.getTime() + snapped * 60_000);
-    const durMs = ap.end.getTime() - ap.start.getTime();
-    const newEnd = new Date(newStart.getTime() + durMs);
-    await moveAppointmentTo(id, newStart, newEnd, colKey);
-  };
+    const finish = (e: PointerEvent) => {
+      const session = pointerDragRef.current;
+      if (!session || e.pointerId !== session.pointerId) return;
+      pointerDragRef.current = null;
+      const activated = session.activated;
+      setDraggingId(null);
+      setDropHoverKey(null);
+      if (!activated) return;
+      markSkipClickAfterDrag();
+      const hit = hitTestAgendaDrop(e.clientX, e.clientY);
+      if (!hit) return;
+      const ap = allAppointments.find((x) => x.id === session.id);
+      if (!ap || !canEditAgendaAppointment(ap, { canWrite })) return;
+      if (hit.kind === 'lane') {
+        const dayMinutes = (endHour - startHour) * 60;
+        const snapped = minutesFromLanePointer(e.clientY, hit.el, pxPerMin, dayMinutes);
+        const newStart = new Date(dayStart.getTime() + snapped * 60_000);
+        const durMs = ap.end.getTime() - ap.start.getTime();
+        const newEnd = new Date(newStart.getTime() + durMs);
+        void moveAppointmentTo(session.id, newStart, newEnd, hit.colKey);
+        return;
+      }
+      const targetDay = parseYmd(hit.ymd);
+      if (!targetDay) return;
+      const moved = shiftAppointmentToDay(ap.start, ap.end, targetDay);
+      void moveAppointmentTo(session.id, moved.start, moved.end, hit.colKey);
+    };
 
-  const handleDropOnCalendarDay = async (
-    e: React.DragEvent,
-    targetDay: Date,
-    colKey?: string,
-  ) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setDropHoverKey(null);
-    const id = readDraggedAppointmentId(e);
-    if (!id) return;
-    const ap = allAppointments.find((x) => x.id === id);
-    if (!ap || !canEditAgendaAppointment(ap, { canWrite })) return;
-    const moved = shiftAppointmentToDay(ap.start, ap.end, targetDay);
-    await moveAppointmentTo(id, moved.start, moved.end, colKey);
-  };
-
-  const allowAppointmentDrop = (e: React.DragEvent, hoverKey: string) => {
-    if (!canWrite) return;
-    e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
-    if (dropHoverKey !== hoverKey) setDropHoverKey(hoverKey);
-  };
-
-  const clearDropHover = (e: React.DragEvent, hoverKey: string) => {
-    const next = e.relatedTarget as Node | null;
-    if (next && (e.currentTarget as HTMLElement).contains(next)) return;
-    setDropHoverKey((k) => (k === hoverKey ? null : k));
-  };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+    return () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+    };
+  }, [allAppointments, canWrite, dayStart, endHour, moveAppointmentTo, pxPerMin, startHour]);
 
   const navLabel = useMemo(() => {
     if (view === 'day') {
@@ -1980,9 +2021,7 @@ const HubAgendaPage: React.FC = () => {
       <div
         className={`hub-agenda-day__lane${dropHoverKey === hoverKey ? ' hub-agenda-day__lane--drop-hover' : ''}`}
         style={{ height: laneH, ['--ag-lane-h' as string]: `${laneH}px` }}
-        onDragOver={(e) => allowAppointmentDrop(e, hoverKey)}
-        onDragLeave={(e) => clearDropHover(e, hoverKey)}
-        onDrop={(e) => void handleDropOnLane(e, colKey)}
+        data-agenda-drop={`lane:${colKey}`}
         onClick={(e) => handleLaneClick(e, colKey)}
       >
         {lines}
@@ -2152,17 +2191,31 @@ const HubAgendaPage: React.FC = () => {
           {seriesEndingSoon.length > 0 ? (
             <div className="hub-agenda__series-ending-banner" role="status">
               <div className="hub-agenda__series-ending-banner-head">
-                <strong>Séries recorrentes a terminar</strong>
-                <span className="hub-clientes__muted">
-                  {seriesEndingSoon.length} série(s) precisam de renovação em breve.
-                </span>
+                <div className="hub-agenda__series-ending-banner-text">
+                  <strong>Séries a renovar</strong>
+                  <span className="hub-clientes__muted">
+                    {seriesEndingSoon.length === 1
+                      ? '1 série precisa de renovação em breve'
+                      : `${seriesEndingSoon.length} séries precisam de renovação em breve`}
+                  </span>
+                </div>
+                {seriesEndingSoon.length > 2 ? (
+                  <button
+                    type="button"
+                    className="hub-agenda__series-ending-toggle"
+                    aria-expanded={seriesBannerExpanded}
+                    onClick={() => setSeriesBannerExpanded((v) => !v)}
+                  >
+                    {seriesBannerExpanded ? 'Recolher' : `+${seriesEndingSoon.length - 2}`}
+                  </button>
+                ) : null}
               </div>
               <ul className="hub-agenda__series-ending-list">
-                {seriesEndingSoon.slice(0, 3).map((s) => (
+                {(seriesBannerExpanded ? seriesEndingSoon : seriesEndingSoon.slice(0, 2)).map((s) => (
                   <li key={s.series_id} className="hub-agenda__series-ending-item">
                     <span>
-                      A série de {s.title?.trim() || 'agendamento'} termina em breve ({s.remaining_count}{' '}
-                      {s.remaining_count === 1 ? 'restante' : 'restantes'}).
+                      {s.title?.trim() || 'Agendamento'} · {s.remaining_count}{' '}
+                      {s.remaining_count === 1 ? 'restante' : 'restantes'}
                     </span>
                     {canWrite ? (
                       <button
@@ -2176,11 +2229,6 @@ const HubAgendaPage: React.FC = () => {
                   </li>
                 ))}
               </ul>
-              {seriesEndingSoon.length > 3 ? (
-                <p className="hub-clientes__muted hub-agenda__series-ending-more">
-                  e mais {seriesEndingSoon.length - 3} série(s)
-                </p>
-              ) : null}
             </div>
           ) : null}
 
@@ -2369,14 +2417,12 @@ const HubAgendaPage: React.FC = () => {
                         const cell = apptsForWeekCell(row.key, d).sort((a, b) => a.start.getTime() - b.start.getTime());
                         const show = cell.slice(0, 3);
                         const more = cell.length - show.length;
-                        const hoverKey = `week:${row.key}:${toYmd(d)}`;
+                        const hoverKey = `cal:${toYmd(d)}:${row.key}`;
                         return (
                           <td key={toYmd(d)}>
                             <div
                               className={`hub-agenda-week__cell-stack${dropHoverKey === hoverKey ? ' hub-agenda-week__cell-stack--hover' : ''}`}
-                              onDragOver={(e) => allowAppointmentDrop(e, hoverKey)}
-                              onDragLeave={(e) => clearDropHover(e, hoverKey)}
-                              onDrop={(e) => void handleDropOnCalendarDay(e, d, row.key)}
+                              data-agenda-drop={`cal:${toYmd(d)}:${row.key}`}
                             >
                               {show.map((a) => (
                                 <AgendaAppointmentCard
@@ -2451,7 +2497,7 @@ const HubAgendaPage: React.FC = () => {
                   const busy = list.length >= 8;
                   const isToday = isSameDay(d, new Date());
                   const blk = blockByYmd.get(k);
-                  const hoverKey = `month:${k}`;
+                  const hoverKey = `cal:${k}`;
                   const blockCls =
                     blk?.kind === 'holiday'
                       ? ' hub-agenda-month__day--holiday'
@@ -2464,9 +2510,7 @@ const HubAgendaPage: React.FC = () => {
                       key={k}
                       title={blk?.label}
                       className={`hub-agenda-month__day ${!inMonth ? 'hub-agenda-month__day--muted' : ''} ${busy ? 'hub-agenda-month__day--busy' : ''} ${isToday ? 'hub-agenda-month__day--today' : ''}${blockCls}${dropCls}`}
-                      onDragOver={(e) => allowAppointmentDrop(e, hoverKey)}
-                      onDragLeave={(e) => clearDropHover(e, hoverKey)}
-                      onDrop={(e) => void handleDropOnCalendarDay(e, d)}
+                      data-agenda-drop={`cal:${k}`}
                       onClick={() => {
                         if (consumeSkipClickAfterDrag()) return;
                         setCursorDate(startOfDay(d));

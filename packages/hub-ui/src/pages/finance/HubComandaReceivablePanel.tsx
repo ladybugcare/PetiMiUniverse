@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Receipt, RotateCcw, Trash2 } from 'lucide-react';
+import { Plus, Receipt, RotateCcw, Trash2 } from 'lucide-react';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import {
   hubFinancialApi,
@@ -9,10 +9,21 @@ import {
 } from '../../api/hubFinancialApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import { hubComandaApi } from '../../api/hubComandaApi';
+import {
+  hubInventoryApi,
+  type HubInventoryItem,
+  type HubInventoryLotRow,
+} from '../../api/hubInventoryApi';
+import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
 import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
+import {
+  emptyCardMachineFees,
+  normalizeCardMachineFees,
+  type CardMachineFees,
+} from '../../utils/hubCardMachineFees';
 import {
   defaultPaymentMethod,
   filterEnabledPaymentMethods,
@@ -119,6 +130,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
   const [detail, setDetail] = useState<HubFinanceReceivableDetail | null>(null);
   const [paymentLines, setPaymentLines] = useState<CheckoutPaymentLine[]>([]);
   const [acceptedPaymentMethods, setAcceptedPaymentMethods] = useState<HubPaymentMethod[]>([]);
+  const [cardMachineFees, setCardMachineFees] = useState<CardMachineFees>(emptyCardMachineFees);
   const [paymentLoading, setPaymentLoading] = useState(false);
   const paymentIdempotencyKeysRef = useRef<Record<string, string>>({});
   const [billingAction, setBillingAction] = useState<CheckoutDrawerBillingAction>('receive_now');
@@ -134,6 +146,14 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
   const [comandaPetNames, setComandaPetNames] = useState<string[]>([]);
   const [showHighlight, setShowHighlight] = useState(false);
   const paymentSectionRef = useRef<HTMLDivElement | null>(null);
+  const [showAddProduct, setShowAddProduct] = useState(false);
+  const [addProductLoading, setAddProductLoading] = useState(false);
+  const [inventoryItems, setInventoryItems] = useState<HubInventoryItem[]>([]);
+  const [inventoryLots, setInventoryLots] = useState<HubInventoryLotRow[]>([]);
+  const [addProductItemId, setAddProductItemId] = useState('');
+  const [addProductLotId, setAddProductLotId] = useState('');
+  const [addProductQty, setAddProductQty] = useState('1');
+  const [addProductUnitAmount, setAddProductUnitAmount] = useState('');
 
   const activeReceivableId = selectedReceivableId || receivableIds[0] || '';
   const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(activeReceivableId || null, false);
@@ -162,6 +182,12 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
   }, [loadDetail]);
 
   useEffect(() => {
+    setShowAddProduct(false);
+    setAddProductItemId('');
+    setAddProductLotId('');
+  }, [activeReceivableId]);
+
+  useEffect(() => {
     if (!clinicId || !unitId) return;
     let cancelled = false;
     void (async () => {
@@ -186,10 +212,12 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
         const methods = filterEnabledPaymentMethods(res.accepted_payment_methods ?? []);
         if (!cancelled) {
           setAcceptedPaymentMethods(methods);
+          setCardMachineFees(normalizeCardMachineFees(res.card_machine_fees));
         }
       } catch {
         if (!cancelled) {
           setAcceptedPaymentMethods(filterEnabledPaymentMethods([]));
+          setCardMachineFees(emptyCardMachineFees());
         }
       }
     })();
@@ -266,6 +294,11 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       hasPermission('hub.cash.receive') &&
       !['cancelled', 'refunded', 'paid'].includes(detail.status),
   );
+  const canAddProductLine = Boolean(
+    detail &&
+      hasPermission('hub.financial.write') &&
+      !['cancelled', 'refunded'].includes(detail.status),
+  );
   const canHistoricalCash = Boolean(
     detail &&
       hasPermission('hub.financial.adjust') &&
@@ -321,6 +354,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       method: HubPaymentMethod;
       amount: number;
       tendered: number | null;
+      installments: number;
       lineId: string;
     }> = [];
     for (const line of paymentLines) {
@@ -341,7 +375,17 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
           return;
         }
       }
-      validated.push({ method: line.method, amount: Math.round(amount * 100) / 100, tendered, lineId: line.id });
+      const installments =
+        line.method === 'credit_card'
+          ? Math.max(1, Math.min(99, Math.floor(Number(line.installments) || 1)))
+          : 1;
+      validated.push({
+        method: line.method,
+        amount: Math.round(amount * 100) / 100,
+        tendered,
+        installments,
+        lineId: line.id,
+      });
     }
     const totalPay = sumPaymentLines(paymentLines);
     if (totalPay > selectedBalance + 0.02) {
@@ -375,6 +419,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
           clinic_id: clinicId,
           amount: line.amount,
           payment_method: line.method,
+          installments: line.installments,
           cash_session_id: line.method === 'cash' ? sessionId : null,
           idempotency_key: ensureIdemKey(line.lineId),
           tendered_amount: line.tendered,
@@ -552,6 +597,100 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     });
   };
 
+  const openAddProductForm = async () => {
+    if (!clinicId) return;
+    setShowAddProduct(true);
+    setAddProductItemId('');
+    setAddProductLotId('');
+    setAddProductQty('1');
+    setAddProductUnitAmount('');
+    try {
+      const [invRes, lotsRes] = await Promise.all([
+        hubInventoryApi.items.list(clinicId, false, 'product'),
+        hubInventoryApi.lots.list(clinicId),
+      ]);
+      const sellable = (invRes.items ?? []).filter((p) => {
+        if (p.deleted_at || p.active === false) return false;
+        const purpose = (p.sale_purpose ?? '').trim().toUpperCase();
+        return !purpose || purpose === 'SALE';
+      });
+      setInventoryItems(sellable);
+      setInventoryLots(lotsRes.lots ?? []);
+    } catch (e) {
+      showError((e as Error)?.message || 'Erro ao carregar produtos');
+      setShowAddProduct(false);
+    }
+  };
+
+  const onSelectAddProductItem = (itemId: string) => {
+    setAddProductItemId(itemId);
+    const inv = inventoryItems.find((p) => p.id === itemId);
+    setAddProductUnitAmount(inv ? String(inv.sale_amount ?? 0) : '');
+    const lot =
+      inventoryLots.find((l) => l.item_id === itemId && Number(l.qty_on_hand ?? 0) > 0) ??
+      inventoryLots.find((l) => l.item_id === itemId);
+    setAddProductLotId(lot?.id ?? '');
+  };
+
+  const onAddProductLine = async () => {
+    if (!clinicId || !detail) return;
+    const qty = parseAmount(addProductQty);
+    const unit = parseAmount(addProductUnitAmount);
+    if (!addProductItemId || !addProductLotId) {
+      showError('Selecione produto e lote.');
+      return;
+    }
+    if (!(qty > 0)) {
+      showError('Informe a quantidade.');
+      return;
+    }
+    setAddProductLoading(true);
+    try {
+      await hubFinancialApi.addReceivableProductLine(detail.id, {
+        clinic_id: clinicId,
+        item_id: addProductItemId,
+        lot_id: addProductLotId,
+        quantity: qty,
+        unit_sale_amount: unit,
+      });
+      showSuccess('Produto adicionado e estoque baixado.');
+      setShowAddProduct(false);
+      await loadDetail();
+      onRefreshComanda?.();
+    } catch (e) {
+      showError((e as Error)?.message || 'Erro ao adicionar produto');
+    } finally {
+      setAddProductLoading(false);
+    }
+  };
+
+  const addProductOptions = useMemo(
+    () => [
+      { value: '', label: '— Selecionar produto —' },
+      ...inventoryItems.map((p) => ({
+        value: p.id,
+        label: `${p.name} · estoque ${Number(p.qty_on_hand ?? 0)}`,
+      })),
+    ],
+    [inventoryItems],
+  );
+
+  const addProductLotOptions = useMemo(() => {
+    if (!addProductItemId) return [{ value: '', label: '— Lote —' }];
+    return [
+      { value: '', label: '— Lote —' },
+      ...inventoryLots
+        .filter((l) => l.item_id === addProductItemId)
+        .map((l) => ({
+          value: l.id,
+          label: `${l.lot_code || 'Sem lote'} · ${Number(l.qty_on_hand ?? 0)}`,
+        })),
+    ];
+  }, [addProductItemId, inventoryLots]);
+
+  const selectedAddProduct = inventoryItems.find((p) => p.id === addProductItemId);
+  const addProductPriceLocked = Boolean(selectedAddProduct && !selectedAddProduct.allow_price_override_on_sale);
+
   const paymentEditorMethods =
     acceptedPaymentMethods.length > 0
       ? acceptedPaymentMethods
@@ -567,6 +706,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
         cashSessionOpen={Boolean(cashSessionId)}
         allowMultiple
         disabled={paymentLoading}
+        cardMachineFees={cardMachineFees}
       />
     ) : null;
 
@@ -819,11 +959,21 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
                 <td>{formatDateTime(payment.payment_date)}</td>
                 <td className="hub-checkout-drawer__cell-muted">
                   {HUB_PAYMENT_METHOD_LABELS[payment.payment_method as HubPaymentMethod] ?? payment.payment_method}
+                  {Number(payment.installments ?? 1) > 1 ? ` · ${payment.installments}x` : null}
                   {isReversed ? ' · anulado/reembolsado' : null}
                   {payment.posting_kind === 'historical_correction' ? ' · correção histórica' : null}
+                  {payment.card_fee_amount != null && Number(payment.card_fee_amount) > 0.009
+                    ? ` · taxa ${formatBrl(Number(payment.card_fee_amount))}`
+                    : null}
                 </td>
                 <td>
                   <strong>{formatBrl(Number(payment.amount ?? 0))}</strong>
+                  {payment.net_amount != null &&
+                  Number(payment.card_fee_amount ?? 0) > 0.009 ? (
+                    <div className="hub-checkout-drawer__cell-muted" style={{ fontSize: 12 }}>
+                      líquido {formatBrl(Number(payment.net_amount))}
+                    </div>
+                  ) : null}
                 </td>
                 <td className="hub-clientes__td-actions">
                   <div className="hub-clientes__td-actions-inner hub-checkout-drawer__row-actions">
@@ -886,7 +1036,105 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
         <CheckoutDrawerSummaryCell label="Saldo" value={formatBrl(selectedBalance)} highlight />
       </CheckoutDrawerSummaryGrid>
 
-      <CheckoutDrawerSection title={`Linhas do recebível (${detail.lines?.length ?? 0})`}>{linesTable}</CheckoutDrawerSection>
+      <CheckoutDrawerSection
+        title={`Linhas do recebível (${detail.lines?.length ?? 0})`}
+        action={
+          canAddProductLine && !showAddProduct ? (
+            <button
+              type="button"
+              className="hub-quote-detail__text-btn"
+              onClick={() => void openAddProductForm()}
+            >
+              <Plus size={14} strokeWidth={2.25} aria-hidden /> Incluir produto
+            </button>
+          ) : null
+        }
+      >
+        {showAddProduct ? (
+          <div className="hub-sell-package__line-card" style={{ marginBottom: 12 }}>
+            <p className="hub-clientes__muted hub-sell-package__hint" style={{ marginTop: 0 }}>
+              Adiciona produto ao recebível e baixa o estoque.
+            </p>
+            <div className="hub-clientes__field">
+              <label className="hub-clientes__label" htmlFor="recv-add-product">
+                Produto
+              </label>
+              <HubSearchableCombobox
+                id="recv-add-product"
+                options={addProductOptions}
+                value={addProductItemId}
+                onChange={onSelectAddProductItem}
+                placeholder="— Selecionar produto —"
+                searchPlaceholder="Nome, EAN ou SKU…"
+                ariaLabel="Produto"
+              />
+            </div>
+            <div className="hub-clientes__field">
+              <label className="hub-clientes__label" htmlFor="recv-add-lot">
+                Lote
+              </label>
+              <HubSearchableCombobox
+                id="recv-add-lot"
+                options={addProductLotOptions}
+                value={addProductLotId}
+                onChange={setAddProductLotId}
+                placeholder="— Lote —"
+                searchPlaceholder="Buscar lote…"
+                ariaLabel="Lote"
+                disabled={!addProductItemId}
+              />
+            </div>
+            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+              <label className="hub-clientes__label" style={{ flex: '1 1 100px' }}>
+                Qtd
+                <input
+                  className="hub-clientes__input"
+                  value={addProductQty}
+                  onChange={(e) => setAddProductQty(e.target.value)}
+                  inputMode="decimal"
+                />
+              </label>
+              <label className="hub-clientes__label" style={{ flex: '1 1 140px' }}>
+                Valor unit.
+                <input
+                  className="hub-clientes__input"
+                  value={addProductUnitAmount}
+                  readOnly={addProductPriceLocked}
+                  title={
+                    addProductPriceLocked
+                      ? 'Preço fixo no catálogo (override desabilitado).'
+                      : undefined
+                  }
+                  onChange={(e) => {
+                    if (addProductPriceLocked) return;
+                    setAddProductUnitAmount(e.target.value);
+                  }}
+                  inputMode="decimal"
+                />
+              </label>
+            </div>
+            <div className="hub-sell-package__footer" style={{ padding: 0, marginTop: 10 }}>
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                onClick={() => setShowAddProduct(false)}
+                disabled={addProductLoading}
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                onClick={() => void onAddProductLine()}
+                disabled={addProductLoading}
+              >
+                {addProductLoading ? 'Salvando…' : 'Adicionar produto'}
+              </button>
+            </div>
+          </div>
+        ) : null}
+        {linesTable}
+      </CheckoutDrawerSection>
 
       {billingActionSection}
 

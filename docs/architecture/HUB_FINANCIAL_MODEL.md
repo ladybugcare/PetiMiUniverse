@@ -41,6 +41,8 @@ Alterações posteriores com rastreio: `discount`, `credit`, `write_off`, `refun
 
 Pagamento liquidado: `receivable_id`, `amount`, `payment_method` (`pix` | `cash` | `credit_card` | `debit_card` | `transfer` | `payment_link` | `customer_credit` | `other`), parcelas, `payment_date`, `external_reference`, ligação opcional a sessão de caixa.
 
+**Taxas da maquininha (estimativa):** `hub_clinic_settings.card_machine_fees` guarda faixas `%` por método (`debit_card` / `credit_card`) e intervalo de parcelas. No checkout, a UI mostra taxa e líquido; ao registrar o pagamento, o ledger grava snapshot em `hub_payments.card_fee_rate_percent` / `card_fee_amount` / `net_amount`. Não altera o valor cobrado do tutor nem cria despesa automática.
+
 **`payment_link` no MVP:** é apenas **rótulo de forma de pagamento** para baixa manual (“recebi via link externo”). Não gera URL, não chama gateway e não liquida recebível sozinho. Integração com gateway / Payment Intent fica **fora do escopo atual** (ver secção abaixo).
 
 ### `hub_expenses` (Fase 2)

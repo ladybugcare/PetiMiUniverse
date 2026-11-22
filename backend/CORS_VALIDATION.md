@@ -55,9 +55,9 @@ FRONTEND_URL=https://peti-vet-petivet.vercel.app
 **Origens permitidas:**
 - ✅ `https://peti-vet-petivet.vercel.app` (hardcoded)
 - ✅ `https://peti-vet-petivet.vercel.app` (da variável FRONTEND_URL)
-- ❌ Requisições sem origem (bloqueadas em produção)
+- ✅ Requisições sem origem (server-to-server: cron curl, healthchecks)
 
-**Status:** ✅ Configurado corretamente
+**Status:** ✅ Configurado corretamente (no-origin liberado de propósito para jobs internos)
 
 ---
 
@@ -82,7 +82,7 @@ FRONTEND_URL=https://peti-vet-petivet.vercel.app
 3. **Validação:**
    - Verifica se origem está na lista
    - Retorna origem exata no header `Access-Control-Allow-Origin`
-   - Permite requisições sem origem apenas em dev/staging
+   - Permite requisições sem origem em todos os ambientes (server-to-server)
 
 4. **Headers CORS:**
    - `credentials: true` - Permite cookies/autenticação

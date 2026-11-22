@@ -645,13 +645,40 @@ export async function insertPostedPaymentWithIdempotency(opts: {
     }
   }
 
+  const installments =
+    opts.paymentMethod === 'debit_card' ? 1 : Math.max(1, Math.min(99, opts.installments ?? 1));
+
+  let cardFeeRate: number | null = null;
+  let cardFeeAmount: number | null = null;
+  let netAmount: number | null = null;
+  if (opts.paymentMethod === 'credit_card' || opts.paymentMethod === 'debit_card') {
+    try {
+      const { getOrCreateHubClinicSettings } = await import('./hubClinicSettingsController.js');
+      const { computeCardFeeSnapshot } = await import('./hubCardMachineFees.js');
+      const settings = await getOrCreateHubClinicSettings(opts.clinicId);
+      const snap = computeCardFeeSnapshot({
+        fees: settings.card_machine_fees,
+        paymentMethod: opts.paymentMethod,
+        amount: opts.amount,
+        installments,
+      });
+      if (snap) {
+        cardFeeRate = snap.card_fee_rate_percent;
+        cardFeeAmount = snap.card_fee_amount;
+        netAmount = snap.net_amount;
+      }
+    } catch (e) {
+      console.warn('[hub_finance] card fee snapshot skipped', e);
+    }
+  }
+
   const row: Record<string, unknown> = {
     clinic_id: opts.clinicId,
     receivable_id: opts.receivableId,
     cash_session_id: opts.cashSessionId,
     amount: round2Ledger(opts.amount),
     payment_method: opts.paymentMethod,
-    installments: opts.installments ?? 1,
+    installments,
     payment_date: opts.paymentDate,
     effective_payment_date: opts.effectivePaymentDate ?? opts.paymentDate,
     notes: opts.notes ?? null,
@@ -661,6 +688,9 @@ export async function insertPostedPaymentWithIdempotency(opts: {
     idempotency_key: idempotencyKey,
     tendered_amount: tenderedAmount,
     change_amount: changeAmount,
+    card_fee_rate_percent: cardFeeRate,
+    card_fee_amount: cardFeeAmount,
+    net_amount: netAmount,
   };
   if (opts.paymentTiming) row.payment_timing = opts.paymentTiming;
   if (opts.correctionReason) row.correction_reason = opts.correctionReason;
