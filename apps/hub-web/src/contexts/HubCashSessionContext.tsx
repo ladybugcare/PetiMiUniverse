@@ -20,6 +20,9 @@ export type HubCashSessionStatusSnapshot = {
   pendingBillingCount: number;
 };
 
+/** Idade máxima (ms) em que o status local ainda é considerado fresco. */
+export const CASH_SESSION_FRESH_MS = 15_000;
+
 type HubCashSessionContextValue = {
   cashSession: HubCashSession | null;
   isOpen: boolean;
@@ -27,6 +30,10 @@ type HubCashSessionContextValue = {
   isPreviousDay: boolean;
   pendingBillingCount: number;
   loading: boolean;
+  /** Timestamp (ms) do último refresh bem-sucedido; null se nunca atualizou. */
+  lastRefreshedAt: number | null;
+  /** True se o último refresh foi há menos de `maxAgeMs` (padrão: CASH_SESSION_FRESH_MS). */
+  isStatusFresh: (maxAgeMs?: number) => boolean;
   refresh: () => Promise<HubCashSessionStatusSnapshot | null>;
 };
 
@@ -52,12 +59,14 @@ export const HubCashSessionProvider: React.FC<{ children: ReactNode }> = ({ chil
   const [cashSession, setCashSession] = useState<HubCashSession | null>(null);
   const [pendingBillingCount, setPendingBillingCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async (): Promise<HubCashSessionStatusSnapshot | null> => {
     if (!clinicId || !unitId || !canReadCash) {
       setCashSession(null);
       setPendingBillingCount(0);
+      setLastRefreshedAt(Date.now());
       return { isOpen: false, pendingBillingCount: 0 };
     }
     setLoading(true);
@@ -66,6 +75,7 @@ export const HubCashSessionProvider: React.FC<{ children: ReactNode }> = ({ chil
       const session = statusRes.cash_session ?? null;
       setCashSession(session);
       setPendingBillingCount(statusRes.pending_billing_count);
+      setLastRefreshedAt(Date.now());
       return {
         isOpen: session?.status === 'open',
         pendingBillingCount: statusRes.pending_billing_count,
@@ -77,6 +87,14 @@ export const HubCashSessionProvider: React.FC<{ children: ReactNode }> = ({ chil
       setLoading(false);
     }
   }, [clinicId, unitId, canReadCash]);
+
+  const isStatusFresh = useCallback(
+    (maxAgeMs: number = CASH_SESSION_FRESH_MS) => {
+      if (lastRefreshedAt == null) return false;
+      return Date.now() - lastRefreshedAt < maxAgeMs;
+    },
+    [lastRefreshedAt],
+  );
 
   useEffect(() => {
     void refresh();
@@ -109,6 +127,8 @@ export const HubCashSessionProvider: React.FC<{ children: ReactNode }> = ({ chil
     isPreviousDay,
     pendingBillingCount,
     loading,
+    lastRefreshedAt,
+    isStatusFresh,
     refresh,
   };
 
@@ -124,6 +144,8 @@ const FALLBACK_CASH_SESSION: HubCashSessionContextValue = {
   isPreviousDay: false,
   pendingBillingCount: 0,
   loading: false,
+  lastRefreshedAt: null,
+  isStatusFresh: () => false,
   refresh: async () => ({ isOpen: false, pendingBillingCount: 0 }),
 };
 

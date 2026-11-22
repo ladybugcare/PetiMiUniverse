@@ -2454,7 +2454,8 @@ export const postHubFinanceCashSessionsAutoCloseOverdue = async (req: Request, r
 /**
  * GET /finance/cash-sessions/status
  * Endpoint leve que agrega status do caixa + contagem de pendências em uma única chamada.
- * Usado pelo HubCashSessionContext para polling periódico no sidebar.
+ * Usado pelo HubCashSessionContext para polling periódico no sidebar e no guard de saída.
+ * Contagem sem montar preview/valores (includeAmounts: false) para evitar N+1.
  */
 export const getHubFinanceCashSessionStatus = async (req: Request, res: Response) => {
   try {
@@ -2466,7 +2467,8 @@ export const getHubFinanceCashSessionStatus = async (req: Request, res: Response
     const clinic_id = clinicParsed.data;
     const unit_id = unitParsed.data;
 
-    const [{ data: cashSession }, pendingBillingResult, { data: openComandasRows }] = await Promise.all([
+    const keys = await fetchActiveReceivableKeys(clinic_id).catch(() => new Set<string>());
+    const [cashSessionRes, pendingBillingResult, openComandasRes] = await Promise.all([
       supabaseAdmin
         .from('hub_cash_sessions')
         .select('id, status, opened_at, opening_balance, closed_at')
@@ -2474,7 +2476,9 @@ export const getHubFinanceCashSessionStatus = async (req: Request, res: Response
         .eq('unit_id', unit_id)
         .eq('status', 'open')
         .maybeSingle(),
-      collectUnbilledItems(clinic_id, unit_id, await fetchActiveReceivableKeys(clinic_id)).catch(() => [] as unknown[]),
+      collectUnbilledItems(clinic_id, unit_id, keys, { includeAmounts: false }).catch(
+        () => [] as unknown[],
+      ),
       supabaseAdmin
         .from('hub_comandas')
         .select('id, total_amount')
@@ -2484,13 +2488,14 @@ export const getHubFinanceCashSessionStatus = async (req: Request, res: Response
         .is('finance_handoff_at', null),
     ]);
 
+    const openComandasRows = openComandasRes.data;
     const openComandasCount = (openComandasRows ?? []).length;
     const openComandasTotal = round2(
       (openComandasRows ?? []).reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0),
     );
 
     return res.json({
-      cash_session: cashSession ?? null,
+      cash_session: cashSessionRes.data ?? null,
       pending_billing_count: pendingBillingResult.length,
       open_comandas_count: openComandasCount,
       open_comandas_total: openComandasTotal,
@@ -2762,8 +2767,11 @@ async function fetchBilledOriginKeysFromComandas(clinicId: string): Promise<Set<
 async function collectUnbilledItems(
   clinicId: string,
   unitId: string | undefined,
-  keys: Set<string>
+  keys: Set<string>,
+  opts?: { includeAmounts?: boolean },
 ): Promise<UnbilledItem[]> {
+  // Quando false, pula buildPreview/loadHospitalization (N+1) — só conta itens.
+  const includeAmounts = opts?.includeAmounts !== false;
   const items: UnbilledItem[] = [];
   let comandaOpenKeys: Set<string>;
   let billedViaComandaKeys: Set<string>;
@@ -2806,7 +2814,9 @@ async function collectUnbilledItems(
     const apptId = row.hub_appointment_id as string | null | undefined;
     if (apptId && comandaOpenKeys.has(`appointment:${apptId}`)) continue;
     if (apptId && billedViaComandaKeys.has(`appointment:${apptId}`)) continue;
-    const pv = await buildPreviewForGroomingSession(clinicId, row.id as string);
+    const estimated_amount = includeAmounts
+      ? (await buildPreviewForGroomingSession(clinicId, row.id as string)).subtotal
+      : 0;
     const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
     const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
     items.push({
@@ -2818,7 +2828,7 @@ async function collectUnbilledItems(
       guardian: g ? (Array.isArray(g) ? g[0] : g) : null,
       pet: pet ? (Array.isArray(pet) ? pet[0] : pet) : null,
       staff: null,
-      estimated_amount: pv.subtotal,
+      estimated_amount,
       operational_status: String(row.grooming_stage),
     });
   }
@@ -2848,7 +2858,9 @@ async function collectUnbilledItems(
     const apptIdEnc = row.hub_appointment_id as string | null | undefined;
     if (apptIdEnc && comandaOpenKeys.has(`appointment:${apptIdEnc}`)) continue;
     if (apptIdEnc && billedViaComandaKeys.has(`appointment:${apptIdEnc}`)) continue;
-    const pv = await buildPreviewForEncounter(clinicId, row.id as string);
+    const estimated_amount = includeAmounts
+      ? (await buildPreviewForEncounter(clinicId, row.id as string)).subtotal
+      : 0;
     const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
     const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
     items.push({
@@ -2860,7 +2872,7 @@ async function collectUnbilledItems(
       guardian: g ? (Array.isArray(g) ? g[0] : g) : null,
       pet: pet ? (Array.isArray(pet) ? pet[0] : pet) : null,
       staff: null,
-      estimated_amount: pv.subtotal,
+      estimated_amount,
       operational_status: String(row.status),
     });
   }
@@ -2887,7 +2899,9 @@ async function collectUnbilledItems(
     if (keys.has(`quote:${row.id}`)) continue;
     if (comandaOpenKeys.has(`quote:${row.id}`)) continue;
     if (billedViaComandaKeys.has(`quote:${row.id}`)) continue;
-    const pv = await buildPreviewForQuote(clinicId, row.id as string);
+    const estimated_amount = includeAmounts
+      ? (await buildPreviewForQuote(clinicId, row.id as string)).final_amount
+      : Number(row.total_amount ?? 0);
     const prospect = row.prospect as { full_name?: string } | { full_name?: string }[] | null;
     const prospectName = prospect
       ? Array.isArray(prospect)
@@ -2913,7 +2927,7 @@ async function collectUnbilledItems(
       guardian: guardianResolved,
       pet: null,
       staff: null,
-      estimated_amount: pv.final_amount,
+      estimated_amount,
       operational_status: String(row.billing_state ?? 'awaiting_billing'),
     });
   }
@@ -2975,7 +2989,9 @@ async function collectUnbilledItems(
     if (comandaOpenKeys.has(`appointment:${id}`)) continue;
     if (billedViaComandaKeys.has(`appointment:${id}`)) continue;
     if (apptIdsWithOperation.has(id)) continue;
-    const pv = await buildPreviewForAppointment(clinicId, id);
+    const estimated_amount = includeAmounts
+      ? (await buildPreviewForAppointment(clinicId, id)).subtotal
+      : 0;
     const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
     const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
     items.push({
@@ -2987,7 +3003,7 @@ async function collectUnbilledItems(
       guardian: g ? (Array.isArray(g) ? g[0] : g) : null,
       pet: pet ? (Array.isArray(pet) ? pet[0] : pet) : null,
       staff: null,
-      estimated_amount: pv.subtotal,
+      estimated_amount,
       operational_status: String(row.status),
     });
   }
@@ -3131,14 +3147,18 @@ async function collectUnbilledItems(
       const origin = resolveHospitalizationBillingOrigin(hospInput);
       if (!origin) continue;
 
-      const hosp = await loadHospitalizationComandaItems({
-        clinicId,
-        hospitalizationId: row.id as string,
-        encounterId: origin.origin_type === 'encounter' ? origin.origin_id : null,
-        appointmentId: origin.origin_type === 'appointment' ? origin.origin_id : hospInput.hub_appointment_id,
-        defaultPetId: (row.pet_id as string | null) ?? null,
-      });
-      if (hosp.subtotal <= 0.009 && hosp.items.length === 0) continue;
+      let estimated_amount = 0;
+      if (includeAmounts) {
+        const hosp = await loadHospitalizationComandaItems({
+          clinicId,
+          hospitalizationId: row.id as string,
+          encounterId: origin.origin_type === 'encounter' ? origin.origin_id : null,
+          appointmentId: origin.origin_type === 'appointment' ? origin.origin_id : hospInput.hub_appointment_id,
+          defaultPetId: (row.pet_id as string | null) ?? null,
+        });
+        if (hosp.subtotal <= 0.009 && hosp.items.length === 0) continue;
+        estimated_amount = hosp.subtotal;
+      }
 
       const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
       const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
@@ -3152,7 +3172,7 @@ async function collectUnbilledItems(
         guardian: g ? (Array.isArray(g) ? g[0] : g) : null,
         pet: pet ? (Array.isArray(pet) ? pet[0] : pet) : null,
         staff: null,
-        estimated_amount: hosp.subtotal,
+        estimated_amount,
         operational_status: String(row.status),
         billing_origin_type: origin.origin_type,
         billing_origin_id: origin.origin_id,
