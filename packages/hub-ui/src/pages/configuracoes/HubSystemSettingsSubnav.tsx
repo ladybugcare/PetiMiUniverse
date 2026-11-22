@@ -9,6 +9,7 @@ const links = [
   { to: `${BASE}/templates-mensagem`, label: 'Templates de Mensagem' },
   { to: `${BASE}/checklists`, label: 'Checklists' },
   { to: `${BASE}/formas-pagamento`, label: 'Formas de pagamento' },
+  { to: `${BASE}/impressao`, label: 'Impressão' },
   { to: `${BASE}/clinicas-parceiras`, label: 'Clínicas parceiras' },
   { to: `${BASE}/leva-e-traz`, label: 'Leva e Traz' },
   { to: `${BASE}/hotel-creche`, label: 'Hotel & Creche' },

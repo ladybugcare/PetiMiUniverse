@@ -9,25 +9,38 @@ const messageTemplatesSchema = z
   .record(z.string(), z.string().max(500))
   .optional();
 
+const cupomWidthMmSchema = z.union([z.literal(58), z.literal(80)]);
+
 const patchSchema = z
   .object({
     clinic_id: uuidStr,
     pet_puppy_max_months: z.number().int().min(1).max(24).optional(),
     message_templates: messageTemplatesSchema,
+    cupom_width_mm: cupomWidthMmSchema.optional(),
   })
   .strict();
+
+export type HubCupomWidthMm = 58 | 80;
 
 export type HubClinicSettingsRow = {
   pet_puppy_max_months: number;
   message_templates: Record<string, string>;
   accepted_payment_methods: HubPaymentMethod[];
+  cupom_width_mm: HubCupomWidthMm;
 };
+
+function normalizeCupomWidthMm(raw: unknown): HubCupomWidthMm {
+  const n = Number(raw);
+  return n === 58 ? 58 : 80;
+}
 
 /** Garante linha de settings por clínica (defaults: 8 meses, templates vazios, todos os métodos). */
 export async function getOrCreateHubClinicSettings(clinicId: string): Promise<HubClinicSettingsRow> {
+  const selectCols =
+    'pet_puppy_max_months, message_templates, accepted_payment_methods, cupom_width_mm';
   const { data: row, error: selErr } = await supabaseAdmin
     .from('hub_clinic_settings')
-    .select('pet_puppy_max_months, message_templates, accepted_payment_methods')
+    .select(selectCols)
     .eq('clinic_id', clinicId)
     .maybeSingle();
   if (!selErr && row) {
@@ -35,34 +48,39 @@ export async function getOrCreateHubClinicSettings(clinicId: string): Promise<Hu
       pet_puppy_max_months: number;
       message_templates: Record<string, string> | null;
       accepted_payment_methods: string[] | null;
+      cupom_width_mm?: number | null;
     };
     return {
       pet_puppy_max_months: Number(r.pet_puppy_max_months) || 8,
       message_templates: r.message_templates ?? {},
       accepted_payment_methods: normalizeAcceptedPaymentMethods(r.accepted_payment_methods),
+      cupom_width_mm: normalizeCupomWidthMm(r.cupom_width_mm),
     };
   }
   const { data: ins, error: insErr } = await supabaseAdmin
     .from('hub_clinic_settings')
     .insert({ clinic_id: clinicId, accepted_payment_methods: [...HUB_PAYMENT_METHODS] })
-    .select('pet_puppy_max_months, message_templates, accepted_payment_methods')
+    .select(selectCols)
     .single();
   if (insErr || !ins) {
     return {
       pet_puppy_max_months: 8,
       message_templates: {},
       accepted_payment_methods: [...HUB_PAYMENT_METHODS],
+      cupom_width_mm: 80,
     };
   }
   const i = ins as {
     pet_puppy_max_months: number;
     message_templates: Record<string, string> | null;
     accepted_payment_methods: string[] | null;
+    cupom_width_mm?: number | null;
   };
   return {
     pet_puppy_max_months: Number(i.pet_puppy_max_months) || 8,
     message_templates: i.message_templates ?? {},
     accepted_payment_methods: normalizeAcceptedPaymentMethods(i.accepted_payment_methods),
+    cupom_width_mm: normalizeCupomWidthMm(i.cupom_width_mm),
   };
 }
 
@@ -86,9 +104,13 @@ export const patchHubClinicSettings = async (req: Request, res: Response) => {
     if (!body.success) {
       return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
     }
-    const { clinic_id, pet_puppy_max_months, message_templates } = body.data;
+    const { clinic_id, pet_puppy_max_months, message_templates, cupom_width_mm } = body.data;
 
-    if (pet_puppy_max_months === undefined && message_templates === undefined) {
+    if (
+      pet_puppy_max_months === undefined &&
+      message_templates === undefined &&
+      cupom_width_mm === undefined
+    ) {
       return res.status(400).json({ error: 'Nenhum campo para atualizar' });
     }
 
@@ -97,6 +119,7 @@ export const patchHubClinicSettings = async (req: Request, res: Response) => {
     const patch: Record<string, unknown> = {};
     if (pet_puppy_max_months !== undefined) patch.pet_puppy_max_months = pet_puppy_max_months;
     if (message_templates !== undefined) patch.message_templates = message_templates;
+    if (cupom_width_mm !== undefined) patch.cupom_width_mm = cupom_width_mm;
 
     const { error } = await supabaseAdmin
       .from('hub_clinic_settings')

@@ -6,6 +6,7 @@ import { resolveServiceLinePricing, type PetPricingFields } from './hubPricingRe
 import { quoteDiscountAmount } from './hubQuoteDiscount';
 import { createAuditLog, extractRequestMetadata } from '../../utils/auditLog';
 import { streamComandaPdf } from './hubComandaPdf';
+import { streamComandaCupomPdf } from './hubComandaCupomPdf';
 import { getOrCreateHubClinicSettings } from './hubClinicSettingsController';
 import {
   assertPaymentMethodInList,
@@ -2854,6 +2855,28 @@ export const getHubComandaPdf = async (req: Request, res: Response) => {
   } catch (e: unknown) {
     if ((e as Error)?.message === 'NOT_FOUND') return res.status(404).json({ error: 'Comanda não encontrada' });
     console.error('getHubComandaPdf', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+/** Cupom térmico (58/80mm) — largura vem de hub_clinic_settings.cupom_width_mm. */
+export const getHubComandaCupomPdf = async (req: Request, res: Response) => {
+  try {
+    const idParsed = uuidStr.safeParse(req.params.id);
+    const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
+    if (!idParsed.success || !clinicParsed.success) {
+      return res.status(400).json({ error: 'id e clinic_id (UUID) obrigatórios' });
+    }
+    const clinicId = clinicParsed.data;
+    const [payload, settings] = await Promise.all([
+      loadComandaPdfPayload(idParsed.data, clinicId),
+      getOrCreateHubClinicSettings(clinicId),
+    ]);
+    streamComandaCupomPdf(res, payload, settings.cupom_width_mm);
+    return;
+  } catch (e: unknown) {
+    if ((e as Error)?.message === 'NOT_FOUND') return res.status(404).json({ error: 'Comanda não encontrada' });
+    console.error('getHubComandaCupomPdf', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
   }
 };

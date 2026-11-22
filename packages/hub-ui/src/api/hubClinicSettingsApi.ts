@@ -2,15 +2,20 @@ import { apiRequest } from '@petimi/web-core';
 
 const basePath = '/api/hub/clinic-settings';
 
+export type HubCupomWidthMm = 58 | 80;
+
 export type HubClinicSettings = {
   pet_puppy_max_months: number;
   /** Templates de mensagem WhatsApp customizados pela clínica. Chave ausente = usa o texto padrão. */
   message_templates: Record<string, string>;
+  /** Largura do cupom térmico de venda (58 ou 80 mm). Default 80 se ausente. */
+  cupom_width_mm?: HubCupomWidthMm;
 };
 
 export type PatchHubClinicSettingsPayload = {
   pet_puppy_max_months?: number;
   message_templates?: Record<string, string>;
+  cupom_width_mm?: HubCupomWidthMm;
 };
 
 export const hubClinicSettingsApi = {

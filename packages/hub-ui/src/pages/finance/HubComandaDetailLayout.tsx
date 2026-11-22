@@ -12,6 +12,7 @@ import {
   Coins,
   DollarSign,
   FileDown,
+  Printer,
   Send,
   Share2,
   User,
@@ -61,6 +62,7 @@ export interface HubComandaDetailLayoutProps {
   checkoutLabel?: string;
   onSendToFinancial?: () => void;
   onOpenPdf: () => void;
+  onOpenCupom?: () => void;
   onCopyPublic: () => void;
   onShareOpenPublic: () => void;
   onShareWhatsAppWithMessage: () => void;
@@ -96,6 +98,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
   checkoutLabel = 'Cobrar',
   onSendToFinancial,
   onOpenPdf,
+  onOpenCupom,
   onCopyPublic,
   onShareOpenPublic,
   onShareWhatsAppWithMessage,
@@ -196,6 +199,18 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
               <FileDown size={18} strokeWidth={2} aria-hidden />
               <span className="hub-quote-detail__btn-text">PDF</span>
             </button>
+            {onOpenCupom ? (
+              <button
+                type="button"
+                className="hub-quote-detail__btn hub-quote-detail__btn--outline"
+                disabled={saving}
+                onClick={onOpenCupom}
+                title="Imprimir cupom térmico"
+              >
+                <Printer size={18} strokeWidth={2} aria-hidden />
+                <span className="hub-quote-detail__btn-text">Cupom</span>
+              </button>
+            ) : null}
             <details className="hub-quote-detail__more hub-quote-detail__share-wrap">
               <summary
                 className="hub-quote-detail__btn hub-quote-detail__btn--outline hub-quote-detail__more-summary"
@@ -245,6 +260,19 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
                 >
                   Baixar ou abrir PDF
                 </button>
+                {onOpenCupom ? (
+                  <button
+                    type="button"
+                    className="hub-quote-detail__more-item"
+                    disabled={saving}
+                    onClick={(e) => {
+                      onOpenCupom();
+                      closeShareDetails(e);
+                    }}
+                  >
+                    Imprimir cupom térmico
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   className="hub-quote-detail__more-item"

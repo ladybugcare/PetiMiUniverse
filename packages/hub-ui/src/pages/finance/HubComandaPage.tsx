@@ -5,6 +5,7 @@ import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import {
   hubComandaApi,
   openHubComandaPdf,
+  openHubComandaCupomPdf,
   type HubComandaAllowedGuardian,
   type HubComandaDetailResponse,
   type HubComandaEditContext,
@@ -464,6 +465,15 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
     }
   };
 
+  const openCupom = async () => {
+    if (!clinicId || !comandaId) return;
+    try {
+      await openHubComandaCupomPdf(comandaId, clinicId);
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao abrir cupom');
+    }
+  };
+
   const applyServiceToItem = useCallback(
     async (idx: number, serviceTypeId: string) => {
       if (!serviceTypeId || !clinicId) {
@@ -745,6 +755,7 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
         checkoutLabel={checkoutLabel}
         onSendToFinancial={showSendToFinanceiro ? handleSendToFinancial : undefined}
         onOpenPdf={() => void openPdf()}
+        onOpenCupom={() => void openCupom()}
         onCopyPublic={() => void copyPublicLink()}
         onShareOpenPublic={() => void openPublicComanda()}
         onShareWhatsAppWithMessage={() => void shareWhatsAppWithMessage()}

@@ -443,6 +443,7 @@ import {
   getHubComandaCancellationPendingCount,
   postHubComandaResolveCancellation,
   getHubComandaPdf,
+  getHubComandaCupomPdf,
   ensureComandaPublicToken,
   getPublicComanda,
 } from '../hubComandasController';
@@ -1769,6 +1770,12 @@ router.get(
   authenticateUser,
   requirePermission('hub.financial.read'),
   getHubComandaPdf
+);
+router.get(
+  '/comandas/:id/cupom.pdf',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubComandaCupomPdf
 );
 router.post(
   '/comandas/:id/public-token',

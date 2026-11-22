@@ -1,0 +1,57 @@
+/* HubPrintSettingsPage — largura do cupom térmico */
+
+.hub-print__options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 16px;
+}
+
+@media (max-width: 640px) {
+  .hub-print__options {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hub-print__option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  text-align: left;
+  padding: 14px 14px;
+  border: 1px solid #e5e0dc;
+  border-radius: 10px;
+  background: #fff;
+  cursor: pointer;
+  color: inherit;
+  transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+}
+
+.hub-print__option:hover:not(:disabled) {
+  border-color: #d4c4bb;
+  background: #faf8f6;
+}
+
+.hub-print__option:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.hub-print__option--selected {
+  border-color: #c86a4d;
+  box-shadow: 0 0 0 1px rgba(200, 106, 77, 0.2);
+  background: #fff8f5;
+}
+
+.hub-print__option-label {
+  font-size: 15px;
+  font-weight: 600;
+  color: #2d1e1c;
+}
+
+.hub-print__option-hint {
+  font-size: 12px;
+  line-height: 1.4;
+  color: #7a6060;
+}

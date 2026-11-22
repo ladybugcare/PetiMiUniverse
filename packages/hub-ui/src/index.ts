@@ -62,7 +62,11 @@ export type {
 export { hubPetsApi } from './api/hubPetsApi';
 export type { HubPet, HubPetGuardianRef } from './api/hubPetsApi';
 export { hubClinicSettingsApi } from './api/hubClinicSettingsApi';
-export type { HubClinicSettings, PatchHubClinicSettingsPayload } from './api/hubClinicSettingsApi';
+export type {
+  HubClinicSettings,
+  HubCupomWidthMm,
+  PatchHubClinicSettingsPayload,
+} from './api/hubClinicSettingsApi';
 export { hubPartnerClinicsApi } from './api/hubPartnerClinicsApi';
 export type {
   HubPartnerClinic,
@@ -209,7 +213,12 @@ export type {
   HubQuoteLine,
 } from './api/hubQuotesApi';
 export type { HubComandaOriginType, HubComandaItem, HubComandaDetailResponse, HubComandaOpenBody, HubComandaManualLine, HubPublicComandaResponse, HubPublicComandaPet, HubComandaAllowedGuardian, HubComandaGuardianEmbed, HubComandaEditContext, HubComandaEditScopes } from './api/hubComandaApi';
-export { hubComandaApi, openHubComandaPdf, downloadHubComandaPdf } from './api/hubComandaApi';
+export {
+  hubComandaApi,
+  openHubComandaPdf,
+  downloadHubComandaPdf,
+  openHubComandaCupomPdf,
+} from './api/hubComandaApi';
 export { ComandaCheckoutDrawer } from './pages/finance/ComandaCheckoutDrawer';
 export type { ComandaCheckoutDrawerProps } from './pages/finance/ComandaCheckoutDrawer';
 export {

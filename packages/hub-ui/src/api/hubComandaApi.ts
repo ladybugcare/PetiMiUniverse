@@ -467,6 +467,18 @@ async function fetchHubComandaPdfBlob(comandaId: string, clinicId: string): Prom
   return res.blob();
 }
 
+async function fetchHubComandaCupomPdfBlob(comandaId: string, clinicId: string): Promise<Blob> {
+  const token = (await getSupabase().auth.getSession()).data.session?.access_token;
+  if (!token) throw new Error('Sessão expirada. Faça login novamente.');
+  const url = `${getApiBaseUrl()}${base}/${encodeURIComponent(comandaId)}/cupom.pdf?${new URLSearchParams({ clinic_id: clinicId })}`;
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as { error?: string })?.error || 'Falha ao gerar cupom');
+  }
+  return res.blob();
+}
+
 export async function openHubComandaPdf(comandaId: string, clinicId: string): Promise<void> {
   const blob = await fetchHubComandaPdfBlob(comandaId, clinicId);
   const objectUrl = URL.createObjectURL(blob);
@@ -484,5 +496,13 @@ export async function downloadHubComandaPdf(comandaId: string, clinicId: string)
   document.body.appendChild(a);
   a.click();
   a.remove();
+  window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
+}
+
+/** Abre o cupom térmico (largura conforme Configurações → Impressão). */
+export async function openHubComandaCupomPdf(comandaId: string, clinicId: string): Promise<void> {
+  const blob = await fetchHubComandaCupomPdfBlob(comandaId, clinicId);
+  const objectUrl = URL.createObjectURL(blob);
+  window.open(objectUrl, '_blank', 'noopener,noreferrer');
   window.setTimeout(() => URL.revokeObjectURL(objectUrl), 120_000);
 }

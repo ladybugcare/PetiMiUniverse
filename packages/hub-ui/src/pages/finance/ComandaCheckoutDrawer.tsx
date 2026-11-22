@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, Download, MessageCircle } from 'lucide-react';
+import { Calendar, Download, MessageCircle, Printer } from 'lucide-react';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubLoading } from '../../components/HubLoading';
 import { HubDateField } from '../../components/HubDateField';
 import {
   hubComandaApi,
   downloadHubComandaPdf,
+  openHubComandaCupomPdf,
   type HubComandaDetailResponse,
   type HubComandaOriginType,
 } from '../../api/hubComandaApi';
@@ -674,6 +675,16 @@ export function ComandaCheckoutDrawer({
     }
   };
 
+  const openSuccessCupom = async () => {
+    if (!successState) return;
+    setShareBusy(true);
+    try {
+      await openHubComandaCupomPdf(successState.comandaId, clinicId);
+    } finally {
+      setShareBusy(false);
+    }
+  };
+
   const finishSuccess = () => {
     if (successState) {
       onSuccess?.({
@@ -784,6 +795,15 @@ export function ComandaCheckoutDrawer({
               >
                 <MessageCircle size={18} aria-hidden />
                 Abrir WhatsApp
+              </button>
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--ghost"
+                disabled={shareBusy}
+                onClick={() => void openSuccessCupom()}
+              >
+                <Printer size={18} aria-hidden />
+                Imprimir cupom
               </button>
               <button
                 type="button"

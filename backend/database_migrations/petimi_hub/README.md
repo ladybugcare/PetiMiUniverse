@@ -320,3 +320,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 151. **`151_create_hub_clinic_public_profiles.sql`** — Landing pública opt-in da clínica: tabela `hub_clinic_public_profiles` (slug, hero, horários, redes, SEO, tema) + flags em `hub_service_types` / `hub_staff_members` (`show_on_public_profile`, blurbs/bio, ordenação). Executar depois dos itens 003 e 009.
 
 152. **`152_alter_hub_public_profile_service_groups.sql`** — `services_display_mode` (`groups` | `services` | `both`) em `hub_clinic_public_profiles` + flags públicas em `hub_service_groups`. Executar depois dos itens 017 e 151.
+
+153. **`153_alter_hub_clinic_settings_cupom_width.sql`** — `cupom_width_mm` (`58` | `80`, default `80`) em `hub_clinic_settings` para o cupom térmico de venda. Executar depois do item 16.
