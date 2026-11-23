@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Plus, AlertCircle, CalendarDays, Calendar, RefreshCw, ChevronDown, User, Dog, Loader2, Stethoscope, Siren, FolderPlus, Folder, Info, CheckCircle2, CalendarPlus, Clock, Zap } from 'lucide-react';
+import { Plus, AlertCircle, CalendarDays, Calendar, RefreshCw, ChevronDown, User, Dog, Loader2, Stethoscope, Siren, FolderPlus, Folder, Info, CheckCircle2, CalendarPlus, Clock, Zap, ArrowLeft } from 'lucide-react';
 import { getStoredClinicId } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
 import { HubSidePanel } from '../../components/HubSidePanel';
@@ -154,6 +154,25 @@ import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 export type CreateHubAppointmentResult = Awaited<ReturnType<typeof hubAgendaApi.create>>;
 
 type AppointmentPickupScope = 'none' | 'block' | 'visit';
+
+/** Alinha com o CSS responsivo do novo agendamento (`max-width: 900px`). */
+const NAM_MOBILE_MQ = '(max-width: 900px)';
+
+type NamMobileStep = 'form' | 'review';
+
+function useNamMobileViewport(): boolean {
+  const [mobile, setMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia(NAM_MOBILE_MQ).matches : false,
+  );
+  useEffect(() => {
+    const mq = window.matchMedia(NAM_MOBILE_MQ);
+    const onChange = () => setMobile(mq.matches);
+    onChange();
+    mq.addEventListener('change', onChange);
+    return () => mq.removeEventListener('change', onChange);
+  }, []);
+  return mobile;
+}
 
 export type NewAppointmentInitial = {
   date?: string;
@@ -408,7 +427,18 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const isClinicalRoutine = !isEditMode && layoutVariant === 'clinical_routine';
   const isWalkIn = !isEditMode && layoutVariant === 'walk_in';
   const multiPetEnabled = !isEditMode && !isClinicalRoutine && !isWalkIn;
+  const isMobile = useNamMobileViewport();
+  /** No mobile, resumo vira 2ª tela; na web o aside permanece ao lado. */
+  const [mobileStep, setMobileStep] = useState<NamMobileStep>('form');
   const [jobMappings, setJobMappings] = useState<GroupJobMappings>({});
+
+  useEffect(() => {
+    if (!isMobile) setMobileStep('form');
+  }, [isMobile]);
+
+  useEffect(() => {
+    if (!open) setMobileStep('form');
+  }, [open]);
 
   useEffect(() => {
     if (!open || !clinicId) return;
@@ -2658,6 +2688,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   const resetForm = () => {
     confirmedOverlapRef.current = false;
+    setMobileStep('form');
     setServices([]);
     setGuardianId('');
     setPetId('');
@@ -3043,6 +3074,18 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     </div>
   );
 
+  const confirmLabel = saving
+    ? 'Salvando…'
+    : isEditMode
+      ? 'Salvar alterações'
+      : isWalkIn
+        ? 'Registrar encaixe'
+        : withRecurrence
+          ? 'Criar série'
+          : 'Criar agendamento';
+
+  const showMobileReview = isMobile && mobileStep === 'review';
+
   // ── Footer ────────────────────────────────────────────────────────────────
   const footer = (
     <>
@@ -3056,23 +3099,51 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           <AlertCircle size={14} /> {saveError}
         </span>
       ) : null}
-      <HubCancelButton onClick={handleClose} disabled={saving} />
-      <button
-        className="hub-btn hub-btn--primary"
-        type="button"
-        onClick={handleSave}
-        disabled={saving || !canSaveDefault}
-      >
-        {saving
-          ? 'Salvando…'
-          : isEditMode
-            ? 'Salvar alterações'
-            : isWalkIn
-              ? 'Registrar encaixe'
-              : withRecurrence
-                ? 'Criar série'
-                : 'Criar agendamento'}
-      </button>
+      {showMobileReview ? (
+        <>
+          <button
+            type="button"
+            className="hub-btn hub-btn--secondary nam-mobile-back-btn"
+            onClick={() => setMobileStep('form')}
+            disabled={saving}
+          >
+            <ArrowLeft size={16} strokeWidth={2} aria-hidden />
+            Voltar
+          </button>
+          <button
+            className="hub-btn hub-btn--primary"
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !canSaveDefault}
+          >
+            {confirmLabel}
+          </button>
+        </>
+      ) : isMobile ? (
+        <>
+          <HubCancelButton onClick={handleClose} disabled={saving} />
+          <button
+            className="hub-btn hub-btn--primary"
+            type="button"
+            onClick={() => setMobileStep('review')}
+            disabled={saving || !canSaveDefault}
+          >
+            Revisar
+          </button>
+        </>
+      ) : (
+        <>
+          <HubCancelButton onClick={handleClose} disabled={saving} />
+          <button
+            className="hub-btn hub-btn--primary"
+            type="button"
+            onClick={handleSave}
+            disabled={saving || !canSaveDefault}
+          >
+            {confirmLabel}
+          </button>
+        </>
+      )}
     </>
   );
 
@@ -3430,25 +3501,39 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     );
   }
 
+  const panelTitle = showMobileReview
+    ? 'Revisar agendamento'
+    : isEditMode
+      ? 'Editar agendamento'
+      : isWalkIn
+        ? 'Encaixe / walk-in'
+        : 'Novo agendamento';
+
+  const panelSubtitle = showMobileReview
+    ? 'Confira o resumo e confirme.'
+    : isWalkIn
+      ? 'Check-in imediato com horário atual.'
+      : (typeof title === 'string' && title) ||
+        (typeof autoTitle === 'string' && autoTitle) ||
+        undefined;
+
   return (
     <>
     <HubSidePanel
       open={open}
       onClose={handleClose}
       size="xl"
-      title={isEditMode ? 'Editar agendamento' : isWalkIn ? 'Encaixe / walk-in' : 'Novo agendamento'}
+      title={panelTitle}
       titleIcon={isWalkIn ? <Zap size={22} strokeWidth={2} aria-hidden /> : <Calendar size={22} strokeWidth={2} aria-hidden />}
-      subtitle={
-        isWalkIn
-          ? 'Check-in imediato com horário atual.'
-          : (typeof title === 'string' && title) ||
-            (typeof autoTitle === 'string' && autoTitle) ||
-            undefined
-      }
+      subtitle={panelSubtitle}
       footer={footer}
-      aside={asideContent}
+      aside={isMobile ? undefined : asideContent}
+      contentKey={isMobile ? mobileStep : 'desktop'}
     >
-      <div className="nam-form">
+      {showMobileReview ? (
+        <div className="nam-form nam-form--mobile-review">{asideContent}</div>
+      ) : null}
+      <div className={`nam-form${showMobileReview ? ' nam-form--mobile-form-hidden' : ''}`}>
         <div className="nam-section nam-section--quick">
           <div className="nam-quick-card">
             {isWalkIn ? (

@@ -2060,25 +2060,34 @@
     padding: 16px;
   }
 
-  /* Formulário + resumo empilhados (resumo abaixo do form, não no topo) */
-  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__body {
-    flex-direction: column;
+  /* Resumo no mobile é 2ª tela (não empilha aside no form) */
+  .hub-side-panel__sheet:has(.nam-form--mobile-review) .hub-side-panel__main {
+    padding: 0;
   }
 
-  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__main--with-aside {
-    padding-right: 16px;
+  .nam-form--mobile-form-hidden {
+    display: none;
   }
 
-  .hub-side-panel__sheet:has(.nam-form) .hub-side-panel__aside {
-    order: 0; /* sobrescreve HubSidePanel order: -1 */
-    width: 100%;
-    flex-shrink: 0;
-    border-left: none;
-    border-bottom: none;
-    border-top: 1px solid #e8e4e0;
+  .nam-form--mobile-review {
+    min-height: 100%;
+  }
+
+  .nam-form--mobile-review .nam-aside {
     padding: 16px;
-    max-height: min(40vh, 320px);
-    overflow-y: auto;
+    background: #faf8f6;
+    min-height: 100%;
+  }
+
+  .nam-form--mobile-review .nam-aside__textarea {
+    min-height: 96px;
+  }
+
+  .nam-mobile-back-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
   }
 
   /* Rodapé com botões em coluna */
