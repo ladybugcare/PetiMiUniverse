@@ -4,6 +4,7 @@ export type HubReportId =
   | 'sales-adjustments'
   | 'product-sales'
   | 'movement-by-sector'
+  | 'my-commissions'
   | 'commissions'
   | 'unbilled'
   | 'cash-flow'
@@ -16,6 +17,8 @@ export type HubReportId =
   | 'client-cohorts'
   | 'birthdays'
   | 'packages'
+  | 'my-attendances'
+  | 'my-no-shows'
   | 'no-shows'
   | 'boarding-occupancy'
   | 'grooming-productivity'
@@ -33,6 +36,11 @@ export type HubReportDefinition = {
   requiresUnit?: boolean;
   /** Mostra seletor de período. */
   periodFilter?: 'standard' | 'absent' | 'lookahead';
+  /**
+   * Relatórios do próprio profissional: catálogo e API só com a permissão listada
+   * (hub.reports.read não libera sozinho).
+   */
+  scope?: 'self';
 };
 
 export type HubReportLinkDefinition = {
@@ -96,6 +104,16 @@ export const HUB_REPORTS: HubReportDefinition[] = [
     permission: 'hub.financial.read',
     requiresUnit: true,
     periodFilter: 'standard',
+  },
+  {
+    id: 'my-commissions',
+    category: 'financeiro',
+    title: 'Minhas comissões',
+    description: 'Estimativa das suas comissões no período — só os seus atendimentos.',
+    permission: 'hub.commissions.read_own',
+    requiresUnit: true,
+    periodFilter: 'standard',
+    scope: 'self',
   },
   {
     id: 'commissions',
@@ -197,6 +215,24 @@ export const HUB_REPORTS: HubReportDefinition[] = [
     periodFilter: 'absent',
   },
   {
+    id: 'my-attendances',
+    category: 'operacional',
+    title: 'Meus atendimentos',
+    description: 'Sua produtividade no período: agendamentos e atendimentos clínicos.',
+    permission: ['hub.clinic.read', 'hub.appointments.read'],
+    periodFilter: 'standard',
+    scope: 'self',
+  },
+  {
+    id: 'my-no-shows',
+    category: 'operacional',
+    title: 'Meus no-shows',
+    description: 'Agendamentos seus que passaram do horário sem evolução (faltas).',
+    permission: 'hub.appointments.read',
+    periodFilter: 'standard',
+    scope: 'self',
+  },
+  {
     id: 'no-shows',
     category: 'operacional',
     title: 'No-shows / faltas',
@@ -224,7 +260,8 @@ export const HUB_REPORTS: HubReportDefinition[] = [
     id: 'vaccines-due',
     category: 'operacional',
     title: 'Vacinas a vencer',
-    description: 'Próximas doses vencidas ou a vencer por pet.',
+    description:
+      'Próximas doses vencidas ou a vencer por pet — útil no consultório para follow-up da clínica.',
     permission: 'hub.clinic.read',
     periodFilter: 'lookahead',
   },
@@ -232,7 +269,8 @@ export const HUB_REPORTS: HubReportDefinition[] = [
     id: 'exams-requested',
     category: 'operacional',
     title: 'Exames solicitados',
-    description: 'Pedidos de exame da clínica no período, para acompanhar e exportar.',
+    description:
+      'Pedidos de exame da clínica no período — acompanhe pendências e exporte para o laboratório.',
     permission: 'hub.clinic.read',
     periodFilter: 'standard',
   },
@@ -270,8 +308,44 @@ export function parseHubReportId(raw: string | null): HubReportId | null {
   return raw as HubReportId;
 }
 
-export function reportAllowed(hasPermission: (p: string) => boolean, permission: string | string[]): boolean {
-  if (hasPermission('hub.reports.read')) return true;
+function permissionMatches(
+  hasPermission: (p: string) => boolean,
+  permission: string | string[],
+): boolean {
   if (Array.isArray(permission)) return permission.some((p) => hasPermission(p));
   return hasPermission(permission);
+}
+
+function needsFinancialRead(permission: string | string[]): boolean {
+  if (Array.isArray(permission)) return permission.includes('hub.financial.read');
+  return permission === 'hub.financial.read';
+}
+
+/**
+ * Visibilidade no catálogo.
+ * - Relatórios `scope: 'self'`: só a permissão listada (não via hub.reports.read).
+ * - Relatórios financeiros: exigem hub.financial.read (hub.reports.read sozinho não basta).
+ * - Demais: hub.reports.read libera o card, ou a permissão do domínio.
+ */
+export function reportAllowed(
+  hasPermission: (p: string) => boolean,
+  permissionOrReport: string | string[] | Pick<HubReportDefinition, 'permission' | 'scope'>,
+): boolean {
+  const isReportDef =
+    typeof permissionOrReport === 'object' &&
+    permissionOrReport !== null &&
+    !Array.isArray(permissionOrReport) &&
+    'permission' in permissionOrReport;
+
+  const permission = isReportDef ? permissionOrReport.permission : permissionOrReport;
+  const scope = isReportDef ? permissionOrReport.scope : undefined;
+
+  if (scope === 'self') return permissionMatches(hasPermission, permission);
+
+  if (needsFinancialRead(permission)) {
+    return hasPermission('hub.financial.read');
+  }
+
+  if (hasPermission('hub.reports.read')) return true;
+  return permissionMatches(hasPermission, permission);
 }

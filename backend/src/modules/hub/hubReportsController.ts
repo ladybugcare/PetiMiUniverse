@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import { resolveStaffIdForUser } from './hubStaffResolve';
 
 const uuidStr = z.string().uuid();
 
@@ -976,6 +977,301 @@ export const getHubVaccinesDueReport = async (req: Request, res: Response) => {
     });
   } catch (e: unknown) {
     console.error('getHubVaccinesDueReport', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+/**
+ * Produtividade do profissional logado (agendamentos + encounters).
+ * Sempre filtra pelo staff do usuário — ignora staff_id da query.
+ */
+export const getHubMyAttendancesReport = async (req: Request, res: Response) => {
+  try {
+    const clinic = uuidStr.safeParse(req.query.clinic_id);
+    if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
+    const clinic_id = clinic.data;
+    const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
+    const unitParsed = unitRaw ? uuidStr.safeParse(unitRaw) : null;
+    if (unitRaw && !unitParsed?.success) return res.status(400).json({ error: 'unit_id inválido' });
+    const unit_id = unitParsed?.success ? unitParsed.data : null;
+
+    const period = parseReportPeriod(req.query);
+    if (!period.ok) return res.status(400).json({ error: period.error });
+    const { fromYmd, toYmd } = period;
+    const fromIso = `${fromYmd}T00:00:00.000Z`;
+    const toIso = `${toYmd}T23:59:59.999Z`;
+
+    const myStaffId = await resolveStaffIdForUser(clinic_id, req.user?.id);
+    if (!myStaffId) {
+      return res.status(403).json({
+        error: 'Seu usuário não está vinculado a um profissional da equipe nesta clínica.',
+      });
+    }
+
+    let apptQ = supabaseAdmin
+      .from('hub_appointments')
+      .select(
+        'id, status, starts_at, ends_at, title, hub_service_type_id, pet_id, guardian_id, unit_id'
+      )
+      .eq('clinic_id', clinic_id)
+      .eq('hub_staff_member_id', myStaffId)
+      .gte('starts_at', fromIso)
+      .lte('starts_at', toIso)
+      .not('status', 'eq', 'cancelled')
+      .order('starts_at', { ascending: false })
+      .limit(500);
+    if (unit_id) apptQ = apptQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+    const { data: appts, error: aErr } = await apptQ;
+    if (aErr) return res.status(500).json({ error: aErr.message });
+
+    let encQ = supabaseAdmin
+      .from('hub_encounters')
+      .select(
+        'id, status, started_at, completed_at, hub_appointment_id, pet_id, guardian_id, unit_id, created_at'
+      )
+      .eq('clinic_id', clinic_id)
+      .eq('hub_staff_member_id', myStaffId)
+      .is('deleted_at', null)
+      .gte('created_at', fromIso)
+      .lte('created_at', toIso)
+      .order('created_at', { ascending: false })
+      .limit(500);
+    if (unit_id) encQ = encQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+    const { data: encs, error: eErr } = await encQ;
+    if (eErr) return res.status(500).json({ error: eErr.message });
+
+    const serviceIds = [
+      ...new Set(
+        (appts ?? [])
+          .map((a) => a.hub_service_type_id as string | null)
+          .filter(Boolean) as string[]
+      ),
+    ];
+    const serviceNames = new Map<string, string>();
+    if (serviceIds.length > 0) {
+      const { data: svcs } = await supabaseAdmin
+        .from('hub_service_types')
+        .select('id, name')
+        .in('id', serviceIds);
+      for (const s of svcs ?? []) serviceNames.set(s.id as string, String(s.name ?? s.id));
+    }
+
+    const byStatus = new Map<string, number>();
+    const byService = new Map<string, { service_id: string; name: string; count: number }>();
+    for (const a of appts ?? []) {
+      const st = String(a.status ?? 'unknown');
+      byStatus.set(st, (byStatus.get(st) ?? 0) + 1);
+      const sid = (a.hub_service_type_id as string | null) ?? null;
+      if (sid) {
+        const cur = byService.get(sid) ?? {
+          service_id: sid,
+          name: serviceNames.get(sid) ?? 'Serviço',
+          count: 0,
+        };
+        cur.count += 1;
+        byService.set(sid, cur);
+      }
+    }
+
+    const encByStatus = new Map<string, number>();
+    for (const e of encs ?? []) {
+      const st = String(e.status ?? 'unknown');
+      encByStatus.set(st, (encByStatus.get(st) ?? 0) + 1);
+    }
+
+    const petIds = [
+      ...new Set(
+        [
+          ...(appts ?? []).map((a) => a.pet_id as string | null),
+          ...(encs ?? []).map((e) => e.pet_id as string | null),
+        ].filter(Boolean) as string[]
+      ),
+    ];
+    const guIds = [
+      ...new Set(
+        [
+          ...(appts ?? []).map((a) => a.guardian_id as string | null),
+          ...(encs ?? []).map((e) => e.guardian_id as string | null),
+        ].filter(Boolean) as string[]
+      ),
+    ];
+    const petMap = new Map<string, string>();
+    const guardianMap = new Map<string, string>();
+    if (petIds.length > 0) {
+      const { data: pets } = await supabaseAdmin.from('hub_pets').select('id, name').in('id', petIds);
+      for (const p of pets ?? []) petMap.set(p.id as string, String(p.name ?? ''));
+    }
+    if (guIds.length > 0) {
+      const { data: gus } = await supabaseAdmin
+        .from('hub_guardians')
+        .select('id, full_name')
+        .in('id', guIds);
+      for (const g of gus ?? []) guardianMap.set(g.id as string, String(g.full_name ?? ''));
+    }
+
+    const items = [
+      ...(appts ?? []).map((a) => ({
+        id: a.id as string,
+        kind: 'appointment' as const,
+        when_at: a.starts_at as string,
+        status: String(a.status ?? ''),
+        title: (a.title as string | null)?.trim() || 'Agendamento',
+        service_name: a.hub_service_type_id
+          ? serviceNames.get(a.hub_service_type_id as string) ?? null
+          : null,
+        pet_name: a.pet_id ? petMap.get(a.pet_id as string) ?? null : null,
+        guardian_name: a.guardian_id ? guardianMap.get(a.guardian_id as string) ?? null : null,
+      })),
+      ...(encs ?? []).map((e) => ({
+        id: e.id as string,
+        kind: 'encounter' as const,
+        when_at: (e.started_at as string | null) || (e.completed_at as string | null) || (e.created_at as string),
+        status: String(e.status ?? ''),
+        title: 'Atendimento clínico',
+        service_name: null as string | null,
+        pet_name: e.pet_id ? petMap.get(e.pet_id as string) ?? null : null,
+        guardian_name: e.guardian_id ? guardianMap.get(e.guardian_id as string) ?? null : null,
+      })),
+    ]
+      .sort((a, b) => b.when_at.localeCompare(a.when_at))
+      .slice(0, 400);
+
+    return res.json({
+      period: { from: fromYmd, to: toYmd },
+      unit_id,
+      staff_id: myStaffId,
+      summary: {
+        appointments_count: (appts ?? []).length,
+        encounters_count: (encs ?? []).length,
+        total_count: (appts ?? []).length + (encs ?? []).length,
+      },
+      by_appointment_status: [...byStatus.entries()]
+        .map(([status, count]) => ({ status, count }))
+        .sort((a, b) => b.count - a.count),
+      by_encounter_status: [...encByStatus.entries()]
+        .map(([status, count]) => ({ status, count }))
+        .sort((a, b) => b.count - a.count),
+      by_service: [...byService.values()].sort((a, b) => b.count - a.count),
+      items,
+    });
+  } catch (e: unknown) {
+    console.error('getHubMyAttendancesReport', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+/**
+ * No-shows dos agendamentos do profissional logado (sem hotel/boarding).
+ * Sempre filtra pelo staff do usuário — ignora staff_id da query.
+ */
+export const getHubMyNoShowsReport = async (req: Request, res: Response) => {
+  try {
+    const clinic = uuidStr.safeParse(req.query.clinic_id);
+    if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
+    const clinic_id = clinic.data;
+    const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
+    const unitParsed = unitRaw ? uuidStr.safeParse(unitRaw) : null;
+    if (unitRaw && !unitParsed?.success) return res.status(400).json({ error: 'unit_id inválido' });
+    const unit_id = unitParsed?.success ? unitParsed.data : null;
+
+    const period = parseReportPeriod(req.query);
+    if (!period.ok) return res.status(400).json({ error: period.error });
+    const { fromYmd, toYmd } = period;
+    const fromIso = `${fromYmd}T00:00:00.000Z`;
+    const toIso = `${toYmd}T23:59:59.999Z`;
+    const nowIso = new Date().toISOString();
+
+    const myStaffId = await resolveStaffIdForUser(clinic_id, req.user?.id);
+    if (!myStaffId) {
+      return res.status(403).json({
+        error: 'Seu usuário não está vinculado a um profissional da equipe nesta clínica.',
+      });
+    }
+
+    let apptQ = supabaseAdmin
+      .from('hub_appointments')
+      .select('id, status, starts_at, ends_at, guardian_id, pet_id, unit_id, title, hub_staff_member_id')
+      .eq('clinic_id', clinic_id)
+      .eq('hub_staff_member_id', myStaffId)
+      .in('status', ['confirmed', 'pending_confirm'])
+      .gte('starts_at', fromIso)
+      .lte('starts_at', toIso)
+      .lt('ends_at', nowIso)
+      .order('starts_at', { ascending: false })
+      .limit(500);
+    if (unit_id) apptQ = apptQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+    const { data: apptRows, error: aErr } = await apptQ;
+    if (aErr) return res.status(500).json({ error: aErr.message });
+
+    let doneQ = supabaseAdmin
+      .from('hub_appointments')
+      .select('id', { count: 'exact', head: true })
+      .eq('clinic_id', clinic_id)
+      .eq('hub_staff_member_id', myStaffId)
+      .in('status', ['done', 'paid', 'in_progress', 'checked_in'])
+      .gte('starts_at', fromIso)
+      .lte('starts_at', toIso);
+    if (unit_id) doneQ = doneQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+    const { count: attendedCount } = await doneQ;
+
+    const guIds = [
+      ...new Set((apptRows ?? []).map((r) => r.guardian_id as string | null).filter(Boolean) as string[]),
+    ];
+    const petIds = [
+      ...new Set((apptRows ?? []).map((r) => r.pet_id as string | null).filter(Boolean) as string[]),
+    ];
+    const guardianMap = new Map<string, { full_name: string; phone: string | null }>();
+    const petMap = new Map<string, string>();
+    if (guIds.length > 0) {
+      const { data: gus } = await supabaseAdmin
+        .from('hub_guardians')
+        .select('id, full_name, phone')
+        .in('id', guIds);
+      for (const g of gus ?? []) {
+        guardianMap.set(g.id as string, {
+          full_name: String(g.full_name ?? ''),
+          phone: (g.phone as string | null) ?? null,
+        });
+      }
+    }
+    if (petIds.length > 0) {
+      const { data: pets } = await supabaseAdmin.from('hub_pets').select('id, name').in('id', petIds);
+      for (const p of pets ?? []) petMap.set(p.id as string, String(p.name ?? ''));
+    }
+
+    const items = (apptRows ?? []).map((r) => {
+      const g = r.guardian_id ? guardianMap.get(r.guardian_id as string) : null;
+      return {
+        id: r.id as string,
+        source: 'appointment' as const,
+        kind_label: (r.title as string | null)?.trim() || 'Agendamento',
+        when_at: r.starts_at as string,
+        guardian_name: g?.full_name ?? null,
+        phone: g?.phone ?? null,
+        pet_name: r.pet_id ? petMap.get(r.pet_id as string) ?? null : null,
+        status: String(r.status),
+      };
+    });
+
+    const totalNoShows = items.length;
+    const attended = attendedCount ?? 0;
+    const denom = attended + totalNoShows;
+    const rate_pct = denom > 0 ? Math.round((totalNoShows / denom) * 1000) / 10 : 0;
+
+    return res.json({
+      period: { from: fromYmd, to: toYmd },
+      unit_id,
+      staff_id: myStaffId,
+      summary: {
+        total_no_shows: totalNoShows,
+        appointment_implied_no_shows: totalNoShows,
+        attended_count: attended,
+        rate_pct,
+      },
+      items: items.slice(0, 400),
+    });
+  } catch (e: unknown) {
+    console.error('getHubMyNoShowsReport', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
   }
 };

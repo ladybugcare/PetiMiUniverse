@@ -26,6 +26,7 @@ describe('permissions', () => {
       expect(hasPermission('CVET_INTERNAL', 'hub.financial.read')).toBe(false);
       expect(hasPermission('CVET_INTERNAL', 'hub.receivables.create')).toBe(false);
       expect(hasPermission('CVET_INTERNAL', 'hub.cash.session')).toBe(false);
+      expect(hasPermission('CVET_INTERNAL', 'hub.commissions.read_own')).toBe(true);
     });
 
     it('CGROOMER não tem hub.financial.write', () => {
@@ -65,6 +66,11 @@ describe('permissions', () => {
     it('CSTAFF sozinho não tem módulos operacionais', () => {
       expect(hasPermission('CSTAFF', 'pickup.routes.read')).toBe(false);
       expect(hasPermission('CSTAFF', 'unit.view')).toBe(true);
+    });
+
+    it('área clinica concede hub.commissions.read_own para CSTAFF', () => {
+      expect(hasEffectivePermission('CSTAFF', 'hub.commissions.read_own', ['clinica'])).toBe(true);
+      expect(hasEffectivePermission('CSTAFF', 'hub.financial.read', ['clinica'])).toBe(false);
     });
   });
 

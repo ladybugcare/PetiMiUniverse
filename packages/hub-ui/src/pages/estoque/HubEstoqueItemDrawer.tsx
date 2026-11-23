@@ -82,7 +82,6 @@ export type InventoryFormState = {
   supplier_discount_pct: string;
   max_sale_discount_pct: string;
   allow_price_override_on_sale: boolean;
-  generates_staff_commission: boolean;
   min_stock_qty: string;
   expiry_alert_policy: HubExpiryAlertPolicy;
   content_qty: string;
@@ -590,14 +589,6 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
                 }
               >
                 Permite alterar o preço durante a venda
-              </HubCheckbox>
-              <HubCheckbox
-                checked={form.generates_staff_commission}
-                onChange={(generates_staff_commission) =>
-                  setForm((f) => ({ ...f, generates_staff_commission }))
-                }
-              >
-                Gera comissão para funcionários
               </HubCheckbox>
             </div>
           </section>

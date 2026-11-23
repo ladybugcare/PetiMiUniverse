@@ -10,6 +10,9 @@ import { HubRelatoriosSalesAdjustments } from './HubRelatoriosSalesAdjustments';
 import { HubRelatoriosProductSales } from './HubRelatoriosProductSales';
 import { HubRelatoriosMovementBySector } from './HubRelatoriosMovementBySector';
 import { HubRelatoriosCommissions } from './HubRelatoriosCommissions';
+import { HubRelatoriosMyCommissions } from './HubRelatoriosMyCommissions';
+import { HubRelatoriosMyAttendances } from './HubRelatoriosMyAttendances';
+import { HubRelatoriosMyNoShows } from './HubRelatoriosMyNoShows';
 import { HubRelatoriosUnbilled } from './HubRelatoriosUnbilled';
 import { HubRelatoriosCashFlow } from './HubRelatoriosCashFlow';
 import { HubRelatoriosTopClients } from './HubRelatoriosTopClients';
@@ -70,6 +73,7 @@ const HubRelatoriosPage: React.FC = () => {
   const canBoarding = hasPermission('boarding.reservations.read');
   const canGrooming = hasPermission('grooming.queue.read');
   const canClinic = hasPermission('hub.clinic.read');
+  const canMyCommissions = hasPermission('hub.commissions.read_own');
   const canAccess =
     canReports ||
     canFinancial ||
@@ -78,12 +82,13 @@ const HubRelatoriosPage: React.FC = () => {
     canAppointments ||
     canBoarding ||
     canGrooming ||
-    canClinic;
+    canClinic ||
+    canMyCommissions;
 
   const activeReport = useMemo(() => {
     if (!reportId) return null;
     const def = HUB_REPORTS.find((r) => r.id === reportId);
-    if (!def || !reportAllowed(hasPermission, def.permission)) return null;
+    if (!def || !reportAllowed(hasPermission, def)) return null;
     return def;
   }, [reportId, hasPermission]);
 
@@ -248,8 +253,20 @@ const HubRelatoriosPage: React.FC = () => {
               <HubRelatoriosMovementBySector clinicId={clinicId} unitId={unitId} period={period} />
             ) : null}
 
+            {!periodInvalid && activeReport.id === 'my-commissions' && unitId ? (
+              <HubRelatoriosMyCommissions clinicId={clinicId} unitId={unitId} period={period} />
+            ) : null}
+
             {!periodInvalid && activeReport.id === 'commissions' && unitId ? (
               <HubRelatoriosCommissions clinicId={clinicId} unitId={unitId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'my-attendances' ? (
+              <HubRelatoriosMyAttendances clinicId={clinicId} unitId={unitId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'my-no-shows' ? (
+              <HubRelatoriosMyNoShows clinicId={clinicId} unitId={unitId} period={period} />
             ) : null}
 
             {!periodInvalid && activeReport.id === 'unbilled' && unitId ? (

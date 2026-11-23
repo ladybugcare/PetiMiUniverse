@@ -10,6 +10,12 @@ function round2(n: number): number {
 
 const basisSchema = z.enum(['percent_of_sale', 'fixed_per_sale']);
 
+const RULE_SELECT = `
+  *,
+  hub_service_types ( id, name, code, service_group, active ),
+  hub_inventory_items ( id, name, store_sku, active )
+`;
+
 const listRulesQuerySchema = z
   .object({
     clinic_id: uuidStr,
@@ -26,12 +32,7 @@ export const listHubCommissionRules = async (req: Request, res: Response) => {
     const { clinic_id, include_inactive } = parsed.data;
     let q = supabaseAdmin
       .from('hub_commission_rules')
-      .select(
-        `
-        *,
-        hub_service_types ( id, name, code, service_group, active )
-      `
-      )
+      .select(RULE_SELECT)
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
       .order('created_at', { ascending: false });
@@ -57,13 +58,24 @@ export const listHubCommissionRules = async (req: Request, res: Response) => {
 const upsertRuleBodySchema = z
   .object({
     clinic_id: uuidStr,
-    hub_service_type_id: uuidStr,
+    hub_service_type_id: uuidStr.optional().nullable(),
+    hub_inventory_item_id: uuidStr.optional().nullable(),
     basis: basisSchema,
     rate: z.number().nonnegative(),
     notes: z.string().trim().max(2000).optional().nullable(),
     active: z.boolean().optional(),
   })
-  .strict();
+  .strict()
+  .superRefine((v, ctx) => {
+    const hasService = Boolean(v.hub_service_type_id);
+    const hasProduct = Boolean(v.hub_inventory_item_id);
+    if (hasService === hasProduct) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Informe exatamente um alvo: hub_service_type_id ou hub_inventory_item_id',
+      });
+    }
+  });
 
 export const postHubCommissionRule = async (req: Request, res: Response) => {
   try {
@@ -71,31 +83,49 @@ export const postHubCommissionRule = async (req: Request, res: Response) => {
     if (!parsed.success) {
       return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
     }
-    const { clinic_id, hub_service_type_id, basis, rate, notes, active } = parsed.data;
+    const { clinic_id, basis, rate, notes, active } = parsed.data;
+    const hub_service_type_id = parsed.data.hub_service_type_id ?? null;
+    const hub_inventory_item_id = parsed.data.hub_inventory_item_id ?? null;
     if (basis === 'percent_of_sale' && rate > 100) {
       return res.status(400).json({ error: 'Percentagem não pode exceder 100' });
     }
 
-    const { data: st, error: stErr } = await supabaseAdmin
-      .from('hub_service_types')
-      .select('id, clinic_id')
-      .eq('id', hub_service_type_id)
-      .maybeSingle();
-    if (stErr || !st || st.clinic_id !== clinic_id) {
-      return res.status(400).json({ error: 'Tipo de serviço inválido para esta clínica' });
+    if (hub_service_type_id) {
+      const { data: st, error: stErr } = await supabaseAdmin
+        .from('hub_service_types')
+        .select('id, clinic_id')
+        .eq('id', hub_service_type_id)
+        .maybeSingle();
+      if (stErr || !st || st.clinic_id !== clinic_id) {
+        return res.status(400).json({ error: 'Tipo de serviço inválido para esta clínica' });
+      }
+    } else if (hub_inventory_item_id) {
+      const { data: item, error: itemErr } = await supabaseAdmin
+        .from('hub_inventory_items')
+        .select('id, clinic_id, deleted_at')
+        .eq('id', hub_inventory_item_id)
+        .maybeSingle();
+      if (itemErr || !item || item.clinic_id !== clinic_id || item.deleted_at) {
+        return res.status(400).json({ error: 'Produto inválido para esta clínica' });
+      }
     }
 
-    const { data: existing } = await supabaseAdmin
+    let existingQuery = supabaseAdmin
       .from('hub_commission_rules')
       .select('id')
       .eq('clinic_id', clinic_id)
-      .eq('hub_service_type_id', hub_service_type_id)
-      .is('deleted_at', null)
-      .maybeSingle();
+      .is('deleted_at', null);
+    if (hub_service_type_id) {
+      existingQuery = existingQuery.eq('hub_service_type_id', hub_service_type_id);
+    } else {
+      existingQuery = existingQuery.eq('hub_inventory_item_id', hub_inventory_item_id as string);
+    }
+    const { data: existing } = await existingQuery.maybeSingle();
 
     const row = {
       clinic_id,
       hub_service_type_id,
+      hub_inventory_item_id,
       basis,
       rate: round2(rate),
       notes: notes ?? null,
@@ -107,7 +137,7 @@ export const postHubCommissionRule = async (req: Request, res: Response) => {
         .from('hub_commission_rules')
         .update(row)
         .eq('id', existing.id as string)
-        .select(`*, hub_service_types ( id, name, code, service_group, active )`)
+        .select(RULE_SELECT)
         .single();
       if (error) return res.status(500).json({ error: error.message });
       return res.json({ rule: data });
@@ -116,7 +146,7 @@ export const postHubCommissionRule = async (req: Request, res: Response) => {
     const { data, error } = await supabaseAdmin
       .from('hub_commission_rules')
       .insert(row)
-      .select(`*, hub_service_types ( id, name, code, service_group, active )`)
+      .select(RULE_SELECT)
       .single();
     if (error) {
       if (String(error.message || '').includes('hub_commission_rules')) {
@@ -175,7 +205,7 @@ export const patchHubCommissionRule = async (req: Request, res: Response) => {
       .from('hub_commission_rules')
       .update(patch)
       .eq('id', idParsed.data)
-      .select(`*, hub_service_types ( id, name, code, service_group, active )`)
+      .select(RULE_SELECT)
       .single();
     if (error) return res.status(500).json({ error: error.message });
     return res.json({ rule: data });
@@ -227,6 +257,20 @@ const previewQuerySchema = z
   })
   .strict();
 
+function applyCommissionRule(
+  lineTotal: number,
+  rule: { basis: string; rate: number } | undefined
+): { commission: number; basis: string | null; rate: number | null } {
+  if (!rule) return { commission: 0, basis: null, rate: null };
+  const basis = rule.basis;
+  const rate = rule.rate;
+  const commission =
+    rule.basis === 'percent_of_sale'
+      ? round2(lineTotal * (rule.rate / 100))
+      : round2(Math.min(rule.rate, lineTotal));
+  return { commission, basis, rate };
+}
+
 export const getHubCommissionPreview = async (req: Request, res: Response) => {
   try {
     const parsed = previewQuerySchema.safeParse(req.query);
@@ -244,14 +288,14 @@ export const getHubCommissionPreview = async (req: Request, res: Response) => {
 
     const { data: lines, error: lnErr } = await supabaseAdmin
       .from('hub_receivable_lines')
-      .select('id, hub_service_type_id, description, quantity, line_total')
+      .select('id, hub_service_type_id, hub_inventory_item_id, description, quantity, line_total')
       .eq('receivable_id', receivable_id)
       .order('sort_order', { ascending: true });
     if (lnErr) return res.status(500).json({ error: lnErr.message });
 
     const { data: rules, error: ruErr } = await supabaseAdmin
       .from('hub_commission_rules')
-      .select('hub_service_type_id, basis, rate, active')
+      .select('hub_service_type_id, hub_inventory_item_id, basis, rate, active')
       .eq('clinic_id', clinic_id)
       .eq('active', true)
       .is('deleted_at', null);
@@ -265,9 +309,13 @@ export const getHubCommissionPreview = async (req: Request, res: Response) => {
     }
 
     const ruleByService = new Map<string, { basis: string; rate: number }>();
+    const ruleByProduct = new Map<string, { basis: string; rate: number }>();
     for (const r of rules ?? []) {
+      const entry = { basis: String(r.basis), rate: Number(r.rate ?? 0) };
       const sid = r.hub_service_type_id as string | null;
-      if (sid) ruleByService.set(sid, { basis: String(r.basis), rate: Number(r.rate ?? 0) });
+      const pid = r.hub_inventory_item_id as string | null;
+      if (sid) ruleByService.set(sid, entry);
+      if (pid) ruleByProduct.set(pid, entry);
     }
 
     type LinePreview = {
@@ -275,6 +323,7 @@ export const getHubCommissionPreview = async (req: Request, res: Response) => {
       description: string;
       line_total: number;
       hub_service_type_id: string | null;
+      hub_inventory_item_id: string | null;
       basis: string | null;
       rate: number | null;
       commission_amount: number;
@@ -285,25 +334,16 @@ export const getHubCommissionPreview = async (req: Request, res: Response) => {
     for (const ln of lines ?? []) {
       const lineTotal = round2(Number(ln.line_total ?? 0));
       const stId = (ln.hub_service_type_id as string) ?? null;
-      const rule = stId ? ruleByService.get(stId) : undefined;
-      let commission = 0;
-      let basis: string | null = null;
-      let rate: number | null = null;
-      if (rule && stId) {
-        basis = rule.basis;
-        rate = rule.rate;
-        if (rule.basis === 'percent_of_sale') {
-          commission = round2(lineTotal * (rule.rate / 100));
-        } else {
-          commission = round2(Math.min(rule.rate, lineTotal));
-        }
-      }
+      const itemId = (ln.hub_inventory_item_id as string) ?? null;
+      const rule = stId ? ruleByService.get(stId) : itemId ? ruleByProduct.get(itemId) : undefined;
+      const { commission, basis, rate } = applyCommissionRule(lineTotal, rule);
       total = round2(total + commission);
       out.push({
         line_id: ln.id as string,
         description: String(ln.description ?? ''),
         line_total: lineTotal,
         hub_service_type_id: stId,
+        hub_inventory_item_id: itemId,
         basis,
         rate,
         commission_amount: commission,

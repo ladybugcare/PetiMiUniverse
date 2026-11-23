@@ -126,7 +126,7 @@ import {
   getHubInventoryValuationReport,
   listHubInventoryItemChanges,
 } from '../hubInventoryController';
-import { getHubAbsentClientsReport, getHubNoShowsReport, getHubBoardingOccupancySeriesReport, getHubClientCohortsReport, getHubBirthdaysReport, getHubGroomingProductivityReport, getHubVaccinesDueReport } from '../hubReportsController';
+import { getHubAbsentClientsReport, getHubNoShowsReport, getHubBoardingOccupancySeriesReport, getHubClientCohortsReport, getHubBirthdaysReport, getHubGroomingProductivityReport, getHubVaccinesDueReport, getHubMyAttendancesReport, getHubMyNoShowsReport } from '../hubReportsController';
 import { postHubReportExportPdf } from '../hubReportExportPdf';
 import {
   listHubReportEmailSchedules,
@@ -398,6 +398,7 @@ import {
   getHubFinanceAgingReport,
   getHubFinanceSalesAdjustmentsReport,
   getHubFinanceCommissionsReport,
+  getHubFinanceMyCommissionsReport,
   getHubFinanceTopClientsReport,
   getHubFinancePackagesReport,
   listHubFinanceExpenses,
@@ -977,6 +978,18 @@ router.get(
   authenticateUser,
   requirePermission('hub.appointments.read'),
   getHubNoShowsReport
+);
+router.get(
+  '/reports/my-attendances',
+  authenticateUser,
+  requirePermission(['hub.clinic.read', 'hub.appointments.read']),
+  getHubMyAttendancesReport
+);
+router.get(
+  '/reports/my-no-shows',
+  authenticateUser,
+  requirePermission('hub.appointments.read'),
+  getHubMyNoShowsReport
 );
 router.get(
   '/reports/boarding-occupancy',
@@ -2125,6 +2138,12 @@ router.get(
   authenticateUser,
   requirePermission('hub.financial.read'),
   getHubFinanceCommissionsReport
+);
+router.get(
+  '/finance/reports/my-commissions',
+  authenticateUser,
+  requirePermission('hub.commissions.read_own'),
+  getHubFinanceMyCommissionsReport
 );
 router.get(
   '/finance/reports/top-clients',

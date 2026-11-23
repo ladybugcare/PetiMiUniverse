@@ -136,6 +136,7 @@ const navSections: NavSection[] = [
           'boarding.reservations.read',
           'grooming.queue.read',
           'hub.clinic.read',
+          'hub.commissions.read_own',
         ],
       },
     ],

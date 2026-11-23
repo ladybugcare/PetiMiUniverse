@@ -61,6 +61,17 @@ export const HubRelatoriosCommissions: React.FC<Props> = ({ clinicId, unitId, pe
     [data],
   );
 
+  const productChartData = useMemo(
+    () =>
+      (data?.by_product ?? []).slice(0, 8).map((p) => ({
+        name: p.name.length > 18 ? `${p.name.slice(0, 16)}…` : p.name,
+        fullName: p.name,
+        comissao: p.commission_total,
+        linhas: p.lines_count,
+      })),
+    [data],
+  );
+
   const staffRows = useMemo(() => {
     const list = data?.by_staff ?? [];
     const maxTotal = Math.max(0, ...list.map((s) => s.commission_total));
@@ -79,15 +90,17 @@ export const HubRelatoriosCommissions: React.FC<Props> = ({ clinicId, unitId, pe
 
   const items = data?.items ?? [];
   const byService = data?.by_service ?? [];
+  const byProduct = data?.by_product ?? [];
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
     title: 'Comissões',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: 'comissoes',
-    headers: ['Serviço', 'Profissional', 'Descrição', 'Venda', 'Comissão', 'Base', 'Taxa'],
+    headers: ['Serviço', 'Produto', 'Profissional', 'Descrição', 'Venda', 'Comissão', 'Base', 'Taxa'],
     rows: items.map((i) => [
       i.service_name,
+      i.product_name ?? null,
       i.staff_name,
       i.description,
       i.line_total,
@@ -183,7 +196,7 @@ export const HubRelatoriosCommissions: React.FC<Props> = ({ clinicId, unitId, pe
           </div>
           {chartData.length === 0 ? (
             <HubRelatoriosEmpty
-              title="Nenhuma comissão"
+              title="Nenhuma comissão de serviço"
               description="Verifique as regras em Financeiro → Comissões e se há vendas no período."
             />
           ) : (
@@ -225,6 +238,61 @@ export const HubRelatoriosCommissions: React.FC<Props> = ({ clinicId, unitId, pe
           )}
         </section>
 
+        <section className="hub-relatorios__panel" aria-labelledby="relatorios-comm-products-chart-title">
+          <div className="hub-relatorios__panel-head">
+            <div>
+              <h2 id="relatorios-comm-products-chart-title" className="hub-relatorios__section-title">
+                Top produtos
+              </h2>
+              <p className="hub-relatorios__panel-sub">Maiores comissões por produto no período</p>
+            </div>
+          </div>
+          {productChartData.length === 0 ? (
+            <HubRelatoriosEmpty
+              title="Nenhuma comissão de produto"
+              description="Cadastre regras de produto em Financeiro → Comissões e venda no período."
+            />
+          ) : (
+            <div className="hub-relatorios__chart hub-relatorios__chart--tall">
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart
+                  data={productChartData}
+                  layout="vertical"
+                  margin={{ left: 4, right: 16, top: 4, bottom: 4 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#ede4df" horizontal={false} />
+                  <XAxis
+                    type="number"
+                    tick={{ fontSize: 11, fill: '#8a6f64' }}
+                    tickFormatter={(v: number) =>
+                      v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : String(v)
+                    }
+                  />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={108}
+                    tick={{ fontSize: 11, fill: '#6b554f' }}
+                  />
+                  <Tooltip
+                    formatter={(v: number, _name, item) => [
+                      formatBrl(v),
+                      `${(item?.payload as { linhas?: number } | undefined)?.linhas ?? 0} linha(s)`,
+                    ]}
+                    labelFormatter={(_label, payload) =>
+                      (payload?.[0]?.payload as { fullName?: string } | undefined)?.fullName ??
+                      String(_label)
+                    }
+                  />
+                  <Bar dataKey="comissao" fill="#2f8af0" radius={[0, 6, 6, 0]} maxBarSize={22} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </section>
+      </div>
+
+      <div className="hub-relatorios__charts-row">
         <section className="hub-relatorios__panel" aria-labelledby="relatorios-comm-staff-title">
           <div className="hub-relatorios__panel-head">
             <div>
@@ -287,7 +355,7 @@ export const HubRelatoriosCommissions: React.FC<Props> = ({ clinicId, unitId, pe
         </div>
         {byService.length === 0 ? (
           <HubRelatoriosEmpty
-            title="Nenhuma comissão"
+            title="Nenhuma comissão de serviço"
             description="Verifique as regras em Financeiro → Comissões e se há vendas no período."
           />
         ) : (
@@ -310,6 +378,48 @@ export const HubRelatoriosCommissions: React.FC<Props> = ({ clinicId, unitId, pe
                     <td className="hub-finance-page__td-num">{s.lines_count}</td>
                     <td className="hub-finance-page__td-num">{formatBrl(s.sales_total)}</td>
                     <td className="hub-finance-page__td-num">{formatBrl(s.commission_total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+
+      <section className="hub-relatorios__panel" aria-labelledby="relatorios-comm-by-product-title">
+        <div className="hub-relatorios__panel-head">
+          <div>
+            <h2 id="relatorios-comm-by-product-title" className="hub-relatorios__section-title">
+              Por produto
+            </h2>
+            <p className="hub-relatorios__panel-sub">Resumo de vendas e comissão por produto do estoque</p>
+          </div>
+        </div>
+        {byProduct.length === 0 ? (
+          <HubRelatoriosEmpty
+            title="Nenhuma comissão de produto"
+            description="Cadastre regras de produto em Financeiro → Comissões e venda no período."
+          />
+        ) : (
+          <div className="hub-finance-page__table-wrap hub-finance-page__table-wrap--scroll">
+            <table className="hub-clientes__table hub-finance-page__panel-table hub-relatorios__table">
+              <thead>
+                <tr>
+                  <th>Produto</th>
+                  <th className="hub-finance-page__th-num">Linhas</th>
+                  <th className="hub-finance-page__th-num">Vendas</th>
+                  <th className="hub-finance-page__th-num">Comissão</th>
+                </tr>
+              </thead>
+              <tbody>
+                {byProduct.map((p) => (
+                  <tr key={p.product_id}>
+                    <td>
+                      <div className="hub-relatorios__cell-primary">{p.name}</div>
+                    </td>
+                    <td className="hub-finance-page__td-num">{p.lines_count}</td>
+                    <td className="hub-finance-page__td-num">{formatBrl(p.sales_total)}</td>
+                    <td className="hub-finance-page__td-num">{formatBrl(p.commission_total)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -346,7 +456,7 @@ export const HubRelatoriosCommissions: React.FC<Props> = ({ clinicId, unitId, pe
               <thead>
                 <tr>
                   <th>Descrição</th>
-                  <th>Serviço</th>
+                  <th>Alvo</th>
                   <th>Profissional</th>
                   <th className="hub-finance-page__th-num">Venda</th>
                   <th className="hub-finance-page__th-num">Comissão</th>
@@ -375,7 +485,7 @@ export const HubRelatoriosCommissions: React.FC<Props> = ({ clinicId, unitId, pe
                         </div>
                       ) : null}
                     </td>
-                    <td>{row.service_name ?? '—'}</td>
+                    <td>{row.service_name ?? row.product_name ?? '—'}</td>
                     <td>{row.staff_name ?? '—'}</td>
                     <td className="hub-finance-page__td-num">{formatBrl(row.line_total)}</td>
                     <td className="hub-finance-page__td-num">{formatBrl(row.commission_amount)}</td>

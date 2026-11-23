@@ -427,7 +427,8 @@ export type HubCommissionBasis = 'percent_of_sale' | 'fixed_per_sale';
 export type HubCommissionRule = {
   id: string;
   clinic_id: string;
-  hub_service_type_id: string;
+  hub_service_type_id: string | null;
+  hub_inventory_item_id?: string | null;
   basis: HubCommissionBasis;
   rate: number;
   active: boolean;
@@ -438,6 +439,10 @@ export type HubCommissionRule = {
     | { id: string; name: string; code: string; service_group: string; active: boolean }
     | { id: string; name: string; code: string; service_group: string; active: boolean }[]
     | null;
+  hub_inventory_items?:
+    | { id: string; name: string; store_sku: string | null; active: boolean }
+    | { id: string; name: string; store_sku: string | null; active: boolean }[]
+    | null;
 };
 
 export type HubCommissionPreviewLine = {
@@ -445,6 +450,7 @@ export type HubCommissionPreviewLine = {
   description: string;
   line_total: number;
   hub_service_type_id: string | null;
+  hub_inventory_item_id?: string | null;
   basis: string | null;
   rate: number | null;
   commission_amount: number;
@@ -598,6 +604,13 @@ export type HubFinanceCommissionsReport = {
     sales_total: number;
     commission_total: number;
   }>;
+  by_product: Array<{
+    product_id: string;
+    name: string;
+    lines_count: number;
+    sales_total: number;
+    commission_total: number;
+  }>;
   by_staff: Array<{
     staff_id: string;
     name: string;
@@ -610,11 +623,64 @@ export type HubFinanceCommissionsReport = {
     line_id: string;
     description: string;
     service_name: string | null;
+    product_name?: string | null;
     staff_name: string | null;
+    staff_id?: string | null;
     line_total: number;
     commission_amount: number;
     basis: string | null;
     rate: number | null;
+  }>;
+};
+
+/** Comissões do profissional logado (self-scoped). */
+export type HubFinanceMyCommissionsReport = HubFinanceCommissionsReport & {
+  staff_id: string;
+};
+
+export type HubMyAttendancesReport = {
+  period: { from: string; to: string };
+  unit_id: string | null;
+  staff_id: string;
+  summary: {
+    appointments_count: number;
+    encounters_count: number;
+    total_count: number;
+  };
+  by_appointment_status: Array<{ status: string; count: number }>;
+  by_encounter_status: Array<{ status: string; count: number }>;
+  by_service: Array<{ service_id: string; name: string; count: number }>;
+  items: Array<{
+    id: string;
+    kind: 'appointment' | 'encounter';
+    when_at: string;
+    status: string;
+    title: string;
+    service_name: string | null;
+    pet_name: string | null;
+    guardian_name: string | null;
+  }>;
+};
+
+export type HubMyNoShowsReport = {
+  period: { from: string; to: string };
+  unit_id: string | null;
+  staff_id: string;
+  summary: {
+    total_no_shows: number;
+    appointment_implied_no_shows: number;
+    attended_count: number;
+    rate_pct: number;
+  };
+  items: Array<{
+    id: string;
+    source: 'appointment';
+    kind_label: string;
+    when_at: string;
+    guardian_name: string | null;
+    phone: string | null;
+    pet_name: string | null;
+    status: string;
   }>;
 };
 
@@ -1303,6 +1369,42 @@ export const hubFinancialApi = {
     return apiRequest(`${base}/reports/commissions?${q}`) as Promise<HubFinanceCommissionsReport>;
   },
 
+  async getMyCommissionsReport(
+    clinicId: string,
+    unitId: string,
+    opts?: { days?: number; from?: string; to?: string }
+  ): Promise<HubFinanceMyCommissionsReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    return apiRequest(`${base}/reports/my-commissions?${q}`) as Promise<HubFinanceMyCommissionsReport>;
+  },
+
+  async getMyAttendancesReport(
+    clinicId: string,
+    opts?: { days?: number; from?: string; to?: string; unit_id?: string | null }
+  ): Promise<HubMyAttendancesReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    if (opts?.unit_id) q.set('unit_id', opts.unit_id);
+    return apiRequest(`/api/hub/reports/my-attendances?${q}`) as Promise<HubMyAttendancesReport>;
+  },
+
+  async getMyNoShowsReport(
+    clinicId: string,
+    opts?: { days?: number; from?: string; to?: string; unit_id?: string | null }
+  ): Promise<HubMyNoShowsReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    if (opts?.unit_id) q.set('unit_id', opts.unit_id);
+    return apiRequest(`/api/hub/reports/my-no-shows?${q}`) as Promise<HubMyNoShowsReport>;
+  },
+
   async getTopClientsReport(
     clinicId: string,
     unitId: string,
@@ -1594,7 +1696,8 @@ export const hubFinancialApi = {
 
   async upsertCommissionRule(body: {
     clinic_id: string;
-    hub_service_type_id: string;
+    hub_service_type_id?: string | null;
+    hub_inventory_item_id?: string | null;
     basis: HubCommissionBasis;
     rate: number;
     notes?: string | null;

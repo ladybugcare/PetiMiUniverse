@@ -61,6 +61,7 @@ export const OPERATIONAL_AREA_PERMISSIONS: Record<HubOperationalArea, readonly s
     'hub.guardians.read',
     'hub.pets.read',
     'hub.service_types.read',
+    'hub.commissions.read_own',
   ],
   banho_tosa: [
     'hub.guardians.read',

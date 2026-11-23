@@ -118,16 +118,17 @@ Receivable → PaymentIntent (pending | succeeded | failed | cancelled) → Paym
 
 Útil quando houver gateway de **cobrança ao tutor** (ex.: Asaas, Stripe) com link + webhook liquidando `hub_receivables`. Isso é independente da assinatura/plano PetiMi Hub da clínica. Até lá, `payment_link` permanece só como método de registro manual no Caixa/Financeiro. Primeira migração `hub_payment_intents` apenas quando a integração de recebíveis for prioridade de produto.
 
-## Comissões (fase 3)
+## Comissões (fase 3 + produtos)
 
-Regras por **`hub_service_type_id`**, não por rótulos genéricos “Banho / Consulta”.
+Regras por **serviço** (`hub_service_type_id`) **ou** **produto** (`hub_inventory_item_id`) — exatamente um alvo por regra. Não usar rótulos genéricos (“Banho / Consulta”) nem o flag legado `hub_inventory_items.generates_staff_commission` (depreciado; não entra no cálculo).
 
 ### `hub_commission_rules`
 
-- `clinic_id`, `hub_service_type_id` — no máximo uma regra activa por par (índice único parcial com `deleted_at IS NULL`).
+- `clinic_id` + alvo: `hub_service_type_id` **ou** `hub_inventory_item_id` (CHECK: exatamente um preenchido).
+- No máximo uma regra activa por par clínica+serviço ou clínica+produto (índices únicos parciais com `deleted_at IS NULL`).
 - `basis`: `percent_of_sale` (taxa em % sobre `line_total` da linha do recebível) ou `fixed_per_sale` (valor fixo por linha, limitado ao total da linha).
 - `rate` (numeric), `active`, `notes`, `created_at` / `updated_at`, `deleted_at` (soft delete).
-- A pré-visualização e relatórios futuros percorrem `hub_receivable_lines` e aplicam a regra activa cujo `hub_service_type_id` coincide com o da linha.
+- Pré-visualização e relatório percorrem `hub_receivable_lines` e aplicam a regra activa cujo `hub_service_type_id` ou `hub_inventory_item_id` coincide com o da linha.
 
 ## Permissões (alvo)
 

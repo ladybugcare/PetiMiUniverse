@@ -1,5 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Ban, CheckCircle2, Pencil, Plus, Scale, Search, Trash2, X } from 'lucide-react';
+import {
+  Ban,
+  CheckCircle2,
+  HelpCircle,
+  Pencil,
+  Percent,
+  Plus,
+  Scale,
+  Search,
+  Trash2,
+  Wallet,
+  X,
+} from 'lucide-react';
 import {
   hubFinancialApi,
   type HubCommissionBasis,
@@ -7,12 +19,16 @@ import {
   type HubCommissionRule,
   type HubFinanceReceivable,
 } from '../../api/hubFinancialApi';
+import { hubInventoryApi, type HubInventoryItem } from '../../api/hubInventoryApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import { HubCancelButton } from '../../components/HubCancelButton';
 import { HubLoading } from '../../components/HubLoading';
 import { HubSearchableCombobox, type HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { HubSidePanel } from '../../components/HubSidePanel';
+import { serviceGroupLabel } from '../../utils/serviceTypeSlug';
 import { formatComandaOriginLabel } from './comandaListPreview';
+
+type CommissionTargetKind = 'service' | 'product';
 
 function formatBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
@@ -31,13 +47,18 @@ function embedOne<T>(x: T | T[] | null | undefined): T | null {
 }
 
 const BASIS_LABELS: Record<HubCommissionBasis, string> = {
-  percent_of_sale: 'Porcentagem da linha',
-  fixed_per_sale: 'Valor fixo por linha',
+  percent_of_sale: '% do item',
+  fixed_per_sale: 'Valor fixo por item',
 };
 
 const BASIS_CHIP: Record<HubCommissionBasis, string> = {
-  percent_of_sale: '% da linha',
+  percent_of_sale: '% do item',
   fixed_per_sale: 'Valor fixo',
+};
+
+const BASIS_HELP: Record<HubCommissionBasis, string> = {
+  percent_of_sale: 'Calcula a comissão sobre o valor daquele item na cobrança.',
+  fixed_per_sale: 'Paga um valor fixo cada vez que o item aparece. Nunca passa do valor do item.',
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -56,17 +77,68 @@ const ACTIVE_FILTERS: { id: ActiveFilter; label: string }[] = [
   { id: 'all', label: 'Todas' },
 ];
 
+/** Exemplo didático usado na tela e no painel. */
+const EXAMPLE_ITEM_AMOUNT = 80;
+
 function formatRate(basis: HubCommissionBasis, rate: number): string {
   if (basis === 'percent_of_sale') return `${rate}%`;
   return formatBrl(rate);
 }
 
-function serviceOf(rule: HubCommissionRule, types: HubServiceType[]) {
+function parseRateInput(raw: string): number | null {
+  const value = Number(String(raw).replace(',', '.'));
+  if (!Number.isFinite(value) || value < 0) return null;
+  return value;
+}
+
+function estimateCommission(basis: HubCommissionBasis, rate: number, itemAmount: number): number {
+  if (basis === 'percent_of_sale') {
+    return Math.round(((itemAmount * rate) / 100 + Number.EPSILON) * 100) / 100;
+  }
+  return Math.min(rate, itemAmount);
+}
+
+function targetOf(
+  rule: HubCommissionRule,
+  types: HubServiceType[],
+  products: HubInventoryItem[],
+): { kind: CommissionTargetKind; name: string; meta: string } {
+  if (rule.hub_inventory_item_id) {
+    const emb = embedOne(rule.hub_inventory_items);
+    if (emb) {
+      return {
+        kind: 'product',
+        name: emb.name,
+        meta: emb.store_sku ? `SKU ${emb.store_sku}` : 'Produto',
+      };
+    }
+    const found = products.find((p) => p.id === rule.hub_inventory_item_id);
+    if (found) {
+      return {
+        kind: 'product',
+        name: found.name,
+        meta: found.store_sku ? `SKU ${found.store_sku}` : 'Produto',
+      };
+    }
+    return { kind: 'product', name: 'Produto removido', meta: 'Produto' };
+  }
   const emb = embedOne(rule.hub_service_types);
-  if (emb) return { name: emb.name, code: emb.code };
+  if (emb) {
+    return {
+      kind: 'service',
+      name: emb.name,
+      meta: emb.service_group ? serviceGroupLabel(emb.service_group) : emb.code || 'Serviço',
+    };
+  }
   const found = types.find((t) => t.id === rule.hub_service_type_id);
-  if (found) return { name: found.name, code: found.code };
-  return { name: 'Serviço removido', code: '' };
+  if (found) {
+    return {
+      kind: 'service',
+      name: found.name,
+      meta: found.service_group ? serviceGroupLabel(found.service_group) : found.code || 'Serviço',
+    };
+  }
+  return { kind: 'service', name: 'Serviço removido', meta: 'Serviço' };
 }
 
 type Props = {
@@ -80,6 +152,7 @@ type Props = {
 const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, showError, showSuccess }) => {
   const [rules, setRules] = useState<HubCommissionRule[]>([]);
   const [serviceTypes, setServiceTypes] = useState<HubServiceType[]>([]);
+  const [products, setProducts] = useState<HubInventoryItem[]>([]);
   const [receivables, setReceivables] = useState<HubFinanceReceivable[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState<ActiveFilter>('active');
@@ -89,7 +162,8 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [svcId, setSvcId] = useState('');
+  const [targetKind, setTargetKind] = useState<CommissionTargetKind>('service');
+  const [targetId, setTargetId] = useState('');
   const [basis, setBasis] = useState<HubCommissionBasis>('percent_of_sale');
   const [rate, setRate] = useState('10');
   const [notes, setNotes] = useState('');
@@ -102,13 +176,15 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
     async (silent = false) => {
       if (!silent) setLoading(true);
       try {
-        const [nextRules, stRes, rec] = await Promise.all([
+        const [nextRules, stRes, itemsRes, rec] = await Promise.all([
           hubFinancialApi.listCommissionRules(clinicId, { includeInactive: true }),
           hubServiceTypesApi.list(clinicId, false, true),
+          hubInventoryApi.items.list(clinicId, true),
           hubFinancialApi.listReceivables(clinicId, { unit_id: unitId }),
         ]);
         setRules(nextRules);
         setServiceTypes(stRes.service_types ?? []);
+        setProducts((itemsRes.items ?? []).filter((p) => p.active && !p.deleted_at));
         setReceivables(rec.filter((r) => r.status !== 'cancelled' && r.status !== 'refunded').slice(0, 80));
       } catch (e) {
         showError((e as Error)?.message || 'Erro ao carregar comissões');
@@ -129,11 +205,15 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
       if (activeFilter === 'active' && !rule.active) return false;
       if (activeFilter === 'inactive' && rule.active) return false;
       if (!term) return true;
-      const svc = serviceOf(rule, serviceTypes);
-      const haystack = normalizeText([svc.name, svc.code, rule.notes, BASIS_LABELS[rule.basis]].filter(Boolean).join(' '));
+      const target = targetOf(rule, serviceTypes, products);
+      const haystack = normalizeText(
+        [target.name, target.meta, target.kind === 'product' ? 'produto' : 'servico', rule.notes, BASIS_LABELS[rule.basis]]
+          .filter(Boolean)
+          .join(' '),
+      );
       return haystack.includes(term);
     });
-  }, [rules, activeFilter, search, serviceTypes]);
+  }, [rules, activeFilter, search, serviceTypes, products]);
 
   const activeCount = rules.filter((r) => r.active).length;
   const filtersNarrowed = activeFilter !== 'active' || search.trim().length > 0;
@@ -142,14 +222,36 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
     () =>
       serviceTypes
         .filter((s) => s.active && !s.deleted_at)
-        .map((s) => ({ value: s.id, label: s.name, searchText: s.code })),
+        .map((s) => {
+          const group = serviceGroupLabel(s.service_group);
+          return {
+            value: s.id,
+            label: group ? `${s.name} · ${group}` : s.name,
+            searchText: [s.name, s.code, group].filter(Boolean).join(' '),
+          };
+        }),
     [serviceTypes],
   );
 
-  const basisOptions: HubComboboxOption[] = (Object.keys(BASIS_LABELS) as HubCommissionBasis[]).map((id) => ({
-    value: id,
-    label: BASIS_LABELS[id],
-  }));
+  const productOptions: HubComboboxOption[] = useMemo(
+    () =>
+      products.map((p) => ({
+        value: p.id,
+        label: p.store_sku ? `${p.name} · ${p.store_sku}` : p.name,
+        searchText: [p.name, p.store_sku, p.ean].filter(Boolean).join(' '),
+      })),
+    [products],
+  );
+
+  const selectedService = useMemo(
+    () => (targetKind === 'service' ? serviceTypes.find((s) => s.id === targetId) ?? null : null),
+    [serviceTypes, targetId, targetKind],
+  );
+
+  const selectedProduct = useMemo(
+    () => (targetKind === 'product' ? products.find((p) => p.id === targetId) ?? null : null),
+    [products, targetId, targetKind],
+  );
 
   const receivableOptions: HubComboboxOption[] = useMemo(
     () =>
@@ -167,9 +269,20 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
     [receivables],
   );
 
+  const rateValue = parseRateInput(rate);
+  const exampleCommission =
+    rateValue == null
+      ? null
+      : estimateCommission(
+          basis,
+          basis === 'percent_of_sale' && rateValue > 100 ? 100 : rateValue,
+          EXAMPLE_ITEM_AMOUNT,
+        );
+
   const resetForm = () => {
     setEditingId(null);
-    setSvcId('');
+    setTargetKind('service');
+    setTargetId('');
     setBasis('percent_of_sale');
     setRate('10');
     setNotes('');
@@ -182,7 +295,13 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
 
   const openEdit = (rule: HubCommissionRule) => {
     setEditingId(rule.id);
-    setSvcId(rule.hub_service_type_id);
+    if (rule.hub_inventory_item_id) {
+      setTargetKind('product');
+      setTargetId(rule.hub_inventory_item_id);
+    } else {
+      setTargetKind('service');
+      setTargetId(rule.hub_service_type_id ?? '');
+    }
     setBasis(rule.basis);
     setRate(String(rule.rate).replace('.', ','));
     setNotes(rule.notes ?? '');
@@ -200,12 +319,12 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
       showError('Sem permissão para alterar regras de comissão.');
       return;
     }
-    if (!svcId) {
-      showError('Escolha um tipo de serviço.');
+    if (!targetId) {
+      showError(targetKind === 'product' ? 'Escolha um produto.' : 'Escolha um tipo de serviço.');
       return;
     }
-    const value = Number(String(rate).replace(',', '.'));
-    if (!Number.isFinite(value) || value < 0) {
+    const value = parseRateInput(rate);
+    if (value == null) {
       showError('Informe uma taxa válida.');
       return;
     }
@@ -217,7 +336,8 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
     try {
       await hubFinancialApi.upsertCommissionRule({
         clinic_id: clinicId,
-        hub_service_type_id: svcId,
+        hub_service_type_id: targetKind === 'service' ? targetId : null,
+        hub_inventory_item_id: targetKind === 'product' ? targetId : null,
         basis,
         rate: value,
         notes: notes.trim() || null,
@@ -254,8 +374,8 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
 
   const onDelete = async (rule: HubCommissionRule) => {
     if (!canWrite || busyId) return;
-    const svc = serviceOf(rule, serviceTypes);
-    if (!window.confirm(`Remover a comissão de "${svc.name}"?`)) return;
+    const target = targetOf(rule, serviceTypes, products);
+    if (!window.confirm(`Remover a comissão de "${target.name}"?`)) return;
     setBusyId(rule.id);
     try {
       await hubFinancialApi.deleteCommissionRule(rule.id, clinicId);
@@ -295,8 +415,8 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
         <div className="hub-payables__head-copy">
           <h2 className="hub-clientes__form-title">Comissões</h2>
           <p className="hub-clientes__subtitle">
-            Uma regra por tipo de serviço. A porcentagem incide sobre a linha da cobrança; o valor fixo não passa do
-            total da linha. Só regras ativas entram na simulação.
+            Defina quanto a equipe recebe por serviço ou produto. O cálculo é por item da cobrança — não pelo
+            total geral.
           </p>
         </div>
         <div className="hub-payables__head-aside">
@@ -315,6 +435,19 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
               Nova regra
             </button>
           ) : null}
+        </div>
+      </div>
+
+      <div className="hub-finance-page__callout hub-finance-page__callout--hint" role="note">
+        <HelpCircle size={18} className="hub-finance-page__callout-icon" aria-hidden />
+        <div>
+          <strong>O que é “por item”?</strong>
+          <p className="hub-commissions__callout-text">
+            Uma cobrança pode ter vários itens (ex.: Banho + Tosa + produto). A regra olha cada item com o
+            serviço ou produto correspondente. Ex.: Banho de {formatBrl(EXAMPLE_ITEM_AMOUNT)} com 10% →
+            comissão {formatBrl(8)}. Se a mesma cobrança tiver um produto com R$&nbsp;5 fixos, soma mais
+            R$&nbsp;5.
+          </p>
         </div>
       </div>
 
@@ -339,7 +472,7 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
             <input
               type="text"
               className="hub-dayboard__search"
-              placeholder="Buscar serviço…"
+              placeholder="Buscar serviço, produto ou setor…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               aria-label="Buscar comissão"
@@ -366,7 +499,7 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
           <p className="hub-finance-page__empty-desc">
             {filtersNarrowed
               ? 'Limpe a busca ou escolha outra situação.'
-              : 'Cadastre a comissão de cada serviço para simular o valor em uma cobrança.'}
+              : 'Cadastre uma regra por serviço ou produto (ex.: Banho 10%) para estimar a comissão na simulação abaixo.'}
           </p>
           {canWrite && !filtersNarrowed ? (
             <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" style={{ marginTop: 12 }} onClick={openCreate}>
@@ -380,8 +513,8 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
           <table className="hub-clientes__table hub-dayboard__table hub-payables__table">
             <thead>
               <tr>
-                <th>Serviço</th>
-                <th>Critério</th>
+                <th>Alvo</th>
+                <th>Como calcula</th>
                 <th className="hub-finance-page__th-num">Taxa</th>
                 <th>Situação</th>
                 <th className="hub-clientes__th-actions">Ações</th>
@@ -389,17 +522,21 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
             </thead>
             <tbody>
               {visible.map((rule) => {
-                const svc = serviceOf(rule, serviceTypes);
+                const target = targetOf(rule, serviceTypes, products);
                 return (
                   <tr key={rule.id} className={editingId === rule.id ? 'hub-payables__row--active' : undefined}>
                     <td>
-                      <span className="hub-payables__payee">{svc.name}</span>
-                      {rule.notes ? <span className="hub-expenses__notes">{rule.notes}</span> : svc.code ? (
-                        <span className="hub-expenses__notes">{svc.code}</span>
-                      ) : null}
+                      <span className="hub-payables__payee">{target.name}</span>
+                      <span className="hub-expenses__notes">
+                        {target.kind === 'product' ? 'Produto' : 'Serviço'}
+                        {target.meta ? ` · ${target.meta}` : ''}
+                        {rule.notes ? ` · ${rule.notes}` : ''}
+                      </span>
                     </td>
                     <td>
-                      <span className="hub-payables__chip">{BASIS_CHIP[rule.basis] ?? rule.basis}</span>
+                      <span className="hub-payables__chip" title={BASIS_HELP[rule.basis]}>
+                        {BASIS_CHIP[rule.basis] ?? rule.basis}
+                      </span>
                     </td>
                     <td className="hub-finance-page__td-num">
                       <span className="hub-payables__amount">{formatRate(rule.basis, Number(rule.rate))}</span>
@@ -420,7 +557,7 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
                             type="button"
                             className="hub-dayboard__action-btn"
                             title="Editar"
-                            aria-label={`Editar comissão de ${svc.name}`}
+                            aria-label={`Editar comissão de ${target.name}`}
                             disabled={busyId === rule.id}
                             onClick={() => openEdit(rule)}
                           >
@@ -430,7 +567,11 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
                             type="button"
                             className="hub-dayboard__action-btn"
                             title={rule.active ? 'Desativar' : 'Ativar'}
-                            aria-label={rule.active ? `Desativar comissão de ${svc.name}` : `Ativar comissão de ${svc.name}`}
+                            aria-label={
+                              rule.active
+                                ? `Desativar comissão de ${target.name}`
+                                : `Ativar comissão de ${target.name}`
+                            }
                             disabled={busyId === rule.id}
                             onClick={() => void onToggle(rule)}
                           >
@@ -440,7 +581,7 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
                             type="button"
                             className="hub-dayboard__action-btn hub-dayboard__action-btn--danger"
                             title="Remover"
-                            aria-label={`Remover comissão de ${svc.name}`}
+                            aria-label={`Remover comissão de ${target.name}`}
                             disabled={busyId === rule.id}
                             onClick={() => void onDelete(rule)}
                           >
@@ -462,7 +603,7 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
       <div className="hub-commissions__preview">
         <h3 className="hub-finance-page__subsection-title">Simular em uma cobrança</h3>
         <p className="hub-clientes__subtitle">
-          Estima a comissão com as regras ativas e as linhas das cobranças recentes desta unidade.
+          Mostra a comissão estimada item a item, com as regras ativas desta clínica.
         </p>
         <div className="hub-finance-page__form-card">
           <div className="hub-commissions__preview-row">
@@ -503,20 +644,20 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
                 <strong>{formatBrl(preview.total_commission)}</strong>
               </div>
               <div>
-                <span>Valor da cobrança</span>
+                <span>Total da cobrança</span>
                 <strong>{formatBrl(preview.receivable_final_amount)}</strong>
               </div>
             </div>
             {preview.lines.length === 0 ? (
-              <p className="hub-clientes__muted">Essa cobrança não tem linhas para calcular.</p>
+              <p className="hub-clientes__muted">Essa cobrança não tem itens para calcular.</p>
             ) : (
               <div className="hub-clientes__table-wrap">
                 <table className="hub-clientes__table hub-dayboard__table hub-payables__table">
                   <thead>
                     <tr>
-                      <th>Linha</th>
-                      <th>Critério</th>
-                      <th className="hub-finance-page__th-num">Valor</th>
+                      <th>Item da cobrança</th>
+                      <th>Como calcula</th>
+                      <th className="hub-finance-page__th-num">Valor do item</th>
                       <th className="hub-finance-page__th-num">Comissão</th>
                     </tr>
                   </thead>
@@ -560,8 +701,8 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
           titleIcon={<Scale size={20} strokeWidth={1.75} aria-hidden />}
           subtitle={
             editingId
-              ? 'Atualiza a regra deste serviço. Salvar de novo no mesmo serviço substitui a anterior.'
-              : 'Define quanto a equipe recebe sobre cada linha desse serviço.'
+              ? 'Atualiza a regra deste alvo. Salvar de novo no mesmo serviço ou produto substitui a anterior.'
+              : 'Uma regra por serviço ou produto. A comissão é calculada em cada item correspondente na cobrança.'
           }
           contentKey={editingId ?? 'create'}
           footer={
@@ -578,41 +719,122 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
             </div>
           }
         >
-          <div className="hub-finance-page__form-grid">
+          <div className="hub-finance-page__form-grid hub-commissions__panel">
             <div className="hub-clientes__field hub-finance-page__field-span-6">
-              <label className="hub-clientes__label" htmlFor="fin-comm-svc">
-                Tipo de serviço
+              <span className="hub-clientes__label" id="fin-comm-target-kind-label">
+                Tipo de alvo
+              </span>
+              <div
+                className="hub-payables__filters"
+                role="radiogroup"
+                aria-labelledby="fin-comm-target-kind-label"
+              >
+                {(
+                  [
+                    { id: 'service' as const, label: 'Serviço' },
+                    { id: 'product' as const, label: 'Produto' },
+                  ] as const
+                ).map((opt) => (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={targetKind === opt.id}
+                    className={`hub-dayboard__toggle-btn${targetKind === opt.id ? ' hub-dayboard__toggle-btn--active' : ''}`}
+                    disabled={!!editingId}
+                    onClick={() => {
+                      if (editingId) return;
+                      setTargetKind(opt.id);
+                      setTargetId('');
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="hub-clientes__field hub-finance-page__field-span-6">
+              <label className="hub-clientes__label" htmlFor="fin-comm-target">
+                {targetKind === 'product' ? 'Produto' : 'Tipo de serviço'}
               </label>
               <HubSearchableCombobox
-                id="fin-comm-svc"
-                options={serviceOptions}
-                value={svcId}
-                onChange={setSvcId}
-                placeholder="Escolher serviço…"
-                searchPlaceholder="Buscar serviço…"
-                ariaLabel="Tipo de serviço"
+                id="fin-comm-target"
+                options={targetKind === 'product' ? productOptions : serviceOptions}
+                value={targetId}
+                onChange={setTargetId}
+                placeholder={targetKind === 'product' ? 'Escolher produto…' : 'Escolher serviço…'}
+                searchPlaceholder={
+                  targetKind === 'product' ? 'Buscar produto ou SKU…' : 'Buscar serviço ou setor…'
+                }
+                ariaLabel={targetKind === 'product' ? 'Produto' : 'Tipo de serviço'}
                 clearable={false}
                 disabled={!!editingId}
               />
+              <p className="hub-clientes__muted hub-payables__field-hint">
+                {targetKind === 'product'
+                  ? selectedProduct
+                    ? selectedProduct.store_sku
+                      ? `SKU: ${selectedProduct.store_sku}`
+                      : 'Produto do estoque'
+                    : 'Ex.: ração, shampoo — cada um pode ter a própria regra.'
+                  : selectedService
+                    ? `Setor: ${serviceGroupLabel(selectedService.service_group)}`
+                    : 'Ex.: Banho, Tosa, Consulta — cada um pode ter a própria regra.'}
+              </p>
             </div>
+
             <div className="hub-clientes__field hub-finance-page__field-span-6">
-              <label className="hub-clientes__label" htmlFor="fin-comm-basis">
-                Critério
-              </label>
-              <HubSearchableCombobox
-                id="fin-comm-basis"
-                options={basisOptions}
-                value={basis}
-                onChange={(value) => setBasis((value || basis) as HubCommissionBasis)}
-                placeholder="Escolher critério…"
-                searchPlaceholder="Buscar critério…"
-                ariaLabel="Critério da comissão"
-                clearable={false}
-              />
+              <span className="hub-clientes__label" id="fin-comm-basis-label">
+                Como calcula
+              </span>
+              <div
+                className="hub-commissions__basis"
+                role="radiogroup"
+                aria-labelledby="fin-comm-basis-label"
+              >
+                {(
+                  [
+                    {
+                      id: 'percent_of_sale' as const,
+                      label: '% do item',
+                      hint: 'Ex.: 10% de um Banho de R$ 80 = R$ 8',
+                      Icon: Percent,
+                    },
+                    {
+                      id: 'fixed_per_sale' as const,
+                      label: 'Valor fixo por item',
+                      hint: 'Ex.: R$ 5 toda vez que o item aparecer',
+                      Icon: Wallet,
+                    },
+                  ] as const
+                ).map((opt) => {
+                  const selected = basis === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={selected}
+                      className={`hub-commissions__basis-option${selected ? ' hub-commissions__basis-option--selected' : ''}`}
+                      onClick={() => setBasis(opt.id)}
+                    >
+                      <span className="hub-commissions__basis-icon" aria-hidden>
+                        <opt.Icon size={16} strokeWidth={2} />
+                      </span>
+                      <span className="hub-commissions__basis-copy">
+                        <span className="hub-commissions__basis-title">{opt.label}</span>
+                        <span className="hub-commissions__basis-hint">{opt.hint}</span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
+
             <div className="hub-clientes__field hub-finance-page__field-span-6">
               <label className="hub-clientes__label" htmlFor="fin-comm-rate">
-                {basis === 'percent_of_sale' ? 'Porcentagem' : 'Valor (R$)'}
+                {basis === 'percent_of_sale' ? 'Porcentagem' : 'Valor fixo (R$)'}
               </label>
               <input
                 id="fin-comm-rate"
@@ -620,12 +842,14 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
                 value={rate}
                 onChange={(e) => setRate(e.target.value)}
                 inputMode="decimal"
-                placeholder={basis === 'percent_of_sale' ? '10' : '0,00'}
+                placeholder={basis === 'percent_of_sale' ? '10' : '5,00'}
               />
+              <p className="hub-clientes__muted hub-payables__field-hint">{BASIS_HELP[basis]}</p>
             </div>
+
             <div className="hub-clientes__field hub-finance-page__field-span-6">
               <label className="hub-clientes__label" htmlFor="fin-comm-notes">
-                Nota
+                Nota (opcional)
               </label>
               <input
                 id="fin-comm-notes"
@@ -634,6 +858,27 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Ex.: comissão do groomer"
               />
+            </div>
+
+            <div className="hub-commissions__example hub-finance-page__field-span-6" aria-live="polite">
+              <div className="hub-commissions__example-label">Exemplo rápido</div>
+              <p className="hub-commissions__example-text">
+                Item de {formatBrl(EXAMPLE_ITEM_AMOUNT)}
+                {selectedService
+                  ? ` (${selectedService.name})`
+                  : selectedProduct
+                    ? ` (${selectedProduct.name})`
+                    : ''}
+                {exampleCommission != null && rateValue != null ? (
+                  <>
+                    {' '}
+                    com {formatRate(basis, rateValue)} → comissão{' '}
+                    <strong>{formatBrl(exampleCommission)}</strong>
+                  </>
+                ) : (
+                  <> — informe a taxa para ver o valor.</>
+                )}
+              </p>
             </div>
           </div>
         </HubSidePanel>

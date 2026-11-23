@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import { resolveStaffIdForUser } from './hubStaffResolve';
 import { computeBalances } from './hubInventoryController';
 import { createSaleStockOut } from './hubInventoryStockUtils';
 import { validateProductSalePricing } from './productSalePriceRules';
@@ -5188,10 +5189,11 @@ export const getHubFinanceMovementBySectorReport = async (req: Request, res: Res
       const serviceId = (line.hub_service_type_id as string | null) ?? null;
       if (serviceId) {
         const meta = serviceMeta.get(serviceId);
+        const fallbackName = String(line.description || 'Serviço').trim() || 'Serviço';
         return {
           service_group: meta?.service_group ?? 'outros',
           service_id: serviceId,
-          name: meta?.name ?? String(line.description || 'Serviço').trim() || 'Serviço',
+          name: meta?.name ?? fallbackName,
         };
       }
       return {
@@ -5426,206 +5428,368 @@ export const getHubFinanceSalesAdjustmentsReport = async (req: Request, res: Res
   }
 };
 
+type CommissionReportPayload = {
+  period: { from: string; to: string };
+  summary: {
+    receivables_count: number;
+    lines_with_commission: number;
+    total_commission: number;
+    total_sales: number;
+  };
+  by_service: Array<{
+    service_id: string;
+    name: string;
+    lines_count: number;
+    sales_total: number;
+    commission_total: number;
+  }>;
+  by_product: Array<{
+    product_id: string;
+    name: string;
+    lines_count: number;
+    sales_total: number;
+    commission_total: number;
+  }>;
+  by_staff: Array<{
+    staff_id: string;
+    name: string;
+    lines_count: number;
+    sales_total: number;
+    commission_total: number;
+  }>;
+  items: Array<{
+    receivable_id: string;
+    line_id: string;
+    description: string;
+    service_name: string | null;
+    product_name: string | null;
+    staff_name: string | null;
+    staff_id: string | null;
+    line_total: number;
+    commission_amount: number;
+    basis: string | null;
+    rate: number | null;
+  }>;
+};
+
+async function buildCommissionsReport(params: {
+  clinic_id: string;
+  unit_id: string;
+  fromYmd: string;
+  toYmd: string;
+  /** Se informado, mantém apenas linhas atribuídas a este staff. */
+  onlyStaffId?: string | null;
+}): Promise<{ ok: true; data: CommissionReportPayload } | { ok: false; status: number; error: string }> {
+  const { clinic_id, unit_id, fromYmd, toYmd, onlyStaffId } = params;
+  const fromIso = utcDayStartIso(fromYmd);
+  const toIso = utcDayEndIso(toYmd);
+
+  const { data: rules, error: ruErr } = await supabaseAdmin
+    .from('hub_commission_rules')
+    .select('hub_service_type_id, hub_inventory_item_id, basis, rate, active')
+    .eq('clinic_id', clinic_id)
+    .eq('active', true)
+    .is('deleted_at', null);
+  if (ruErr) {
+    const msg = String(ruErr.message || '');
+    const missingTable =
+      /Could not find the table .*hub_commission_rules/i.test(msg) ||
+      /relation .*hub_commission_rules.* does not exist/i.test(msg);
+    if (missingTable) {
+      return {
+        ok: false,
+        status: 503,
+        error: 'Tabela hub_commission_rules não encontrada. Aplique 038_create_hub_commission_rules.sql.',
+      };
+    }
+    return { ok: false, status: 500, error: msg };
+  }
+  const ruleByService = new Map<string, { basis: string; rate: number }>();
+  const ruleByProduct = new Map<string, { basis: string; rate: number }>();
+  for (const r of rules ?? []) {
+    const entry = { basis: String(r.basis), rate: Number(r.rate ?? 0) };
+    const sid = r.hub_service_type_id as string | null;
+    const pid = r.hub_inventory_item_id as string | null;
+    if (sid) ruleByService.set(sid, entry);
+    if (pid) ruleByProduct.set(pid, entry);
+  }
+
+  const { data: recs, error: recErr } = await supabaseAdmin
+    .from('hub_receivables')
+    .select('id, source_type, source_id, final_amount, status, created_at')
+    .eq('clinic_id', clinic_id)
+    .or(`unit_id.eq.${unit_id},unit_id.is.null`)
+    .is('deleted_at', null)
+    .neq('status', 'cancelled')
+    .gte('created_at', fromIso)
+    .lte('created_at', toIso)
+    .limit(800);
+  if (recErr) return { ok: false, status: 500, error: recErr.message };
+  const recIds = (recs ?? []).map((r) => r.id as string);
+  if (recIds.length === 0) {
+    return {
+      ok: true,
+      data: {
+        period: { from: fromYmd, to: toYmd },
+        summary: { receivables_count: 0, lines_with_commission: 0, total_commission: 0, total_sales: 0 },
+        by_service: [],
+        by_product: [],
+        by_staff: [],
+        items: [],
+      },
+    };
+  }
+
+  const { data: lines, error: lnErr } = await supabaseAdmin
+    .from('hub_receivable_lines')
+    .select('id, receivable_id, hub_service_type_id, hub_inventory_item_id, description, line_total')
+    .eq('clinic_id', clinic_id)
+    .in('receivable_id', recIds);
+  if (lnErr) return { ok: false, status: 500, error: lnErr.message };
+
+  const appointmentIds = (recs ?? [])
+    .filter((r) => r.source_type === 'appointment' && r.source_id)
+    .map((r) => r.source_id as string);
+  const encounterIds = (recs ?? [])
+    .filter((r) => r.source_type === 'encounter' && r.source_id)
+    .map((r) => r.source_id as string);
+
+  const staffByAppointment = new Map<string, string>();
+  if (appointmentIds.length > 0) {
+    const { data: appts } = await supabaseAdmin
+      .from('hub_appointments')
+      .select('id, hub_staff_member_id')
+      .in('id', appointmentIds);
+    for (const a of appts ?? []) {
+      if (a.hub_staff_member_id) staffByAppointment.set(a.id as string, a.hub_staff_member_id as string);
+    }
+  }
+
+  const staffByEncounter = new Map<string, string>();
+  if (encounterIds.length > 0) {
+    const { data: encs } = await supabaseAdmin
+      .from('hub_encounters')
+      .select('id, hub_staff_member_id')
+      .in('id', encounterIds);
+    for (const e of encs ?? []) {
+      if (e.hub_staff_member_id) staffByEncounter.set(e.id as string, e.hub_staff_member_id as string);
+    }
+  }
+
+  const staffIds = [
+    ...new Set([...staffByAppointment.values(), ...staffByEncounter.values()]),
+  ];
+  const staffNames = new Map<string, string>();
+  if (staffIds.length > 0) {
+    const { data: staffRows } = await supabaseAdmin
+      .from('hub_staff_members')
+      .select('id, full_name, display_name')
+      .in('id', staffIds);
+    for (const s of staffRows ?? []) {
+      staffNames.set(
+        s.id as string,
+        String((s.display_name as string | null) || (s.full_name as string | null) || s.id)
+      );
+    }
+  }
+
+  const serviceIds = [
+    ...new Set((lines ?? []).map((l) => l.hub_service_type_id as string | null).filter(Boolean) as string[]),
+  ];
+  const serviceNames = new Map<string, string>();
+  if (serviceIds.length > 0) {
+    const { data: svcRows } = await supabaseAdmin
+      .from('hub_service_types')
+      .select('id, name')
+      .in('id', serviceIds);
+    for (const s of svcRows ?? []) serviceNames.set(s.id as string, String(s.name ?? s.id));
+  }
+
+  const productIds = [
+    ...new Set((lines ?? []).map((l) => l.hub_inventory_item_id as string | null).filter(Boolean) as string[]),
+  ];
+  const productNames = new Map<string, string>();
+  if (productIds.length > 0) {
+    const { data: itemRows } = await supabaseAdmin
+      .from('hub_inventory_items')
+      .select('id, name')
+      .in('id', productIds);
+    for (const p of itemRows ?? []) productNames.set(p.id as string, String(p.name ?? p.id));
+  }
+
+  const recById = new Map((recs ?? []).map((r) => [r.id as string, r]));
+  const byService = new Map<
+    string,
+    { service_id: string; name: string; lines_count: number; sales_total: number; commission_total: number }
+  >();
+  const byProduct = new Map<
+    string,
+    { product_id: string; name: string; lines_count: number; sales_total: number; commission_total: number }
+  >();
+  const byStaff = new Map<
+    string,
+    { staff_id: string; name: string; lines_count: number; sales_total: number; commission_total: number }
+  >();
+  const items: CommissionReportPayload['items'] = [];
+
+  let totalCommission = 0;
+  let totalSales = 0;
+  let linesWithCommission = 0;
+  const receivableIdsWithKeptLines = new Set<string>();
+
+  for (const ln of lines ?? []) {
+    const lineTotal = round2(Number(ln.line_total ?? 0));
+    const stId = (ln.hub_service_type_id as string) ?? null;
+    const itemId = (ln.hub_inventory_item_id as string) ?? null;
+    const rule = stId ? ruleByService.get(stId) : itemId ? ruleByProduct.get(itemId) : undefined;
+    let commission = 0;
+    let basis: string | null = null;
+    let rate: number | null = null;
+    if (rule) {
+      basis = rule.basis;
+      rate = rule.rate;
+      if (rule.basis === 'percent_of_sale') commission = round2(lineTotal * (rule.rate / 100));
+      else commission = round2(Math.min(rule.rate, lineTotal));
+    }
+    if (commission <= 0) continue;
+
+    const rec = recById.get(ln.receivable_id as string);
+    let staffId: string | null = null;
+    if (rec?.source_id) {
+      if (rec.source_type === 'appointment') {
+        staffId = staffByAppointment.get(rec.source_id as string) ?? null;
+      } else if (rec.source_type === 'encounter') {
+        staffId = staffByEncounter.get(rec.source_id as string) ?? null;
+      }
+    }
+
+    if (onlyStaffId && staffId !== onlyStaffId) continue;
+
+    linesWithCommission += 1;
+    totalCommission = round2(totalCommission + commission);
+    totalSales = round2(totalSales + lineTotal);
+    receivableIdsWithKeptLines.add(ln.receivable_id as string);
+
+    if (stId) {
+      const cur = byService.get(stId) ?? {
+        service_id: stId,
+        name: serviceNames.get(stId) ?? 'Serviço',
+        lines_count: 0,
+        sales_total: 0,
+        commission_total: 0,
+      };
+      cur.lines_count += 1;
+      cur.sales_total = round2(cur.sales_total + lineTotal);
+      cur.commission_total = round2(cur.commission_total + commission);
+      byService.set(stId, cur);
+    }
+    if (itemId) {
+      const cur = byProduct.get(itemId) ?? {
+        product_id: itemId,
+        name: productNames.get(itemId) ?? 'Produto',
+        lines_count: 0,
+        sales_total: 0,
+        commission_total: 0,
+      };
+      cur.lines_count += 1;
+      cur.sales_total = round2(cur.sales_total + lineTotal);
+      cur.commission_total = round2(cur.commission_total + commission);
+      byProduct.set(itemId, cur);
+    }
+    if (staffId) {
+      const cur = byStaff.get(staffId) ?? {
+        staff_id: staffId,
+        name: staffNames.get(staffId) ?? 'Profissional',
+        lines_count: 0,
+        sales_total: 0,
+        commission_total: 0,
+      };
+      cur.lines_count += 1;
+      cur.sales_total = round2(cur.sales_total + lineTotal);
+      cur.commission_total = round2(cur.commission_total + commission);
+      byStaff.set(staffId, cur);
+    }
+    items.push({
+      receivable_id: ln.receivable_id as string,
+      line_id: ln.id as string,
+      description: String(ln.description ?? ''),
+      service_name: stId ? serviceNames.get(stId) ?? null : null,
+      product_name: itemId ? productNames.get(itemId) ?? null : null,
+      staff_name: staffId ? staffNames.get(staffId) ?? null : null,
+      staff_id: staffId,
+      line_total: lineTotal,
+      commission_amount: commission,
+      basis,
+      rate,
+    });
+  }
+
+  return {
+    ok: true,
+    data: {
+      period: { from: fromYmd, to: toYmd },
+      summary: {
+        receivables_count: onlyStaffId ? receivableIdsWithKeptLines.size : recIds.length,
+        lines_with_commission: linesWithCommission,
+        total_commission: totalCommission,
+        total_sales: totalSales,
+      },
+      by_service: [...byService.values()].sort((a, b) => b.commission_total - a.commission_total),
+      by_product: [...byProduct.values()].sort((a, b) => b.commission_total - a.commission_total),
+      by_staff: [...byStaff.values()].sort((a, b) => b.commission_total - a.commission_total),
+      items: items.slice(0, 300),
+    },
+  };
+}
+
 /** Comissões estimadas no período (regras ativas × linhas de recebíveis não cancelados). */
 export const getHubFinanceCommissionsReport = async (req: Request, res: Response) => {
   try {
     const parsed = parsePeriodQuery(req.query);
     if (!parsed.ok) return res.status(400).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
-    const fromIso = utcDayStartIso(fromYmd);
-    const toIso = utcDayEndIso(toYmd);
+    const built = await buildCommissionsReport({ clinic_id, unit_id, fromYmd, toYmd });
+    if (!built.ok) return res.status(built.status).json({ error: built.error });
+    return res.json(built.data);
+  } catch (e: unknown) {
+    console.error('getHubFinanceCommissionsReport', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
 
-    const { data: rules, error: ruErr } = await supabaseAdmin
-      .from('hub_commission_rules')
-      .select('hub_service_type_id, basis, rate, active')
-      .eq('clinic_id', clinic_id)
-      .eq('active', true)
-      .is('deleted_at', null);
-    if (ruErr) {
-      if (String(ruErr.message || '').includes('hub_commission_rules')) {
-        return res.status(503).json({
-          error: 'Tabela hub_commission_rules não encontrada. Aplique 038_create_hub_commission_rules.sql.',
-        });
-      }
-      return res.status(500).json({ error: ruErr.message });
-    }
-    const ruleByService = new Map<string, { basis: string; rate: number }>();
-    for (const r of rules ?? []) {
-      const sid = r.hub_service_type_id as string | null;
-      if (sid) ruleByService.set(sid, { basis: String(r.basis), rate: Number(r.rate ?? 0) });
-    }
+/**
+ * Comissões do profissional logado (self-scoped).
+ * Ignora qualquer staff_id da query — sempre resolve pelo usuário autenticado.
+ */
+export const getHubFinanceMyCommissionsReport = async (req: Request, res: Response) => {
+  try {
+    const parsed = parsePeriodQuery(req.query);
+    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
 
-    const { data: recs, error: recErr } = await supabaseAdmin
-      .from('hub_receivables')
-      .select('id, source_type, source_id, final_amount, status, created_at')
-      .eq('clinic_id', clinic_id)
-      .or(`unit_id.eq.${unit_id},unit_id.is.null`)
-      .is('deleted_at', null)
-      .neq('status', 'cancelled')
-      .gte('created_at', fromIso)
-      .lte('created_at', toIso)
-      .limit(800);
-    if (recErr) return res.status(500).json({ error: recErr.message });
-    const recIds = (recs ?? []).map((r) => r.id as string);
-    if (recIds.length === 0) {
-      return res.json({
-        period: { from: fromYmd, to: toYmd },
-        summary: { receivables_count: 0, lines_with_commission: 0, total_commission: 0, total_sales: 0 },
-        by_service: [],
-        by_staff: [],
-        items: [],
+    const myStaffId = await resolveStaffIdForUser(clinic_id, req.user?.id);
+    if (!myStaffId) {
+      return res.status(403).json({
+        error: 'Seu usuário não está vinculado a um profissional da equipe nesta clínica.',
       });
     }
 
-    const { data: lines, error: lnErr } = await supabaseAdmin
-      .from('hub_receivable_lines')
-      .select('id, receivable_id, hub_service_type_id, description, line_total')
-      .eq('clinic_id', clinic_id)
-      .in('receivable_id', recIds);
-    if (lnErr) return res.status(500).json({ error: lnErr.message });
-
-    const appointmentIds = (recs ?? [])
-      .filter((r) => r.source_type === 'appointment' && r.source_id)
-      .map((r) => r.source_id as string);
-    const staffByAppointment = new Map<string, string>();
-    if (appointmentIds.length > 0) {
-      const { data: appts } = await supabaseAdmin
-        .from('hub_appointments')
-        .select('id, hub_staff_member_id')
-        .in('id', appointmentIds);
-      for (const a of appts ?? []) {
-        if (a.hub_staff_member_id) staffByAppointment.set(a.id as string, a.hub_staff_member_id as string);
-      }
-    }
-
-    const staffIds = [...new Set(staffByAppointment.values())];
-    const staffNames = new Map<string, string>();
-    if (staffIds.length > 0) {
-      const { data: staffRows } = await supabaseAdmin
-        .from('hub_staff_members')
-        .select('id, full_name, display_name')
-        .in('id', staffIds);
-      for (const s of staffRows ?? []) {
-        staffNames.set(
-          s.id as string,
-          String((s.display_name as string | null) || (s.full_name as string | null) || s.id)
-        );
-      }
-    }
-
-    const serviceIds = [
-      ...new Set((lines ?? []).map((l) => l.hub_service_type_id as string | null).filter(Boolean) as string[]),
-    ];
-    const serviceNames = new Map<string, string>();
-    if (serviceIds.length > 0) {
-      const { data: svcRows } = await supabaseAdmin
-        .from('hub_service_types')
-        .select('id, name')
-        .in('id', serviceIds);
-      for (const s of svcRows ?? []) serviceNames.set(s.id as string, String(s.name ?? s.id));
-    }
-
-    const recById = new Map((recs ?? []).map((r) => [r.id as string, r]));
-    const byService = new Map<
-      string,
-      { service_id: string; name: string; lines_count: number; sales_total: number; commission_total: number }
-    >();
-    const byStaff = new Map<
-      string,
-      { staff_id: string; name: string; lines_count: number; sales_total: number; commission_total: number }
-    >();
-    const items: Array<{
-      receivable_id: string;
-      line_id: string;
-      description: string;
-      service_name: string | null;
-      staff_name: string | null;
-      line_total: number;
-      commission_amount: number;
-      basis: string | null;
-      rate: number | null;
-    }> = [];
-
-    let totalCommission = 0;
-    let totalSales = 0;
-    let linesWithCommission = 0;
-
-    for (const ln of lines ?? []) {
-      const lineTotal = round2(Number(ln.line_total ?? 0));
-      totalSales = round2(totalSales + lineTotal);
-      const stId = (ln.hub_service_type_id as string) ?? null;
-      const rule = stId ? ruleByService.get(stId) : undefined;
-      let commission = 0;
-      let basis: string | null = null;
-      let rate: number | null = null;
-      if (rule && stId) {
-        basis = rule.basis;
-        rate = rule.rate;
-        if (rule.basis === 'percent_of_sale') commission = round2(lineTotal * (rule.rate / 100));
-        else commission = round2(Math.min(rule.rate, lineTotal));
-      }
-      if (commission > 0) {
-        linesWithCommission += 1;
-        totalCommission = round2(totalCommission + commission);
-        if (stId) {
-          const cur = byService.get(stId) ?? {
-            service_id: stId,
-            name: serviceNames.get(stId) ?? 'Serviço',
-            lines_count: 0,
-            sales_total: 0,
-            commission_total: 0,
-          };
-          cur.lines_count += 1;
-          cur.sales_total = round2(cur.sales_total + lineTotal);
-          cur.commission_total = round2(cur.commission_total + commission);
-          byService.set(stId, cur);
-        }
-        const rec = recById.get(ln.receivable_id as string);
-        const staffId =
-          rec?.source_type === 'appointment' && rec.source_id
-            ? staffByAppointment.get(rec.source_id as string) ?? null
-            : null;
-        if (staffId) {
-          const cur = byStaff.get(staffId) ?? {
-            staff_id: staffId,
-            name: staffNames.get(staffId) ?? 'Profissional',
-            lines_count: 0,
-            sales_total: 0,
-            commission_total: 0,
-          };
-          cur.lines_count += 1;
-          cur.sales_total = round2(cur.sales_total + lineTotal);
-          cur.commission_total = round2(cur.commission_total + commission);
-          byStaff.set(staffId, cur);
-        }
-        items.push({
-          receivable_id: ln.receivable_id as string,
-          line_id: ln.id as string,
-          description: String(ln.description ?? ''),
-          service_name: stId ? serviceNames.get(stId) ?? null : null,
-          staff_name: staffId ? staffNames.get(staffId) ?? null : null,
-          line_total: lineTotal,
-          commission_amount: commission,
-          basis,
-          rate,
-        });
-      }
-    }
+    const built = await buildCommissionsReport({
+      clinic_id,
+      unit_id,
+      fromYmd,
+      toYmd,
+      onlyStaffId: myStaffId,
+    });
+    if (!built.ok) return res.status(built.status).json({ error: built.error });
 
     return res.json({
-      period: { from: fromYmd, to: toYmd },
-      summary: {
-        receivables_count: recIds.length,
-        lines_with_commission: linesWithCommission,
-        total_commission: totalCommission,
-        total_sales: totalSales,
-      },
-      by_service: [...byService.values()].sort((a, b) => b.commission_total - a.commission_total),
-      by_staff: [...byStaff.values()].sort((a, b) => b.commission_total - a.commission_total),
-      items: items.slice(0, 300),
+      ...built.data,
+      staff_id: myStaffId,
+      by_staff: built.data.by_staff.filter((s) => s.staff_id === myStaffId),
     });
   } catch (e: unknown) {
-    console.error('getHubFinanceCommissionsReport', e);
+    console.error('getHubFinanceMyCommissionsReport', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
   }
 };

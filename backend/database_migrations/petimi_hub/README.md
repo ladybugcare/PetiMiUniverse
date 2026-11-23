@@ -126,7 +126,7 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 
 37. **`037_create_hub_expenses.sql`** — `hub_expenses` (despesas por unidade; dashboard e fluxo de caixa). Executar depois do item 35. Ver [HUB_FINANCIAL_IMPLEMENTATION_PLAN.md](../../docs/architecture/HUB_FINANCIAL_IMPLEMENTATION_PLAN.md) (Fase 2).
 
-38. **`038_create_hub_commission_rules.sql`** — `hub_commission_rules` (comissão por `hub_service_type_id`: `percent_of_sale` ou `fixed_per_sale`; soft delete). Executar depois dos itens 3 e 35. API: `GET|POST /api/hub/finance/commission-rules`, `PATCH|DELETE …/commission-rules/:id`, `GET …/commission-preview`. Ver [HUB_FINANCIAL_MODEL.md](../../docs/architecture/HUB_FINANCIAL_MODEL.md) (comissões).
+38. **`038_create_hub_commission_rules.sql`** — `hub_commission_rules` (comissão por `hub_service_type_id`: `percent_of_sale` ou `fixed_per_sale`; soft delete). Executar depois dos itens 3 e 35. API: `GET|POST /api/hub/finance/commission-rules`, `PATCH|DELETE …/commission-rules/:id`, `GET …/commission-preview`. Ver [HUB_FINANCIAL_MODEL.md](../../docs/architecture/HUB_FINANCIAL_MODEL.md) (comissões). Estendido pelo item **160** (produto).
 
 39. **`039_create_hub_comandas.sql`** + **`039a_create_hub_comanda_items.sql`** — Comandas operacionais (checkout) por origem (`appointment`, `grooming_session`, `quote`, `encounter`, …) e itens faturáveis. Executar depois do núcleo financeiro (35), pets/tutores e tabelas de origem (agenda, grooming, orçamentos, clínica).
 
@@ -334,3 +334,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 158. **`158_create_hub_inventory_item_changes.sql`** — tabela `hub_inventory_item_changes` (auditoria de custo, preço, mínimo, ativo, nome, soft-delete do item). Executar depois do item 008.
 
 159. **`159_alter_hub_receivable_lines_product_cost.sql`** — `unit_cost_amount` em `hub_receivable_lines` (snapshot de custo na venda de produto para margem/COGS). Executar depois do item 042.
+
+160. **`160_alter_hub_commission_rules_products.sql`** — unifica comissão: `hub_service_type_id` nullable + `hub_inventory_item_id`; CHECK de exatamente um alvo; índices únicos parciais por serviço e por produto. Executar depois dos itens 038 e 008. Ver [HUB_FINANCIAL_MODEL.md](../../docs/architecture/HUB_FINANCIAL_MODEL.md) (comissões).

@@ -19,6 +19,7 @@ import {
   Repeat,
   Scissors,
   Search,
+  Stethoscope,
   Syringe,
   FlaskConical,
   Trophy,
@@ -30,6 +31,7 @@ import {
   Users,
   Activity,
   Printer,
+  UserCircle,
 } from 'lucide-react';
 import {
   HUB_REPORT_CATEGORIES,
@@ -47,6 +49,7 @@ const REPORT_ICONS: Record<HubReportId, React.ElementType> = {
   'sales-adjustments': Receipt,
   'product-sales': Package,
   'movement-by-sector': LayoutGrid,
+  'my-commissions': UserCircle,
   commissions: Percent,
   unbilled: FileWarning,
   'cash-flow': Wallet,
@@ -59,6 +62,8 @@ const REPORT_ICONS: Record<HubReportId, React.ElementType> = {
   'stock-abc': Layers,
   'stock-turnover': Repeat,
   'absent-clients': UserX,
+  'my-attendances': Stethoscope,
+  'my-no-shows': UserMinus,
   'no-shows': UserMinus,
   'boarding-occupancy': Building2,
   'grooming-productivity': Scissors,
@@ -101,7 +106,7 @@ export const HubRelatoriosCatalog: React.FC<HubRelatoriosCatalogProps> = ({
   const [categoryFilter, setCategoryFilter] = useState<HubReportCategoryId | 'all'>('all');
 
   const reports = useMemo(
-    () => HUB_REPORTS.filter((r) => reportAllowed(hasPermission, r.permission)),
+    () => HUB_REPORTS.filter((r) => reportAllowed(hasPermission, r)),
     [hasPermission],
   );
   const links = useMemo(
