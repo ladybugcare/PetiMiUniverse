@@ -98,6 +98,10 @@ export type CaixaSessionMovementsCardProps = {
   cardWithoutFeeGrossTotal?: number;
 };
 
+function isNonZeroAmount(n: number): boolean {
+  return Math.abs(Number(n)) > 0.009;
+}
+
 export const CaixaSessionMovementsCard: React.FC<CaixaSessionMovementsCardProps> = ({
   cashOpen,
   loadingMethods,
@@ -112,6 +116,11 @@ export const CaixaSessionMovementsCard: React.FC<CaixaSessionMovementsCardProps>
 }) => {
   const outflowsNet = round2(depositsTotal - withdrawalsTotal);
   const showCardFees = cardFeeTotalCentsPositive(cardFeeTotal);
+  const visibleMethods = methodsEntries.filter(([, total]) => isNonZeroAmount(total));
+  const showWithdrawals = isNonZeroAmount(withdrawalsTotal);
+  const showDeposits = isNonZeroAmount(depositsTotal);
+  const showEntradas = visibleMethods.length > 0;
+  const showOutflows = showWithdrawals || showDeposits;
 
   return (
     <div className="hub-caixa-page__card hub-caixa-page__card--ops">
@@ -122,20 +131,22 @@ export const CaixaSessionMovementsCard: React.FC<CaixaSessionMovementsCardProps>
         <HubLoading variant="block" label="Carregando formas de pagamento…" />
       ) : (
         <div className="hub-caixa-page__card-scroll">
-          <MovementsSection title="Entradas" total={methodsTotal} variant="in">
-            {methodsEntries.map(([method, total]) => {
-              const meta = PAYMENT_METHOD_ICONS[method];
-              return (
-                <MovementRow
-                  key={method}
-                  label={HUB_PAYMENT_METHOD_LABELS[method]}
-                  amount={Number(total)}
-                  icon={meta.icon}
-                  tone={meta.tone}
-                />
-              );
-            })}
-          </MovementsSection>
+          {showEntradas ? (
+            <MovementsSection title="Entradas" total={methodsTotal} variant="in">
+              {visibleMethods.map(([method, total]) => {
+                const meta = PAYMENT_METHOD_ICONS[method];
+                return (
+                  <MovementRow
+                    key={method}
+                    label={HUB_PAYMENT_METHOD_LABELS[method]}
+                    amount={Number(total)}
+                    icon={meta.icon}
+                    tone={meta.tone}
+                  />
+                );
+              })}
+            </MovementsSection>
+          ) : null}
 
           {showCardFees ? (
             <div className="hub-caixa-page__card-fees" aria-label="Taxas da maquininha">
@@ -159,21 +170,27 @@ export const CaixaSessionMovementsCard: React.FC<CaixaSessionMovementsCardProps>
             </div>
           ) : null}
 
-          <MovementsSection title="Saídas" total={outflowsNet} variant="out">
-            <MovementRow
-              label="Sangria"
-              amount={-withdrawalsTotal}
-              icon={<ArrowDownToLine size={14} strokeWidth={2} />}
-              tone="red"
-              signed
-            />
-            <MovementRow
-              label="Suprimento"
-              amount={depositsTotal}
-              icon={<ArrowUpFromLine size={14} strokeWidth={2} />}
-              tone="purple"
-            />
-          </MovementsSection>
+          {showOutflows ? (
+            <MovementsSection title="Saídas" total={outflowsNet} variant="out">
+              {showWithdrawals ? (
+                <MovementRow
+                  label="Sangria"
+                  amount={-withdrawalsTotal}
+                  icon={<ArrowDownToLine size={14} strokeWidth={2} />}
+                  tone="red"
+                  signed
+                />
+              ) : null}
+              {showDeposits ? (
+                <MovementRow
+                  label="Suprimento"
+                  amount={depositsTotal}
+                  icon={<ArrowUpFromLine size={14} strokeWidth={2} />}
+                  tone="purple"
+                />
+              ) : null}
+            </MovementsSection>
+          ) : null}
 
           <div className="hub-caixa-page__movements-footer">
             <div className="hub-caixa-page__movements-footer-row">

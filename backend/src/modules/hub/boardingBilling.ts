@@ -316,13 +316,15 @@ export type DayBoardBilling = {
   comanda_id: string | null;
   comanda_status: string | null;
   has_receivable: boolean;
-  receivable_status: 'pending' | 'partially_paid' | 'paid' | null;
+  receivable_status: 'pending' | 'partially_paid' | 'paid' | 'cancelled' | 'refunded' | null;
   finance_handoff_at: string | null;
   active_receivable_id: string | null;
   /** Vencimento do recebível ativo (pendente/parcial), quando houver. */
   due_date: string | null;
   /** Valor final do recebível ativo (para filtrar cobranças zeradas). */
   receivable_amount?: number | null;
+  /** Devolução física de produtos do recebível ativo (quando aplicável). */
+  stock_return_status?: 'pending' | 'partial' | 'returned' | 'unsellable' | 'mixed' | null;
 };
 
 export function isBilledViaComandaHandoff(billing: DayBoardBilling): boolean {

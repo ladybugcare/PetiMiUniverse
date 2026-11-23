@@ -38,6 +38,14 @@ import { notifyHubCancellationPending } from './hubNotifyEvents';
 import { isMissingPostgrestRelation } from '../../utils/supabaseSchemaErrors.js';
 import { comandaProductOriginAlreadyStockedOut } from './comandaStockOut';
 import {
+  assertCaseInClinic,
+  assertEncounterInClinic,
+  assertGuardianInClinic,
+  assertGuardianLinkedToPet,
+  assertPetInClinic,
+  assertUnitInClinic,
+} from './hubTenantAsserts';
+import {
   buildComandaItemsFromPackagePurchase,
   fulfillPackagePurchasesOnComandaCheckout,
   findEligiblePackageBalance,
@@ -152,6 +160,60 @@ async function assertComandaEditAllowed(
   if (!scopes[context]) {
     throw new Error(editScopeErrorMessage(scopes, context));
   }
+}
+
+/**
+ * Valida FKs efetivas da comanda antes de qualquer INSERT.
+ * Em `manual`/`package` (IDs vindos do body), também valida tutor/pets/vínculo.
+ * Em origens operacionais, valida unit/encounter/case persistidos (body ou resolução).
+ */
+async function assertComandaPersistedTenantFks(opts: {
+  clinicId: string;
+  originType: string;
+  unitId: string | null | undefined;
+  guardianId: string | null | undefined;
+  petIds: Array<string | null | undefined>;
+  encounterId: string | null | undefined;
+  caseId: string | null | undefined;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await assertUnitInClinic(opts.clinicId, opts.unitId))) {
+    return { ok: false, error: 'Unidade inválida' };
+  }
+  if (!(await assertEncounterInClinic(opts.clinicId, opts.encounterId))) {
+    return { ok: false, error: 'Atendimento inválido' };
+  }
+  if (!(await assertCaseInClinic(opts.clinicId, opts.caseId))) {
+    return { ok: false, error: 'Caso clínico inválido' };
+  }
+
+  const clientSuppliedIds = opts.originType === 'manual' || opts.originType === 'package';
+  if (!clientSuppliedIds) {
+    return { ok: true };
+  }
+
+  if (!(await assertGuardianInClinic(opts.clinicId, opts.guardianId))) {
+    return { ok: false, error: 'Tutor inválido' };
+  }
+
+  const uniquePets = [
+    ...new Set(opts.petIds.filter((id): id is string => typeof id === 'string' && id.length > 0)),
+  ];
+  for (const petId of uniquePets) {
+    if (!(await assertPetInClinic(opts.clinicId, petId))) {
+      return { ok: false, error: 'Pet inválido' };
+    }
+  }
+
+  const guardianId = opts.guardianId ?? null;
+  if (guardianId) {
+    for (const petId of uniquePets) {
+      if (!(await assertGuardianLinkedToPet(petId, guardianId))) {
+        return { ok: false, error: 'Tutor inválido' };
+      }
+    }
+  }
+
+  return { ok: true };
 }
 
 function round2(n: number): number {
@@ -2390,6 +2452,20 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
       built.pet_id ??
       (built.items.map((it) => it.pet_id).find((pid): pid is string => Boolean(pid)) ?? null);
 
+    // Isolamento multi-tenant: valida FKs efetivas (o que será persistido) antes de qualquer escrita.
+    const tenantCheck = await assertComandaPersistedTenantFks({
+      clinicId: clinic_id,
+      originType: origin_type,
+      unitId: built.unit_id,
+      guardianId: built.guardian_id,
+      petIds: [resolvedPetId, ...built.items.map((it) => it.pet_id)],
+      encounterId: resolvedEncounterId,
+      caseId: resolvedCaseId,
+    });
+    if (!tenantCheck.ok) {
+      return res.status(400).json({ error: tenantCheck.error });
+    }
+
     const { data: comanda, error: cErr } = await supabaseAdmin
       .from('hub_comandas')
       .insert({
@@ -3441,6 +3517,8 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
           comanda_id: comandaId,
           original_amount: subtotal,
           final_amount: finalAmount,
+          net_amount_at_sale: finalAmount,
+          returned_amount: 0,
           status: 'pending',
           due_date: action === 'leave_pending' ? due_date : null,
           notes: null,
@@ -3924,6 +4002,8 @@ export async function leavePendingHandoffComanda(
         comanda_id: comandaId,
         original_amount: subtotal,
         final_amount: finalAmount,
+        net_amount_at_sale: finalAmount,
+        returned_amount: 0,
         status: 'pending',
         due_date: dueDate,
         notes: null,
@@ -5288,13 +5368,32 @@ export const postHubComandaAddItems = async (req: Request, res: Response) => {
 
     const { data: comanda, error: cErr } = await supabaseAdmin
       .from('hub_comandas')
-      .select('id, status, clinic_id, pet_id')
+      .select('id, status, clinic_id, pet_id, guardian_id')
       .eq('id', comandaId)
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
       .maybeSingle();
     if (cErr) return res.status(500).json({ error: cErr.message });
     if (!comanda) return res.status(404).json({ error: 'Comanda não encontrada' });
+
+    const defaultPetId = (comanda.pet_id as string | null) ?? null;
+    const comandaGuardianId = (comanda.guardian_id as string | null) ?? null;
+    const effectivePetIds = items.map((it) => it.pet_id ?? defaultPetId);
+
+    // Isolamento: valida todos os pets efetivos (após default) antes de qualquer escrita.
+    for (const petId of effectivePetIds) {
+      if (!(await assertPetInClinic(clinic_id, petId))) {
+        return res.status(400).json({ error: 'Pet inválido' });
+      }
+    }
+    if (comandaGuardianId) {
+      for (const petId of effectivePetIds) {
+        if (!petId) continue;
+        if (!(await assertGuardianLinkedToPet(petId, comandaGuardianId))) {
+          return res.status(400).json({ error: 'Tutor inválido' });
+        }
+      }
+    }
 
     const { data: maxSortRow } = await supabaseAdmin
       .from('hub_comanda_items')
@@ -5349,7 +5448,6 @@ export const postHubComandaAddItems = async (req: Request, res: Response) => {
       }
     }
 
-    const defaultPetId = (comanda.pet_id as string | null) ?? null;
     const insertRows = items.map((it) => ({
       clinic_id,
       comanda_id: comandaId,
@@ -5982,6 +6080,8 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
             comanda_id: comandaId,
             original_amount: subtotal,
             final_amount: subtotal,
+            net_amount_at_sale: subtotal,
+            returned_amount: 0,
             status: 'pending',
             due_date: null,
             notes: null,

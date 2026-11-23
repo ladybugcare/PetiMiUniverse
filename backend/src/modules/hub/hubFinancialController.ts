@@ -4,7 +4,11 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { resolveStaffIdForUser } from './hubStaffResolve';
 import { computeBalances } from './hubInventoryController';
-import { createSaleStockOut } from './hubInventoryStockUtils';
+import { createSaleStockOut, restoreProductStockForReceivableLines } from './hubInventoryStockUtils';
+import {
+  computeStockReturnStatus,
+  isProductStockLine,
+} from './hubProductReturnStatus';
 import { validateProductSalePricing } from './productSalePriceRules';
 import { resolveAppliedSaleAmount } from './hubPricingResolve';
 import { streamPaymentReceiptPdf } from './hubPaymentReceiptPdf';
@@ -25,6 +29,7 @@ import {
   FinanceLedgerError,
   postHistoricalCashPayment,
   recalculateReceivableFromPosted,
+  returnReceivableProductLines,
   reversePaymentSoft,
   sumPostedPaymentsForReceivable,
   validatePaymentCashSession,
@@ -65,6 +70,12 @@ import {
   pickActiveReceivableId,
 } from './hubFinancialDayBoard';
 import { collectOpenFinanceiroOriginKeys } from './hubFinanceDayBoardOpen';
+import {
+  buildManualDayBoardItem,
+  buildManualServicesFromReceivableLines,
+  type ManualDayBoardComanda,
+  type ManualDayBoardLine,
+} from './hubFinanceDayBoardManual';
 import { financeSourceTypeSchema, receivableSourceTypeSchema } from './hubFinanceSchemas';
 import { notifyHubPaymentDue } from './hubNotifyEvents';
 import { syncChargeBundleStatusForReceivable } from './hubChargeBundlesService';
@@ -988,6 +999,8 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
           source_id: manualSourceId,
           original_amount: subtotal,
           final_amount: subtotal,
+          net_amount_at_sale: subtotal,
+          returned_amount: 0,
           status: 'pending',
           due_date: due_date ?? null,
           competence_date: competence_date ?? null,
@@ -1133,6 +1146,8 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
         source_id: source_id!,
         original_amount: built.subtotal,
         final_amount: finalAmount,
+        net_amount_at_sale: finalAmount,
+        returned_amount: 0,
         status: 'pending',
         notes: notes ?? null,
       })
@@ -1619,9 +1634,21 @@ export const postHubFinanceReceivableProductLine = async (req: Request, res: Res
 
     const original = round2(Number(rec.original_amount ?? 0) + lineTotal);
     const final = round2(Number(rec.final_amount ?? 0) + lineTotal);
+    const { data: recMeta } = await supabaseAdmin
+      .from('hub_receivables')
+      .select('returned_amount, net_amount_at_sale')
+      .eq('id', receivableId)
+      .maybeSingle();
+    const returnedAmt = Number(recMeta?.returned_amount ?? 0);
+    const patch: Record<string, unknown> = { original_amount: original, final_amount: final };
+    // Snapshot ainda mutável: sem devolução e ainda não congelado por pagamento.
+    if (returnedAmt <= 0.009) {
+      const paid = await sumPostedPaymentsForReceivable(receivableId);
+      if (paid <= 0.009) patch.net_amount_at_sale = final;
+    }
     const { data: updated, error: updErr } = await supabaseAdmin
       .from('hub_receivables')
-      .update({ original_amount: original, final_amount: final })
+      .update(patch)
       .eq('id', receivableId)
       .select('*, lines:hub_receivable_lines(*)')
       .single();
@@ -1652,19 +1679,22 @@ export const deleteHubFinanceReceivableProductLine = async (req: Request, res: R
     if (lineErr || !line) return res.status(404).json({ error: 'Linha não encontrada' });
     if (line.line_kind !== 'product') return res.status(409).json({ error: 'Apenas linhas de produto podem ser removidas aqui' });
     const qty = Number(line.quantity ?? 0);
+    // Remoção de linha = reversão comprovada de baixa indevida (não é devolução de cliente).
     if (line.hub_inventory_item_id && line.hub_inventory_lot_id && qty > 0) {
-      await supabaseAdmin.from('hub_stock_movements').insert({
-        clinic_id: clinicId.data,
-        item_id: line.hub_inventory_item_id,
-        lot_id: line.hub_inventory_lot_id,
-        movement_type: 'adjustment_in',
+      const { restoreSaleStockIn } = await import('./hubInventoryStockUtils.js');
+      const restored = await restoreSaleStockIn({
+        clinicId: clinicId.data,
+        itemId: line.hub_inventory_item_id as string,
+        lotId: line.hub_inventory_lot_id as string,
         qty,
-        unit_cost: null,
-        reference_type: 'hub_receivable_line_removed',
-        reference_id: line.id,
+        referenceType: 'hub_receivable_line_removed',
+        referenceId: line.id as string,
         notes: 'Reversão de produto removido de recebível',
-        created_by: req.user?.id ?? null,
+        createdBy: req.user?.id ?? null,
       });
+      if ('error' in restored) {
+        return res.status(500).json({ error: restored.error });
+      }
     }
     const { data: rec } = await supabaseAdmin
       .from('hub_receivables')
@@ -1675,9 +1705,20 @@ export const deleteHubFinanceReceivableProductLine = async (req: Request, res: R
     const delta = Number(line.line_total ?? 0);
     const original = round2(Math.max(0, Number(rec?.original_amount ?? 0) - delta));
     const final = round2(Math.max(0, Number(rec?.final_amount ?? 0) - delta));
+    const { data: recMeta } = await supabaseAdmin
+      .from('hub_receivables')
+      .select('returned_amount')
+      .eq('id', receivableId.data)
+      .maybeSingle();
+    const returnedAmt = Number(recMeta?.returned_amount ?? 0);
+    const patch: Record<string, unknown> = { original_amount: original, final_amount: final };
+    if (returnedAmt <= 0.009) {
+      const paid = await sumPostedPaymentsForReceivable(receivableId.data);
+      if (paid <= 0.009) patch.net_amount_at_sale = final;
+    }
     const { data: updated, error: updErr } = await supabaseAdmin
       .from('hub_receivables')
-      .update({ original_amount: original, final_amount: final })
+      .update(patch)
       .eq('id', receivableId.data)
       .select('*, lines:hub_receivable_lines(*)')
       .single();
@@ -1690,6 +1731,13 @@ export const deleteHubFinanceReceivableProductLine = async (req: Request, res: R
   }
 };
 
+const stockReturnLineSchema = z
+  .object({
+    line_id: uuidStr,
+    qty: z.coerce.number().finite().positive().optional(),
+  })
+  .strict();
+
 const reversePaymentBodySchema = z
   .object({
     clinic_id: uuidStr,
@@ -1697,15 +1745,36 @@ const reversePaymentBodySchema = z
     mode: z.enum(['payment_reversal', 'refund']).default('payment_reversal'),
     refund_method: hubPaymentMethodSchema.optional().nullable(),
     refund_effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+    confirm_stock_return: z.boolean().optional().default(false),
+    stock_return_condition: z.enum(['sellable', 'unsellable']).optional().nullable(),
+    stock_return_lines: z.array(stockReturnLineSchema).max(200).optional().nullable(),
   })
-  .strict();
+  .strict()
+  .superRefine((val, ctx) => {
+    if (val.confirm_stock_return && !val.stock_return_condition) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'stock_return_condition é obrigatório quando confirm_stock_return=true',
+        path: ['stock_return_condition'],
+      });
+    }
+  });
 
 export const postHubFinancePaymentReverse = async (req: Request, res: Response) => {
   try {
     const paymentId = uuidStr.safeParse(req.params.id);
     const parsed = reversePaymentBodySchema.safeParse(req.body);
     if (!paymentId.success || !parsed.success) return res.status(400).json({ error: 'Dados inválidos' });
-    const { clinic_id, reason, mode, refund_method, refund_effective_date } = parsed.data;
+    const {
+      clinic_id,
+      reason,
+      mode,
+      refund_method,
+      refund_effective_date,
+      confirm_stock_return,
+      stock_return_condition,
+      stock_return_lines,
+    } = parsed.data;
     const userId = req.user?.id ?? null;
 
     const { data: payment, error: pErr } = await supabaseAdmin
@@ -1734,6 +1803,9 @@ export const postHubFinancePaymentReverse = async (req: Request, res: Response) 
       mode: mode as PaymentReversalMode,
       refundMethod: refund_method ?? null,
       refundEffectiveDate: refund_effective_date ?? null,
+      confirmStockReturn: confirm_stock_return,
+      stockReturnCondition: stock_return_condition ?? undefined,
+      stockReturnLines: stock_return_lines ?? undefined,
     });
 
     const { data: rec } = await supabaseAdmin
@@ -1749,6 +1821,8 @@ export const postHubFinancePaymentReverse = async (req: Request, res: Response) 
       reversal_mode: result.reversal_mode,
       adjustment_id: result.adjustment_id,
       warning: result.warning,
+      stock_restored: result.stock_restored ?? 0,
+      stock_unsellable: result.stock_unsellable ?? 0,
     });
   } catch (e: unknown) {
     if (e instanceof FinanceLedgerError) {
@@ -1824,6 +1898,8 @@ const listPaymentsQuerySchema = z
     unit_id: uuidStr,
     from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
     to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+    /** posted = elegíveis a estorno (padrão); reversed = histórico já anulado. */
+    status: z.enum(['posted', 'reversed']).optional().default('posted'),
   })
   .strict();
 
@@ -1911,13 +1987,50 @@ async function paymentBelongsToPendingCancellation(clinicId: string, receivableI
   return pending.has(String(receivable.comanda_id));
 }
 
+/** Detalhe de um pagamento para o formulário de estorno (inclui fora do período da lista). */
+export const getHubFinancePayment = async (req: Request, res: Response) => {
+  try {
+    const paymentId = uuidStr.safeParse(req.params.id);
+    const clinicId = uuidStr.safeParse(req.query.clinic_id);
+    if (!paymentId.success || !clinicId.success) {
+      return res.status(400).json({ error: 'id e clinic_id obrigatórios' });
+    }
+    const { data: row, error } = await supabaseAdmin
+      .from('hub_payments')
+      .select(
+        `
+        id, amount, payment_method, installments, payment_date, notes, status, clinic_id,
+        cash_session:hub_cash_sessions(status),
+        receivable:hub_receivables(
+          id, unit_id, status, final_amount, source_type, comanda_id, deleted_at,
+          guardian:hub_guardians(full_name)
+        )
+      `,
+      )
+      .eq('id', paymentId.data)
+      .eq('clinic_id', clinicId.data)
+      .maybeSingle();
+    if (error) return res.status(500).json({ error: error.message });
+    if (!row) return res.status(404).json({ error: 'Pagamento não encontrado' });
+    const receivable = oneEmbed(
+      (row as { receivable?: Record<string, unknown> | Record<string, unknown>[] | null }).receivable ??
+        null,
+    );
+    if (receivable?.deleted_at) return res.status(404).json({ error: 'Pagamento não encontrado' });
+    return res.json({ payment: mapPaymentListRow(row as Record<string, unknown>) });
+  } catch (e: unknown) {
+    console.error('getHubFinancePayment', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
 export const listHubFinancePayments = async (req: Request, res: Response) => {
   try {
     const parsed = listPaymentsQuerySchema.safeParse(req.query);
     if (!parsed.success) {
       return res.status(400).json({ error: 'clinic_id e unit_id obrigatórios' });
     }
-    const { clinic_id, unit_id, from, to } = parsed.data;
+    const { clinic_id, unit_id, from, to, status: paymentStatus } = parsed.data;
     const select = `
       id, amount, payment_method, installments, payment_date, notes, status,
       cash_session:hub_cash_sessions(status),
@@ -1932,7 +2045,7 @@ export const listHubFinancePayments = async (req: Request, res: Response) => {
         .from('hub_payments')
         .select(select)
         .eq('clinic_id', clinic_id)
-        .eq('status', 'posted')
+        .eq('status', paymentStatus)
         .order('payment_date', { ascending: false })
         .limit(300);
       q = matchNullUnit
@@ -1950,7 +2063,7 @@ export const listHubFinancePayments = async (req: Request, res: Response) => {
         .from('hub_payments')
         .select(select)
         .eq('clinic_id', clinic_id)
-        .eq('status', 'posted')
+        .eq('status', paymentStatus)
         .order('payment_date', { ascending: false })
         .limit(400);
       if (from) fallback = fallback.gte('payment_date', `${from}T00:00:00.000-03:00`);
@@ -1980,21 +2093,25 @@ export const listHubFinancePayments = async (req: Request, res: Response) => {
       .sort((a, b) => String(b.payment_date ?? '').localeCompare(String(a.payment_date ?? '')))
       .map(mapPaymentListRow);
 
-    const comandaIds = [
-      ...new Set(
-        payments
-          .map((payment) => payment.receivable?.comanda_id)
-          .filter((id): id is string => Boolean(id)),
-      ),
-    ];
-    const pendingComandaIds = await comandaIdsWithPendingCancellation(clinic_id, comandaIds);
-    const visiblePayments =
-      pendingComandaIds.size === 0
-        ? payments
-        : payments.filter((payment) => {
-            const comandaId = payment.receivable?.comanda_id;
-            return !comandaId || !pendingComandaIds.has(comandaId);
-          });
+    // Na lista de ação (posted), esconde pagamentos de cancelamento operacional ainda pendente.
+    // No histórico (reversed) mostra tudo do período.
+    let visiblePayments = payments;
+    if (paymentStatus === 'posted') {
+      const comandaIds = [
+        ...new Set(
+          payments
+            .map((payment) => payment.receivable?.comanda_id)
+            .filter((id): id is string => Boolean(id)),
+        ),
+      ];
+      const pendingComandaIds = await comandaIdsWithPendingCancellation(clinic_id, comandaIds);
+      if (pendingComandaIds.size > 0) {
+        visiblePayments = payments.filter((payment) => {
+          const comandaId = payment.receivable?.comanda_id;
+          return !comandaId || !pendingComandaIds.has(comandaId);
+        });
+      }
+    }
 
     return res.json({ payments: visiblePayments });
   } catch (e: unknown) {
@@ -2007,15 +2124,33 @@ const cancelReceivableBodySchema = z
   .object({
     clinic_id: uuidStr,
     reason: z.string().trim().min(3).max(2000),
+    confirm_stock_return: z.boolean().optional().default(false),
+    stock_return_condition: z.enum(['sellable', 'unsellable']).optional().nullable(),
+    stock_return_lines: z.array(stockReturnLineSchema).max(200).optional().nullable(),
   })
-  .strict();
+  .strict()
+  .superRefine((val, ctx) => {
+    if (val.confirm_stock_return && !val.stock_return_condition) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'stock_return_condition é obrigatório quando confirm_stock_return=true',
+        path: ['stock_return_condition'],
+      });
+    }
+  });
 
 export const postHubFinanceReceivableCancel = async (req: Request, res: Response) => {
   try {
     const receivableId = uuidStr.safeParse(req.params.id);
     const parsed = cancelReceivableBodySchema.safeParse(req.body);
     if (!receivableId.success || !parsed.success) return res.status(400).json({ error: 'Dados inválidos' });
-    const { clinic_id, reason } = parsed.data;
+    const {
+      clinic_id,
+      reason,
+      confirm_stock_return,
+      stock_return_condition,
+      stock_return_lines,
+    } = parsed.data;
     const { data: rec, error: rErr } = await supabaseAdmin
       .from('hub_receivables')
       .select('id, clinic_id, status, final_amount, lines:hub_receivable_lines(*)')
@@ -2031,25 +2166,37 @@ export const postHubFinanceReceivableCancel = async (req: Request, res: Response
     if ((payments ?? []).length > 0) {
       return res.status(409).json({ error: 'Estorne os pagamentos antes de cancelar o recebível' });
     }
-    for (const line of (rec.lines ?? []) as Record<string, unknown>[]) {
-      if (line.line_kind !== 'product') continue;
-      const qty = Number(line.quantity ?? 0);
-      const itemId = line.hub_inventory_item_id as string | null;
-      const lotId = line.hub_inventory_lot_id as string | null;
-      if (!itemId || !lotId || qty <= 0) continue;
-      await supabaseAdmin.from('hub_stock_movements').insert({
-        clinic_id,
-        item_id: itemId,
-        lot_id: lotId,
-        movement_type: 'adjustment_in',
-        qty,
-        unit_cost: null,
-        reference_type: 'hub_receivable_cancelled',
-        reference_id: receivableId.data,
-        notes: 'Reversão por cancelamento de recebível',
-        created_by: req.user?.id ?? null,
+
+    let stockRestored = 0;
+    let stockUnsellable = 0;
+    let stockWarning: string | null =
+      'Estoque não foi alterado. Cancelamento financeiro não presume devolução física.';
+    if (confirm_stock_return) {
+      const nestedLines = (rec.lines ?? []) as Array<Record<string, unknown>>;
+      const stock = await restoreProductStockForReceivableLines({
+        clinicId: clinic_id,
+        receivableId: receivableId.data,
+        notes: `Devolução física confirmada no cancelamento: ${reason.trim()}`,
+        createdBy: req.user?.id ?? null,
+        lines: nestedLines.length > 0 ? nestedLines : undefined,
+        condition: stock_return_condition ?? 'sellable',
+        lineSpecs: stock_return_lines ?? undefined,
       });
+      if (stock.errors.length) {
+        return res.status(500).json({ error: `Falha ao processar devolução de estoque: ${stock.errors[0]}` });
+      }
+      stockRestored = stock.restored;
+      stockUnsellable = stock.unsellable;
+      if (stock_return_condition === 'unsellable') {
+        stockWarning =
+          stockUnsellable > 0
+            ? `Devolução sem reentrada ao disponível (${stockUnsellable} linha(s) sem condição de revenda).`
+            : 'Devolução sem condição de revenda: estoque disponível inalterado.';
+      } else {
+        stockWarning = `Estoque reentrado (${stockRestored} nova(s), ${stock.skipped} já registrada(s)).`;
+      }
     }
+
     await supabaseAdmin.from('hub_financial_adjustments').insert({
       clinic_id,
       receivable_id: receivableId.data,
@@ -2082,9 +2229,85 @@ export const postHubFinanceReceivableCancel = async (req: Request, res: Response
       }
       throw syncErr;
     }
-    return res.json({ receivable: updated });
+    return res.json({
+      receivable: updated,
+      stock_restored: stockRestored,
+      stock_unsellable: stockUnsellable,
+      warning: stockWarning,
+    });
   } catch (e: unknown) {
     console.error('postHubFinanceReceivableCancel', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+const productReturnBodySchema = z
+  .object({
+    clinic_id: uuidStr,
+    reason: z.string().trim().min(3).max(2000),
+    stock_return_condition: z.enum(['sellable', 'unsellable']),
+    stock_return_lines: z.array(stockReturnLineSchema).min(1).max(200),
+    /** Obrigatório somente quando houver valor financeiro a devolver. */
+    refund_method: hubPaymentMethodSchema.optional().nullable(),
+    refund_effective_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional().nullable(),
+    /** UUID por abertura do formulário; reutilizar em retry da mesma operação. */
+    idempotency_key: uuidStr,
+  })
+  .strict();
+
+/**
+ * Devolução física por item (parcial ou total) via RPC atômica.
+ * Comercial devolvido ≠ reembolso financeiro (matriz pago × líquido vigente).
+ */
+export const postHubFinanceReceivableProductReturn = async (req: Request, res: Response) => {
+  try {
+    const receivableId = uuidStr.safeParse(req.params.id);
+    const parsed = productReturnBodySchema.safeParse(req.body);
+    if (!receivableId.success || !parsed.success) {
+      return res.status(400).json({ error: 'Dados inválidos (idempotency_key UUID obrigatória)' });
+    }
+    const {
+      clinic_id,
+      reason,
+      stock_return_condition,
+      stock_return_lines,
+      refund_method,
+      refund_effective_date,
+      idempotency_key,
+    } = parsed.data;
+
+    const result = await returnReceivableProductLines({
+      clinicId: clinic_id,
+      receivableId: receivableId.data,
+      userId: req.user?.id ?? null,
+      reason,
+      condition: stock_return_condition,
+      lineSpecs: stock_return_lines,
+      refundMethod: refund_method ?? null,
+      refundEffectiveDate: refund_effective_date ?? null,
+      idempotencyKey: idempotency_key,
+    });
+
+    const detail = await buildReceivableDetail(receivableId.data, clinic_id);
+    return res.json({
+      ok: true,
+      receivable: detail,
+      receivable_status: result.receivable_status,
+      refund_amount: result.refund_amount,
+      commercial_returned: result.commercial_returned ?? null,
+      balance_due: result.balance_due ?? null,
+      adjustment_id: result.adjustment_id,
+      stock_restored: result.stock_restored,
+      stock_unsellable: result.stock_unsellable,
+      stock_return_status: detail?.stock_return_status ?? null,
+      warning: result.warning,
+      replayed: result.replayed ?? false,
+    });
+  } catch (e: unknown) {
+    if (e instanceof FinanceLedgerError) {
+      return res.status(e.status).json({ error: e.message });
+    }
+    console.error('postHubFinanceReceivableProductReturn', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
   }
 };
@@ -2191,53 +2414,100 @@ async function buildReceivableDetail(receivableId: string, clinicId: string): Pr
   if (recErr) throw new Error(recErr.message);
   if (!rec) return null;
 
-  const lines = await enrichReceivableLines((rec.lines ?? []) as Record<string, unknown>[]);
-  const [{ data: guardian }, { data: unit }, { data: payments }, { data: adjustments }, source] = await Promise.all([
-    rec.guardian_id
-      ? supabaseAdmin
-          .from('hub_guardians')
-          .select('id, full_name, phone, email')
-          .eq('id', rec.guardian_id as string)
-          .eq('clinic_id', clinicId)
-          .maybeSingle()
-          .then((r) => {
-            if (r.error) throw new Error(r.error.message);
-            return r;
-          })
-      : Promise.resolve({ data: null }),
-    rec.unit_id
-      ? supabaseAdmin
-          .from('units')
-          .select('id, name, nickname, phone, address, city, state')
-          .eq('id', rec.unit_id as string)
-          .maybeSingle()
-          .then((r) => {
-            if (r.error) throw new Error(r.error.message);
-            return r;
-          })
-      : Promise.resolve({ data: null }),
-    supabaseAdmin
-      .from('hub_payments')
+  let rawLines = (rec.lines ?? []) as Record<string, unknown>[];
+  if (rawLines.length === 0) {
+    const { data: flatLines, error: flatErr } = await supabaseAdmin
+      .from('hub_receivable_lines')
       .select('*')
       .eq('receivable_id', receivableId)
-      .eq('clinic_id', clinicId)
-      .order('payment_date', { ascending: false }),
-    supabaseAdmin
-      .from('hub_financial_adjustments')
-      .select('*')
-      .eq('receivable_id', receivableId)
-      .eq('clinic_id', clinicId)
-      .order('created_at', { ascending: false }),
-    loadReceivableSourceDetails(rec as Record<string, unknown>),
-  ]);
+      .eq('clinic_id', clinicId);
+    if (flatErr) throw new Error(flatErr.message);
+    rawLines = (flatLines ?? []) as Record<string, unknown>[];
+  }
+  const lines = await enrichReceivableLines(rawLines);
+  const [{ data: guardian }, { data: unit }, { data: payments }, { data: adjustments }, { data: productReturns }, source] =
+    await Promise.all([
+      rec.guardian_id
+        ? supabaseAdmin
+            .from('hub_guardians')
+            .select('id, full_name, phone, email')
+            .eq('id', rec.guardian_id as string)
+            .eq('clinic_id', clinicId)
+            .maybeSingle()
+            .then((r) => {
+              if (r.error) throw new Error(r.error.message);
+              return r;
+            })
+        : Promise.resolve({ data: null }),
+      rec.unit_id
+        ? supabaseAdmin
+            .from('units')
+            .select('id, name, nickname, phone, address, city, state')
+            .eq('id', rec.unit_id as string)
+            .maybeSingle()
+            .then((r) => {
+              if (r.error) throw new Error(r.error.message);
+              return r;
+            })
+        : Promise.resolve({ data: null }),
+      supabaseAdmin
+        .from('hub_payments')
+        .select('*, cash_session:hub_cash_sessions(status)')
+        .eq('receivable_id', receivableId)
+        .eq('clinic_id', clinicId)
+        .order('payment_date', { ascending: false }),
+      supabaseAdmin
+        .from('hub_financial_adjustments')
+        .select('*')
+        .eq('receivable_id', receivableId)
+        .eq('clinic_id', clinicId)
+        .order('created_at', { ascending: false }),
+      supabaseAdmin
+        .from('hub_product_return_events')
+        .select('id, receivable_line_id, item_id, lot_id, qty, condition, reason, created_by, created_at')
+        .eq('receivable_id', receivableId)
+        .eq('clinic_id', clinicId)
+        .order('created_at', { ascending: false })
+        .then((r) => {
+          // Tabela pode não existir em ambientes sem migration 162.
+          if (r.error && /does not exist|schema cache|42P01/i.test(String(r.error.message))) {
+            return { data: [] as Record<string, unknown>[] };
+          }
+          if (r.error) throw new Error(r.error.message);
+          return r;
+        }),
+      loadReceivableSourceDetails(rec as Record<string, unknown>),
+    ]);
 
-  const paymentRows = payments ?? [];
+  const paymentRows: Array<Record<string, unknown>> = ((payments ?? []) as Array<Record<string, unknown>>).map(
+    (row) => {
+      const session = oneEmbed(row.cash_session as { status?: string } | { status?: string }[] | null);
+      const cash_session_status =
+        session?.status === 'open' || session?.status === 'closed' ? session.status : null;
+      return {
+        ...row,
+        cash_session: undefined,
+        cash_session_status,
+      };
+    },
+  );
   const paidAmount = round2(
     paymentRows
       .filter((row) => String(row.status ?? 'posted') === 'posted')
       .reduce((sum, row) => sum + Number(row.amount ?? 0), 0),
   );
   const finalAmount = Number(rec.final_amount ?? 0);
+  const productLineIds = (lines as Array<Record<string, unknown>>)
+    .filter((l) => isProductStockLine(l))
+    .map((l) => String(l.id));
+  const stock_return_status = computeStockReturnStatus({
+    productLineIds,
+    returns: ((productReturns ?? []) as Array<Record<string, unknown>>).map((r) => ({
+      receivable_line_id: String(r.receivable_line_id),
+      condition: String(r.condition ?? ''),
+    })),
+    receivableStatus: String(rec.status ?? ''),
+  });
   return {
     ...rec,
     lines,
@@ -2246,6 +2516,8 @@ async function buildReceivableDetail(receivableId: string, clinicId: string): Pr
     source,
     payments: paymentRows,
     adjustments: adjustments ?? [],
+    product_returns: productReturns ?? [],
+    stock_return_status,
     paid_amount: paidAmount,
     balance_amount: round2(Math.max(0, finalAmount - paidAmount)),
   };
@@ -3498,8 +3770,64 @@ async function fetchBillingStatusBatch(
       active_receivable_id: activeId,
       due_date: activeRow?.due_date ?? null,
       receivable_amount: activeRow != null ? Number(activeRow.final_amount ?? 0) : null,
+      stock_return_status: null,
     });
   }
+
+  const activeIds = [...result.values()]
+    .map((b) => b.active_receivable_id)
+    .filter((id): id is string => Boolean(id));
+  if (activeIds.length > 0) {
+    const [{ data: productLines }, { data: returnEvents }] = await Promise.all([
+      supabaseAdmin
+        .from('hub_receivable_lines')
+        .select('id, receivable_id, line_kind, hub_inventory_item_id, hub_inventory_lot_id, quantity')
+        .eq('clinic_id', clinicId)
+        .in('receivable_id', activeIds),
+      supabaseAdmin
+        .from('hub_product_return_events')
+        .select('receivable_id, receivable_line_id, condition')
+        .eq('clinic_id', clinicId)
+        .in('receivable_id', activeIds)
+        .then((r) => {
+          if (r.error && /does not exist|schema cache|42P01/i.test(String(r.error.message))) {
+            return { data: [] as Array<Record<string, unknown>> };
+          }
+          if (r.error) throw new Error(r.error.message);
+          return r;
+        }),
+    ]);
+
+    const linesByRec = new Map<string, string[]>();
+    for (const line of productLines ?? []) {
+      if (!isProductStockLine(line as Record<string, unknown>)) continue;
+      const rid = String((line as { receivable_id: string }).receivable_id);
+      const list = linesByRec.get(rid) ?? [];
+      list.push(String((line as { id: string }).id));
+      linesByRec.set(rid, list);
+    }
+    const returnsByRec = new Map<string, Array<{ receivable_line_id: string; condition: string }>>();
+    for (const ev of returnEvents ?? []) {
+      const rid = String((ev as { receivable_id: string }).receivable_id);
+      const list = returnsByRec.get(rid) ?? [];
+      list.push({
+        receivable_line_id: String((ev as { receivable_line_id: string }).receivable_line_id),
+        condition: String((ev as { condition: string }).condition),
+      });
+      returnsByRec.set(rid, list);
+    }
+
+    for (const billing of result.values()) {
+      const rid = billing.active_receivable_id;
+      if (!rid) continue;
+      billing.stock_return_status = computeStockReturnStatus({
+        productLineIds: linesByRec.get(rid) ?? [],
+        returns: returnsByRec.get(rid) ?? [],
+        receivableStatus: billing.receivable_status,
+      });
+    }
+  }
+
   return result;
 }
 
@@ -3571,7 +3899,7 @@ type DayBoardItem = {
   pet: { id: string; name: string } | null;
   operational_status: string;
   estimated_amount: number;
-  services: { name: string; amount: number }[];
+  services: Array<{ name: string; amount: number; kind?: 'service' | 'product' | 'fee' | null }>;
   billing: DayBoardBilling;
   has_package_balance?: boolean;
   /** none | package | series_invoice */
@@ -3771,6 +4099,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
         services: servicesEnriched.map((sv) => ({
           name: String(sv.service_type?.name ?? 'Serviço'),
           amount: resolveAppliedSaleAmount(sv.sale_amount_applied, sv.service_type?.sale_amount),
+          kind: 'service' as const,
         })),
         billing: {
           comanda_id: null,
@@ -3858,13 +4187,14 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       const petObj = pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null;
       const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
       let estimated = 0;
-      let services: Array<{ name: string; amount: number }> = [];
+      let services: Array<{ name: string; amount: number; kind?: 'service' | 'product' | 'fee' | null }> = [];
       try {
         const pv = await buildPreviewForGroomingSession(clinic_id, id);
         estimated = pv.subtotal;
         services = pv.lines.map((line) => ({
           name: String(line.description ?? 'Serviço'),
           amount: round2(Number(line.line_total ?? 0)),
+          kind: 'service' as const,
         }));
       } catch {
         // Mantém zero se a prévia falhar — billing/enrichment ainda aplica.
@@ -4159,7 +4489,108 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       }
     }
 
-    // ── 4b. Origens em aberto sem entidade operacional carregada (orçamento, pacote, etc.) ──
+    // ── 4b. Vendas rápidas (comandas origin_type=manual) ──
+    {
+      const openManualIds = openIdsByType.get('manual') ?? [];
+      const seenManual = new Set(
+        items.filter((i) => i.origin_type === 'manual').map((i) => i.origin_id),
+      );
+      let loadManuals = !openMode;
+      if (openMode && openManualIds.length > 0) loadManuals = true;
+      if (loadManuals) {
+        let mq = supabaseAdmin
+          .from('hub_comandas')
+          .select(
+            `id, origin_id, status, opened_at, total_amount, finance_handoff_at, guardian_id, pet_id,
+            guardian:hub_guardians(id, full_name),
+            pet:hub_pets(id, name)`,
+          )
+          .eq('clinic_id', clinic_id)
+          .eq('origin_type', 'manual')
+          .neq('status', 'cancelada')
+          .is('deleted_at', null)
+          .not('origin_id', 'is', null);
+        if (openMode) {
+          mq = mq.in('origin_id', openManualIds);
+        } else {
+          mq = mq.gte('opened_at', dayStart).lte('opened_at', dayEnd);
+        }
+        if (unit_id) mq = mq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+        const { data: manualRows, error: manualErr } = await mq;
+        if (manualErr) throw new Error(manualErr.message);
+
+        const manualComandas: ManualDayBoardComanda[] = [];
+        for (const row of manualRows ?? []) {
+          const originId = row.origin_id as string | null;
+          if (!originId || seenManual.has(originId)) continue;
+          seenManual.add(originId);
+          const g = row.guardian as
+            | { id: string; full_name: string }
+            | { id: string; full_name: string }[]
+            | null;
+          const p = row.pet as
+            | { id: string; name: string }
+            | { id: string; name: string }[]
+            | null;
+          manualComandas.push({
+            id: row.id as string,
+            origin_id: originId,
+            status: String(row.status ?? 'aberta'),
+            opened_at: (row.opened_at as string | null) ?? null,
+            total_amount: row.total_amount == null ? null : Number(row.total_amount),
+            finance_handoff_at: (row.finance_handoff_at as string | null) ?? null,
+            guardian_id: (row.guardian_id as string | null) ?? null,
+            pet_id: (row.pet_id as string | null) ?? null,
+            guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
+            pet: p ? (Array.isArray(p) ? (p[0] ?? null) : p) : null,
+          });
+        }
+
+        const manualComandaIds = manualComandas.map((c) => c.id);
+        const linesByComanda = new Map<string, ManualDayBoardLine[]>();
+        if (manualComandaIds.length > 0) {
+          const { data: lineRows, error: lineErr } = await supabaseAdmin
+            .from('hub_comanda_items')
+            .select('comanda_id, description, line_total, quantity, item_kind, pet_id')
+            .eq('clinic_id', clinic_id)
+            .in('comanda_id', manualComandaIds);
+          if (lineErr) throw new Error(lineErr.message);
+          for (const ln of lineRows ?? []) {
+            const cid = ln.comanda_id as string;
+            const list = linesByComanda.get(cid) ?? [];
+            list.push({
+              comanda_id: cid,
+              description: (ln.description as string | null) ?? null,
+              line_total: ln.line_total == null ? null : Number(ln.line_total),
+              quantity: ln.quantity == null ? null : Number(ln.quantity),
+              item_kind: (ln.item_kind as string | null) ?? null,
+              pet_id: (ln.pet_id as string | null) ?? null,
+              status: null,
+            });
+            linesByComanda.set(cid, list);
+          }
+        }
+
+        for (const comanda of manualComandas) {
+          const built = buildManualDayBoardItem(comanda, linesByComanda.get(comanda.id) ?? []);
+          originKeys.push({ origin_type: 'manual', origin_id: comanda.origin_id });
+          items.push({
+            ...built,
+            billing: {
+              comanda_id: null,
+              comanda_status: null,
+              has_receivable: false,
+              receivable_status: null,
+              finance_handoff_at: null,
+              active_receivable_id: null,
+              due_date: null,
+            },
+          });
+        }
+      }
+    }
+
+    // ── 4c. Origens em aberto sem entidade operacional carregada (orçamento, pacote, etc.) ──
     if (openMode && openOriginKeys) {
       const seen = new Set(items.map((i) => `${i.origin_type}:${i.origin_id}`));
       for (const k of openOriginKeys) {
@@ -4202,6 +4633,152 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
           : `${item.origin_type}:${item.origin_id}`;
       const billing = billingMap.get(key);
       if (billing) item.billing = billing;
+    }
+
+    // ── 5b. Enriquecer stubs manuais restantes (recebível avulso sem comanda carregada) ──
+    {
+      const stubs = items.filter(
+        (i) =>
+          i.origin_type === 'manual' &&
+          (!i.services.length || !i.guardian_id) &&
+          (i.billing.active_receivable_id || i.billing.comanda_id),
+      );
+      if (stubs.length > 0) {
+        const recIds = stubs
+          .map((s) => s.billing.active_receivable_id)
+          .filter((id): id is string => Boolean(id));
+        const comandaIds = stubs
+          .map((s) => s.billing.comanda_id)
+          .filter((id): id is string => Boolean(id));
+
+        const guardianByRec = new Map<string, { id: string; full_name: string } | null>();
+        const linesByRec = new Map<
+          string,
+          Array<{ description: string | null; line_total: number | null; quantity: number | null; line_kind: string | null }>
+        >();
+        if (recIds.length > 0) {
+          const { data: recRows } = await supabaseAdmin
+            .from('hub_receivables')
+            .select('id, guardian_id, guardian:hub_guardians(id, full_name)')
+            .eq('clinic_id', clinic_id)
+            .in('id', recIds);
+          for (const r of recRows ?? []) {
+            const g = r.guardian as
+              | { id: string; full_name: string }
+              | { id: string; full_name: string }[]
+              | null;
+            guardianByRec.set(
+              r.id as string,
+              g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
+            );
+          }
+          const { data: lnRows } = await supabaseAdmin
+            .from('hub_receivable_lines')
+            .select('receivable_id, description, line_total, quantity, line_kind')
+            .eq('clinic_id', clinic_id)
+            .in('receivable_id', recIds);
+          for (const ln of lnRows ?? []) {
+            const rid = ln.receivable_id as string;
+            const list = linesByRec.get(rid) ?? [];
+            list.push({
+              description: (ln.description as string | null) ?? null,
+              line_total: ln.line_total == null ? null : Number(ln.line_total),
+              quantity: ln.quantity == null ? null : Number(ln.quantity),
+              line_kind: (ln.line_kind as string | null) ?? null,
+            });
+            linesByRec.set(rid, list);
+          }
+        }
+
+        const comandaById = new Map<string, ManualDayBoardComanda>();
+        const linesByComandaId = new Map<string, ManualDayBoardLine[]>();
+        if (comandaIds.length > 0) {
+          const { data: cmdRows } = await supabaseAdmin
+            .from('hub_comandas')
+            .select(
+              `id, origin_id, status, opened_at, total_amount, finance_handoff_at, guardian_id, pet_id,
+              guardian:hub_guardians(id, full_name),
+              pet:hub_pets(id, name)`,
+            )
+            .eq('clinic_id', clinic_id)
+            .in('id', comandaIds);
+          for (const row of cmdRows ?? []) {
+            const g = row.guardian as
+              | { id: string; full_name: string }
+              | { id: string; full_name: string }[]
+              | null;
+            const p = row.pet as
+              | { id: string; name: string }
+              | { id: string; name: string }[]
+              | null;
+            comandaById.set(row.id as string, {
+              id: row.id as string,
+              origin_id: (row.origin_id as string) ?? '',
+              status: String(row.status ?? 'aberta'),
+              opened_at: (row.opened_at as string | null) ?? null,
+              total_amount: row.total_amount == null ? null : Number(row.total_amount),
+              finance_handoff_at: (row.finance_handoff_at as string | null) ?? null,
+              guardian_id: (row.guardian_id as string | null) ?? null,
+              pet_id: (row.pet_id as string | null) ?? null,
+              guardian: g ? (Array.isArray(g) ? (g[0] ?? null) : g) : null,
+              pet: p ? (Array.isArray(p) ? (p[0] ?? null) : p) : null,
+            });
+          }
+          const { data: cmdLines } = await supabaseAdmin
+            .from('hub_comanda_items')
+            .select('comanda_id, description, line_total, quantity, item_kind, pet_id')
+            .eq('clinic_id', clinic_id)
+            .in('comanda_id', comandaIds);
+          for (const ln of cmdLines ?? []) {
+            const cid = ln.comanda_id as string;
+            const list = linesByComandaId.get(cid) ?? [];
+            list.push({
+              comanda_id: cid,
+              description: (ln.description as string | null) ?? null,
+              line_total: ln.line_total == null ? null : Number(ln.line_total),
+              quantity: ln.quantity == null ? null : Number(ln.quantity),
+              item_kind: (ln.item_kind as string | null) ?? null,
+              pet_id: (ln.pet_id as string | null) ?? null,
+              status: null,
+            });
+            linesByComandaId.set(cid, list);
+          }
+        }
+
+        for (const item of stubs) {
+          const cid = item.billing.comanda_id;
+          if (cid && comandaById.has(cid)) {
+            const built = buildManualDayBoardItem(
+              comandaById.get(cid)!,
+              linesByComandaId.get(cid) ?? [],
+            );
+            item.origin_label = built.origin_label;
+            item.starts_at = item.starts_at ?? built.starts_at;
+            item.guardian_id = item.guardian_id ?? built.guardian_id;
+            item.guardian = item.guardian ?? built.guardian;
+            item.pet_id = item.pet_id ?? built.pet_id;
+            item.pet = item.pet ?? built.pet;
+            item.operational_status = built.operational_status;
+            if (!item.services.length) item.services = built.services;
+            if (!(item.estimated_amount > 0.009)) item.estimated_amount = built.estimated_amount;
+            continue;
+          }
+          const rid = item.billing.active_receivable_id;
+          if (!rid) continue;
+          const g = guardianByRec.get(rid);
+          if (g && !item.guardian) {
+            item.guardian = g;
+            item.guardian_id = g.id;
+          }
+          if (!item.services.length) {
+            item.services = buildManualServicesFromReceivableLines(linesByRec.get(rid) ?? []);
+            item.estimated_amount = item.services.reduce((s, sv) => s + sv.amount, 0);
+          }
+          if (item.origin_label === 'Cobrança avulsa' || !item.origin_label) {
+            item.origin_label = 'Venda rápida';
+          }
+        }
+      }
     }
 
     const clinicBalances = await listActivePackageBalances({ clinicId: clinic_id });
@@ -4317,7 +4894,7 @@ function resolveOpenOriginLabel(originType: string): string {
     case 'series_invoice':
       return 'Fatura de série';
     case 'manual':
-      return 'Cobrança avulsa';
+      return 'Venda rápida';
     case 'appointment':
       return 'Agenda';
     case 'grooming_session':

@@ -29,6 +29,9 @@ export function isDayBoardPaidAndComplete(
   operationalStatus: string,
   receivableStatus: DayBoardBilling['receivable_status']
 ): boolean {
+  if (receivableStatus === 'refunded' || receivableStatus === 'cancelled') {
+    return isDayBoardOperationallyComplete(originType, operationalStatus);
+  }
   return receivableStatus === 'paid' && isDayBoardOperationallyComplete(originType, operationalStatus);
 }
 
@@ -38,10 +41,18 @@ export function pickActiveReceivableId(statusesWithIds: Array<{ id: string; stat
   const partial = statusesWithIds.find((r) => r.status === 'partially_paid');
   if (partial) return partial.id;
   const paid = statusesWithIds.find((r) => r.status === 'paid');
-  return paid?.id ?? null;
+  if (paid) return paid.id;
+  const refunded = statusesWithIds.find((r) => r.status === 'refunded');
+  if (refunded) return refunded.id;
+  const cancelled = statusesWithIds.find((r) => r.status === 'cancelled');
+  return cancelled?.id ?? null;
 }
 
 export function matchesFinanceiroDayBoardScope(billing: DayBoardBilling): boolean {
+  // Reembolso/cancelamento não é conta a receber — mesmo com handoff da comanda.
+  if (billing.receivable_status === 'refunded' || billing.receivable_status === 'cancelled') {
+    return false;
+  }
   if (billing.finance_handoff_at) return true;
   if (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid') return true;
   return false;
@@ -62,10 +73,14 @@ export function hasFinanceiroChargeableAmount(opts: {
   return Number(opts.estimated_amount ?? 0) > 0.009;
 }
 
-export function aggregateReceivableStatus(statuses: string[]): 'pending' | 'partially_paid' | 'paid' | null {
+export function aggregateReceivableStatus(
+  statuses: string[],
+): 'pending' | 'partially_paid' | 'paid' | 'cancelled' | 'refunded' | null {
   if (statuses.length === 0) return null;
   if (statuses.some((s) => s === 'pending')) return 'pending';
   if (statuses.some((s) => s === 'partially_paid')) return 'partially_paid';
-  if (statuses.every((s) => s === 'paid')) return 'paid';
+  if (statuses.some((s) => s === 'paid')) return 'paid';
+  if (statuses.some((s) => s === 'refunded')) return 'refunded';
+  if (statuses.every((s) => s === 'cancelled')) return 'cancelled';
   return null;
 }

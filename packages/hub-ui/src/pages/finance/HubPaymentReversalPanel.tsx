@@ -5,9 +5,9 @@ import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import {
   hubFinancialApi,
   type HubFinancePaymentListItem,
+  type HubFinanceReceivableDetail,
 } from '../../api/hubFinancialApi';
 import { useAlert } from '../../components/AlertProvider';
-import { HubCancelButton } from '../../components/HubCancelButton';
 import { HubDateField } from '../../components/HubDateField';
 import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
 import { HubSidePanel } from '../../components/HubSidePanel';
@@ -15,6 +15,8 @@ import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { paymentMethodLabel } from '../../utils/hubPaymentMethods';
 import { formatComandaOriginLabel } from './comandaListPreview';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
+import { merchandiseLinesFromReceivableDetail } from './HubMerchandiseReturnSection';
+import { HubPaymentReversalForm } from './HubPaymentReversalForm';
 
 function formatBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
@@ -48,15 +50,8 @@ function formatPaymentDate(iso: string): string {
   return d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
 }
 
-const RECEIVABLE_STATUS_LABELS: Record<string, string> = {
-  pending: 'Pendente',
-  partially_paid: 'Parcial',
-  paid: 'Pago',
-  cancelled: 'Cancelado',
-  refunded: 'Estornado',
-};
-
 type MethodFilter = 'all' | 'pix' | 'cash' | 'credit_card' | 'debit_card' | 'other';
+type ListMode = 'posted' | 'reversed';
 
 const METHOD_FILTERS: { id: MethodFilter; label: string }[] = [
   { id: 'all', label: 'Todas' },
@@ -67,17 +62,40 @@ const METHOD_FILTERS: { id: MethodFilter; label: string }[] = [
   { id: 'other', label: 'Outras' },
 ];
 
+const LIST_MODES: { id: ListMode; label: string }[] = [
+  { id: 'posted', label: 'A estornar' },
+  { id: 'reversed', label: 'Já estornados' },
+];
+
 const KNOWN_METHODS = new Set(['pix', 'cash', 'credit_card', 'debit_card']);
 
 function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value.trim());
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value.trim(),
+  );
 }
 
-export const HubPaymentReversalPanel: React.FC = () => {
+type HubPaymentReversalPanelProps = {
+  /** Caixa: copy alinhado à devolução no balcão; Financeiro: link para contas a receber. */
+  context?: 'financeiro' | 'caixa';
+  /**
+   * Embutido em side panel (ex.: Caixa): sem título de página e confirmação inline
+   * (evita empilhar outro HubSidePanel).
+   */
+  embedded?: boolean;
+  /** Chamado após estorno/reembolso bem-sucedido (ex.: atualizar métricas do caixa). */
+  onChanged?: () => void;
+};
+
+export const HubPaymentReversalPanel: React.FC<HubPaymentReversalPanelProps> = ({
+  context = 'financeiro',
+  embedded = false,
+  onChanged,
+}) => {
   const clinicId = getStoredClinicId();
   const unitId = useSelectedUnitId();
   const { hasPermission } = usePermissions();
-  const { showError, showSuccess } = useAlert();
+  const { showError } = useAlert();
 
   const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(
     clinicId && unitId ? `${clinicId}:${unitId}` : null,
@@ -85,18 +103,20 @@ export const HubPaymentReversalPanel: React.FC = () => {
   const [rows, setRows] = useState<HubFinancePaymentListItem[]>([]);
   const [listFrom, setListFrom] = useState(() => daysAgoIso(30));
   const [listTo, setListTo] = useState(() => todayIsoLocal());
+  const [listMode, setListMode] = useState<ListMode>('posted');
   const [methodFilter, setMethodFilter] = useState<MethodFilter>('all');
   const [search, setSearch] = useState('');
   const [target, setTarget] = useState<HubFinancePaymentListItem | null>(null);
   const [manualId, setManualId] = useState<string | null>(null);
-  const [manualDraft, setManualDraft] = useState('');
-  const [reason, setReason] = useState('');
-  const [reversalMode, setReversalMode] = useState<'payment_reversal' | 'refund'>('payment_reversal');
-  const [refundMethod, setRefundMethod] = useState('pix');
-  const [refundDate, setRefundDate] = useState(() => todayIsoLocal());
-  const [saving, setSaving] = useState(false);
+  const [receivableDetail, setReceivableDetail] = useState<HubFinanceReceivableDetail | null>(null);
 
   const canReverse = hasPermission('hub.payments.reverse');
+  const isHistory = listMode === 'reversed';
+
+  const merchandiseLines = useMemo(
+    () => merchandiseLinesFromReceivableDetail(receivableDetail),
+    [receivableDetail],
+  );
 
   const load = useCallback(async () => {
     if (!clinicId || !unitId) {
@@ -109,6 +129,7 @@ export const HubPaymentReversalPanel: React.FC = () => {
       const payments = await hubFinancialApi.listPayments(clinicId, unitId, {
         from: listFrom,
         to: listTo,
+        status: listMode,
       });
       setRows(payments);
       succeed();
@@ -118,7 +139,7 @@ export const HubPaymentReversalPanel: React.FC = () => {
     } finally {
       finish();
     }
-  }, [clinicId, unitId, listFrom, listTo, showError, begin, succeed, finish]);
+  }, [clinicId, unitId, listFrom, listTo, listMode, showError, begin, succeed, finish]);
 
   useEffect(() => {
     void load();
@@ -128,12 +149,16 @@ export const HubPaymentReversalPanel: React.FC = () => {
     const term = normalizeText(search.trim());
     return rows.filter((row) => {
       if (methodFilter === 'other' && KNOWN_METHODS.has(row.payment_method)) return false;
-      if (methodFilter !== 'all' && methodFilter !== 'other' && row.payment_method !== methodFilter) return false;
+      if (methodFilter !== 'all' && methodFilter !== 'other' && row.payment_method !== methodFilter) {
+        return false;
+      }
       if (!term) return true;
       const guardian = row.receivable?.guardian_name ?? '';
       const origin = formatComandaOriginLabel(row.receivable?.source_type ?? '');
       const haystack = normalizeText(
-        [guardian, origin, paymentMethodLabel(row.payment_method), row.notes, row.id].filter(Boolean).join(' '),
+        [guardian, origin, paymentMethodLabel(row.payment_method), row.notes, row.id]
+          .filter(Boolean)
+          .join(' '),
       );
       return haystack.includes(term);
     });
@@ -148,73 +173,73 @@ export const HubPaymentReversalPanel: React.FC = () => {
   const manualLookup = search.trim();
   const showManualHint = isUuid(manualLookup) && !rows.some((row) => row.id === manualLookup);
 
+  const [lookupBusy, setLookupBusy] = useState(false);
+
   const resetPanel = () => {
     setTarget(null);
     setManualId(null);
-    setManualDraft('');
-    setReason('');
-    setReversalMode('payment_reversal');
-    setRefundMethod('pix');
-    setRefundDate(todayIsoLocal());
+    setReceivableDetail(null);
+    setLookupBusy(false);
   };
 
+  const loadReceivableForReturn = useCallback(
+    async (receivableId: string | null | undefined) => {
+      if (!clinicId || !receivableId) {
+        setReceivableDetail(null);
+        return;
+      }
+      try {
+        const detail = await hubFinancialApi.getReceivableDetail(receivableId, clinicId);
+        setReceivableDetail(detail);
+      } catch {
+        setReceivableDetail(null);
+      }
+    },
+    [clinicId],
+  );
+
   const closePanel = () => {
-    if (saving) return;
     resetPanel();
   };
 
   const openRow = (row: HubFinancePaymentListItem) => {
     setManualId(null);
-    setManualDraft('');
     setTarget(row);
-    setReason('');
+    void loadReceivableForReturn(row.receivable?.id);
   };
+
+  const resolvePaymentById = useCallback(
+    async (id: string) => {
+      if (!clinicId || !isUuid(id)) return;
+      if (target?.id === id) return;
+      setLookupBusy(true);
+      try {
+        const payment = await hubFinancialApi.getPayment(id, clinicId);
+        setTarget(payment);
+        setManualId(null);
+        await loadReceivableForReturn(payment.receivable?.id);
+      } catch {
+        /* mantém o campo manual se o código não existir / sem acesso */
+      } finally {
+        setLookupBusy(false);
+      }
+    },
+    [clinicId, target?.id, loadReceivableForReturn],
+  );
 
   const openManual = (id = '') => {
     setTarget(null);
-    setManualId(id);
-    setManualDraft(id);
-    setReason('');
+    setReceivableDetail(null);
+    setManualId(id || 'manual');
+    if (id && isUuid(id)) {
+      void resolvePaymentById(id);
+    }
   };
 
-  const onConfirm = async () => {
-    if (!clinicId) return;
-    if (!canReverse) {
-      showError('Sem permissão para estornar pagamentos.');
-      return;
-    }
-    const paymentId = (target?.id ?? manualDraft).trim();
-    if (!paymentId || !isUuid(paymentId)) {
-      showError('Informe o código completo do pagamento.');
-      return;
-    }
-    if (reason.trim().length < 3) {
-      showError('Informe o motivo do estorno (mín. 3 caracteres).');
-      return;
-    }
-    if (reversalMode === 'refund' && !refundDate) {
-      showError('Informe a data efetiva do reembolso.');
-      return;
-    }
-    setSaving(true);
-    try {
-      const res = await hubFinancialApi.reversePayment(paymentId, {
-        clinic_id: clinicId,
-        reason: reason.trim(),
-        mode: reversalMode,
-        refund_method: reversalMode === 'refund' ? (refundMethod as 'pix') : null,
-        refund_effective_date: reversalMode === 'refund' ? refundDate : null,
-      });
-      const status = RECEIVABLE_STATUS_LABELS[res.receivable_status] ?? res.receivable_status;
-      const actionLabel = reversalMode === 'refund' ? 'Reembolso registrado' : 'Lançamento anulado';
-      showSuccess(res.warning || `${actionLabel}. A cobrança ficou ${status.toLowerCase()}.`);
-      resetPanel();
-      await load();
-    } catch (e) {
-      showError((e as Error)?.message || 'Erro ao estornar pagamento');
-    } finally {
-      setSaving(false);
-    }
+  const onFormSuccess = async () => {
+    resetPanel();
+    setListMode('reversed');
+    onChanged?.();
   };
 
   if (!clinicId || !unitId) {
@@ -222,45 +247,138 @@ export const HubPaymentReversalPanel: React.FC = () => {
   }
 
   const panelOpen = !!target || manualId !== null;
-  const cashClosed = target?.payment_method === 'cash' && target.cash_session_status === 'closed';
+  const paymentSummary = target
+    ? {
+        id: target.id,
+        amount: Number(target.amount),
+        payment_method: target.payment_method,
+        installments: target.installments,
+        payment_date: target.payment_date,
+        cash_session_status: target.cash_session_status,
+      }
+    : null;
+
+  const seedManualId =
+    !target && manualId && manualId !== 'manual' && isUuid(manualId) ? manualId : '';
+
+  const originLabel = target?.receivable?.source_type
+    ? formatComandaOriginLabel(target.receivable.source_type)
+    : null;
+  const loadingMerchandise =
+    lookupBusy || Boolean(target?.receivable?.id && !receivableDetail);
+  const hasPendingMerch = merchandiseLines.some((l) => !l.alreadyReturned);
+
+  const reversalForm = panelOpen ? (
+    <HubPaymentReversalForm
+      key={`${target?.id ?? manualId ?? 'manual'}-${receivableDetail?.id ?? 'pending'}`}
+      clinicId={clinicId}
+      payment={paymentSummary}
+      seedPaymentId={seedManualId}
+      onLookupPaymentId={(id) => void resolvePaymentById(id)}
+      originLabel={originLabel}
+      allowCustomerCreditRefund={Boolean(
+        receivableDetail?.guardian_id || receivableDetail?.guardian?.id,
+      )}
+      merchandiseLines={merchandiseLines}
+      stockReturnStatus={receivableDetail?.stock_return_status}
+      loadingMerchandise={loadingMerchandise}
+      initialMode={hasPendingMerch ? 'refund' : 'payment_reversal'}
+      idPrefix={embedded ? 'caixa-rev' : 'fin-rev'}
+      cancelLabel="Voltar"
+      subtitle={embedded ? undefined : null}
+      onCancel={closePanel}
+      onSuccess={() => void onFormSuccess()}
+    />
+  ) : null;
+
+  if (embedded && panelOpen) {
+    return reversalForm;
+  }
 
   return (
     <>
       <section className="hub-finance-page__section hub-payables hub-expenses hub-adjustments">
-        <div className="hub-payables__head">
-          <div className="hub-payables__head-copy">
-            <h2 className="hub-clientes__form-title">Estornos</h2>
-            <p className="hub-clientes__subtitle">
-              Pagamentos desta unidade no período. O estorno devolve o valor integral e recalcula o saldo da
-              cobrança. Atendimento cancelado na operação fica em Cancelamentos até a decisão. Para ajustar uma
-              comanda, abra a ficha em{' '}
-              <Link to="/hub/financeiro?tab=receivables" className="hub-clientes__link-btn">
-                Contas a receber
-              </Link>
-              .
-            </p>
+        {embedded ? (
+          <div className="hub-payables__head hub-payables__head--compact">
+            <div className="hub-payables__head-aside">
+              {!loading ? (
+                <div className="hub-payables__stat">
+                  <span className="hub-payables__stat-label">No período</span>
+                  <span className="hub-payables__stat-value">{formatBrl(visibleTotal)}</span>
+                  <span className="hub-expenses__stat-meta">
+                    {visible.length} pagamento{visible.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+              ) : null}
+              {canReverse && !isHistory ? (
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--ghost"
+                  onClick={() => openManual()}
+                >
+                  Estornar por código
+                </button>
+              ) : null}
+            </div>
           </div>
-          <div className="hub-payables__head-aside">
-            {!loading ? (
-              <div className="hub-payables__stat">
-                <span className="hub-payables__stat-label">No período</span>
-                <span className="hub-payables__stat-value">{formatBrl(visibleTotal)}</span>
-                <span className="hub-expenses__stat-meta">
-                  {visible.length} pagamento{visible.length === 1 ? '' : 's'}
-                </span>
-              </div>
-            ) : null}
-            {canReverse ? (
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--ghost"
-                onClick={() => openManual()}
-              >
-                Estornar por código
-              </button>
-            ) : null}
+        ) : (
+          <div className="hub-payables__head">
+            <div className="hub-payables__head-copy">
+              <h2 className="hub-clientes__form-title">Estornos</h2>
+              <p className="hub-clientes__subtitle">
+                {isHistory ? (
+                  <>
+                    Histórico de pagamentos já anulados no período. Eles saem da listagem do caixa e de “A
+                    estornar”. O acerto também aparece em{' '}
+                    <Link to="/hub/relatorios?relatorio=sales-adjustments" className="hub-clientes__link-btn">
+                      Relatórios → Vendas e acertos
+                    </Link>
+                    {context === 'financeiro' ? (
+                      <>
+                        {' '}
+                        e na ficha em{' '}
+                        <Link to="/hub/financeiro?tab=receivables" className="hub-clientes__link-btn">
+                          Contas a receber
+                        </Link>
+                      </>
+                    ) : null}
+                    .
+                  </>
+                ) : context === 'caixa' ? (
+                  <>
+                    Pagamentos ainda válidos desta unidade — inclusive vendas rápidas de dias anteriores. Depois do
+                    estorno, o item sai daqui e do caixa; veja em “Já estornados”.
+                  </>
+                ) : (
+                  <>
+                    Pagamentos ainda válidos desta unidade. Depois do estorno, o item some daqui e do caixa — abra
+                    “Já estornados” para o histórico. Cancelamento operacional fica em Cancelamentos até a decisão.
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="hub-payables__head-aside">
+              {!loading ? (
+                <div className="hub-payables__stat">
+                  <span className="hub-payables__stat-label">No período</span>
+                  <span className="hub-payables__stat-value">{formatBrl(visibleTotal)}</span>
+                  <span className="hub-expenses__stat-meta">
+                    {visible.length} pagamento{visible.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+              ) : null}
+              {canReverse && !isHistory ? (
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--ghost"
+                  onClick={() => openManual()}
+                >
+                  Estornar por código
+                </button>
+              ) : null}
+            </div>
           </div>
-        </div>
+        )}
 
         {!canReverse ? (
           <p className="hub-clientes__muted">Apenas leitura — sem permissão para estornar pagamentos.</p>
@@ -269,12 +387,41 @@ export const HubPaymentReversalPanel: React.FC = () => {
         <HubRefreshingBanner show={refreshing} label="Atualizando pagamentos…" />
 
         <div className="hub-expenses__toolbar">
-          <div className="hub-payables__filters hub-expenses__filters" role="group" aria-label="Filtrar por forma de pagamento">
+          <div
+            className="hub-payables__filters hub-expenses__filters"
+            role="tablist"
+            aria-label="Lista de estornos"
+          >
+            {LIST_MODES.map((item) => (
+              <button
+                key={item.id}
+                type="button"
+                role="tab"
+                aria-selected={listMode === item.id}
+                className={`hub-dayboard__toggle-btn${
+                  listMode === item.id ? ' hub-dayboard__toggle-btn--active' : ''
+                }`}
+                onClick={() => {
+                  setListMode(item.id);
+                  resetPanel();
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <div
+            className="hub-payables__filters hub-expenses__filters"
+            role="group"
+            aria-label="Filtrar por forma de pagamento"
+          >
             {METHOD_FILTERS.map((item) => (
               <button
                 key={item.id}
                 type="button"
-                className={`hub-dayboard__toggle-btn${methodFilter === item.id ? ' hub-dayboard__toggle-btn--active' : ''}`}
+                className={`hub-dayboard__toggle-btn${
+                  methodFilter === item.id ? ' hub-dayboard__toggle-btn--active' : ''
+                }`}
                 onClick={() => setMethodFilter(item.id)}
               >
                 {item.label}
@@ -334,10 +481,14 @@ export const HubPaymentReversalPanel: React.FC = () => {
           </div>
         </div>
 
-        {showManualHint && canReverse ? (
+        {showManualHint && canReverse && !isHistory ? (
           <p className="hub-adjustments__manual-hint">
             Esse código não está no período.
-            <button type="button" className="hub-clientes__link-btn" onClick={() => openManual(manualLookup)}>
+            <button
+              type="button"
+              className="hub-clientes__link-btn"
+              onClick={() => openManual(manualLookup)}
+            >
               Estornar mesmo assim
             </button>
           </p>
@@ -351,12 +502,18 @@ export const HubPaymentReversalPanel: React.FC = () => {
               <RotateCcw size={24} strokeWidth={1.75} />
             </span>
             <p className="hub-finance-page__empty-title">
-              {filtersNarrowed ? 'Nenhum pagamento com esses filtros' : 'Nenhum pagamento no período'}
+              {filtersNarrowed
+                ? 'Nenhum pagamento com esses filtros'
+                : isHistory
+                  ? 'Nenhum estorno no período'
+                  : 'Nenhum pagamento no período'}
             </p>
             <p className="hub-finance-page__empty-desc">
               {filtersNarrowed
                 ? 'Limpe a busca, troque a forma ou amplie as datas.'
-                : 'Os recebimentos da unidade aparecem aqui para estorno, em qualquer forma de pagamento.'}
+                : isHistory
+                  ? 'Pagamentos anulados no período aparecem aqui. Amplie as datas se o estorno foi feito em outro dia.'
+                  : 'Os recebimentos da unidade aparecem aqui para estorno. Depois de anular, mude para “Já estornados”.'}
             </p>
           </div>
         ) : (
@@ -369,7 +526,7 @@ export const HubPaymentReversalPanel: React.FC = () => {
                   <th>Origem</th>
                   <th>Forma</th>
                   <th className="hub-finance-page__th-num">Valor</th>
-                  <th className="hub-clientes__th-actions">Ações</th>
+                  <th className="hub-clientes__th-actions">{isHistory ? 'Situação' : 'Ações'}</th>
                 </tr>
               </thead>
               <tbody>
@@ -379,6 +536,11 @@ export const HubPaymentReversalPanel: React.FC = () => {
                     ? formatComandaOriginLabel(row.receivable.source_type)
                     : '—';
                   const active = target?.id === row.id;
+                  const comandaHref = row.receivable?.comanda_id
+                    ? `/hub/financeiro/comanda/${row.receivable.comanda_id}`
+                    : row.receivable?.id
+                      ? `/hub/financeiro?tab=receivables&receivable=${row.receivable.id}`
+                      : null;
                   return (
                     <tr key={row.id} className={active ? 'hub-payables__row--active' : undefined}>
                       <td>
@@ -389,11 +551,8 @@ export const HubPaymentReversalPanel: React.FC = () => {
                         {row.notes ? <span className="hub-expenses__notes">{row.notes}</span> : null}
                       </td>
                       <td>
-                        {row.receivable?.comanda_id ? (
-                          <Link
-                            to={`/hub/financeiro/comanda/${row.receivable.comanda_id}`}
-                            className="hub-payables__chip hub-payables__chip--link"
-                          >
+                        {comandaHref ? (
+                          <Link to={comandaHref} className="hub-payables__chip hub-payables__chip--link">
                             {origin}
                           </Link>
                         ) : (
@@ -410,7 +569,9 @@ export const HubPaymentReversalPanel: React.FC = () => {
                         <span className="hub-payables__amount">{formatBrl(Number(row.amount))}</span>
                       </td>
                       <td className="hub-clientes__td-actions">
-                        {canReverse ? (
+                        {isHistory ? (
+                          <span className="hub-payables__chip hub-payables__chip--muted">Estornado</span>
+                        ) : canReverse ? (
                           <div className="hub-clientes__td-actions-inner hub-dayboard__actions">
                             <button
                               type="button"
@@ -435,146 +596,18 @@ export const HubPaymentReversalPanel: React.FC = () => {
         )}
       </section>
 
-      <HubSidePanel
-        open={panelOpen}
-        onClose={closePanel}
-        title="Estornar pagamento"
-        titleIcon={<RotateCcw size={20} strokeWidth={1.75} aria-hidden />}
-        subtitle="O valor integral volta e o saldo da cobrança é recalculado."
-        contentKey={target?.id ?? manualId ?? 'manual'}
-        footer={
-          <div className="hub-finance-page__drawer-footer">
-            <HubCancelButton onClick={closePanel} disabled={saving} />
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--primary"
-              disabled={saving || reason.trim().length < 3}
-              onClick={() => void onConfirm()}
-            >
-              {saving
-                ? 'Salvando…'
-                : reversalMode === 'refund'
-                  ? 'Confirmar reembolso'
-                  : 'Confirmar anulação'}
-            </button>
-          </div>
-        }
-      >
-        {target ? (
-          <div className="hub-adjustments__facts" aria-label="Pagamento selecionado">
-            <div>
-              <span>Tutor</span>
-              <strong>{target.receivable?.guardian_name ?? '—'}</strong>
-            </div>
-            <div>
-              <span>Valor</span>
-              <strong>{formatBrl(Number(target.amount))}</strong>
-            </div>
-            <div>
-              <span>Forma</span>
-              <strong>
-                {paymentMethodLabel(target.payment_method)}
-                {target.installments > 1 ? ` · ${target.installments}x` : ''}
-              </strong>
-            </div>
-            <div>
-              <span>Data</span>
-              <strong>{formatPaymentDate(target.payment_date)}</strong>
-            </div>
-          </div>
-        ) : (
-          <div className="hub-clientes__field">
-            <label className="hub-clientes__label" htmlFor="fin-reverse-payment">
-              Código do pagamento
-            </label>
-            <input
-              id="fin-reverse-payment"
-              className="hub-clientes__input"
-              value={manualDraft}
-              onChange={(e) => setManualDraft(e.target.value)}
-              placeholder="Cole o código completo"
-              autoComplete="off"
-              spellCheck={false}
-            />
-          </div>
-        )}
-
-        {cashClosed ? (
-          <p className="hub-adjustments__warning" role="status">
-            Este dinheiro entrou em um caixa que já foi fechado. O snapshot da sessão permanece; o impacto fica em
-            ajustes pós-fechamento.
-          </p>
-        ) : null}
-
-        <div className="hub-clientes__field" role="group" aria-label="Tipo de operação">
-          <span className="hub-clientes__label">Tipo</span>
-          <div className="hub-payables__filters" style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button
-              type="button"
-              className={`hub-dayboard__toggle-btn${reversalMode === 'payment_reversal' ? ' hub-dayboard__toggle-btn--active' : ''}`}
-              onClick={() => setReversalMode('payment_reversal')}
-            >
-              Anular lançamento
-            </button>
-            <button
-              type="button"
-              className={`hub-dayboard__toggle-btn${reversalMode === 'refund' ? ' hub-dayboard__toggle-btn--active' : ''}`}
-              onClick={() => setReversalMode('refund')}
-            >
-              Reembolso efetivo
-            </button>
-          </div>
-          <p className="hub-clientes__muted" style={{ marginTop: 6 }}>
-            {reversalMode === 'refund'
-              ? 'Use quando houve devolução real de dinheiro ou crédito ao cliente.'
-              : 'Use para corrigir lançamento incorreto (duplicidade, método ou valor errado).'}
-          </p>
-        </div>
-
-        {reversalMode === 'refund' ? (
-          <>
-            <div className="hub-clientes__field">
-              <label className="hub-clientes__label" htmlFor="fin-refund-method">
-                Forma do reembolso
-              </label>
-              <select
-                id="fin-refund-method"
-                className="hub-clientes__input"
-                value={refundMethod}
-                onChange={(e) => setRefundMethod(e.target.value)}
-              >
-                <option value="pix">Pix</option>
-                <option value="cash">Dinheiro</option>
-                <option value="transfer">Transferência</option>
-                <option value="customer_credit">Crédito do tutor</option>
-                <option value="credit_card">Cartão de crédito</option>
-                <option value="debit_card">Cartão de débito</option>
-                <option value="other">Outro</option>
-              </select>
-            </div>
-            <HubDateField
-              id="fin-refund-date"
-              label="Data efetiva do reembolso"
-              value={refundDate}
-              onChange={setRefundDate}
-            />
-          </>
-        ) : null}
-
-        <div className="hub-clientes__field">
-          <label className="hub-clientes__label" htmlFor="fin-reverse-reason">
-            Motivo
-          </label>
-          <textarea
-            id="fin-reverse-reason"
-            className="hub-clientes__input"
-            rows={3}
-            value={reason}
-            onChange={(e) => setReason(e.target.value)}
-            placeholder="Descreva o motivo (mín. 3 caracteres)"
-          />
-        </div>
-      </HubSidePanel>
+      {!embedded ? (
+        <HubSidePanel
+          open={panelOpen}
+          onClose={closePanel}
+          title="Estornar pagamento"
+          titleIcon={<RotateCcw size={20} strokeWidth={1.75} aria-hidden />}
+          subtitle="O valor integral volta e o saldo da cobrança é recalculado."
+          contentKey={target?.id ?? manualId ?? 'manual'}
+        >
+          {reversalForm}
+        </HubSidePanel>
+      ) : null}
     </>
   );
 };

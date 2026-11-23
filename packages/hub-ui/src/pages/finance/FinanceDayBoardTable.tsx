@@ -12,7 +12,9 @@ import {
   resolveDayBoardCheckoutLabel,
 } from './hubComandaEditUtils';
 import { isDayBoardBatchSelectable } from './batchChargeItems';
+import { dayBoardCompositionLabel, resolveDayBoardComposition } from './dayBoardComposition';
 import { ReceivableDueBadge } from './ReceivableDueBadge';
+import { ReceivableStockReturnBadge } from './ReceivableStockReturnBadge';
 
 export const STATUS_OP_LABEL: Record<string, string> = {
   pending_confirm: 'Aguardando confirmação',
@@ -35,6 +37,9 @@ export const STATUS_OP_LABEL: Record<string, string> = {
   discharged: 'Alta',
   death: 'Óbito',
   transferred: 'Transferido',
+  aberta: 'Aberta',
+  fechada: 'Fechada',
+  open: 'Aberta',
 };
 
 /** No Financeiro, status operacional "paid" confunde com recebível quitado. */
@@ -51,22 +56,53 @@ export function petInitials(name: string): string {
 }
 
 export function ComandaStatusBadge({ billing }: { billing: HubFinanceDayBoardItem['billing'] }) {
+  const stockBadge = <ReceivableStockReturnBadge status={billing.stock_return_status} />;
   if (billing.receivable_status === 'paid') {
-    return <span className="hub-clientes__pill hub-dayboard__pill--paid">Recebido</span>;
+    return (
+      <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span className="hub-clientes__pill hub-dayboard__pill--paid">Recebido</span>
+        {stockBadge}
+      </span>
+    );
+  }
+  if (billing.receivable_status === 'refunded') {
+    return (
+      <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <ReceivableDueBadge dueDate={billing.due_date} status="refunded" showDate />
+        {stockBadge}
+      </span>
+    );
+  }
+  if (billing.receivable_status === 'cancelled') {
+    return (
+      <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <ReceivableDueBadge dueDate={billing.due_date} status="cancelled" showDate />
+        {stockBadge}
+      </span>
+    );
   }
   if (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid') {
     return (
-      <ReceivableDueBadge
-        dueDate={billing.due_date}
-        status={billing.receivable_status}
-        showDate
-      />
+      <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <ReceivableDueBadge dueDate={billing.due_date} status={billing.receivable_status} showDate />
+        {stockBadge}
+      </span>
     );
   }
   if (billing.comanda_id && billing.comanda_status === 'aberta') {
-    return <span className="hub-clientes__pill hub-dayboard__pill--open">Comanda aberta</span>;
+    return (
+      <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+        <span className="hub-clientes__pill hub-dayboard__pill--open">Comanda aberta</span>
+        {stockBadge}
+      </span>
+    );
   }
-  return <span className="hub-clientes__pill hub-dayboard__pill--none">Sem cobrança</span>;
+  return (
+    <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+      <span className="hub-clientes__pill hub-dayboard__pill--none">Sem cobrança</span>
+      {stockBadge}
+    </span>
+  );
 }
 
 export type FinanceDayBoardTableProps = {
@@ -93,6 +129,75 @@ export type FinanceDayBoardTableProps = {
 
 function itemKey(item: HubFinanceDayBoardItem): string {
   return `${item.origin_type}:${item.origin_id}`;
+}
+
+function DayBoardTypeCell({ item }: { item: HubFinanceDayBoardItem }) {
+  const composition = resolveDayBoardComposition(item);
+  const label = dayBoardCompositionLabel(composition);
+  if (!composition) {
+    return <span className="hub-clientes__muted">—</span>;
+  }
+  return (
+    <span
+      className={`hub-clientes__pill hub-dayboard__type-pill hub-dayboard__type-pill--${composition}`}
+      title={label}
+    >
+      {label}
+    </span>
+  );
+}
+
+function DayBoardDescriptiveCell({
+  item,
+  serviceNames,
+  groupLabel,
+}: {
+  item: HubFinanceDayBoardItem;
+  serviceNames: string;
+  groupLabel: string | null;
+}) {
+  return (
+    <div className="hub-dayboard__services-wrap">
+      {item.coverage_kind === 'series_invoice' || item.series_invoice_comanda_id ? (
+        <span className="hub-clientes__pill hub-dayboard__pill--open" style={{ marginRight: 6 }}>
+          Fatura
+        </span>
+      ) : item.has_package_balance || item.coverage_kind === 'package' ? (
+        <span className="hub-clientes__pill hub-dayboard__pill--open" style={{ marginRight: 6 }}>
+          Pacote
+        </span>
+      ) : null}
+      {groupLabel ? (
+        <span className="hub-clientes__pill hub-dayboard__group-pill">{groupLabel}</span>
+      ) : null}
+      <span className="hub-dayboard__services-cell" title={serviceNames}>
+        {serviceNames}
+      </span>
+      {(item.has_package_balance || item.coverage_kind === 'package') &&
+      Number(item.estimated_amount ?? 0) <= 0.009 ? (
+        <span className="hub-clientes__muted" style={{ display: 'block', fontSize: 12, marginTop: 2 }}>
+          Coberto por pacote
+        </span>
+      ) : null}
+      {item.coverage_kind === 'series_invoice' ? (
+        <span className="hub-clientes__muted" style={{ display: 'block', fontSize: 12, marginTop: 2 }}>
+          Coberto por fatura
+        </span>
+      ) : null}
+    </div>
+  );
+}
+
+function DayBoardPetCell({ item }: { item: HubFinanceDayBoardItem }) {
+  if (!item.pet?.name) {
+    return <span className="hub-clientes__muted">—</span>;
+  }
+  return (
+    <div className="hub-clientes__tutor-cell">
+      <span className="hub-clientes__avatar hub-pets-table-avatar">{petInitials(item.pet.name)}</span>
+      <span className="hub-clientes__tutor-name hub-dayboard__pet-name">{item.pet.name}</span>
+    </div>
+  );
 }
 
 export function FinanceDayBoardTable({
@@ -138,12 +243,26 @@ export function FinanceDayBoardTable({
                 />
               </th>
             ) : null}
-            <th>Pet</th>
-            <th>Serviços</th>
-            <th>Tutor</th>
-            <th>Horário</th>
-            <th title="Andamento do serviço (agenda, banho, hotel…)">Atendimento</th>
-            <th title="Situação do recebível / vencimento">Cobrança</th>
+            {isCaixa ? (
+              <>
+                <th>Tipo</th>
+                <th>Descritivo</th>
+                <th>Horário</th>
+                <th title="Andamento do serviço (agenda, banho, hotel…)">Atendimento</th>
+                <th title="Situação do recebível / vencimento">Cobrança</th>
+                <th>Pet</th>
+                <th>Tutor</th>
+              </>
+            ) : (
+              <>
+                <th>Pet</th>
+                <th>Serviços</th>
+                <th>Tutor</th>
+                <th>Horário</th>
+                <th title="Andamento do serviço (agenda, banho, hotel…)">Atendimento</th>
+                <th title="Situação do recebível / vencimento">Cobrança</th>
+              </>
+            )}
             <th className="hub-clientes__th-actions">Ações</th>
           </tr>
         </thead>
@@ -166,10 +285,8 @@ export function FinanceDayBoardTable({
             const groupLabel = item.service_group ? serviceGroupLabel(item.service_group) : null;
 
             const canCancelReceivable =
-              !isCaixa &&
               hasReceivable &&
               canFinancialWrite &&
-              canEdit &&
               !isViewOnly &&
               Boolean(item.billing.active_receivable_id) &&
               (item.billing.receivable_status === 'pending' ||
@@ -200,54 +317,56 @@ export function FinanceDayBoardTable({
                     )}
                   </td>
                 ) : null}
-                <td>
-                  {item.pet?.name ? (
-                    <div className="hub-clientes__tutor-cell">
-                      <span className="hub-clientes__avatar hub-pets-table-avatar">{petInitials(item.pet.name)}</span>
-                      <span className="hub-clientes__tutor-name hub-dayboard__pet-name">{item.pet.name}</span>
-                    </div>
-                  ) : (
-                    <span className="hub-clientes__muted">—</span>
-                  )}
-                </td>
-                <td>
-                  <div className="hub-dayboard__services-wrap">
-                    {item.coverage_kind === 'series_invoice' || item.series_invoice_comanda_id ? (
-                      <span className="hub-clientes__pill hub-dayboard__pill--open" style={{ marginRight: 6 }}>
-                        Fatura
+                {isCaixa ? (
+                  <>
+                    <td>
+                      <DayBoardTypeCell item={item} />
+                    </td>
+                    <td>
+                      <DayBoardDescriptiveCell
+                        item={item}
+                        serviceNames={serviceNames}
+                        groupLabel={groupLabel}
+                      />
+                    </td>
+                    <td className="hub-dayboard__time-cell">{timeStr}</td>
+                    <td>
+                      <span className={`hub-dayboard__op-badge hub-dayboard__op-badge--${item.operational_status}`}>
+                        {opLabel}
                       </span>
-                    ) : item.has_package_balance || item.coverage_kind === 'package' ? (
-                      <span className="hub-clientes__pill hub-dayboard__pill--open" style={{ marginRight: 6 }}>
-                        Pacote
+                    </td>
+                    <td>
+                      <ComandaStatusBadge billing={item.billing} />
+                    </td>
+                    <td>
+                      <DayBoardPetCell item={item} />
+                    </td>
+                    <td>{item.guardian?.full_name ?? <span className="hub-clientes__muted">—</span>}</td>
+                  </>
+                ) : (
+                  <>
+                    <td>
+                      <DayBoardPetCell item={item} />
+                    </td>
+                    <td>
+                      <DayBoardDescriptiveCell
+                        item={item}
+                        serviceNames={serviceNames}
+                        groupLabel={groupLabel}
+                      />
+                    </td>
+                    <td>{item.guardian?.full_name ?? <span className="hub-clientes__muted">—</span>}</td>
+                    <td className="hub-dayboard__time-cell">{timeStr}</td>
+                    <td>
+                      <span className={`hub-dayboard__op-badge hub-dayboard__op-badge--${item.operational_status}`}>
+                        {opLabel}
                       </span>
-                    ) : null}
-                    {groupLabel ? (
-                      <span className="hub-clientes__pill hub-dayboard__group-pill">{groupLabel}</span>
-                    ) : null}
-                    <span className="hub-dayboard__services-cell" title={serviceNames}>
-                      {serviceNames}
-                    </span>
-                    {(item.has_package_balance || item.coverage_kind === 'package') &&
-                    Number(item.estimated_amount ?? 0) <= 0.009 ? (
-                      <span className="hub-clientes__muted" style={{ display: 'block', fontSize: 12, marginTop: 2 }}>
-                        Coberto por pacote
-                      </span>
-                    ) : null}
-                    {item.coverage_kind === 'series_invoice' ? (
-                      <span className="hub-clientes__muted" style={{ display: 'block', fontSize: 12, marginTop: 2 }}>
-                        Coberto por fatura
-                      </span>
-                    ) : null}
-                  </div>
-                </td>
-                <td>{item.guardian?.full_name ?? <span className="hub-clientes__muted">—</span>}</td>
-                <td className="hub-dayboard__time-cell">{timeStr}</td>
-                <td>
-                  <span className={`hub-dayboard__op-badge hub-dayboard__op-badge--${item.operational_status}`}>
-                    {opLabel}
-                  </span>
-                </td>
-                <td><ComandaStatusBadge billing={item.billing} /></td>
+                    </td>
+                    <td>
+                      <ComandaStatusBadge billing={item.billing} />
+                    </td>
+                  </>
+                )}
                 <td className="hub-clientes__td-actions" onClick={(e) => e.stopPropagation()}>
                   <div className="hub-clientes__td-actions-inner hub-dayboard__actions">
                     {isCaixa && !hasComanda && canCreateReceivable && onOpenComanda && (

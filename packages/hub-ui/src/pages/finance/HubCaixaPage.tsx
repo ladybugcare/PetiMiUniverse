@@ -5,12 +5,12 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
-  HelpCircle,
   Coins,
   Lock,
   Unlock,
   Package,
   Pencil,
+  RotateCcw,
   Search,
   ShoppingBag,
   User,
@@ -54,6 +54,8 @@ import { QuickSaleDrawer } from './QuickSaleDrawer';
 import { EncerrarTurnoDrawer } from './EncerrarTurnoDrawer';
 import { IniciarTurnoDrawer } from './IniciarTurnoDrawer';
 import { HubComandaReceivableDrawer } from './HubComandaReceivableDrawer';
+import { HubReceivableCancelPanel } from './HubReceivableCancelPanel';
+import HubPaymentReversalPanel from './HubPaymentReversalPanel';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import type { PackageSaleScheduleContext } from './packageSaleScheduleUtils';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
@@ -108,7 +110,7 @@ const HubCaixaPage: React.FC = () => {
   const [selectedCashItem, setSelectedCashItem] = useState<CaixaSessionHistoryItem | null>(null);
   const [openComandas, setOpenComandas] = useState<Array<Record<string, unknown>>>([]);
   const [acceptedPaymentMethods, setAcceptedPaymentMethods] = useState<HubPaymentMethod[]>([]);
-  const [cashMovementExpanded, setCashMovementExpanded] = useState(false);
+  const [showSangriaPanel, setShowSangriaPanel] = useState(false);
 
   // Day board
   const [dayBoardItems, setDayBoardItems] = useState<HubFinanceDayBoardItem[]>([]);
@@ -138,6 +140,8 @@ const HubCaixaPage: React.FC = () => {
   const [showBatchCharge, setShowBatchCharge] = useState(false);
   const [batchItems, setBatchItems] = useState<BatchChargeItem[]>([]);
   const [showEncerrarTurno, setShowEncerrarTurno] = useState(false);
+  const [cancelReceivableId, setCancelReceivableId] = useState<string | null>(null);
+  const [showEstornos, setShowEstornos] = useState(false);
   const [showIniciarTurno, setShowIniciarTurno] = useState(false);
   const [closedSessions, setClosedSessions] = useState<HubCashSession[]>([]);
   const [showSessionHistory, setShowSessionHistory] = useState(false);
@@ -152,6 +156,7 @@ const HubCaixaPage: React.FC = () => {
 
   const canFinancialWrite = hasPermission('hub.financial.write');
   const canCreateReceivable = hasPermission('hub.receivables.create');
+  const canReversePayments = hasPermission('hub.payments.reverse');
 
   const loadDayBoard = useCallback(
     async (dateOverride?: string) => {
@@ -279,7 +284,10 @@ const HubCaixaPage: React.FC = () => {
   }, [clinicId, cashOpen?.id]);
 
   useEffect(() => {
-    if (!cashOpen) setCashMovementExpanded(false);
+    if (!cashOpen) {
+      setShowSangriaPanel(false);
+      setShowEstornos(false);
+    }
   }, [cashOpen]);
 
   const dayBoardFiltered = useMemo(() => {
@@ -661,6 +669,16 @@ const HubCaixaPage: React.FC = () => {
     }
   };
 
+  const onCancelReceivableFromBoard = (item: HubFinanceDayBoardItem) => {
+    if (!canFinancialWrite) {
+      showError('Sem permissão para cancelar recebíveis.');
+      return;
+    }
+    const receivableId = item.billing.active_receivable_id;
+    if (!receivableId) return;
+    setCancelReceivableId(receivableId);
+  };
+
   const onCheckoutFromBoard = (item: HubFinanceDayBoardItem) => {
     if (item.billing.comanda_id) setCheckoutComandaId(item.billing.comanda_id);
   };
@@ -854,6 +872,13 @@ const HubCaixaPage: React.FC = () => {
     }
   };
 
+  const closeSangriaPanel = () => {
+    setShowSangriaPanel(false);
+    setMovAmount('');
+    setMovNotes('');
+    setMovType('withdrawal');
+  };
+
   const onCashMovement = async () => {
     if (!cashOpen?.id) return;
     if (!hasPermission('hub.cash.session')) { showError('Sem permissão para movimentar caixa.'); return; }
@@ -862,8 +887,7 @@ const HubCaixaPage: React.FC = () => {
     try {
       await hubFinancialApi.createCashMovement(cashOpen.id, { clinic_id: clinicId, movement_type: movType, amount: v, notes: movNotes.trim() || null });
       showSuccess(movType === 'withdrawal' ? 'Sangria registrada.' : 'Suprimento registrado.');
-      setMovAmount('');
-      setMovNotes('');
+      closeSangriaPanel();
       await load();
     } catch (e) {
       showError((e as Error)?.message || 'Erro ao registrar movimento');
@@ -915,19 +939,33 @@ const HubCaixaPage: React.FC = () => {
                 <Package size={15} strokeWidth={2} />
                 Vender pacote
               </button>
+              {canReversePayments ? (
+                <button
+                  type="button"
+                  className={`hub-clientes__btn hub-clientes__btn--ghost${showEstornos ? ' hub-caixa-page__session-action--active' : ''}`}
+                  aria-expanded={showEstornos}
+                  title="Estornar pagamentos (inclui venda rápida de dias anteriores)"
+                  onClick={() => {
+                    setShowSangriaPanel(false);
+                    setShowEstornos(true);
+                  }}
+                >
+                  <RotateCcw size={15} strokeWidth={2} aria-hidden />
+                  Estornos
+                </button>
+              ) : null}
               <button
                 type="button"
-                className={`hub-clientes__btn hub-clientes__btn--ghost${cashMovementExpanded ? ' hub-caixa-page__session-action--active' : ''}`}
-                aria-expanded={cashMovementExpanded}
+                className={`hub-clientes__btn hub-clientes__btn--ghost${showSangriaPanel ? ' hub-caixa-page__session-action--active' : ''}`}
+                aria-expanded={showSangriaPanel}
                 title="Sangria: retirada de dinheiro da gaveta. Suprimento: entrada de dinheiro na gaveta."
-                onClick={() => setCashMovementExpanded((v) => !v)}
+                onClick={() => {
+                  setShowEstornos(false);
+                  setShowSangriaPanel(true);
+                }}
               >
+                <Coins size={15} strokeWidth={2} aria-hidden />
                 Sangria / Suprimento
-                {cashMovementExpanded ? (
-                  <ChevronUp size={15} strokeWidth={2} aria-hidden />
-                ) : (
-                  <ChevronDown size={15} strokeWidth={2} aria-hidden />
-                )}
               </button>
               {hasPermission('hub.cash.session') ? (
                 <button
@@ -956,71 +994,6 @@ const HubCaixaPage: React.FC = () => {
           ) : null}
         </div>
       </div>
-
-      {cashOpen && cashMovementExpanded ? (
-        <div className="hub-caixa-page__sangria-panel" role="region" aria-label="Sangria e suprimento">
-          <div className="hub-caixa-page__sangria-panel-head">
-            <span className="hub-caixa-page__card-title">
-              Sangria / Suprimento
-              <span
-                className="hub-caixa-page__card-title-help"
-                title="Sangria: retirada de dinheiro da gaveta. Suprimento: entrada de dinheiro na gaveta."
-                role="img"
-                aria-label="Ajuda sobre sangria e suprimento"
-              >
-                <HelpCircle size={15} strokeWidth={2} />
-              </span>
-            </span>
-          </div>
-          <div className="hub-caixa-page__form-row">
-            <div className="hub-clientes__field">
-              <span className="hub-clientes__label">Tipo</span>
-              <select
-                className="hub-clientes__select-input"
-                value={movType}
-                onChange={(e) => setMovType(e.target.value as 'withdrawal' | 'deposit')}
-                aria-label="Tipo de movimento"
-              >
-                <option value="withdrawal">Sangria (retirada)</option>
-                <option value="deposit">Suprimento (entrada)</option>
-              </select>
-            </div>
-            <div className="hub-clientes__field">
-              <label className="hub-clientes__label" htmlFor="caixa-mov-amt">Valor</label>
-              <div className="hub-caixa-page__money-field">
-                <span className="hub-caixa-page__money-prefix">R$</span>
-                <input
-                  id="caixa-mov-amt"
-                  className="hub-clientes__input"
-                  value={movAmount}
-                  onChange={(e) => setMovAmount(e.target.value)}
-                  inputMode="decimal"
-                  placeholder="0,00"
-                />
-              </div>
-            </div>
-          </div>
-          <div className="hub-caixa-page__form-row hub-caixa-page__form-row--single">
-            <div className="hub-clientes__field">
-              <label className="hub-clientes__label" htmlFor="caixa-mov-notes">Observação (opcional)</label>
-              <input
-                id="caixa-mov-notes"
-                className="hub-clientes__input"
-                value={movNotes}
-                onChange={(e) => setMovNotes(e.target.value)}
-                placeholder="Ex.: Pagamento de fornecedor"
-              />
-            </div>
-          </div>
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--primary hub-caixa-page__btn-register"
-            onClick={() => void onCashMovement()}
-          >
-            Registrar
-          </button>
-        </div>
-      ) : null}
 
       <CaixaMetricsRow
         loading={loading}
@@ -1186,6 +1159,7 @@ const HubCaixaPage: React.FC = () => {
                 onSendToFinanceiro={onSendToFinanceiro}
                 onWaive={onWaiveFromBoard}
                 onShareComanda={onShareComanda}
+                onCancelReceivable={onCancelReceivableFromBoard}
                 onRowClick={onEditComanda}
                 busy={dayBoardBusy}
                 selectionEnabled={canCreateReceivable}
@@ -1458,6 +1432,95 @@ const HubCaixaPage: React.FC = () => {
       )}
     </>,
     <>
+      <HubSidePanel
+        open={!!cashOpen && showSangriaPanel}
+        onClose={closeSangriaPanel}
+        title="Sangria / Suprimento"
+        titleIcon={<Coins size={20} strokeWidth={1.75} aria-hidden />}
+        subtitle="Sangria retira dinheiro da gaveta; suprimento coloca dinheiro na gaveta."
+        footer={
+          <div className="hub-finance-page__drawer-footer">
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost"
+              onClick={closeSangriaPanel}
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary"
+              onClick={() => void onCashMovement()}
+            >
+              Registrar
+            </button>
+          </div>
+        }
+      >
+        <div className="hub-caixa-page__form-row">
+          <div className="hub-clientes__field">
+            <span className="hub-clientes__label">Tipo</span>
+            <select
+              className="hub-clientes__select-input"
+              value={movType}
+              onChange={(e) => setMovType(e.target.value as 'withdrawal' | 'deposit')}
+              aria-label="Tipo de movimento"
+            >
+              <option value="withdrawal">Sangria (retirada)</option>
+              <option value="deposit">Suprimento (entrada)</option>
+            </select>
+          </div>
+          <div className="hub-clientes__field">
+            <label className="hub-clientes__label" htmlFor="caixa-mov-amt">
+              Valor
+            </label>
+            <div className="hub-caixa-page__money-field">
+              <span className="hub-caixa-page__money-prefix">R$</span>
+              <input
+                id="caixa-mov-amt"
+                className="hub-clientes__input"
+                value={movAmount}
+                onChange={(e) => setMovAmount(e.target.value)}
+                inputMode="decimal"
+                placeholder="0,00"
+              />
+            </div>
+          </div>
+        </div>
+        <div className="hub-caixa-page__form-row hub-caixa-page__form-row--single">
+          <div className="hub-clientes__field">
+            <label className="hub-clientes__label" htmlFor="caixa-mov-notes">
+              Observação (opcional)
+            </label>
+            <input
+              id="caixa-mov-notes"
+              className="hub-clientes__input"
+              value={movNotes}
+              onChange={(e) => setMovNotes(e.target.value)}
+              placeholder="Ex.: Pagamento de fornecedor"
+            />
+          </div>
+        </div>
+      </HubSidePanel>
+
+      <HubSidePanel
+        open={!!cashOpen && showEstornos && canReversePayments}
+        onClose={() => setShowEstornos(false)}
+        title="Estornos"
+        titleIcon={<RotateCcw size={20} strokeWidth={1.75} aria-hidden />}
+        subtitle="Pagamentos da unidade no período — inclusive vendas rápidas de dias anteriores."
+        size="wide"
+      >
+        <HubPaymentReversalPanel
+          context="caixa"
+          embedded
+          onChanged={() => {
+            void load();
+            void loadDayBoard();
+          }}
+        />
+      </HubSidePanel>
+
       <BatchChargeDrawer
         open={showBatchCharge}
         items={batchItems}
@@ -1765,6 +1828,18 @@ const HubCaixaPage: React.FC = () => {
           setCheckoutScheduleContext(null);
         }}
       />
+      {clinicId ? (
+        <HubReceivableCancelPanel
+          open={Boolean(cancelReceivableId)}
+          clinicId={clinicId}
+          receivableId={cancelReceivableId}
+          onClose={() => setCancelReceivableId(null)}
+          onSuccess={() => {
+            setCancelReceivableId(null);
+            void load();
+          }}
+        />
+      ) : null}
       {showEncerrarTurno && cashOpen && (
         <EncerrarTurnoDrawer
           open={showEncerrarTurno}

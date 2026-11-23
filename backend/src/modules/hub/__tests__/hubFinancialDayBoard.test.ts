@@ -68,6 +68,20 @@ describe('hubFinancialDayBoard', () => {
         })
       ).toBe(false);
     });
+
+    it('exclui recebível reembolsado mesmo com handoff', () => {
+      expect(
+        matchesFinanceiroDayBoardScope({
+          comanda_id: 'c1',
+          comanda_status: 'fechada',
+          has_receivable: true,
+          receivable_status: 'refunded',
+          finance_handoff_at: '2026-06-04T12:00:00.000Z',
+          active_receivable_id: 'r1',
+          due_date: null,
+        }),
+      ).toBe(false);
+    });
   });
 
   describe('hasFinanceiroChargeableAmount', () => {
@@ -124,6 +138,10 @@ describe('hubFinancialDayBoard', () => {
     it('null quando vazio', () => {
       expect(aggregateReceivableStatus([])).toBeNull();
     });
+
+    it('refunded quando só há estornos', () => {
+      expect(aggregateReceivableStatus(['refunded', 'cancelled'])).toBe('refunded');
+    });
   });
 
   describe('pickActiveReceivableId', () => {
@@ -144,6 +162,10 @@ describe('hubFinancialDayBoard', () => {
 
     it('false quando pendente', () => {
       expect(isDayBoardPaidAndComplete('boarding_reservation', 'checked_out', 'pending')).toBe(false);
+    });
+
+    it('true quando reembolsado e operação completa', () => {
+      expect(isDayBoardPaidAndComplete('manual', 'closed', 'refunded')).toBe(true);
     });
   });
 });

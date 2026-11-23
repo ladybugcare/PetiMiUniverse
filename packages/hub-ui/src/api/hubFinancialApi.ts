@@ -37,15 +37,18 @@ export type HubFinanceUnbilledItem = {
   billing_origin_id?: string | null;
 };
 
+export type HubStockReturnStatus = 'pending' | 'partial' | 'returned' | 'unsellable' | 'mixed' | null;
+
 export type HubFinanceDayBoardBilling = {
   comanda_id: string | null;
   comanda_status: string | null;
   has_receivable: boolean;
-  receivable_status: 'pending' | 'partially_paid' | 'paid' | null;
+  receivable_status: 'pending' | 'partially_paid' | 'paid' | 'cancelled' | 'refunded' | null;
   finance_handoff_at?: string | null;
   active_receivable_id?: string | null;
   due_date?: string | null;
   receivable_amount?: number | null;
+  stock_return_status?: HubStockReturnStatus;
 };
 
 export type HubFinanceDayBoardItem = {
@@ -60,7 +63,7 @@ export type HubFinanceDayBoardItem = {
   pet: { id: string; name: string } | null;
   operational_status: string;
   estimated_amount: number;
-  services: { name: string; amount: number }[];
+  services: Array<{ name: string; amount: number; kind?: 'service' | 'product' | 'fee' | null }>;
   billing: HubFinanceDayBoardBilling;
   has_package_balance?: boolean;
   coverage_kind?: 'none' | 'package' | 'series_invoice';
@@ -129,6 +132,8 @@ export type HubFinancePayment = {
   clinic_id: string;
   receivable_id: string;
   cash_session_id?: string | null;
+  /** Presente quando o detalhe do recebível traz join da sessão. */
+  cash_session_status?: 'open' | 'closed' | null;
   amount: number;
   payment_method: HubPaymentMethod;
   installments?: number;
@@ -175,12 +180,26 @@ export type HubFinanceAdjustment = {
   created_at: string;
 };
 
+export type HubProductReturnEvent = {
+  id: string;
+  receivable_line_id: string;
+  item_id: string;
+  lot_id?: string | null;
+  qty: number;
+  condition: 'sellable' | 'unsellable';
+  reason?: string | null;
+  created_by?: string | null;
+  created_at?: string;
+};
+
 export type HubFinanceReceivableDetail = HubFinanceReceivable & {
   guardian?: { id: string; full_name: string; phone?: string | null; email?: string | null } | null;
   unit?: { id: string; name?: string | null; nickname?: string | null } | null;
   source?: Record<string, unknown> | null;
   payments?: HubFinancePayment[];
   adjustments?: HubFinanceAdjustment[];
+  product_returns?: HubProductReturnEvent[];
+  stock_return_status?: HubStockReturnStatus;
   paid_amount?: number;
   balance_amount?: number;
 };
@@ -1033,11 +1052,73 @@ export const hubFinancialApi = {
     }) as Promise<{ receivable: HubFinanceReceivable }>;
   },
 
-  async cancelReceivable(receivableId: string, body: { clinic_id: string; reason: string }): Promise<{ receivable: HubFinanceReceivable }> {
+  async cancelReceivable(
+    receivableId: string,
+    body: {
+      clinic_id: string;
+      reason: string;
+      confirm_stock_return?: boolean;
+      stock_return_condition?: 'sellable' | 'unsellable' | null;
+      stock_return_lines?: Array<{ line_id: string; qty?: number }> | null;
+    },
+  ): Promise<{
+    receivable: HubFinanceReceivable;
+    stock_restored?: number;
+    stock_unsellable?: number;
+    warning?: string | null;
+  }> {
     return apiRequest(`${base}/receivables/${encodeURIComponent(receivableId)}/cancel`, {
       method: 'POST',
       body: JSON.stringify(body),
-    }) as Promise<{ receivable: HubFinanceReceivable }>;
+    }) as Promise<{
+      receivable: HubFinanceReceivable;
+      stock_restored?: number;
+      stock_unsellable?: number;
+      warning?: string | null;
+    }>;
+  },
+
+  async confirmReceivableProductReturn(
+    receivableId: string,
+    body: {
+      clinic_id: string;
+      reason: string;
+      stock_return_condition: 'sellable' | 'unsellable';
+      stock_return_lines: Array<{ line_id: string; qty?: number }>;
+      refund_method?: HubPaymentMethod | null;
+      refund_effective_date?: string | null;
+      /** UUID por abertura do formulário; reutilizar em retry. */
+      idempotency_key: string;
+    },
+  ): Promise<{
+    ok: boolean;
+    receivable: HubFinanceReceivableDetail;
+    receivable_status?: string;
+    refund_amount?: number;
+    commercial_returned?: number | null;
+    balance_due?: number | null;
+    stock_restored?: number;
+    stock_unsellable?: number;
+    stock_return_status?: HubStockReturnStatus;
+    warning?: string | null;
+    replayed?: boolean;
+  }> {
+    return apiRequest(`${base}/receivables/${encodeURIComponent(receivableId)}/product-returns`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{
+      ok: boolean;
+      receivable: HubFinanceReceivableDetail;
+      receivable_status?: string;
+      refund_amount?: number;
+      commercial_returned?: number | null;
+      balance_due?: number | null;
+      stock_restored?: number;
+      stock_unsellable?: number;
+      stock_return_status?: HubStockReturnStatus;
+      warning?: string | null;
+      replayed?: boolean;
+    }>;
   },
 
   async createReceivablePayment(
@@ -1083,15 +1164,25 @@ export const hubFinancialApi = {
   async listPayments(
     clinicId: string,
     unitId: string,
-    opts?: { from?: string; to?: string },
+    opts?: { from?: string; to?: string; status?: 'posted' | 'reversed' },
   ): Promise<HubFinancePaymentListItem[]> {
     const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
     if (opts?.from) q.set('from', opts.from);
     if (opts?.to) q.set('to', opts.to);
+    if (opts?.status) q.set('status', opts.status);
     const res = (await apiRequest(`${base}/payments?${q.toString()}`)) as {
       payments?: HubFinancePaymentListItem[];
     };
     return res.payments ?? [];
+  },
+
+  async getPayment(paymentId: string, clinicId: string): Promise<HubFinancePaymentListItem> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    const res = (await apiRequest(
+      `${base}/payments/${encodeURIComponent(paymentId)}?${q.toString()}`,
+    )) as { payment?: HubFinancePaymentListItem };
+    if (!res.payment) throw new Error('Pagamento não encontrado');
+    return res.payment;
   },
 
   async reversePayment(
@@ -1102,6 +1193,9 @@ export const hubFinancialApi = {
       mode?: 'payment_reversal' | 'refund';
       refund_method?: HubPaymentMethod | null;
       refund_effective_date?: string | null;
+      confirm_stock_return?: boolean;
+      stock_return_condition?: 'sellable' | 'unsellable' | null;
+      stock_return_lines?: Array<{ line_id: string; qty?: number }> | null;
     },
   ): Promise<{
     ok: boolean;
@@ -1109,6 +1203,8 @@ export const hubFinancialApi = {
     reversal_mode?: string;
     adjustment_id?: string;
     warning?: string | null;
+    stock_restored?: number;
+    stock_unsellable?: number;
   }> {
     return apiRequest(`${base}/payments/${encodeURIComponent(paymentId)}/reverse`, {
       method: 'POST',
@@ -1119,6 +1215,8 @@ export const hubFinancialApi = {
       reversal_mode?: string;
       adjustment_id?: string;
       warning?: string | null;
+      stock_restored?: number;
+      stock_unsellable?: number;
     }>;
   },
 

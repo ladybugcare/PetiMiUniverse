@@ -75,6 +75,8 @@ describe('POST /api/hub/finance/payments/:id/reverse — agenda paid', () => {
             amount: 50,
             payment_method: 'pix',
             cash_session_id: null,
+            status: 'posted',
+            posting_kind: 'operational',
           },
         ],
         hub_financial_adjustments: [],

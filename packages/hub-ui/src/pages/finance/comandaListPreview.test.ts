@@ -42,7 +42,7 @@ describe('formatComandaListPets', () => {
 
 describe('formatComandaOriginLabel', () => {
   it('traduz origem', () => {
-    expect(formatComandaOriginLabel('manual')).toBe('Manual');
+    expect(formatComandaOriginLabel('manual')).toBe('Venda rápida');
     expect(formatComandaOriginLabel('appointment')).toBe('Agenda');
   });
 });
@@ -89,7 +89,7 @@ describe('formatReceivableListTitle', () => {
   });
 
   it('sem linhas cai no rótulo da origem', () => {
-    expect(formatReceivableListTitle({ source_type: 'manual', lines: [] })).toBe('Manual');
+    expect(formatReceivableListTitle({ source_type: 'manual', lines: [] })).toBe('Venda rápida');
     expect(formatReceivableListTitle({ source_type: 'appointment' })).toBe('Agenda');
   });
 });

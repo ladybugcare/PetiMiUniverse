@@ -13,8 +13,24 @@ import {
 } from './hubCustomerCredit';
 import { syncChargeBundleStatusForReceivable } from './hubChargeBundlesService';
 import { syncPackageBalancesForReceivable } from './hubPackagesService';
+import {
+  restoreProductStockForReceivableLines,
+  type StockReturnCondition,
+  type StockReturnLineSpec,
+} from './hubInventoryStockUtils';
 
 export type PaymentReversalMode = 'payment_reversal' | 'refund';
+
+export type ReversePaymentResult = {
+  ok: true;
+  receivable_status: string;
+  receivable_id: string;
+  adjustment_id: string;
+  reversal_mode: PaymentReversalMode;
+  warning: string | null;
+  stock_restored?: number;
+  stock_unsellable?: number;
+};
 
 export class FinanceLedgerError extends Error {
   status: number;
@@ -86,6 +102,26 @@ export async function recalculateReceivableFromPosted(receivableId: string): Pro
   return nextStatus;
 }
 
+/**
+ * Reembolso efetivo sem pagamentos posted restantes fecha o título como `refunded`
+ * (não reabre como pendente a cobrar). Anulação (`payment_reversal`) mantém o recalc.
+ */
+export async function applyRefundReceivableClosure(
+  receivableId: string,
+  currentStatus: string,
+): Promise<string> {
+  if (currentStatus !== 'pending') return currentStatus;
+  const paid = await sumPostedPaymentsForReceivable(receivableId);
+  if (paid > 0.009) return currentStatus;
+  const { error } = await supabaseAdmin
+    .from('hub_receivables')
+    .update({ status: 'refunded' })
+    .eq('id', receivableId)
+    .eq('status', 'pending');
+  if (error) throw new Error(error.message);
+  return 'refunded';
+}
+
 export type ValidateCashSessionResult =
   | { ok: true; cash_session_id: string | null }
   | { ok: false; error: string; status: number };
@@ -149,15 +185,6 @@ export async function validatePaymentCashSession(opts: {
   return { ok: true, cash_session_id: null };
 }
 
-export type ReversePaymentResult = {
-  ok: true;
-  receivable_status: string;
-  receivable_id: string;
-  adjustment_id: string;
-  reversal_mode: PaymentReversalMode;
-  warning: string | null;
-};
-
 /**
  * Anulação (payment_reversal) ou reembolso efetivo (refund). Soft-reverse — nunca DELETE.
  */
@@ -169,6 +196,10 @@ export async function reversePaymentSoft(opts: {
   mode: PaymentReversalMode;
   refundMethod?: string | null;
   refundEffectiveDate?: string | null;
+  /** Só reentra estoque com confirmação explícita de devolução física. */
+  confirmStockReturn?: boolean;
+  stockReturnCondition?: StockReturnCondition;
+  stockReturnLines?: StockReturnLineSpec[];
 }): Promise<ReversePaymentResult> {
   const { paymentId, clinicId, userId, reason, mode } = opts;
   if (reason.trim().length < 3) {
@@ -177,6 +208,20 @@ export async function reversePaymentSoft(opts: {
   if (mode === 'refund') {
     if (!opts.refundMethod || !opts.refundEffectiveDate) {
       throw new FinanceLedgerError('Reembolso exige refund_method e refund_effective_date', 400);
+    }
+  }
+  if (opts.confirmStockReturn) {
+    if (mode !== 'refund') {
+      throw new FinanceLedgerError(
+        'Devolução de estoque só se aplica a reembolso efetivo (não a anulação de lançamento).',
+        400,
+      );
+    }
+    if (!opts.stockReturnCondition) {
+      throw new FinanceLedgerError(
+        'Informe stock_return_condition (sellable|unsellable) ao confirmar devolução física.',
+        400,
+      );
     }
   }
 
@@ -194,15 +239,41 @@ export async function reversePaymentSoft(opts: {
     throw new FinanceLedgerError('Pagamento já estornado', 409);
   }
 
-  // Pré-checagem: se o estorno tirar o recebível de `paid`, saldos ainda active com restante
-  // exigem cancel comercial antes (não bloqueia por redemption — cancel ≠ reverse).
+  const receivableIdPre = payment.receivable_id as string;
+
+  // Validações de negócio ANTES de qualquer escrita (RPC/TS) — evita estorno órfão.
   {
-    const receivableIdPre = payment.receivable_id as string;
     const { data: recPre } = await supabaseAdmin
       .from('hub_receivables')
-      .select('final_amount, status')
+      .select('final_amount, status, guardian_id, comanda_id, returned_amount')
       .eq('id', receivableIdPre)
       .maybeSingle();
+
+    if (mode === 'refund' && opts.refundMethod === 'customer_credit') {
+      const guardianId = (recPre?.guardian_id as string | null) ?? null;
+      if (!guardianId) {
+        throw new FinanceLedgerError(
+          'Recebível sem tutor — não é possível reembolsar em crédito. Escolha Pix, dinheiro ou outra forma.',
+          409,
+        );
+      }
+    }
+
+    // Devolução parcial: anular/reembolsar payment integral gera saldo incoerente.
+    if (recPre && Number(recPre.returned_amount ?? 0) > 0.009) {
+      const paidNow = await sumPostedPaymentsForReceivable(receivableIdPre);
+      const after = round2Ledger(paidNow - Number(payment.amount ?? 0));
+      const finalAmt = Number(recPre.final_amount ?? 0);
+      if (after < finalAmt - 0.009) {
+        throw new FinanceLedgerError(
+          'Há devolução parcial de produtos neste recebível. Não é possível anular/reembolsar este pagamento por completo sem incoerência de saldo. Devolva os itens restantes pela devolução de mercadoria.',
+          409,
+        );
+      }
+    }
+
+    // Se o estorno tirar o recebível de `paid`, saldos ainda active com restante
+    // exigem cancel comercial antes (não bloqueia por redemption — cancel ≠ reverse).
     if (recPre && String(recPre.status) === 'paid') {
       const paidNow = await sumPostedPaymentsForReceivable(receivableIdPre);
       const after = round2Ledger(paidNow - Number(payment.amount ?? 0));
@@ -338,6 +409,10 @@ export async function reversePaymentSoft(opts: {
     receivableStatus = await recalculateReceivableFromPosted(receivableId);
   }
 
+  if (mode === 'refund') {
+    receivableStatus = await applyRefundReceivableClosure(receivableId, receivableStatus);
+  }
+
   // Crédito do tutor / reembolso em crédito — uma vez, fora do RPC (lógica de negócio TS).
   if (mode === 'payment_reversal' && payment.payment_method === 'customer_credit') {
     try {
@@ -354,6 +429,7 @@ export async function reversePaymentSoft(opts: {
       throw e;
     }
   } else if (mode === 'refund' && opts.refundMethod === 'customer_credit') {
+    // guardian_id já validado antes do estorno; só aplica o crédito.
     const { data: rec } = await supabaseAdmin
       .from('hub_receivables')
       .select('guardian_id, comanda_id')
@@ -362,7 +438,11 @@ export async function reversePaymentSoft(opts: {
       .maybeSingle();
     const guardianId = (rec?.guardian_id as string | null) ?? null;
     if (!guardianId) {
-      throw new FinanceLedgerError('Recebível sem tutor — não é possível reembolsar em crédito.', 409);
+      // Não deveria ocorrer após a pré-checagem; evita crédito silencioso.
+      throw new FinanceLedgerError(
+        'Recebível sem tutor — não é possível reembolsar em crédito. Escolha Pix, dinheiro ou outra forma.',
+        409,
+      );
     }
     try {
       await restoreHubCustomerCredit({
@@ -397,6 +477,43 @@ export async function reversePaymentSoft(opts: {
     throw e;
   }
 
+  // Financeiro ≠ físico: refund/reversal nunca reentram estoque sem confirmação explícita.
+  // payment_reversal: silencioso quanto a estoque (nunca moveu); refund sem confirmação: avisa.
+  let stockRestored = 0;
+  let stockUnsellable = 0;
+  if (mode === 'refund' && !opts.confirmStockReturn) {
+    const stockHint =
+      'Estoque não foi alterado. Para devolver mercadoria ao disponível, confirme a devolução física (confirm_stock_return).';
+    warning = warning ? `${warning} ${stockHint}` : stockHint;
+  } else if (mode === 'refund' && opts.confirmStockReturn) {
+    const stock = await restoreProductStockForReceivableLines({
+      clinicId,
+      receivableId,
+      notes: `Devolução física confirmada no reembolso: ${reason.trim()}`,
+      createdBy: userId,
+      condition: opts.stockReturnCondition,
+      lineSpecs: opts.stockReturnLines,
+    });
+    if (stock.errors.length) {
+      throw new FinanceLedgerError(
+        `Estorno financeiro ok, mas falhou a devolução de estoque: ${stock.errors[0]}`,
+        500,
+      );
+    }
+    stockRestored = stock.restored;
+    stockUnsellable = stock.unsellable;
+    if (opts.stockReturnCondition === 'unsellable') {
+      const tip =
+        stockUnsellable > 0
+          ? `Devolução registrada sem reentrada ao disponível (${stockUnsellable} linha(s) sem condição de revenda).`
+          : 'Devolução sem condição de revenda: estoque disponível inalterado.';
+      warning = warning ? `${warning} ${tip}` : tip;
+    } else if (stockRestored > 0 || stock.skipped > 0) {
+      const tip = `Estoque reentrado (${stockRestored} nova(s), ${stock.skipped} já registrada(s)).`;
+      warning = warning ? `${warning} ${tip}` : tip;
+    }
+  }
+
   return {
     ok: true,
     receivable_status: receivableStatus,
@@ -404,7 +521,473 @@ export async function reversePaymentSoft(opts: {
     adjustment_id: adjustmentId,
     reversal_mode: mode,
     warning,
+    stock_restored: stockRestored,
+    stock_unsellable: stockUnsellable,
   };
+}
+
+export type ProductLineReturnResult = {
+  ok: true;
+  receivable_status: string;
+  refund_amount: number;
+  commercial_returned?: number;
+  balance_due?: number;
+  adjustment_id: string | null;
+  stock_restored: number;
+  stock_unsellable: number;
+  warning: string | null;
+  replayed?: boolean;
+};
+
+/** Produção/preprod: só RPC. Fallback TS apenas em test / HUB_PRODUCT_RETURN_TS_FALLBACK=1. */
+export function allowProductReturnTsFallback(): boolean {
+  if (process.env.HUB_PRODUCT_RETURN_TS_FALLBACK === '1') return true;
+  if (process.env.HUB_PRODUCT_RETURN_TS_FALLBACK === '0') return false;
+  return process.env.NODE_ENV === 'test';
+}
+
+function isHubReturnProductLinesUnavailableError(msg: string): boolean {
+  const m = String(msg || '').toLowerCase();
+  return (
+    m.includes('rpc_unavailable') ||
+    m.includes('could not find the function') ||
+    m.includes('function public.hub_return_receivable_product_lines') ||
+    m.includes('schema cache') ||
+    m.includes('pgrst202') ||
+    m.includes('42883') ||
+    m.includes('rpc is not a function') ||
+    m.includes('.rpc is not a function')
+  );
+}
+
+function mapRpcBusinessError(msg: string): FinanceLedgerError | null {
+  const raw = String(msg || '');
+  const lower = raw.toLowerCase();
+  if (!raw) return null;
+  if (lower.includes('não encontrado') || lower.includes('nao encontrado') || lower.includes('p0002')) {
+    return new FinanceLedgerError(raw.replace(/^.*?:\s*/i, '').slice(0, 500) || 'Não encontrado', 404);
+  }
+  if (
+    lower.includes('p0001') ||
+    lower.includes('já') ||
+    lower.includes('excede') ||
+    lower.includes('obrigat') ||
+    lower.includes('inválid') ||
+    lower.includes('invalid') ||
+    lower.includes('sem tutor') ||
+    lower.includes('legado') ||
+    lower.includes('idempotency') ||
+    lower.includes('bloqueado') ||
+    lower.includes('devolução')
+  ) {
+    const clean = raw
+      .replace(/^.*ERROR:\s*/i, '')
+      .replace(/\s+CONTEXT:[\s\S]*$/i, '')
+      .trim();
+    const status =
+      lower.includes('idempotency') || lower.includes('já') || lower.includes('legado') || lower.includes('bloqueado')
+        ? 409
+        : lower.includes('obrigat') || lower.includes('inválid')
+          ? 400
+          : 409;
+    return new FinanceLedgerError(clean.slice(0, 500) || 'Operação não permitida', status);
+  }
+  return null;
+}
+
+/**
+ * Devolução por item via RPC atômica `hub_return_receivable_product_lines`.
+ * Separação: comercial devolvido × reembolso financeiro (matriz pago vs líquido).
+ */
+export async function returnReceivableProductLines(opts: {
+  clinicId: string;
+  receivableId: string;
+  userId: string | null;
+  reason: string;
+  condition: StockReturnCondition;
+  lineSpecs: StockReturnLineSpec[];
+  refundMethod?: string | null;
+  refundEffectiveDate?: string | null;
+  idempotencyKey: string;
+}): Promise<ProductLineReturnResult> {
+  const reason = opts.reason.trim();
+  if (reason.length < 3) {
+    throw new FinanceLedgerError('Motivo obrigatório (mín. 3 caracteres)', 400);
+  }
+  if (!opts.lineSpecs.length) {
+    throw new FinanceLedgerError('Selecione ao menos um produto para devolver.', 400);
+  }
+  if (!opts.idempotencyKey || !/^[0-9a-f-]{36}$/i.test(opts.idempotencyKey)) {
+    throw new FinanceLedgerError('idempotency_key UUID obrigatória', 400);
+  }
+
+  const lineIds = [...new Set(opts.lineSpecs.map((s) => s.line_id))];
+  if (lineIds.length !== opts.lineSpecs.length) {
+    throw new FinanceLedgerError('line_ids contém duplicatas', 400);
+  }
+
+  let rpcData: unknown = null;
+  let rpcMsg = '';
+  try {
+    const rpcRes = await supabaseAdmin.rpc('hub_return_receivable_product_lines', {
+      p_clinic_id: opts.clinicId,
+      p_receivable_id: opts.receivableId,
+      p_user_id: opts.userId,
+      p_reason: reason,
+      p_condition: opts.condition,
+      p_line_ids: lineIds,
+      p_refund_method: opts.refundMethod ?? null,
+      p_refund_effective_date: opts.refundEffectiveDate ?? null,
+      p_idempotency_key: opts.idempotencyKey,
+    });
+    rpcData = rpcRes.data;
+    if (rpcRes.error) rpcMsg = rpcRes.error.message || 'rpc_error';
+  } catch (e) {
+    rpcMsg = (e as Error)?.message || 'rpc_unavailable';
+  }
+
+  if (!rpcMsg && rpcData && typeof rpcData === 'object' && (rpcData as { ok?: boolean }).ok) {
+    const body = rpcData as {
+      receivable_status: string;
+      refund_amount?: number;
+      financial_refund?: number;
+      commercial_returned?: number;
+      balance_due?: number;
+      adjustment_id?: string | null;
+      stock_restored?: number;
+      stock_unsellable?: number;
+      warning?: string | null;
+      replayed?: boolean;
+    };
+    const refundAmount = round2Ledger(Number(body.financial_refund ?? body.refund_amount ?? 0));
+    try {
+      await syncHubAppointmentPaidFromReceivable({
+        clinicId: opts.clinicId,
+        receivableId: opts.receivableId,
+      });
+      void syncChargeBundleStatusForReceivable(opts.receivableId, opts.clinicId);
+      await syncPackageBalancesForReceivable(opts.receivableId);
+    } catch (e) {
+      const msg = (e as Error)?.message ?? '';
+      if (msg.startsWith('PACKAGE_BALANCE_HAS_REDEMPTIONS')) {
+        throw new FinanceLedgerError(
+          'Não é possível devolver: o pacote já teve sessões consumidas. Estorne os resgates antes.',
+          409,
+        );
+      }
+      throw e;
+    }
+    return {
+      ok: true,
+      receivable_status: String(body.receivable_status),
+      refund_amount: refundAmount,
+      commercial_returned: body.commercial_returned != null ? Number(body.commercial_returned) : undefined,
+      balance_due: body.balance_due != null ? Number(body.balance_due) : undefined,
+      adjustment_id: (body.adjustment_id as string | null) ?? null,
+      stock_restored: Number(body.stock_restored ?? 0),
+      stock_unsellable: Number(body.stock_unsellable ?? 0),
+      warning: body.warning ?? null,
+      replayed: Boolean(body.replayed),
+    };
+  }
+
+  const business = mapRpcBusinessError(rpcMsg);
+  if (business) throw business;
+
+  if (!isHubReturnProductLinesUnavailableError(rpcMsg) || !allowProductReturnTsFallback()) {
+    console.error('[hub_finance] hub_return_receivable_product_lines unavailable', rpcMsg);
+    throw new FinanceLedgerError(
+      'Devolução de mercadoria temporariamente indisponível (RPC). Tente novamente em instantes; nenhuma alteração foi aplicada.',
+      503,
+    );
+  }
+
+  // Fallback só em testes — não é atômico sob concorrência.
+  return returnReceivableProductLinesTsFallback(opts);
+}
+
+/** @internal Somente NODE_ENV=test / HUB_PRODUCT_RETURN_TS_FALLBACK=1 */
+async function returnReceivableProductLinesTsFallback(opts: {
+  clinicId: string;
+  receivableId: string;
+  userId: string | null;
+  reason: string;
+  condition: StockReturnCondition;
+  lineSpecs: StockReturnLineSpec[];
+  refundMethod?: string | null;
+  refundEffectiveDate?: string | null;
+  idempotencyKey: string;
+}): Promise<ProductLineReturnResult> {
+  const {
+    computeReceivableFinancialAfterReturn,
+    commercialReturnForLines,
+  } = await import('./hubReceivableFinancialBalance.js');
+
+  const reason = opts.reason.trim();
+  const { data: rec, error: rErr } = await supabaseAdmin
+    .from('hub_receivables')
+    .select(
+      'id, clinic_id, status, final_amount, original_amount, net_amount_at_sale, returned_amount, guardian_id, comanda_id, unit_id',
+    )
+    .eq('id', opts.receivableId)
+    .eq('clinic_id', opts.clinicId)
+    .maybeSingle();
+  if (rErr || !rec) throw new FinanceLedgerError('Recebível não encontrado', 404);
+  if (String(rec.status) === 'cancelled') {
+    throw new FinanceLedgerError('Recebível cancelado — não é possível devolver produtos.', 409);
+  }
+
+  const { data: existingReq } = await supabaseAdmin
+    .from('hub_product_return_requests')
+    .select('receivable_id, payload_hash, response')
+    .eq('clinic_id', opts.clinicId)
+    .eq('idempotency_key', opts.idempotencyKey)
+    .maybeSingle();
+  if (existingReq?.response && typeof existingReq.response === 'object') {
+    const body = existingReq.response as Record<string, unknown>;
+    return {
+      ok: true,
+      receivable_status: String(body.receivable_status ?? rec.status),
+      refund_amount: Number(body.refund_amount ?? body.financial_refund ?? 0),
+      commercial_returned: body.commercial_returned != null ? Number(body.commercial_returned) : undefined,
+      balance_due: body.balance_due != null ? Number(body.balance_due) : undefined,
+      adjustment_id: (body.adjustment_id as string | null) ?? null,
+      stock_restored: Number(body.stock_restored ?? 0),
+      stock_unsellable: Number(body.stock_unsellable ?? 0),
+      warning: (body.warning as string | null) ?? null,
+      replayed: true,
+    };
+  }
+
+  const { data: lines, error: lErr } = await supabaseAdmin
+    .from('hub_receivable_lines')
+    .select('*')
+    .eq('receivable_id', opts.receivableId)
+    .eq('clinic_id', opts.clinicId);
+  if (lErr) throw new Error(lErr.message);
+
+  const lineById = new Map((lines ?? []).map((l) => [String(l.id), l as Record<string, unknown>]));
+  const selected: Array<Record<string, unknown>> = [];
+  for (const spec of opts.lineSpecs) {
+    const line = lineById.get(spec.line_id);
+    if (!line) throw new FinanceLedgerError(`Linha ${spec.line_id} não encontrada nesta cobrança.`, 404);
+    if (String(line.line_kind ?? '') !== 'product') {
+      throw new FinanceLedgerError('Só linhas de produto podem ser devolvidas.', 409);
+    }
+    if (!line.hub_inventory_item_id || !line.hub_inventory_lot_id) {
+      throw new FinanceLedgerError('Produto sem vínculo de estoque — não é possível devolver.', 409);
+    }
+    selected.push(line);
+  }
+
+  const { data: priorReturns } = await supabaseAdmin
+    .from('hub_product_return_events')
+    .select('receivable_line_id')
+    .eq('clinic_id', opts.clinicId)
+    .eq('receivable_id', opts.receivableId)
+    .in(
+      'receivable_line_id',
+      selected.map((l) => String(l.id)),
+    );
+  const already = new Set((priorReturns ?? []).map((r) => String(r.receivable_line_id)));
+  if (selected.some((l) => already.has(String(l.id)))) {
+    throw new FinanceLedgerError('Um ou mais itens selecionados já foram devolvidos.', 409);
+  }
+
+  const netAtSale =
+    rec.net_amount_at_sale != null
+      ? Number(rec.net_amount_at_sale)
+      : round2Ledger(Number(rec.final_amount ?? 0) + Number(rec.returned_amount ?? 0));
+
+  const commercial = commercialReturnForLines({
+    lineTotals: selected.map((l) => Number(l.line_total ?? 0)),
+    originalAmount: Number(rec.original_amount ?? 0),
+    netAmountAtSale: netAtSale,
+  });
+
+  const posted = await sumPostedPaymentsForReceivable(opts.receivableId);
+  const { data: lineRefundsRows } = await supabaseAdmin
+    .from('hub_financial_adjustments')
+    .select('amount')
+    .eq('receivable_id', opts.receivableId)
+    .eq('adjustment_type', 'refund')
+    .is('payment_id', null);
+  const lineRefundsBefore = round2Ledger(
+    (lineRefundsRows ?? []).reduce((s, r) => s + Number(r.amount ?? 0), 0),
+  );
+
+  const snap = computeReceivableFinancialAfterReturn({
+    netAmountAtSale: netAtSale,
+    returnedAmountBefore: Number(rec.returned_amount ?? 0),
+    commercialReturnNow: commercial,
+    postedPayments: posted,
+    lineRefundsAlreadyPaidOut: lineRefundsBefore,
+  });
+
+  if (snap.financialRefundNow > 0.009) {
+    if (!opts.refundMethod || !opts.refundEffectiveDate) {
+      throw new FinanceLedgerError(
+        `Há valor financeiro a devolver (R$ ${snap.financialRefundNow.toFixed(2)}). Informe a forma e a data do reembolso.`,
+        400,
+      );
+    }
+    if (opts.refundMethod === 'customer_credit' && !(rec.guardian_id as string | null)) {
+      throw new FinanceLedgerError(
+        'Recebível sem tutor — não é possível reembolsar em crédito. Escolha Pix, dinheiro ou outra forma.',
+        409,
+      );
+    }
+  }
+
+  let warning: string | null = null;
+  let adjustmentId: string | null = null;
+
+  if (snap.financialRefundNow > 0.009) {
+    const { data: adj, error: adjErr } = await supabaseAdmin
+      .from('hub_financial_adjustments')
+      .insert({
+        clinic_id: opts.clinicId,
+        receivable_id: opts.receivableId,
+        payment_id: null,
+        adjustment_type: 'refund',
+        amount: snap.financialRefundNow,
+        reason: `Devolução de produto: ${reason}`,
+        created_by_user_id: opts.userId,
+        refund_method: opts.refundMethod,
+        refund_effective_date: opts.refundEffectiveDate,
+      })
+      .select('id')
+      .single();
+    if (adjErr || !adj) throw new Error(adjErr?.message || 'Erro ao registrar reembolso');
+    adjustmentId = adj.id as string;
+
+    if (opts.refundMethod === 'customer_credit') {
+      try {
+        await restoreHubCustomerCredit({
+          clinicId: opts.clinicId,
+          guardianId: rec.guardian_id as string,
+          amount: snap.financialRefundNow,
+          reason: `Reembolso por devolução de produto: ${reason}`,
+          comandaId: (rec.comanda_id as string | null) ?? null,
+          receivableId: opts.receivableId,
+          createdByUserId: opts.userId,
+        });
+      } catch (e) {
+        if (e instanceof CustomerCreditError) throw new FinanceLedgerError(e.message, e.status);
+        throw e;
+      }
+    } else if (opts.refundMethod === 'cash' && rec.unit_id) {
+      const { data: openSession } = await supabaseAdmin
+        .from('hub_cash_sessions')
+        .select('id')
+        .eq('clinic_id', opts.clinicId)
+        .eq('unit_id', rec.unit_id as string)
+        .eq('status', 'open')
+        .maybeSingle();
+      if (openSession?.id) {
+        await supabaseAdmin.from('hub_cash_movements').insert({
+          clinic_id: opts.clinicId,
+          cash_session_id: openSession.id,
+          movement_type: 'withdrawal',
+          amount: snap.financialRefundNow,
+          notes: `Reembolso devolução de produto: ${reason}`,
+          created_by_user_id: opts.userId,
+        });
+      } else {
+        warning =
+          'Reembolso em dinheiro registrado sem sessão de caixa aberta — ajuste a gaveta manualmente se necessário.';
+      }
+    }
+  }
+
+  const stock = await restoreProductStockForReceivableLines({
+    clinicId: opts.clinicId,
+    receivableId: opts.receivableId,
+    notes: `Devolução física de item(ns): ${reason}`,
+    createdBy: opts.userId,
+    lines: lines as Array<Record<string, unknown>>,
+    condition: opts.condition,
+    lineSpecs: opts.lineSpecs,
+  });
+  if (stock.errors.length) throw new FinanceLedgerError(stock.errors[0], 500);
+
+  await supabaseAdmin
+    .from('hub_receivables')
+    .update({
+      final_amount: snap.finalAmountAfter,
+      returned_amount: snap.returnedAmountAfter,
+      net_amount_at_sale: netAtSale,
+      status: snap.suggestedStatus,
+    })
+    .eq('id', opts.receivableId);
+
+  if (snap.finalAmountAfter <= 0.009 && posted > 0.009) {
+    const { data: postedPays } = await supabaseAdmin
+      .from('hub_payments')
+      .select('id')
+      .eq('receivable_id', opts.receivableId)
+      .eq('status', 'posted');
+    const now = new Date().toISOString();
+    for (const pay of postedPays ?? []) {
+      await supabaseAdmin
+        .from('hub_payments')
+        .update({
+          status: 'reversed',
+          reversed_at: now,
+          reversed_by_user_id: opts.userId,
+          reversal_reason: `Venda zerada após devolução de produtos: ${reason}`,
+          reversal_mode: 'refund',
+          reversal_adjustment_id: adjustmentId,
+        })
+        .eq('id', pay.id);
+    }
+  }
+
+  await syncHubAppointmentPaidFromReceivable({ clinicId: opts.clinicId, receivableId: opts.receivableId });
+  void syncChargeBundleStatusForReceivable(opts.receivableId, opts.clinicId);
+  try {
+    await syncPackageBalancesForReceivable(opts.receivableId);
+  } catch (e) {
+    const msg = (e as Error)?.message ?? '';
+    if (msg.startsWith('PACKAGE_BALANCE_HAS_REDEMPTIONS')) {
+      throw new FinanceLedgerError(
+        'Não é possível devolver: o pacote já teve sessões consumidas. Estorne os resgates antes.',
+        409,
+      );
+    }
+    throw e;
+  }
+
+  if (opts.condition === 'unsellable' && stock.unsellable > 0) {
+    const tip = `Devolução registrada sem reentrada ao disponível (${stock.unsellable} linha(s)).`;
+    warning = warning ? `${warning} ${tip}` : tip;
+  } else if (stock.restored > 0 || stock.skipped > 0) {
+    const tip = `Estoque reentrado (${stock.restored} nova(s), ${stock.skipped} já registrada(s)).`;
+    warning = warning ? `${warning} ${tip}` : tip;
+  }
+
+  const response = {
+    ok: true as const,
+    receivable_status: snap.suggestedStatus,
+    refund_amount: snap.financialRefundNow,
+    commercial_returned: snap.commercialReturnedNow,
+    balance_due: snap.balanceDueAfter,
+    adjustment_id: adjustmentId,
+    stock_restored: stock.restored,
+    stock_unsellable: stock.unsellable,
+    warning,
+  };
+
+  await supabaseAdmin.from('hub_product_return_requests').insert({
+    clinic_id: opts.clinicId,
+    receivable_id: opts.receivableId,
+    idempotency_key: opts.idempotencyKey,
+    payload_hash: `ts:${opts.idempotencyKey}`,
+    response,
+    created_by_user_id: opts.userId,
+  });
+
+  return response;
 }
 
 export type HistoricalCashResult = {
@@ -560,7 +1143,41 @@ export async function postHistoricalCashPayment(opts: {
 }
 
 /**
- * Insert de pagamento posted com idempotência (lookup → insert → race no unique).
+ * Fallback TS de insert (sem FOR UPDATE) só em testes / opt-in explícito.
+ * Em preprod/produção a atomicidade exige RPC `hub_post_payment`.
+ */
+export function allowPostedPaymentTsFallback(): boolean {
+  if (process.env.HUB_PAYMENT_TS_FALLBACK === '1') return true;
+  if (process.env.HUB_PAYMENT_TS_FALLBACK === '0') return false;
+  return process.env.NODE_ENV === 'test';
+}
+
+function isHubPostPaymentUnavailableError(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    !m.trim() ||
+    m.includes('rpc_unavailable') ||
+    m.includes('does not exist') ||
+    m.includes('could not find the function') ||
+    m.includes('schema cache') ||
+    m.includes('pgrst202') ||
+    m.includes('42883') || // undefined_function
+    m.includes('is not a function') // cliente/mock sem .rpc
+  );
+}
+
+function mapHubPostPaymentBusinessError(message: string): { error: string; status: number } | null {
+  if (/excede o saldo/i.test(message)) return { error: message, status: 400 };
+  if (/Valor inválido/i.test(message)) return { error: message, status: 400 };
+  if (/não aceita pagamentos/i.test(message)) return { error: message, status: 409 };
+  if (/Recebível não encontrado/i.test(message)) return { error: message, status: 404 };
+  if (/idempotency_key já usada/i.test(message)) return { error: message, status: 409 };
+  return null;
+}
+
+/**
+ * Insert de pagamento posted via RPC atômica (`hub_post_payment`).
+ * Idempotência: lookup prévio + unique index + tratamento na RPC.
  * Não recalcula o recebível — o caller deve chamar recalculateReceivableFromPosted.
  */
 function paymentsPayloadCompatible(
@@ -672,6 +1289,100 @@ export async function insertPostedPaymentWithIdempotency(opts: {
     }
   }
 
+  const rpcPayload = {
+    p_clinic_id: opts.clinicId,
+    p_receivable_id: opts.receivableId,
+    p_amount: round2Ledger(opts.amount),
+    p_payment_method: opts.paymentMethod,
+    p_created_by_user_id: opts.createdByUserId,
+    p_cash_session_id: opts.cashSessionId,
+    p_installments: installments,
+    p_payment_date: opts.paymentDate,
+    p_effective_payment_date: opts.effectivePaymentDate ?? opts.paymentDate,
+    p_notes: opts.notes ?? null,
+    p_idempotency_key: idempotencyKey,
+    p_tendered_amount: tenderedAmount,
+    p_change_amount: changeAmount,
+    p_posting_kind: opts.postingKind ?? 'operational',
+    p_payment_timing: opts.paymentTiming ?? 'on_checkout',
+    p_correction_reason: opts.correctionReason ?? null,
+    p_corrected_by_user_id: opts.correctedByUserId ?? null,
+    p_card_fee_rate_percent: cardFeeRate,
+    p_card_fee_amount: cardFeeAmount,
+    p_net_amount: netAmount,
+  };
+
+  let rpcMsg = '';
+  try {
+    const rpcRes = await supabaseAdmin.rpc('hub_post_payment', rpcPayload);
+    if (!rpcRes.error && rpcRes.data && typeof rpcRes.data === 'object' && (rpcRes.data as { ok?: boolean }).ok) {
+      const body = rpcRes.data as {
+        payment: Record<string, unknown>;
+        replayed?: boolean;
+      };
+      return {
+        ok: true,
+        payment: body.payment,
+        replayed: Boolean(body.replayed),
+      };
+    }
+    rpcMsg = String(rpcRes.error?.message ?? '');
+    const business = mapHubPostPaymentBusinessError(rpcMsg);
+    if (business) return { ok: false, ...business };
+    if (!isHubPostPaymentUnavailableError(rpcMsg)) {
+      return {
+        ok: false,
+        error: rpcMsg || 'Falha ao registrar pagamento via ledger atômico',
+        status: 500,
+      };
+    }
+  } catch (e: unknown) {
+    rpcMsg = (e as Error)?.message || 'rpc_unavailable';
+    const business = mapHubPostPaymentBusinessError(rpcMsg);
+    if (business) return { ok: false, ...business };
+    if (!isHubPostPaymentUnavailableError(rpcMsg) && !allowPostedPaymentTsFallback()) {
+      return {
+        ok: false,
+        error: rpcMsg || 'Falha ao registrar pagamento via ledger atômico',
+        status: 500,
+      };
+    }
+  }
+
+  // RPC ausente/indisponível: em ambientes reais falha controlada (sem insert paralelo).
+  if (!allowPostedPaymentTsFallback()) {
+    console.error('[hub_finance] hub_post_payment unavailable', rpcMsg);
+    return {
+      ok: false,
+      error:
+        'Ledger de pagamento indisponível (RPC hub_post_payment). Tente novamente em instantes; nenhum lançamento foi criado.',
+      status: 503,
+    };
+  }
+
+  // Somente testes / HUB_PAYMENT_TS_FALLBACK=1 — NÃO é atômico sob concorrência.
+  const { data: recLock, error: recLockErr } = await supabaseAdmin
+    .from('hub_receivables')
+    .select('id, clinic_id, status, final_amount')
+    .eq('id', opts.receivableId)
+    .eq('clinic_id', opts.clinicId)
+    .maybeSingle();
+  if (recLockErr || !recLock) {
+    return { ok: false, error: 'Recebível não encontrado', status: 404 };
+  }
+  if (recLock.status === 'cancelled' || recLock.status === 'refunded') {
+    return { ok: false, error: 'Recebível não aceita pagamentos neste estado', status: 409 };
+  }
+  const paidNow = await sumPostedPaymentsForReceivable(opts.receivableId);
+  const remaining = round2Ledger(Number(recLock.final_amount ?? 0) - paidNow);
+  if (round2Ledger(opts.amount) > remaining + 0.02) {
+    return {
+      ok: false,
+      error: `Valor excede o saldo em aberto (${remaining.toFixed(2)})`,
+      status: 400,
+    };
+  }
+
   const row: Record<string, unknown> = {
     clinic_id: opts.clinicId,
     receivable_id: opts.receivableId,
@@ -691,8 +1402,8 @@ export async function insertPostedPaymentWithIdempotency(opts: {
     card_fee_rate_percent: cardFeeRate,
     card_fee_amount: cardFeeAmount,
     net_amount: netAmount,
+    payment_timing: opts.paymentTiming ?? 'on_checkout',
   };
-  if (opts.paymentTiming) row.payment_timing = opts.paymentTiming;
   if (opts.correctionReason) row.correction_reason = opts.correctionReason;
   if (opts.correctedByUserId) row.corrected_by_user_id = opts.correctedByUserId;
 

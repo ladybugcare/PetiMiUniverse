@@ -16,6 +16,7 @@ import {
   type BatchChargeItem,
 } from './batchChargeItems';
 import { FinanceDayBoardTable } from './FinanceDayBoardTable';
+import { HubReceivableCancelPanel } from './HubReceivableCancelPanel';
 import { HubLoading } from '../../components/HubLoading';
 import { useAlert } from '../../components/AlertProvider';
 
@@ -145,6 +146,7 @@ export function FinanceDayBoardSection({
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(() => new Set());
   const [showBatchCharge, setShowBatchCharge] = useState(false);
   const [batchItems, setBatchItems] = useState<BatchChargeItem[]>([]);
+  const [cancelReceivableId, setCancelReceivableId] = useState<string | null>(null);
   // Evita loop: pai costuma passar `onLoaded={() => void loadSummary()}` (nova ref a cada render).
   // Se `onLoaded` entrar nas deps de `loadDayBoard`, cada resumo dispara reload → busy eterno.
   const onLoadedRef = useRef(onLoaded);
@@ -270,28 +272,14 @@ export function FinanceDayBoardSection({
     }
   };
 
-  const onCancelReceivableFromBoard = async (item: HubFinanceDayBoardItem) => {
+  const onCancelReceivableFromBoard = (item: HubFinanceDayBoardItem) => {
     if (!canFinancialWrite) {
       showError('Sem permissão para cancelar recebíveis.');
       return;
     }
     const receivableId = item.billing.active_receivable_id;
     if (!receivableId) return;
-    const reason = window.prompt('Motivo do cancelamento do recebível:');
-    if (!reason?.trim()) return;
-    setDayBoardBusy(true);
-    try {
-      await hubFinancialApi.cancelReceivable(receivableId, { clinic_id: clinicId, reason: reason.trim() });
-      showSuccess('Recebível cancelado.');
-      setReceivableDrawer((prev) =>
-        prev?.selectedReceivableId === receivableId || prev?.comandaId === item.billing.comanda_id ? null : prev,
-      );
-      await loadDayBoard();
-    } catch (e) {
-      showError((e as Error)?.message || 'Erro ao cancelar recebível');
-    } finally {
-      setDayBoardBusy(false);
-    }
+    setCancelReceivableId(receivableId);
   };
 
   const handleDateChange = (iso: string) => {
@@ -532,6 +520,19 @@ export function FinanceDayBoardSection({
           void loadDayBoard();
         }}
         onBundleCreated={(id) => navigate(`/hub/financeiro/cobranca-lote/${id}/pronto-para-envio`)}
+      />
+
+      <HubReceivableCancelPanel
+        open={Boolean(cancelReceivableId)}
+        clinicId={clinicId}
+        receivableId={cancelReceivableId}
+        onClose={() => setCancelReceivableId(null)}
+        onSuccess={() => {
+          setReceivableDrawer((prev) =>
+            prev && cancelReceivableId && prev.selectedReceivableId === cancelReceivableId ? null : prev,
+          );
+          void loadDayBoard();
+        }}
       />
     </>
   );

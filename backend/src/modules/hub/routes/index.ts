@@ -374,6 +374,7 @@ import {
   postHubFinanceWaiveBilling,
   postHubFinanceReceivablePayment,
   listHubFinancePayments,
+  getHubFinancePayment,
   listHubFinanceReceivables,
   getHubFinanceReceivableDetail,
   getHubFinancePaymentReceipt,
@@ -420,6 +421,7 @@ import {
   postHubFinancePaymentReverse,
   postHubFinanceReceivableHistoricalCash,
   postHubFinanceReceivableCancel,
+  postHubFinanceReceivableProductReturn,
   getHubFinanceDayBoard,
   getHubFinancePaymentMethodSettings,
   patchHubFinancePaymentMethodSettings,
@@ -1955,6 +1957,12 @@ router.post(
   postHubFinanceReceivableCancel
 );
 router.post(
+  '/finance/receivables/:id/product-returns',
+  authenticateUser,
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
+  postHubFinanceReceivableProductReturn
+);
+router.post(
   '/finance/waive-billing',
   authenticateUser,
   requirePermission('hub.financial.write'), requireCoreOpsWrite,
@@ -2007,6 +2015,12 @@ router.get(
   authenticateUser,
   requirePermission('hub.financial.read'),
   listHubFinancePayments
+);
+router.get(
+  '/finance/payments/:id',
+  authenticateUser,
+  requirePermission(['hub.financial.read', 'hub.payments.reverse']),
+  getHubFinancePayment
 );
 /**
  * Estorno financeiro — exceção de produto:

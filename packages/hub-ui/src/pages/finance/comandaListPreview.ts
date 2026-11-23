@@ -12,7 +12,7 @@ export const COMANDA_ORIGIN_LABELS: Record<string, string> = {
   boarding_reservation: 'Hotel/Creche',
   hospitalization: 'Internação',
   package: 'Pacote',
-  manual: 'Manual',
+  manual: 'Venda rápida',
 };
 
 /** Mesmos rótulos para `source_type` de recebível (quando não há linhas). */

@@ -51,7 +51,9 @@ const HubFinanceiroPage: React.FC = () => {
   const clinicId = getStoredClinicId();
   const unitId = useSelectedUnitId();
   const [tab, setTab] = useState<FinanceTab>(() => tabFromSearchParams(searchParams));
-  const [adjustView, setAdjustView] = useState<'cancellations' | 'reversals'>('cancellations');
+  const [adjustView, setAdjustView] = useState<'cancellations' | 'reversals'>(() =>
+    searchParams.get('adjust') === 'reversals' ? 'reversals' : 'cancellations',
+  );
   const [cancellationPendingCount, setCancellationPendingCount] = useState(0);
   const [summary, setSummary] = useState<HubFinanceDashboardSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
@@ -86,9 +88,18 @@ const HubFinanceiroPage: React.FC = () => {
     }
   }, [clinicId, unitId]);
 
+  const canReversePayments = hasPermission('hub.payments.reverse');
+
   useEffect(() => {
     setTab(tabFromSearchParams(searchParams));
-  }, [searchParams]);
+    if (searchParams.get('adjust') === 'reversals' && canReversePayments) {
+      setAdjustView('reversals');
+    } else if (searchParams.get('adjust') === 'cancellations') {
+      setAdjustView('cancellations');
+    } else if (searchParams.get('adjust') === 'reversals') {
+      setAdjustView('cancellations');
+    }
+  }, [searchParams, canReversePayments]);
 
   useEffect(() => {
     if (!clinicId || !unitId) return;
@@ -423,7 +434,9 @@ const HubFinanceiroPage: React.FC = () => {
             ariaLabel="Tipos de ajuste"
             variant="detail"
             className="hub-adjustments__tabs"
-            activeId={adjustView}
+            activeId={
+              adjustView === 'reversals' && !canReversePayments ? 'cancellations' : adjustView
+            }
             onTabChange={(id) => setAdjustView(id as 'cancellations' | 'reversals')}
             items={[
               {
@@ -431,13 +444,13 @@ const HubFinanceiroPage: React.FC = () => {
                 label: 'Cancelamentos',
                 badge: cancellationPendingCount || null,
               },
-              { id: 'reversals', label: 'Estornos' },
+              ...(canReversePayments ? [{ id: 'reversals' as const, label: 'Estornos' }] : []),
             ]}
           />
-          {adjustView === 'cancellations' ? (
-            <HubCancellationAdjustmentsPanel onCountChange={handleCancellationCountChange} />
-          ) : (
+          {adjustView === 'reversals' && canReversePayments ? (
             <HubPaymentReversalPanel />
+          ) : (
+            <HubCancellationAdjustmentsPanel onCountChange={handleCancellationCountChange} />
           )}
         </>
       ) : null}

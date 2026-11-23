@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { Plus, Receipt, RotateCcw, Trash2 } from 'lucide-react';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
 import {
   hubFinancialApi,
   openHubPaymentReceiptPdf,
+  type HubFinancePayment,
   type HubFinanceReceivableDetail,
   type HubPaymentMethod,
 } from '../../api/hubFinancialApi';
@@ -14,7 +16,8 @@ import {
   type HubInventoryItem,
   type HubInventoryLotRow,
 } from '../../api/hubInventoryApi';
-import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
+import { HubDateField } from '../../components/HubDateField';
+import { HubSearchableCombobox, type HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
 import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
@@ -47,6 +50,44 @@ import {
   totalChangeDue,
   type CheckoutPaymentLine,
 } from './CheckoutPaymentLinesEditor';
+import {
+  assumedMerchandiseReturnValue,
+  emptyMerchandiseReturnValue,
+  HubMerchandiseReturnSection,
+  merchandiseLinesFromReceivableDetail,
+  merchandiseReturnApiFields,
+  selectedMerchandiseAmount,
+  type MerchandiseReturnValue,
+} from './HubMerchandiseReturnSection';
+import { formatComandaOriginLabel } from './comandaListPreview';
+import { HubPaymentReversalForm, type PaymentReversalMode } from './HubPaymentReversalForm';
+import { ReceivableStockReturnBadge } from './ReceivableStockReturnBadge';
+
+const FINANCE_ESTORNOS_HREF = '/hub/financeiro?tab=adjustments&adjust=reversals';
+
+const STANDALONE_REFUND_METHOD_OPTIONS_BASE: HubComboboxOption[] = [
+  { value: 'pix', label: 'Pix' },
+  { value: 'cash', label: 'Dinheiro' },
+  { value: 'transfer', label: 'Transferência' },
+  { value: 'credit_card', label: 'Cartão de crédito' },
+  { value: 'debit_card', label: 'Cartão de débito' },
+  { value: 'other', label: 'Outro' },
+];
+
+function standaloneRefundMethodOptions(hasGuardian: boolean): HubComboboxOption[] {
+  if (!hasGuardian) return STANDALONE_REFUND_METHOD_OPTIONS_BASE;
+  return [
+    STANDALONE_REFUND_METHOD_OPTIONS_BASE[0],
+    STANDALONE_REFUND_METHOD_OPTIONS_BASE[1],
+    STANDALONE_REFUND_METHOD_OPTIONS_BASE[2],
+    { value: 'customer_credit', label: 'Crédito do tutor' },
+    ...STANDALONE_REFUND_METHOD_OPTIONS_BASE.slice(3),
+  ];
+}
+
+function isPostedPayment(payment: HubFinancePayment): boolean {
+  return String(payment.status ?? 'posted') !== 'reversed';
+}
 
 function formatBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
@@ -135,9 +176,40 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
   const paymentIdempotencyKeysRef = useRef<Record<string, string>>({});
   const [billingAction, setBillingAction] = useState<CheckoutDrawerBillingAction>('receive_now');
   const [cancelReason, setCancelReason] = useState('');
+  const [merchandiseReturn, setMerchandiseReturn] = useState<MerchandiseReturnValue>(() =>
+    emptyMerchandiseReturnValue(),
+  );
+  const [standaloneReturnOpen, setStandaloneReturnOpen] = useState(false);
+  const [standaloneReturnReason, setStandaloneReturnReason] = useState('');
+  const [standaloneMerchandiseReturn, setStandaloneMerchandiseReturn] = useState<MerchandiseReturnValue>(
+    () => emptyMerchandiseReturnValue(),
+  );
+  const standaloneReturnIdemKeyRef = useRef<string | null>(null);
+  const ensureStandaloneReturnIdemKey = useCallback(() => {
+    if (standaloneReturnIdemKeyRef.current) return standaloneReturnIdemKeyRef.current;
+    const key =
+      typeof crypto !== 'undefined' && 'randomUUID' in crypto
+        ? crypto.randomUUID()
+        : `00000000-0000-4000-8000-${Date.now().toString(16).padStart(12, '0')}`.slice(0, 36);
+    standaloneReturnIdemKeyRef.current = key;
+    return key;
+  }, []);
+
+  const [standaloneRefundMethod, setStandaloneRefundMethod] = useState('pix');
+  const [standaloneRefundDate, setStandaloneRefundDate] = useState(() => {
+    const d = new Date();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${d.getFullYear()}-${m}-${day}`;
+  });
+  /** Após marcar devolução com pagamento ainda posted e sem permissão de estorno. */
+  const [standaloneNeedFinanceHandoff, setStandaloneNeedFinanceHandoff] = useState(false);
   const [cashSessionId, setCashSessionId] = useState<string | null>(null);
   const [reversePaymentId, setReversePaymentId] = useState<string | null>(null);
-  const [reverseReason, setReverseReason] = useState('');
+  const [reverseQueue, setReverseQueue] = useState<string[]>([]);
+  const [reverseInitialMode, setReverseInitialMode] = useState<PaymentReversalMode>('payment_reversal');
+  const [reverseInitialReason, setReverseInitialReason] = useState('');
+  const [reversePrefillMerch, setReversePrefillMerch] = useState<MerchandiseReturnValue | null>(null);
   const [historicalOpen, setHistoricalOpen] = useState(false);
   const [historicalAmount, setHistoricalAmount] = useState('');
   const [historicalDate, setHistoricalDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -455,6 +527,230 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     onRefreshComanda,
   ]);
 
+  const merchandiseLines = useMemo(
+    () => merchandiseLinesFromReceivableDetail(detail),
+    [detail],
+  );
+
+  const pendingMerchandiseLines = useMemo(
+    () => merchandiseLines.filter((l) => !l.alreadyReturned),
+    [merchandiseLines],
+  );
+
+  const postedPayments = useMemo(
+    () => (detail?.payments ?? []).filter(isPostedPayment),
+    [detail?.payments],
+  );
+
+  const financeReversalDone =
+    !detail
+      ? false
+      : postedPayments.length === 0 &&
+        (detail.status === 'refunded' ||
+          detail.status === 'cancelled' ||
+          (detail.payments ?? []).some((p) => String(p.status) === 'reversed'));
+
+  const resetStandaloneReturn = useCallback(() => {
+    setStandaloneReturnOpen(false);
+    setStandaloneReturnReason('');
+    setStandaloneMerchandiseReturn(emptyMerchandiseReturnValue());
+    setStandaloneRefundMethod('pix');
+    setStandaloneNeedFinanceHandoff(false);
+    standaloneReturnIdemKeyRef.current = null;
+  }, []);
+
+  /** Estimativa de reembolso financeiro (pago − líquido após devolução comercial). */
+  const estimatedFinancialRefund = useMemo(() => {
+    if (!detail) return 0;
+    const commercial = selectedMerchandiseAmount(merchandiseLines, standaloneMerchandiseReturn);
+    if (commercial <= 0) return 0;
+    const returnedBefore = Number((detail as { returned_amount?: number }).returned_amount ?? 0);
+    const netAtSale = Number(
+      (detail as { net_amount_at_sale?: number | null }).net_amount_at_sale ??
+        Number(detail.final_amount ?? 0) + returnedBefore,
+    );
+    const finalAfter = Math.max(0, Math.round((netAtSale - returnedBefore - commercial) * 100) / 100);
+    const posted = postedPayments.reduce((s, p) => s + Number(p.amount ?? 0), 0);
+    return Math.max(0, Math.round((posted - finalAfter) * 100) / 100);
+  }, [detail, merchandiseLines, standaloneMerchandiseReturn, postedPayments]);
+
+  useEffect(() => {
+    if (detail?.guardian_id || detail?.guardian?.id) return;
+    if (standaloneRefundMethod === 'customer_credit') setStandaloneRefundMethod('pix');
+  }, [detail?.guardian_id, detail?.guardian?.id, standaloneRefundMethod]);
+
+  const closeReverseForm = useCallback(() => {
+    setReversePaymentId(null);
+    setReverseQueue([]);
+    setReverseInitialMode('payment_reversal');
+    setReverseInitialReason('');
+    setReversePrefillMerch(null);
+  }, []);
+
+  const openReverseForPayment = useCallback(
+    (
+      paymentId: string,
+      opts?: {
+        mode?: PaymentReversalMode;
+        reason?: string;
+        merchandise?: MerchandiseReturnValue | null;
+        queue?: string[];
+      },
+    ) => {
+      setStandaloneReturnOpen(false);
+      setStandaloneNeedFinanceHandoff(false);
+      setReversePaymentId(paymentId);
+      setReverseQueue((opts?.queue ?? []).filter((id) => id !== paymentId));
+      setReverseInitialMode(opts?.mode ?? 'payment_reversal');
+      setReverseInitialReason(opts?.reason ?? '');
+      setReversePrefillMerch(opts?.merchandise ?? null);
+    },
+    [],
+  );
+
+  const onReverseFormSuccess = useCallback(() => {
+    const [nextId, ...rest] = reverseQueue;
+    if (nextId) {
+      // Estoque (se marcado) já foi tratado no 1º reembolso — próximos só financeiro.
+      setReversePrefillMerch(null);
+      setReversePaymentId(nextId);
+      setReverseQueue(rest);
+      void loadDetail();
+      onRefreshComanda?.();
+      return;
+    }
+    closeReverseForm();
+    void loadDetail();
+    onRefreshComanda?.();
+  }, [reverseQueue, closeReverseForm, loadDetail, onRefreshComanda]);
+
+  const onConfirmStandaloneProductReturn = useCallback(async () => {
+    if (!clinicId || !detail) return;
+    if (pendingMerchandiseLines.length === 0) {
+      showError('Não há produtos pendentes de devolução.');
+      return;
+    }
+    if (standaloneReturnReason.trim().length < 3) {
+      showError('Informe o motivo da devolução (mín. 3 caracteres).');
+      return;
+    }
+    if (standaloneMerchandiseReturn.selectedLineIds.length === 0) {
+      showError('Selecione ao menos um produto para devolver.');
+      return;
+    }
+    if (!standaloneMerchandiseReturn.condition) {
+      showError('Selecione se a mercadoria está apta ou não para revenda.');
+      return;
+    }
+    const needsFinancialRefund = estimatedFinancialRefund > 0.009;
+    if (needsFinancialRefund && !hasPermission('hub.payments.reverse')) {
+      setStandaloneNeedFinanceHandoff(true);
+      return;
+    }
+    if (!needsFinancialRefund && !hasPermission('hub.financial.write')) {
+      showError('Sem permissão para registrar devolução de mercadoria.');
+      return;
+    }
+    if (needsFinancialRefund && !standaloneRefundDate) {
+      showError('Informe a data efetiva do reembolso.');
+      return;
+    }
+    if (
+      needsFinancialRefund &&
+      standaloneRefundMethod === 'customer_credit' &&
+      !detail.guardian_id &&
+      !detail.guardian?.id
+    ) {
+      showError('Esta cobrança não tem tutor — escolha Pix, dinheiro ou outra forma de reembolso.');
+      return;
+    }
+
+    const stockFields = merchandiseReturnApiFields(standaloneMerchandiseReturn);
+    if (!stockFields.stock_return_lines?.length || !stockFields.stock_return_condition) {
+      showError('Selecione os itens e a condição da mercadoria.');
+      return;
+    }
+
+    setPaymentLoading(true);
+    try {
+      const res = await hubFinancialApi.confirmReceivableProductReturn(detail.id, {
+        clinic_id: clinicId,
+        reason: standaloneReturnReason.trim(),
+        stock_return_condition: stockFields.stock_return_condition,
+        stock_return_lines: stockFields.stock_return_lines,
+        refund_method: needsFinancialRefund ? (standaloneRefundMethod as HubPaymentMethod) : null,
+        refund_effective_date: needsFinancialRefund ? standaloneRefundDate : null,
+        idempotency_key: ensureStandaloneReturnIdemKey(),
+      });
+      const refundLabel =
+        res.refund_amount && res.refund_amount > 0
+          ? ` Reembolso financeiro de ${formatBrl(res.refund_amount)}.`
+          : '';
+      showSuccess(res.warning || `Devolução registrada.${refundLabel}`);
+      resetStandaloneReturn();
+      if (res.receivable) setDetail(res.receivable);
+      else await loadDetail();
+      onRefreshComanda?.();
+    } catch (e) {
+      showError((e as Error)?.message || 'Erro ao registrar devolução');
+    } finally {
+      setPaymentLoading(false);
+    }
+  }, [
+    clinicId,
+    detail,
+    hasPermission,
+    pendingMerchandiseLines.length,
+    estimatedFinancialRefund,
+    standaloneReturnReason,
+    standaloneMerchandiseReturn,
+    standaloneRefundMethod,
+    standaloneRefundDate,
+    ensureStandaloneReturnIdemKey,
+    showError,
+    showSuccess,
+    resetStandaloneReturn,
+    loadDetail,
+    onRefreshComanda,
+  ]);
+
+  /** Devolução por item: reembolsa só o valor selecionado (não estorna a comanda inteira). */
+  const onAttemptMerchandiseReturn = useCallback(() => {
+    if (!detail) return;
+    if (standaloneReturnReason.trim().length < 3) {
+      showError('Informe o motivo da devolução (mín. 3 caracteres).');
+      return;
+    }
+    if (standaloneMerchandiseReturn.selectedLineIds.length === 0) {
+      showError('Selecione ao menos um produto para devolver.');
+      return;
+    }
+    if (!standaloneMerchandiseReturn.condition) {
+      showError('Selecione se a mercadoria está apta ou não para revenda.');
+      return;
+    }
+    if (pendingMerchandiseLines.length === 0) {
+      showError('Não há produtos pendentes de devolução.');
+      return;
+    }
+
+    if (estimatedFinancialRefund > 0.009 && !hasPermission('hub.payments.reverse')) {
+      setStandaloneNeedFinanceHandoff(true);
+      return;
+    }
+
+    void onConfirmStandaloneProductReturn();
+  }, [
+    detail,
+    standaloneReturnReason,
+    standaloneMerchandiseReturn,
+    pendingMerchandiseLines.length,
+    estimatedFinancialRefund,
+    hasPermission,
+    showError,
+    onConfirmStandaloneProductReturn,
+  ]);
+
   const onCancelReceivable = useCallback(async () => {
     if (!clinicId || !detail) return;
     if (!hasPermission('hub.financial.write')) {
@@ -465,11 +761,22 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       showError('Informe o motivo do cancelamento (mín. 3 caracteres).');
       return;
     }
+    const pendingMerchandise = merchandiseLines.some((l) => !l.alreadyReturned);
+    if (pendingMerchandise && merchandiseReturn.returned && !merchandiseReturn.condition) {
+      showError('Selecione se a mercadoria está apta ou não para revenda.');
+      return;
+    }
     setPaymentLoading(true);
     try {
-      await hubFinancialApi.cancelReceivable(detail.id, { clinic_id: clinicId, reason: cancelReason.trim() });
-      showSuccess('Recebível cancelado.');
+      const stockFields = pendingMerchandise ? merchandiseReturnApiFields(merchandiseReturn) : {};
+      const res = await hubFinancialApi.cancelReceivable(detail.id, {
+        clinic_id: clinicId,
+        reason: cancelReason.trim(),
+        ...stockFields,
+      });
+      showSuccess(res.warning || 'Recebível cancelado.');
       setCancelReason('');
+      setMerchandiseReturn(emptyMerchandiseReturnValue());
       await loadDetail();
       onRefreshComanda?.();
       onCancelSuccess?.();
@@ -478,7 +785,19 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     } finally {
       setPaymentLoading(false);
     }
-  }, [clinicId, detail, hasPermission, cancelReason, showError, showSuccess, loadDetail, onRefreshComanda, onCancelSuccess]);
+  }, [
+    clinicId,
+    detail,
+    hasPermission,
+    cancelReason,
+    merchandiseLines,
+    merchandiseReturn,
+    showError,
+    showSuccess,
+    loadDetail,
+    onRefreshComanda,
+    onCancelSuccess,
+  ]);
 
   const onConfirmBilling = useCallback(async () => {
     if (billingAction === 'cancel') {
@@ -556,32 +875,6 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     loadDetail,
     onRefreshComanda,
   ]);
-
-  const onReversePayment = async () => {
-    if (!clinicId || !reversePaymentId) return;
-    if (!hasPermission('hub.payments.reverse')) {
-      showError('Sem permissão para estornar pagamentos.');
-      return;
-    }
-    if (!reverseReason.trim() || reverseReason.trim().length < 3) {
-      showError('Informe o motivo do estorno (mín. 3 caracteres).');
-      return;
-    }
-    try {
-      await hubFinancialApi.reversePayment(reversePaymentId, {
-        clinic_id: clinicId,
-        reason: reverseReason.trim(),
-        mode: 'payment_reversal',
-      });
-      showSuccess('Lançamento anulado.');
-      setReversePaymentId(null);
-      setReverseReason('');
-      await loadDetail();
-      onRefreshComanda?.();
-    } catch (e) {
-      showError((e as Error)?.message || 'Erro ao estornar pagamento');
-    }
-  };
 
   const onRemoveProductLine = async (lineId: string) => {
     if (!clinicId || !detail) return;
@@ -743,7 +1036,17 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       >
         <CheckoutDrawerActionTabs
           action={billingAction}
-          onActionChange={setBillingAction}
+          onActionChange={(next) => {
+            setBillingAction(next);
+            if (next === 'cancel') {
+              // Um único fluxo de devolução física: o do cancelamento.
+              setStandaloneReturnOpen(false);
+              setStandaloneReturnReason('');
+              setStandaloneMerchandiseReturn(assumedMerchandiseReturnValue(pendingMerchandiseLines));
+            } else {
+              setMerchandiseReturn(emptyMerchandiseReturnValue());
+            }
+          }}
           tabs={[
             ...(canRegisterPayment ? [{ value: 'receive_now' as const, label: 'Receber agora' }] : []),
             ...(canCancelReceivable ? [{ value: 'cancel' as const, label: 'Cancelar' }] : []),
@@ -753,14 +1056,46 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
         {billingAction === 'receive_now' && canRegisterPayment ? paymentLinesEditor : null}
 
         {billingAction === 'cancel' && canCancelReceivable ? (
-          <CheckoutDrawerCancelReasonField
-            id="comanda-fin-cancel-reason"
-            value={cancelReason}
-            onChange={setCancelReason}
-          />
+          <>
+            <CheckoutDrawerCancelReasonField
+              id="comanda-fin-cancel-reason"
+              value={cancelReason}
+              onChange={setCancelReason}
+            />
+            {merchandiseLines.length > 0 ? (
+              <HubMerchandiseReturnSection
+                idPrefix="comanda-fin-stock"
+                lines={merchandiseLines}
+                value={merchandiseReturn}
+                onChange={setMerchandiseReturn}
+                disabled={paymentLoading}
+              />
+            ) : null}
+          </>
         ) : null}
       </CheckoutDrawerBillingShell>
     ) : null;
+
+  const showStandaloneMerchandiseReturn =
+    pendingMerchandiseLines.length > 0 &&
+    hasPermission('hub.financial.write') &&
+    billingAction !== 'cancel';
+
+  const reversePayment = useMemo(
+    () => (detail?.payments ?? []).find((p) => p.id === reversePaymentId) ?? null,
+    [detail?.payments, reversePaymentId],
+  );
+
+  const reversePaymentSummary = reversePayment
+    ? {
+        id: reversePayment.id,
+        amount: Number(reversePayment.amount),
+        payment_method: String(reversePayment.payment_method),
+        installments: Number(reversePayment.installments ?? 1),
+        payment_date: reversePayment.payment_date,
+        cash_session_status: reversePayment.cash_session_status ?? null,
+      }
+    : null;
 
   const paymentFields = !drawerLayout && canRegisterPayment ? (
     <div
@@ -994,10 +1329,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
                         className="hub-dayboard__action-btn hub-dayboard__action-btn--danger"
                         title="Estornar pagamento"
                         aria-label="Estornar pagamento"
-                        onClick={() => {
-                          setReversePaymentId(payment.id);
-                          setReverseReason('');
-                        }}
+                        onClick={() => openReverseForPayment(payment.id)}
                       >
                         <RotateCcw size={15} strokeWidth={2} />
                       </button>
@@ -1023,6 +1355,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
         badges={
           <>
             <span className={statusPillClass(detail.status)}>{statusLabel(detail.status)}</span>
+            <ReceivableStockReturnBadge status={detail.stock_return_status} />
             <span className="hub-checkout-drawer__origin-badge">
               {formatDateTime(detail.created_at)}
             </span>
@@ -1138,33 +1471,198 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
 
       {billingActionSection}
 
+      {showStandaloneMerchandiseReturn ? (
+        <CheckoutDrawerSection
+          title="Devolução de mercadorias"
+          hint={
+            standaloneReturnOpen
+              ? estimatedFinancialRefund > 0.009
+                ? 'Marque só os itens (quantidade integral). O reembolso financeiro só ocorre se o pago superar o líquido restante.'
+                : financeReversalDone
+                  ? 'Estorno já registrado — confirme só a devolução física ao estoque.'
+                  : 'Marque só os itens (quantidade integral). Sem reembolso financeiro se o saldo a receber absorver a devolução.'
+              : 'Devolva um ou mais itens sem precisar estornar a comanda inteira.'
+          }
+          action={
+            !standaloneReturnOpen ? (
+              <button
+                type="button"
+                className="hub-quote-detail__text-btn"
+                onClick={() => {
+                  setMerchandiseReturn(emptyMerchandiseReturnValue());
+                  setStandaloneNeedFinanceHandoff(false);
+                  setStandaloneReturnOpen(true);
+                  setStandaloneMerchandiseReturn(assumedMerchandiseReturnValue(pendingMerchandiseLines));
+                }}
+              >
+                Registrar devolução
+              </button>
+            ) : null
+          }
+        >
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            <ReceivableStockReturnBadge status={detail.stock_return_status} />
+          </div>
+          {standaloneReturnOpen ? (
+            <div className="hub-merch-return-form">
+              {standaloneNeedFinanceHandoff ? (
+                <div className="hub-adjustments__warning" role="status">
+                  <p style={{ margin: '0 0 8px' }}>
+                    Há valor financeiro a devolver nesta cobrança. Você não tem permissão para reembolsar —
+                    peça ao financeiro para concluir a devolução dos itens.
+                  </p>
+                  <Link to={FINANCE_ESTORNOS_HREF} className="hub-clientes__link-btn">
+                    Ir ao Financeiro (Estornos)
+                  </Link>
+                </div>
+              ) : null}
+              {!standaloneNeedFinanceHandoff ? (
+                <p className="hub-clientes__muted" style={{ marginTop: 0 }}>
+                  Comercial dos itens:{' '}
+                  <strong>
+                    {formatBrl(
+                      selectedMerchandiseAmount(pendingMerchandiseLines, standaloneMerchandiseReturn),
+                    )}
+                  </strong>
+                  {estimatedFinancialRefund > 0.009 ? (
+                    <>
+                      {' '}
+                      · reembolso financeiro estimado: <strong>{formatBrl(estimatedFinancialRefund)}</strong>
+                    </>
+                  ) : (
+                    <> · sem reembolso financeiro (ajuste só o saldo a receber)</>
+                  )}
+                  .
+                </p>
+              ) : null}
+              {financeReversalDone && !standaloneNeedFinanceHandoff ? (
+                <p className="hub-clientes__muted" style={{ marginTop: 0 }}>
+                  Estorno já registrado — só confirmação de estoque.
+                </p>
+              ) : null}
+              <div className="hub-merch-return-form__reason">
+                <label className="hub-clientes__label" htmlFor="recv-standalone-return-reason">
+                  Motivo
+                  <textarea
+                    id="recv-standalone-return-reason"
+                    className="hub-clientes__input"
+                    rows={3}
+                    value={standaloneReturnReason}
+                    onChange={(e) => setStandaloneReturnReason(e.target.value)}
+                    placeholder="Ex.: Cliente devolveu o produto no dia seguinte"
+                  />
+                </label>
+              </div>
+              <HubMerchandiseReturnSection
+                idPrefix="recv-standalone-stock"
+                lines={pendingMerchandiseLines}
+                value={standaloneMerchandiseReturn}
+                onChange={setStandaloneMerchandiseReturn}
+                disabled={paymentLoading || standaloneNeedFinanceHandoff}
+                confirmMode="assumed"
+                showHeading={false}
+              />
+              {estimatedFinancialRefund > 0.009 && !standaloneNeedFinanceHandoff ? (
+                <div className="hub-merch-return-form__refund" style={{ display: 'grid', gap: 10 }}>
+                  <HubSearchableCombobox
+                    id="recv-standalone-refund-method"
+                    label="Forma do reembolso"
+                    options={standaloneRefundMethodOptions(
+                      Boolean(detail.guardian_id || detail.guardian?.id),
+                    )}
+                    value={standaloneRefundMethod}
+                    onChange={setStandaloneRefundMethod}
+                    disabled={paymentLoading}
+                  />
+                  {!detail.guardian_id && !detail.guardian?.id ? (
+                    <p className="hub-clientes__muted" style={{ margin: 0 }}>
+                      Sem tutor nesta cobrança — crédito do tutor não está disponível.
+                    </p>
+                  ) : null}
+                  <HubDateField
+                    id="recv-standalone-refund-date"
+                    label="Data efetiva"
+                    valueIso={standaloneRefundDate}
+                    onChangeIso={setStandaloneRefundDate}
+                    showTodayButton
+                  />
+                </div>
+              ) : null}
+              <div className="hub-merch-return-form__actions">
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--ghost"
+                  disabled={paymentLoading}
+                  onClick={() => resetStandaloneReturn()}
+                >
+                  Cancelar
+                </button>
+                {standaloneNeedFinanceHandoff ? null : (
+                  <button
+                    type="button"
+                    className="hub-clientes__btn hub-clientes__btn--primary"
+                    disabled={
+                      paymentLoading ||
+                      standaloneReturnReason.trim().length < 3 ||
+                      standaloneMerchandiseReturn.selectedLineIds.length === 0 ||
+                      !standaloneMerchandiseReturn.condition
+                    }
+                    onClick={() => onAttemptMerchandiseReturn()}
+                  >
+                    {paymentLoading
+                      ? 'Salvando…'
+                      : estimatedFinancialRefund > 0.009
+                        ? 'Confirmar devolução e reembolso'
+                        : 'Confirmar devolução'}
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : null}
+        </CheckoutDrawerSection>
+      ) : detail.stock_return_status ? (
+        <CheckoutDrawerSection title="Devolução de mercadorias">
+          <ReceivableStockReturnBadge status={detail.stock_return_status} />
+        </CheckoutDrawerSection>
+      ) : null}
+
       <CheckoutDrawerSection title="Pagamentos">{paymentsTable}</CheckoutDrawerSection>
 
-      {reversePaymentId ? (
-        <CheckoutDrawerSection title="Estornar pagamento">
-          <p className="hub-clientes__muted">
-            Estornando pagamento <strong>{reversePaymentId.slice(0, 8)}…</strong>
-          </p>
-          <textarea
-            className="hub-clientes__input"
-            rows={2}
-            value={reverseReason}
-            onChange={(e) => setReverseReason(e.target.value)}
-            placeholder="Motivo do estorno (mín. 3 caracteres)"
+      {reversePaymentId && reversePaymentSummary ? (
+        <CheckoutDrawerSection
+          title={
+            reversePrefillMerch?.returned
+              ? 'Estorno financeiro necessário'
+              : 'Estornar pagamento'
+          }
+          hint={
+            reversePrefillMerch?.returned
+              ? 'Devolução física marcada — conclua o reembolso para fechar o ciclo (financeiro + estoque).'
+              : undefined
+          }
+        >
+          {reverseQueue.length > 0 ? (
+            <p className="hub-clientes__muted" style={{ marginBottom: 8 }}>
+              Ainda restam {reverseQueue.length} pagamento{reverseQueue.length === 1 ? '' : 's'} nesta
+              cobrança — após este, abrimos o próximo.
+            </p>
+          ) : null}
+          <HubPaymentReversalForm
+            key={`${reversePaymentId}-${reverseInitialMode}-${reversePrefillMerch?.condition ?? 'none'}-${reverseQueue.length}`}
+            clinicId={clinicId}
+            payment={reversePaymentSummary}
+            originLabel={formatComandaOriginLabel(detail.source_type)}
+            allowCustomerCreditRefund={Boolean(detail.guardian_id || detail.guardian?.id)}
+            merchandiseLines={merchandiseLines}
+            stockReturnStatus={detail.stock_return_status}
+            initialMode={reverseInitialMode}
+            initialReason={reverseInitialReason}
+            initialMerchandiseReturn={reversePrefillMerch ?? undefined}
+            idPrefix="recv-rev"
+            subtitle={null}
+            onCancel={closeReverseForm}
+            onSuccess={onReverseFormSuccess}
           />
-          <div className="hub-finance-page__drawer-footer" style={{ marginTop: 8, padding: 0 }}>
-            <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => setReversePaymentId(null)}>
-              Voltar
-            </button>
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--primary"
-              disabled={!reverseReason.trim() || reverseReason.trim().length < 3}
-              onClick={() => void onReversePayment()}
-            >
-              Confirmar estorno
-            </button>
-          </div>
         </CheckoutDrawerSection>
       ) : null}
     </>
@@ -1172,6 +1670,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     <>
       <div className="hub-finance-page__detail-hero">
         <span className={statusPillClass(detail.status)}>{statusLabel(detail.status)}</span>
+        <ReceivableStockReturnBadge status={detail.stock_return_status} />
         <strong>{formatBrl(Number(detail.final_amount))}</strong>
         <span className="hub-clientes__muted">Criado em {formatDateTime(detail.created_at)}</span>
       </div>
@@ -1205,37 +1704,175 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
         {linesTable}
       </section>
 
+      {showStandaloneMerchandiseReturn ? (
+        <section className="hub-finance-page__panel-section">
+          <h3 className="hub-finance-page__subsection-title">Devolução de mercadorias</h3>
+          <ReceivableStockReturnBadge status={detail.stock_return_status} />
+          {!standaloneReturnOpen ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost"
+              style={{ marginTop: 8 }}
+              onClick={() => {
+                setMerchandiseReturn(emptyMerchandiseReturnValue());
+                setStandaloneNeedFinanceHandoff(false);
+                setStandaloneReturnOpen(true);
+                setStandaloneMerchandiseReturn(assumedMerchandiseReturnValue(pendingMerchandiseLines));
+              }}
+            >
+              Registrar devolução
+            </button>
+          ) : (
+            <div className="hub-merch-return-form" style={{ marginTop: 10 }}>
+              {standaloneNeedFinanceHandoff ? (
+                <div className="hub-adjustments__warning" role="status">
+                  <p style={{ margin: '0 0 8px' }}>
+                    Há valor financeiro a devolver. Você não tem permissão para reembolsar — peça ao
+                    financeiro.
+                  </p>
+                  <Link to={FINANCE_ESTORNOS_HREF} className="hub-clientes__link-btn">
+                    Ir ao Financeiro (Estornos)
+                  </Link>
+                </div>
+              ) : null}
+              {!standaloneNeedFinanceHandoff ? (
+                <p className="hub-clientes__muted">
+                  Comercial dos itens:{' '}
+                  <strong>
+                    {formatBrl(
+                      selectedMerchandiseAmount(pendingMerchandiseLines, standaloneMerchandiseReturn),
+                    )}
+                  </strong>
+                  {estimatedFinancialRefund > 0.009 ? (
+                    <>
+                      {' '}
+                      · reembolso financeiro estimado: <strong>{formatBrl(estimatedFinancialRefund)}</strong>
+                    </>
+                  ) : (
+                    <> · sem reembolso financeiro (ajuste só o saldo a receber)</>
+                  )}
+                  .
+                </p>
+              ) : null}
+              <div className="hub-merch-return-form__reason">
+                <label className="hub-clientes__label" htmlFor="recv-page-return-reason">
+                  Motivo
+                  <textarea
+                    id="recv-page-return-reason"
+                    className="hub-clientes__input"
+                    rows={3}
+                    value={standaloneReturnReason}
+                    onChange={(e) => setStandaloneReturnReason(e.target.value)}
+                    placeholder="Ex.: Cliente devolveu o produto no dia seguinte"
+                  />
+                </label>
+              </div>
+              <HubMerchandiseReturnSection
+                idPrefix="recv-page-stock"
+                lines={pendingMerchandiseLines}
+                value={standaloneMerchandiseReturn}
+                onChange={setStandaloneMerchandiseReturn}
+                disabled={paymentLoading || standaloneNeedFinanceHandoff}
+                confirmMode="assumed"
+                showHeading={false}
+              />
+              {estimatedFinancialRefund > 0.009 && !standaloneNeedFinanceHandoff ? (
+                <div className="hub-merch-return-form__refund" style={{ display: 'grid', gap: 10 }}>
+                  <HubSearchableCombobox
+                    id="recv-page-refund-method"
+                    label="Forma do reembolso"
+                    options={standaloneRefundMethodOptions(
+                      Boolean(detail.guardian_id || detail.guardian?.id),
+                    )}
+                    value={standaloneRefundMethod}
+                    onChange={setStandaloneRefundMethod}
+                    disabled={paymentLoading}
+                  />
+                  {!detail.guardian_id && !detail.guardian?.id ? (
+                    <p className="hub-clientes__muted" style={{ margin: 0 }}>
+                      Sem tutor nesta cobrança — crédito do tutor não está disponível.
+                    </p>
+                  ) : null}
+                  <HubDateField
+                    id="recv-page-refund-date"
+                    label="Data efetiva"
+                    valueIso={standaloneRefundDate}
+                    onChangeIso={setStandaloneRefundDate}
+                    showTodayButton
+                  />
+                </div>
+              ) : null}
+              <div className="hub-merch-return-form__actions">
+                <button
+                  type="button"
+                  className="hub-clientes__btn hub-clientes__btn--ghost"
+                  disabled={paymentLoading}
+                  onClick={() => resetStandaloneReturn()}
+                >
+                  Cancelar
+                </button>
+                {standaloneNeedFinanceHandoff ? null : (
+                  <button
+                    type="button"
+                    className="hub-clientes__btn hub-clientes__btn--primary"
+                    disabled={
+                      paymentLoading ||
+                      standaloneReturnReason.trim().length < 3 ||
+                      standaloneMerchandiseReturn.selectedLineIds.length === 0 ||
+                      !standaloneMerchandiseReturn.condition
+                    }
+                    onClick={() => onAttemptMerchandiseReturn()}
+                  >
+                    {paymentLoading
+                      ? 'Salvando…'
+                      : estimatedFinancialRefund > 0.009
+                        ? 'Confirmar devolução e reembolso'
+                        : 'Confirmar devolução'}
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </section>
+      ) : detail.stock_return_status ? (
+        <section className="hub-finance-page__panel-section">
+          <h3 className="hub-finance-page__subsection-title">Devolução de mercadorias</h3>
+          <ReceivableStockReturnBadge status={detail.stock_return_status} />
+        </section>
+      ) : null}
+
       <section className="hub-finance-page__panel-section">
         <h3 className="hub-finance-page__subsection-title">Pagamentos</h3>
         {paymentsTable}
       </section>
 
-      {reversePaymentId ? (
+      {reversePaymentId && reversePaymentSummary ? (
         <section className="hub-finance-page__panel-section">
-          <h3 className="hub-finance-page__subsection-title">Estornar pagamento</h3>
-          <p className="hub-clientes__muted">
-            Estornando pagamento <strong>{reversePaymentId.slice(0, 8)}…</strong>
-          </p>
-          <textarea
-            className="hub-clientes__input"
-            rows={2}
-            value={reverseReason}
-            onChange={(e) => setReverseReason(e.target.value)}
-            placeholder="Motivo do estorno (mín. 3 caracteres)"
+          <h3 className="hub-finance-page__subsection-title">
+            {reversePrefillMerch?.returned ? 'Estorno financeiro necessário' : 'Estornar pagamento'}
+          </h3>
+          {reverseQueue.length > 0 ? (
+            <p className="hub-clientes__muted" style={{ marginBottom: 8 }}>
+              Ainda restam {reverseQueue.length} pagamento{reverseQueue.length === 1 ? '' : 's'} nesta
+              cobrança — após este, abrimos o próximo.
+            </p>
+          ) : null}
+          <HubPaymentReversalForm
+            key={`${reversePaymentId}-${reverseInitialMode}-${reversePrefillMerch?.condition ?? 'none'}-${reverseQueue.length}`}
+            clinicId={clinicId}
+            payment={reversePaymentSummary}
+            originLabel={formatComandaOriginLabel(detail.source_type)}
+            allowCustomerCreditRefund={Boolean(detail.guardian_id || detail.guardian?.id)}
+            merchandiseLines={merchandiseLines}
+            stockReturnStatus={detail.stock_return_status}
+            initialMode={reverseInitialMode}
+            initialReason={reverseInitialReason}
+            initialMerchandiseReturn={reversePrefillMerch ?? undefined}
+            idPrefix="recv-rev-page"
+            subtitle={null}
+            onCancel={closeReverseForm}
+            onSuccess={onReverseFormSuccess}
           />
-          <div className="hub-clientes__footer-btns" style={{ marginTop: 8 }}>
-            <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => setReversePaymentId(null)}>
-              Cancelar
-            </button>
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--primary"
-              disabled={!reverseReason.trim() || reverseReason.trim().length < 3}
-              onClick={() => void onReversePayment()}
-            >
-              Confirmar estorno
-            </button>
-          </div>
         </section>
       ) : null}
     </>
