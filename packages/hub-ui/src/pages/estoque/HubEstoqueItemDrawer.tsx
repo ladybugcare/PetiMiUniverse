@@ -63,6 +63,51 @@ function formatAuditWhen(iso: string): string {
   }
 }
 
+function parseMoneyInputLocal(raw: string): number | null {
+  let s = raw
+    .trim()
+    .replace(/\u00a0/g, ' ')
+    .replace(/R\$\s*/gi, '')
+    .trim()
+    .replace(/\s/g, '');
+  if (s === '') return null;
+  const lastComma = s.lastIndexOf(',');
+  const lastDot = s.lastIndexOf('.');
+  if (lastComma > lastDot) s = s.replace(/\./g, '').replace(',', '.');
+  else if (lastDot > lastComma) s = s.replace(/,/g, '');
+  else if (lastComma >= 0) s = s.replace(',', '.');
+  const n = Number(s);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100) / 100;
+}
+
+function formatMoneyNumberLocal(n: number): string {
+  return new Intl.NumberFormat('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+}
+
+function formatMoneyCurrencyLocal(n: number): string {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
+}
+
+function parsePercentInputLocal(raw: string): number | null {
+  const s = raw.trim().replace(/\s/g, '').replace('%', '').replace(',', '.');
+  if (s === '') return null;
+  const n = Number(s);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return Math.round(n * 100) / 100;
+}
+
+function saleFromCostPercent(cost: number, pct: number): number {
+  return Math.round(((cost * pct) / 100 + Number.EPSILON) * 100) / 100;
+}
+
+function percentFromCostSale(cost: number, sale: number): number | null {
+  if (!(cost > 0)) return null;
+  return Math.round(((sale / cost) * 100 + Number.EPSILON) * 100) / 100;
+}
+
+type SalePriceMode = 'manual' | 'percent';
+
 export const INVENTORY_FORM_ID = 'hub-estoque-item-form';
 
 export type InventoryFormState = {
@@ -189,6 +234,19 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
   const subtitle = mode === 'edit' && editingItem ? editingItem.name : undefined;
   const [changes, setChanges] = useState<HubInventoryItemChange[]>([]);
   const [changesLoading, setChangesLoading] = useState(false);
+  const [salePriceMode, setSalePriceMode] = useState<SalePriceMode>('manual');
+  const [saleMarkupPct, setSaleMarkupPct] = useState('110');
+
+  useEffect(() => {
+    if (!open) return;
+    setSalePriceMode('manual');
+    const cost = parseMoneyInputLocal(form.cost_amount);
+    const sale = parseMoneyInputLocal(form.sale_amount);
+    const derived = cost != null && sale != null ? percentFromCostSale(cost, sale) : null;
+    setSaleMarkupPct(derived != null ? String(derived).replace('.', ',') : '110');
+    // Só ao abrir/trocar item — não reage a cada digitação de preço.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- reset por sessão do drawer
+  }, [open, mode, editingItem?.id]);
 
   useEffect(() => {
     if (!open || mode !== 'edit' || !clinicId || !editingItem?.id) {
@@ -515,72 +573,180 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
             </div>
           </section>
 
-          <section className="hub-estoque-drawer__section">
-            <h3 className="hub-estoque-drawer__section-title">Preços</h3>
-            <div className="hub-estoque-drawer__row">
-              <div className="hub-clientes__field">
+          <section className="hub-estoque-drawer__section hub-estoque-drawer__section--prices">
+            <div className="hub-estoque-drawer__prices-head">
+              <h3 className="hub-estoque-drawer__section-title">Preços</h3>
+              <div
+                className="hub-estoque-drawer__sale-mode"
+                role="group"
+                aria-label="Como informar o valor de venda"
+              >
+                <button
+                  type="button"
+                  className={`hub-estoque-drawer__sale-mode-btn${salePriceMode === 'manual' ? ' hub-estoque-drawer__sale-mode-btn--active' : ''}`}
+                  aria-pressed={salePriceMode === 'manual'}
+                  onClick={() => setSalePriceMode('manual')}
+                >
+                  Valor (R$)
+                </button>
+                <button
+                  type="button"
+                  className={`hub-estoque-drawer__sale-mode-btn${salePriceMode === 'percent' ? ' hub-estoque-drawer__sale-mode-btn--active' : ''}`}
+                  aria-pressed={salePriceMode === 'percent'}
+                  onClick={() => {
+                    const cost = parseMoneyInputLocal(form.cost_amount);
+                    const sale = parseMoneyInputLocal(form.sale_amount);
+                    const derived = cost != null && sale != null ? percentFromCostSale(cost, sale) : null;
+                    if (derived != null) setSaleMarkupPct(String(derived).replace('.', ','));
+                    setSalePriceMode('percent');
+                    if (cost != null) {
+                      const pct = derived ?? parsePercentInputLocal(saleMarkupPct) ?? 110;
+                      setForm((f) => ({
+                        ...f,
+                        sale_amount: formatMoneyNumberLocal(saleFromCostPercent(cost, pct)),
+                      }));
+                      if (derived == null) setSaleMarkupPct(String(pct).replace('.', ','));
+                    }
+                  }}
+                >
+                  % sobre o custo
+                </button>
+              </div>
+            </div>
+
+            <div className="hub-estoque-drawer__prices-grid">
+              <div className="hub-clientes__field hub-estoque-drawer__field--compact">
                 <label className="hub-clientes__label" htmlFor="inv-cost">
-                  Valor de custo *
+                  Custo *
                 </label>
-                <div className="hub-estoque-drawer__affix">
+                <div className="hub-estoque-drawer__affix hub-estoque-drawer__affix--money">
                   <span className="hub-estoque-drawer__affix-prefix">R$</span>
                   <input
                     id="inv-cost"
                     className="hub-clientes__input"
                     required
+                    inputMode="decimal"
                     value={form.cost_amount}
-                    onChange={(e) => setForm((f) => ({ ...f, cost_amount: e.target.value }))}
+                    onChange={(e) => {
+                      const nextCost = e.target.value;
+                      setForm((f) => {
+                        if (salePriceMode !== 'percent') return { ...f, cost_amount: nextCost };
+                        const cost = parseMoneyInputLocal(nextCost);
+                        const pct = parsePercentInputLocal(saleMarkupPct);
+                        if (cost == null || pct == null) return { ...f, cost_amount: nextCost };
+                        return {
+                          ...f,
+                          cost_amount: nextCost,
+                          sale_amount: formatMoneyNumberLocal(saleFromCostPercent(cost, pct)),
+                        };
+                      });
+                    }}
                     placeholder="0,00"
                   />
                 </div>
               </div>
-              <div className="hub-clientes__field">
-                <label className="hub-clientes__label" htmlFor="inv-sale">
-                  Valor de venda *
+
+              <div className="hub-clientes__field hub-estoque-drawer__field--compact">
+                <label
+                  className="hub-clientes__label"
+                  htmlFor={salePriceMode === 'manual' ? 'inv-sale' : 'inv-sale-pct'}
+                >
+                  {salePriceMode === 'manual' ? 'Venda *' : '% do custo *'}
                 </label>
-                <div className="hub-estoque-drawer__affix">
-                  <span className="hub-estoque-drawer__affix-prefix">R$</span>
-                  <input
-                    id="inv-sale"
-                    className="hub-clientes__input"
-                    required
-                    value={form.sale_amount}
-                    onChange={(e) => setForm((f) => ({ ...f, sale_amount: e.target.value }))}
-                    placeholder="0,00"
-                  />
-                </div>
+                {salePriceMode === 'manual' ? (
+                  <div className="hub-estoque-drawer__affix hub-estoque-drawer__affix--money">
+                    <span className="hub-estoque-drawer__affix-prefix">R$</span>
+                    <input
+                      id="inv-sale"
+                      className="hub-clientes__input"
+                      required
+                      inputMode="decimal"
+                      value={form.sale_amount}
+                      onChange={(e) => setForm((f) => ({ ...f, sale_amount: e.target.value }))}
+                      placeholder="0,00"
+                    />
+                  </div>
+                ) : (
+                  <div className="hub-estoque-drawer__affix hub-estoque-drawer__affix--pct">
+                    <input
+                      id="inv-sale-pct"
+                      className="hub-clientes__input"
+                      inputMode="decimal"
+                      required
+                      value={saleMarkupPct}
+                      onChange={(e) => {
+                        const nextPct = e.target.value;
+                        setSaleMarkupPct(nextPct);
+                        const cost = parseMoneyInputLocal(form.cost_amount);
+                        const pct = parsePercentInputLocal(nextPct);
+                        if (cost == null || pct == null) return;
+                        setForm((f) => ({
+                          ...f,
+                          sale_amount: formatMoneyNumberLocal(saleFromCostPercent(cost, pct)),
+                        }));
+                      }}
+                      placeholder="110"
+                      aria-describedby="inv-sale-pct-hint"
+                    />
+                    <span className="hub-estoque-drawer__affix-suffix">%</span>
+                  </div>
+                )}
               </div>
-            </div>
-            <div className="hub-estoque-drawer__row">
-              <div className="hub-clientes__field">
+
+              <div className="hub-clientes__field hub-estoque-drawer__field--compact">
                 <label className="hub-clientes__label" htmlFor="inv-sup-disc">
-                  Desconto fornecedor
+                  Desc. fornecedor
                 </label>
-                <div className="hub-estoque-drawer__affix">
+                <div className="hub-estoque-drawer__affix hub-estoque-drawer__affix--pct">
                   <input
                     id="inv-sup-disc"
                     className="hub-clientes__input"
+                    inputMode="decimal"
                     value={form.supplier_discount_pct}
                     onChange={(e) => setForm((f) => ({ ...f, supplier_discount_pct: e.target.value }))}
+                    placeholder="0"
                   />
                   <span className="hub-estoque-drawer__affix-suffix">%</span>
                 </div>
               </div>
-              <div className="hub-clientes__field">
+
+              <div className="hub-clientes__field hub-estoque-drawer__field--compact">
                 <label className="hub-clientes__label" htmlFor="inv-max-disc">
-                  Desconto máximo na venda
+                  Desc. máx. na venda
                 </label>
-                <div className="hub-estoque-drawer__affix">
+                <div className="hub-estoque-drawer__affix hub-estoque-drawer__affix--pct">
                   <input
                     id="inv-max-disc"
                     className="hub-clientes__input"
+                    inputMode="decimal"
                     value={form.max_sale_discount_pct}
                     onChange={(e) => setForm((f) => ({ ...f, max_sale_discount_pct: e.target.value }))}
+                    placeholder="0"
                   />
                   <span className="hub-estoque-drawer__affix-suffix">%</span>
                 </div>
               </div>
             </div>
+
+            {salePriceMode === 'percent' ? (
+              <p id="inv-sale-pct-hint" className="hub-estoque-drawer__sale-hint" aria-live="polite">
+                {(() => {
+                  const cost = parseMoneyInputLocal(form.cost_amount);
+                  const pct = parsePercentInputLocal(saleMarkupPct);
+                  if (cost == null || pct == null) {
+                    return 'Ex.: custo R$ 10 e 110% → venda R$ 11,00.';
+                  }
+                  const sale = saleFromCostPercent(cost, pct);
+                  return (
+                    <>
+                      {formatMoneyNumberLocal(pct)}% de {formatMoneyCurrencyLocal(cost)} ={' '}
+                      <strong>{formatMoneyCurrencyLocal(sale)}</strong>
+                    </>
+                  );
+                })()}
+              </p>
+            ) : null}
+
             <div className="hub-estoque-drawer__checks">
               <HubCheckbox
                 checked={form.allow_price_override_on_sale}

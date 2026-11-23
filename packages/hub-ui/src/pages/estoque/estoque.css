@@ -199,9 +199,98 @@
   box-shadow: 0 0 0 3px rgba(200, 106, 77, 0.14);
 }
 
+.hub-estoque-drawer__prices-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-bottom: 12px;
+}
+
+.hub-estoque-drawer__section--prices .hub-estoque-drawer__section-title {
+  margin-bottom: 0;
+}
+
+.hub-estoque-drawer__prices-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px 14px;
+  margin-bottom: 10px;
+}
+
+.hub-estoque-drawer__prices-grid > .hub-clientes__field {
+  margin-bottom: 0;
+}
+
+.hub-estoque-drawer__field--compact .hub-estoque-drawer__affix {
+  max-width: 148px;
+}
+
+.hub-estoque-drawer__field--compact .hub-estoque-drawer__affix--pct {
+  max-width: 112px;
+}
+
+.hub-estoque-drawer__sale-mode {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 999px;
+  border: 1px solid #e8e4e0;
+  background: #f7f3f1;
+  gap: 2px;
+}
+
+.hub-estoque-drawer__sale-mode-btn {
+  appearance: none;
+  border: none;
+  background: transparent;
+  margin: 0;
+  padding: 6px 11px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  color: #7a6e6a;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.hub-estoque-drawer__sale-mode-btn:hover {
+  color: #4a3b3a;
+}
+
+.hub-estoque-drawer__sale-mode-btn--active {
+  color: #4a3b3a;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(74, 59, 58, 0.1);
+}
+
+.hub-estoque-drawer__sale-mode-btn:focus-visible {
+  outline: 2px solid var(--hc-brand, #c86a4d);
+  outline-offset: 1px;
+}
+
+.hub-estoque-drawer__sale-hint {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #fff8f4;
+  border: 1px solid #f0d9c8;
+  font-size: 12px;
+  line-height: 1.4;
+  color: #6b4a3a;
+}
+
+.hub-estoque-drawer__sale-hint strong {
+  color: #4a3b3a;
+  font-weight: 650;
+}
+
 .hub-estoque-drawer__affix {
   display: flex;
   align-items: stretch;
+  width: 100%;
   border: 1px solid #e8e4e0;
   border-radius: 10px;
   overflow: hidden;
@@ -216,8 +305,11 @@
 .hub-estoque-drawer__affix .hub-clientes__input {
   border: none;
   border-radius: 0;
-  min-height: 40px;
+  min-height: 38px;
+  padding-left: 10px;
+  padding-right: 10px;
   box-shadow: none;
+  font-variant-numeric: tabular-nums;
 }
 
 .hub-estoque-drawer__affix .hub-clientes__input:focus {
@@ -228,9 +320,10 @@
 .hub-estoque-drawer__affix-suffix {
   display: flex;
   align-items: center;
-  padding: 0 12px;
-  font-size: 13px;
-  font-weight: 600;
+  flex-shrink: 0;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 650;
   color: var(--hc-text-muted, #8e6e67);
   background: #faf8f7;
 }
@@ -241,6 +334,27 @@
 
 .hub-estoque-drawer__affix-suffix {
   border-left: 1px solid #e8e4e0;
+}
+
+@media (max-width: 900px) {
+  .hub-estoque-drawer__prices-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 520px) {
+  .hub-estoque-drawer__prices-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .hub-estoque-drawer__field--compact .hub-estoque-drawer__affix,
+  .hub-estoque-drawer__field--compact .hub-estoque-drawer__affix--pct {
+    max-width: none;
+  }
+
+  .hub-estoque-drawer__prices-head {
+    align-items: flex-start;
+  }
 }
 
 .hub-estoque-drawer__checks {

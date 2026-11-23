@@ -68,11 +68,11 @@ type NavSection = {
 const navSections: NavSection[] = [
   {
     id: 'dashboard',
-    title: 'Dashboard',
+    title: 'Visão Geral',
     items: [
       {
         to: '/hub/dashboard',
-        label: 'Dashboard',
+        label: 'Visão Geral',
         icon: LayoutDashboard,
         end: true,
         permission: [
