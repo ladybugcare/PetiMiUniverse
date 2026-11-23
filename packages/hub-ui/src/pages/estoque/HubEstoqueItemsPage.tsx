@@ -906,6 +906,7 @@ const HubEstoqueItemsPage: React.FC = () => {
         open={drawerOpen}
         onClose={closePanel}
         mode={panelMode === 'edit' ? 'edit' : 'create'}
+        clinicId={clinicId}
         itemKind={form.item_kind}
         allowKindChange={panelMode === 'create'}
         form={form}

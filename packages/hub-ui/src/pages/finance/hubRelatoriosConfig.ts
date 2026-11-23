@@ -2,6 +2,8 @@ export type HubReportId =
   | 'finance-overview'
   | 'pending-payments'
   | 'sales-adjustments'
+  | 'product-sales'
+  | 'movement-by-sector'
   | 'commissions'
   | 'unbilled'
   | 'cash-flow'
@@ -77,6 +79,25 @@ export const HUB_REPORTS: HubReportDefinition[] = [
     periodFilter: 'standard',
   },
   {
+    id: 'product-sales',
+    category: 'financeiro',
+    title: 'Vendas por produto',
+    description: 'Receita, COGS e margem por produto; mix serviços vs produtos no período.',
+    permission: 'hub.financial.read',
+    requiresUnit: true,
+    periodFilter: 'standard',
+  },
+  {
+    id: 'movement-by-sector',
+    category: 'financeiro',
+    title: 'Movimentação por setor',
+    description:
+      'Vendas do período agrupadas por grupo de serviço (banho e tosa, clínica, hotel, produtos etc.).',
+    permission: 'hub.financial.read',
+    requiresUnit: true,
+    periodFilter: 'standard',
+  },
+  {
     id: 'commissions',
     category: 'financeiro',
     title: 'Comissões',
@@ -140,7 +161,7 @@ export const HUB_REPORTS: HubReportDefinition[] = [
     id: 'stock-position',
     category: 'estoque',
     title: 'Posição de estoque',
-    description: 'Saldo atual por item, mínimo configurado e situação (ok, baixo, zerado).',
+    description: 'Saldo atual por item, valor a custo e a preço de venda, mínimo e situação.',
     permission: 'hub.inventory.read',
   },
   {

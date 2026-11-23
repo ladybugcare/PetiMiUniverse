@@ -168,6 +168,49 @@ export type HubInventoryTurnoverReport = {
   }>;
 };
 
+export type HubInventoryItemChange = {
+  id: string;
+  clinic_id: string;
+  item_id: string;
+  field: 'cost_amount' | 'sale_amount' | 'min_stock_qty' | 'active' | 'name' | 'deleted_at';
+  old_value: unknown;
+  new_value: unknown;
+  actor_user_id: string | null;
+  actor_name: string | null;
+  created_at: string;
+};
+
+export type HubInventoryValuationReport = {
+  summary: {
+    items_count: number;
+    qty_total: number;
+    value_cost: number;
+    value_sale: number;
+    zero_stock: number;
+    low_stock: number;
+  };
+  by_kind: Array<{
+    item_kind: string;
+    items_count: number;
+    qty: number;
+    value_cost: number;
+    value_sale: number;
+  }>;
+  items: Array<{
+    item_id: string;
+    name: string;
+    item_kind: string;
+    unit_label: string | null;
+    active: boolean;
+    qty_on_hand: number;
+    cost_amount: number;
+    sale_amount: number;
+    value_cost: number;
+    value_sale: number;
+    min_stock_qty: number;
+  }>;
+};
+
 export const hubInventoryApi = {
   suppliers: {
     list(clinicId: string) {
@@ -305,6 +348,12 @@ export const hubInventoryApi = {
     ) {
       return apiRequest(`${base}/items/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }) as Promise<{ item: HubInventoryItem }>;
     },
+    changes(clinicId: string, itemId: string, limit = 50) {
+      const p = new URLSearchParams({ clinic_id: clinicId, limit: String(limit) });
+      return apiRequest(`${base}/items/${itemId}/changes?${p}`) as Promise<{
+        changes: HubInventoryItemChange[];
+      }>;
+    },
   },
   movements: {
     list(
@@ -378,6 +427,11 @@ export const hubInventoryApi = {
       if (opts?.from) p.set('from', opts.from);
       if (opts?.to) p.set('to', opts.to);
       return apiRequest(`${base}/reports/turnover?${p}`) as Promise<HubInventoryTurnoverReport>;
+    },
+    valuation(clinicId: string) {
+      return apiRequest(
+        `${base}/reports/valuation?clinic_id=${encodeURIComponent(clinicId)}`,
+      ) as Promise<HubInventoryValuationReport>;
     },
   },
 };

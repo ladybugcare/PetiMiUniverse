@@ -330,3 +330,7 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 156. **`156_backfill_appointment_service_sale_snapshots.sql`** — preenche `sale_amount_applied` nulo a partir do catálogo e repara itens/totais de comandas abertas que ficaram em R$ 0 por causa do snapshot ausente. Executar depois dos itens 015/019a.
 
 157. **`157_alter_notifications_hub_series_ending.sql`** — amplia `notifications_type_check` com `hub_series_ending_soon` (série recorrente a renovar; aviso no sino + dashboard). Executar depois do item 112.
+
+158. **`158_create_hub_inventory_item_changes.sql`** — tabela `hub_inventory_item_changes` (auditoria de custo, preço, mínimo, ativo, nome, soft-delete do item). Executar depois do item 008.
+
+159. **`159_alter_hub_receivable_lines_product_cost.sql`** — `unit_cost_amount` em `hub_receivable_lines` (snapshot de custo na venda de produto para margem/COGS). Executar depois do item 042.

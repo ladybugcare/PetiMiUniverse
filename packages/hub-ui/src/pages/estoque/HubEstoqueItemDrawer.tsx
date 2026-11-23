@@ -1,6 +1,12 @@
-import React, { useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Package } from 'lucide-react';
-import type { HubExpiryAlertPolicy, HubInventoryItem, HubItemKind } from '../../api/hubInventoryApi';
+import {
+  hubInventoryApi,
+  type HubExpiryAlertPolicy,
+  type HubInventoryItem,
+  type HubInventoryItemChange,
+  type HubItemKind,
+} from '../../api/hubInventoryApi';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
@@ -17,6 +23,45 @@ import '../clientes/clientes.css';
 import '../clientes/clientes-drawer.css';
 import '../servicos/servicos-page.css';
 import './estoque.css';
+
+const AUDIT_FIELD_LABELS: Record<HubInventoryItemChange['field'], string> = {
+  cost_amount: 'Custo',
+  sale_amount: 'Preço de venda',
+  min_stock_qty: 'Estoque mínimo',
+  active: 'Ativo',
+  name: 'Nome',
+  deleted_at: 'Arquivado',
+};
+
+function formatAuditValue(field: HubInventoryItemChange['field'], value: unknown): string {
+  if (value === null || value === undefined) return '—';
+  if (field === 'active') return value ? 'Sim' : 'Não';
+  if (field === 'deleted_at') return value ? 'Sim' : 'Não';
+  if (field === 'cost_amount' || field === 'sale_amount') {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return String(value);
+    return n.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  }
+  if (field === 'min_stock_qty') {
+    const n = Number(value);
+    return Number.isFinite(n) ? String(n) : String(value);
+  }
+  return String(value);
+}
+
+function formatAuditWhen(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  } catch {
+    return iso;
+  }
+}
 
 export const INVENTORY_FORM_ID = 'hub-estoque-item-form';
 
@@ -99,6 +144,7 @@ export type HubEstoqueItemDrawerProps = {
   open: boolean;
   onClose: () => void;
   mode: 'create' | 'edit';
+  clinicId?: string | null;
   itemKind: HubItemKind;
   allowKindChange?: boolean;
   form: InventoryFormState;
@@ -122,6 +168,7 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
   open,
   onClose,
   mode,
+  clinicId,
   itemKind,
   allowKindChange = false,
   form,
@@ -141,6 +188,31 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
   const activeKind = form.item_kind || itemKind;
   const title = mode === 'create' ? kindNewLabel(activeKind) : 'Editar item';
   const subtitle = mode === 'edit' && editingItem ? editingItem.name : undefined;
+  const [changes, setChanges] = useState<HubInventoryItemChange[]>([]);
+  const [changesLoading, setChangesLoading] = useState(false);
+
+  useEffect(() => {
+    if (!open || mode !== 'edit' || !clinicId || !editingItem?.id) {
+      setChanges([]);
+      return;
+    }
+    let cancelled = false;
+    setChangesLoading(true);
+    void hubInventoryApi.items
+      .changes(clinicId, editingItem.id)
+      .then((res) => {
+        if (!cancelled) setChanges(res.changes ?? []);
+      })
+      .catch(() => {
+        if (!cancelled) setChanges([]);
+      })
+      .finally(() => {
+        if (!cancelled) setChangesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open, mode, clinicId, editingItem?.id]);
 
   const unitOptions = useMemo(() => withCurrentOption(UNIT_BASE, form.unit_label), [form.unit_label]);
   const purposeOptions = useMemo(
@@ -685,6 +757,41 @@ export const HubEstoqueItemDrawer: React.FC<HubEstoqueItemDrawerProps> = ({
               </>
             )}
           </section>
+
+          {mode === 'edit' && editingItem ? (
+            <section className="hub-estoque-drawer__section" aria-labelledby="inv-audit-title">
+              <h3 id="inv-audit-title" className="hub-estoque-drawer__section-title">
+                Histórico de alterações
+              </h3>
+              <p className="hub-estoque-drawer__section-lead">
+                Alterações de custo, preço, mínimo, nome e status do cadastro.
+              </p>
+              {changesLoading ? (
+                <p className="hub-clientes__muted">Carregando histórico…</p>
+              ) : changes.length === 0 ? (
+                <p className="hub-clientes__muted">Nenhuma alteração registrada ainda.</p>
+              ) : (
+                <ul className="hub-estoque-drawer__audit-list">
+                  {changes.map((c) => (
+                    <li key={c.id} className="hub-estoque-drawer__audit-item">
+                      <div className="hub-estoque-drawer__audit-meta">
+                        <strong>{AUDIT_FIELD_LABELS[c.field] ?? c.field}</strong>
+                        <span className="hub-clientes__muted">{formatAuditWhen(c.created_at)}</span>
+                      </div>
+                      <div className="hub-estoque-drawer__audit-values">
+                        <span>{formatAuditValue(c.field, c.old_value)}</span>
+                        <span aria-hidden>→</span>
+                        <span>{formatAuditValue(c.field, c.new_value)}</span>
+                      </div>
+                      <div className="hub-clientes__muted" style={{ fontSize: 12 }}>
+                        {c.actor_name || (c.actor_user_id ? 'Usuário' : 'Sistema')}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          ) : null}
         </form>
       </div>
     </HubSidePanel>

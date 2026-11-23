@@ -7,6 +7,8 @@ import { HubRelatoriosEmailSchedules } from './HubRelatoriosEmailSchedules';
 import { HubRelatoriosFinanceOverview } from './HubRelatoriosFinanceOverview';
 import { HubRelatoriosPendingPayments } from './HubRelatoriosPendingPayments';
 import { HubRelatoriosSalesAdjustments } from './HubRelatoriosSalesAdjustments';
+import { HubRelatoriosProductSales } from './HubRelatoriosProductSales';
+import { HubRelatoriosMovementBySector } from './HubRelatoriosMovementBySector';
 import { HubRelatoriosCommissions } from './HubRelatoriosCommissions';
 import { HubRelatoriosUnbilled } from './HubRelatoriosUnbilled';
 import { HubRelatoriosCashFlow } from './HubRelatoriosCashFlow';
@@ -236,6 +238,14 @@ const HubRelatoriosPage: React.FC = () => {
 
             {!periodInvalid && activeReport.id === 'sales-adjustments' && unitId ? (
               <HubRelatoriosSalesAdjustments clinicId={clinicId} unitId={unitId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'product-sales' && unitId ? (
+              <HubRelatoriosProductSales clinicId={clinicId} unitId={unitId} period={period} />
+            ) : null}
+
+            {!periodInvalid && activeReport.id === 'movement-by-sector' && unitId ? (
+              <HubRelatoriosMovementBySector clinicId={clinicId} unitId={unitId} period={period} />
             ) : null}
 
             {!periodInvalid && activeReport.id === 'commissions' && unitId ? (

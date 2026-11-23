@@ -476,6 +476,55 @@ export type HubFinanceTopServicesReport = {
   items: Array<{ service_id: string; name: string; quantity: number; total: number }>;
 };
 
+export type HubFinanceMovementBySectorReport = {
+  period: { from: string; to: string };
+  summary: {
+    receivables_count: number;
+    lines_count: number;
+    total: number;
+    groups_count: number;
+  };
+  by_group: Array<{
+    service_group: string;
+    lines_count: number;
+    quantity: number;
+    total: number;
+    share_pct: number;
+  }>;
+  by_service: Array<{
+    service_group: string;
+    service_id: string | null;
+    name: string;
+    lines_count: number;
+    quantity: number;
+    total: number;
+  }>;
+};
+
+export type HubFinanceProductSalesReport = {
+  period: { from: string; to: string };
+  mix: { services: number; products: number; other: number; total: number };
+  summary: {
+    items_count: number;
+    quantity: number;
+    revenue: number;
+    cogs: number;
+    margin: number;
+    margin_pct: number | null;
+  };
+  items: Array<{
+    item_id: string | null;
+    name: string;
+    item_kind: string | null;
+    quantity: number;
+    revenue: number;
+    cogs: number;
+    margin: number;
+    margin_pct: number | null;
+  }>;
+  notes?: string;
+};
+
 export type HubFinanceRevenueSeriesPoint = { key: string; label: string; amount: number };
 
 export type HubFinanceRevenueSeriesReport = {
@@ -1186,6 +1235,32 @@ export const hubFinancialApi = {
     if (opts?.from) q.set('from', opts.from);
     if (opts?.to) q.set('to', opts.to);
     return apiRequest(`${base}/reports/top-services?${q}`) as Promise<HubFinanceTopServicesReport>;
+  },
+
+  async getProductSalesReport(
+    clinicId: string,
+    unitId: string,
+    opts?: { days?: number; from?: string; to?: string }
+  ): Promise<HubFinanceProductSalesReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    return apiRequest(`${base}/reports/product-sales?${q}`) as Promise<HubFinanceProductSalesReport>;
+  },
+
+  async getMovementBySectorReport(
+    clinicId: string,
+    unitId: string,
+    opts?: { days?: number; from?: string; to?: string }
+  ): Promise<HubFinanceMovementBySectorReport> {
+    const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId });
+    if (opts?.days != null) q.set('days', String(opts.days));
+    if (opts?.from) q.set('from', opts.from);
+    if (opts?.to) q.set('to', opts.to);
+    return apiRequest(
+      `${base}/reports/movement-by-sector?${q}`,
+    ) as Promise<HubFinanceMovementBySectorReport>;
   },
 
   async getAgingReport(clinicId: string, unitId: string, opts?: { as_of?: string }): Promise<HubFinanceAgingReport> {

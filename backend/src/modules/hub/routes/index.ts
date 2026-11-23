@@ -123,6 +123,8 @@ import {
   getHubInventoryMovementsReport,
   getHubInventoryAbcReport,
   getHubInventoryTurnoverReport,
+  getHubInventoryValuationReport,
+  listHubInventoryItemChanges,
 } from '../hubInventoryController';
 import { getHubAbsentClientsReport, getHubNoShowsReport, getHubBoardingOccupancySeriesReport, getHubClientCohortsReport, getHubBirthdaysReport, getHubGroomingProductivityReport, getHubVaccinesDueReport } from '../hubReportsController';
 import { postHubReportExportPdf } from '../hubReportExportPdf';
@@ -391,6 +393,8 @@ import {
   getHubFinanceRevenueSeries,
   getHubFinanceTicketAverageReport,
   getHubFinanceTopServicesReport,
+  getHubFinanceProductSalesReport,
+  getHubFinanceMovementBySectorReport,
   getHubFinanceAgingReport,
   getHubFinanceSalesAdjustmentsReport,
   getHubFinanceCommissionsReport,
@@ -917,6 +921,12 @@ router.patch('/inventory/manufacturers/:id', authenticateUser, requirePermission
 
 router.get('/inventory/items', authenticateUser, requirePermission('hub.inventory.read'), listHubInventoryItems);
 router.post('/inventory/items', authenticateUser, requirePermission('hub.inventory.write'), requireCoreCatalogWrite, createHubInventoryItem);
+router.get(
+  '/inventory/items/:id/changes',
+  authenticateUser,
+  requirePermission('hub.inventory.read'),
+  listHubInventoryItemChanges,
+);
 router.patch('/inventory/items/:id', authenticateUser, requirePermission('hub.inventory.write'), requireCoreCatalogWrite, patchHubInventoryItem);
 
 router.get('/inventory/movements', authenticateUser, requirePermission('hub.inventory.read'), listHubStockMovements);
@@ -948,6 +958,12 @@ router.get(
   authenticateUser,
   requirePermission('hub.inventory.read'),
   getHubInventoryTurnoverReport
+);
+router.get(
+  '/inventory/reports/valuation',
+  authenticateUser,
+  requirePermission('hub.inventory.read'),
+  getHubInventoryValuationReport
 );
 
 router.get(
@@ -2079,6 +2095,18 @@ router.get(
   authenticateUser,
   requirePermission('hub.financial.read'),
   getHubFinanceTopServicesReport
+);
+router.get(
+  '/finance/reports/product-sales',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceProductSalesReport
+);
+router.get(
+  '/finance/reports/movement-by-sector',
+  authenticateUser,
+  requirePermission('hub.financial.read'),
+  getHubFinanceMovementBySectorReport
 );
 router.get(
   '/finance/reports/aging',

@@ -13,6 +13,8 @@ export type EncounterStockOutParams = {
   itemId: string;
   lotId: string;
   qty?: number;
+  /** Custo unitário no movimento; se omitido, usa cost_amount do catálogo. */
+  unitCost?: number | null;
   notes?: string | null;
   referenceType: string;
   referenceId: string;
@@ -117,6 +119,17 @@ async function createStockOutMovement(
   );
   if (stockErr) return { error: stockErr };
 
+  let unitCost: number | null =
+    params.unitCost != null && Number.isFinite(Number(params.unitCost))
+      ? Number(params.unitCost)
+      : null;
+  if (unitCost == null) {
+    const item = await assertClinicInventoryItem(params.clinicId, params.itemId);
+    if (item?.cost_amount != null && Number.isFinite(Number(item.cost_amount))) {
+      unitCost = Number(item.cost_amount);
+    }
+  }
+
   const { data: mov, error: movErr } = await supabaseAdmin
     .from('hub_stock_movements')
     .insert({
@@ -125,6 +138,7 @@ async function createStockOutMovement(
       lot_id: params.lotId,
       movement_type: movementType,
       qty,
+      unit_cost: unitCost,
       notes: params.notes ?? null,
       reference_type: params.referenceType,
       reference_id: params.referenceId,

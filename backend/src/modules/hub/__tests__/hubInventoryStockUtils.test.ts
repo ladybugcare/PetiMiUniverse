@@ -116,9 +116,37 @@ describe('hubInventoryStockUtils', () => {
       item_id: ITEM_ID,
       lot_id: LOT_ID,
       qty: 2,
+      unit_cost: 16,
       reference_type: 'hub_comanda_item',
       reference_id: refId,
     });
+  });
+
+  it('createSaleStockOut usa unitCost informado em vez do catálogo', async () => {
+    stockFixture([
+      {
+        clinic_id: CLINIC_ID,
+        item_id: ITEM_ID,
+        lot_id: LOT_ID,
+        movement_type: 'purchase_in',
+        qty: 5,
+      },
+    ]);
+    const result = await createSaleStockOut({
+      clinicId: CLINIC_ID,
+      itemId: ITEM_ID,
+      lotId: LOT_ID,
+      qty: 1,
+      unitCost: 9.5,
+      referenceType: 'hub_receivable_line',
+      referenceId: 'dddddddd-dddd-4ddd-8ddd-dddddddd0005',
+    });
+    expect('id' in result).toBe(true);
+    if ('error' in result) return;
+    const out = (getMockSupabaseClient()._state.tables.hub_stock_movements ?? []).find(
+      (r) => r.movement_type === 'sale_out',
+    );
+    expect(out?.unit_cost).toBe(9.5);
   });
 
   it('createSaleStockOut é idempotente para a mesma referência', async () => {

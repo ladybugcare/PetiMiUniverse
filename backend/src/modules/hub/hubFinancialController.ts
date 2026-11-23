@@ -1526,7 +1526,7 @@ export const postHubFinanceReceivableProductLine = async (req: Request, res: Res
     const { data: item, error: itemErr } = await supabaseAdmin
       .from('hub_inventory_items')
       .select(
-        'id, clinic_id, name, sale_amount, max_sale_discount_pct, allow_price_override_on_sale, deleted_at, active',
+        'id, clinic_id, name, sale_amount, cost_amount, max_sale_discount_pct, allow_price_override_on_sale, deleted_at, active',
       )
       .eq('id', item_id)
       .maybeSingle();
@@ -1583,6 +1583,10 @@ export const postHubFinanceReceivableProductLine = async (req: Request, res: Res
           description: description?.trim() || String(item.name || 'Produto'),
           quantity,
           unit_sale_amount: unitSale,
+          unit_cost_amount:
+            item.cost_amount != null && Number.isFinite(Number(item.cost_amount))
+              ? round2(Number(item.cost_amount))
+              : null,
           line_total: lineTotal,
           sort_order: 9999,
         })
@@ -1598,6 +1602,10 @@ export const postHubFinanceReceivableProductLine = async (req: Request, res: Res
       itemId: item_id,
       lotId: lot_id,
       qty: quantity,
+      unitCost:
+        item.cost_amount != null && Number.isFinite(Number(item.cost_amount))
+          ? Number(item.cost_amount)
+          : null,
       notes: notes ?? `Venda vinculada ao recebível ${receivableId}`,
       referenceType: 'hub_receivable_line',
       referenceId: line.id as string,
@@ -4915,6 +4923,340 @@ export const getHubFinanceTopServicesReport = async (req: Request, res: Response
     return res.json({ period: { from: fromYmd, to: toYmd }, items });
   } catch (e: unknown) {
     console.error('getHubFinanceTopServicesReport', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+/**
+ * Vendas por produto + mix (serviços vs produtos vs demais) + margem/COGS.
+ * COGS usa unit_cost_amount (snapshot); fallback: cost_amount atual do catálogo.
+ */
+export const getHubFinanceProductSalesReport = async (req: Request, res: Response) => {
+  try {
+    const parsed = parsePeriodQuery(req.query);
+    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
+    const fromIso = utcDayStartIso(fromYmd);
+    const toIso = utcDayEndIso(toYmd);
+
+    const { data: recs, error: recErr } = await supabaseAdmin
+      .from('hub_receivables')
+      .select('id')
+      .eq('clinic_id', clinic_id)
+      .or(`unit_id.eq.${unit_id},unit_id.is.null`)
+      .is('deleted_at', null)
+      .neq('status', 'cancelled')
+      .gte('created_at', fromIso)
+      .lte('created_at', toIso);
+    if (recErr) return res.status(500).json({ error: recErr.message });
+    const ids = (recs ?? []).map((r) => r.id as string);
+    if (ids.length === 0) {
+      return res.json({
+        period: { from: fromYmd, to: toYmd },
+        mix: { services: 0, products: 0, other: 0, total: 0 },
+        summary: {
+          items_count: 0,
+          quantity: 0,
+          revenue: 0,
+          cogs: 0,
+          margin: 0,
+          margin_pct: null as number | null,
+        },
+        items: [],
+      });
+    }
+
+    const { data: lines, error: lineErr } = await supabaseAdmin
+      .from('hub_receivable_lines')
+      .select(
+        'line_kind, hub_inventory_item_id, description, quantity, line_total, unit_cost_amount',
+      )
+      .eq('clinic_id', clinic_id)
+      .in('receivable_id', ids);
+    if (lineErr) return res.status(500).json({ error: lineErr.message });
+
+    let mixServices = 0;
+    let mixProducts = 0;
+    let mixOther = 0;
+    for (const line of lines ?? []) {
+      const total = Number(line.line_total ?? 0);
+      const kind = String(line.line_kind ?? '');
+      if (kind === 'product') mixProducts = round2(mixProducts + total);
+      else if (kind === 'appointment_service' || kind === 'grooming_extra' || kind === 'quote_line') {
+        mixServices = round2(mixServices + total);
+      } else mixOther = round2(mixOther + total);
+    }
+    const mixTotal = round2(mixServices + mixProducts + mixOther);
+
+    const productLines = (lines ?? []).filter((l) => String(l.line_kind) === 'product');
+    const itemIds = [
+      ...new Set(
+        productLines
+          .map((l) => l.hub_inventory_item_id as string | null)
+          .filter(Boolean) as string[],
+      ),
+    ];
+    const catalogCost = new Map<string, number>();
+    const catalogName = new Map<string, string>();
+    const catalogKind = new Map<string, string>();
+    if (itemIds.length > 0) {
+      const { data: inv } = await supabaseAdmin
+        .from('hub_inventory_items')
+        .select('id, name, item_kind, cost_amount')
+        .in('id', itemIds);
+      for (const it of inv ?? []) {
+        catalogName.set(it.id as string, String(it.name ?? ''));
+        catalogKind.set(it.id as string, String(it.item_kind ?? 'product'));
+        if (it.cost_amount != null && Number.isFinite(Number(it.cost_amount))) {
+          catalogCost.set(it.id as string, Number(it.cost_amount));
+        }
+      }
+    }
+
+    type Agg = {
+      item_id: string | null;
+      name: string;
+      item_kind: string | null;
+      quantity: number;
+      revenue: number;
+      cogs: number;
+    };
+    const byItem = new Map<string, Agg>();
+    for (const line of productLines) {
+      const itemId = (line.hub_inventory_item_id as string | null) ?? null;
+      const key = itemId ?? `desc:${String(line.description ?? 'Produto')}`;
+      const qty = Number(line.quantity ?? 0);
+      const revenue = Number(line.line_total ?? 0);
+      let unitCost: number | null =
+        line.unit_cost_amount != null && Number.isFinite(Number(line.unit_cost_amount))
+          ? Number(line.unit_cost_amount)
+          : null;
+      if (unitCost == null && itemId && catalogCost.has(itemId)) {
+        unitCost = catalogCost.get(itemId)!;
+      }
+      const cogs = unitCost != null ? round2(qty * unitCost) : 0;
+      const cur = byItem.get(key) ?? {
+        item_id: itemId,
+        name: itemId
+          ? catalogName.get(itemId) || String(line.description || 'Produto')
+          : String(line.description || 'Produto'),
+        item_kind: itemId ? catalogKind.get(itemId) ?? null : null,
+        quantity: 0,
+        revenue: 0,
+        cogs: 0,
+      };
+      cur.quantity = round2(cur.quantity + qty);
+      cur.revenue = round2(cur.revenue + revenue);
+      cur.cogs = round2(cur.cogs + cogs);
+      byItem.set(key, cur);
+    }
+
+    const items = [...byItem.values()]
+      .map((r) => {
+        const margin = round2(r.revenue - r.cogs);
+        const margin_pct = r.revenue > 0 ? round2((margin / r.revenue) * 100) : null;
+        return { ...r, margin, margin_pct };
+      })
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 200);
+
+    const revenue = round2(items.reduce((s, i) => s + i.revenue, 0));
+    const cogs = round2(items.reduce((s, i) => s + i.cogs, 0));
+    const margin = round2(revenue - cogs);
+    const quantity = round2(items.reduce((s, i) => s + i.quantity, 0));
+
+    return res.json({
+      period: { from: fromYmd, to: toYmd },
+      mix: {
+        services: mixServices,
+        products: mixProducts,
+        other: mixOther,
+        total: mixTotal,
+      },
+      summary: {
+        items_count: items.length,
+        quantity,
+        revenue,
+        cogs,
+        margin,
+        margin_pct: revenue > 0 ? round2((margin / revenue) * 100) : null,
+      },
+      items,
+      notes:
+        'COGS usa unit_cost_amount da linha; linhas antigas sem snapshot usam cost_amount atual do catálogo.',
+    });
+  } catch (e: unknown) {
+    console.error('getHubFinanceProductSalesReport', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
+/**
+ * Movimentação de vendas no período, agregada por setor (service_group) e detalhe por serviço.
+ * Produtos de estoque entram no bucket sintético `produtos` — não divide sessão de caixa.
+ */
+export const getHubFinanceMovementBySectorReport = async (req: Request, res: Response) => {
+  try {
+    const parsed = parsePeriodQuery(req.query);
+    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
+    const fromIso = utcDayStartIso(fromYmd);
+    const toIso = utcDayEndIso(toYmd);
+
+    const empty = () =>
+      res.json({
+        period: { from: fromYmd, to: toYmd },
+        summary: {
+          receivables_count: 0,
+          lines_count: 0,
+          total: 0,
+          groups_count: 0,
+        },
+        by_group: [],
+        by_service: [],
+      });
+
+    const { data: recs, error: recErr } = await supabaseAdmin
+      .from('hub_receivables')
+      .select('id')
+      .eq('clinic_id', clinic_id)
+      .or(`unit_id.eq.${unit_id},unit_id.is.null`)
+      .is('deleted_at', null)
+      .neq('status', 'cancelled')
+      .gte('created_at', fromIso)
+      .lte('created_at', toIso);
+    if (recErr) return res.status(500).json({ error: recErr.message });
+    const ids = (recs ?? []).map((r) => r.id as string);
+    if (ids.length === 0) return empty();
+
+    const { data: lines, error: lineErr } = await supabaseAdmin
+      .from('hub_receivable_lines')
+      .select('hub_service_type_id, line_kind, description, quantity, line_total')
+      .eq('clinic_id', clinic_id)
+      .in('receivable_id', ids);
+    if (lineErr) return res.status(500).json({ error: lineErr.message });
+    if (!lines?.length) return empty();
+
+    const serviceIds = [
+      ...new Set(
+        (lines ?? [])
+          .map((l) => l.hub_service_type_id as string | null)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const serviceMeta = new Map<string, { name: string; service_group: string }>();
+    if (serviceIds.length > 0) {
+      const { data: services } = await supabaseAdmin
+        .from('hub_service_types')
+        .select('id, name, service_group')
+        .in('id', serviceIds);
+      for (const svc of services ?? []) {
+        const group = String(svc.service_group ?? 'outros').trim() || 'outros';
+        serviceMeta.set(svc.id as string, {
+          name: String(svc.name || svc.id),
+          service_group: group,
+        });
+      }
+    }
+
+    type GroupAgg = { service_group: string; lines_count: number; quantity: number; total: number };
+    type ServiceAgg = {
+      service_group: string;
+      service_id: string | null;
+      name: string;
+      lines_count: number;
+      quantity: number;
+      total: number;
+    };
+
+    const byGroup = new Map<string, GroupAgg>();
+    const byService = new Map<string, ServiceAgg>();
+
+    const resolveBucket = (line: {
+      hub_service_type_id?: string | null;
+      line_kind?: string | null;
+      description?: string | null;
+    }): { service_group: string; service_id: string | null; name: string } => {
+      const kind = String(line.line_kind ?? '');
+      if (kind === 'product') {
+        return {
+          service_group: 'produtos',
+          service_id: null,
+          name: String(line.description || 'Produto').trim() || 'Produto',
+        };
+      }
+      const serviceId = (line.hub_service_type_id as string | null) ?? null;
+      if (serviceId) {
+        const meta = serviceMeta.get(serviceId);
+        return {
+          service_group: meta?.service_group ?? 'outros',
+          service_id: serviceId,
+          name: meta?.name ?? String(line.description || 'Serviço').trim() || 'Serviço',
+        };
+      }
+      return {
+        service_group: 'outros',
+        service_id: null,
+        name: String(line.description || 'Outros').trim() || 'Outros',
+      };
+    };
+
+    for (const line of lines ?? []) {
+      const bucket = resolveBucket(line);
+      const qty = Number(line.quantity ?? 0);
+      const total = Number(line.line_total ?? 0);
+
+      const g = byGroup.get(bucket.service_group) ?? {
+        service_group: bucket.service_group,
+        lines_count: 0,
+        quantity: 0,
+        total: 0,
+      };
+      g.lines_count += 1;
+      g.quantity = round2(g.quantity + qty);
+      g.total = round2(g.total + total);
+      byGroup.set(bucket.service_group, g);
+
+      const serviceKey = bucket.service_id
+        ? `svc:${bucket.service_id}`
+        : `name:${bucket.service_group}:${bucket.name}`;
+      const s = byService.get(serviceKey) ?? {
+        service_group: bucket.service_group,
+        service_id: bucket.service_id,
+        name: bucket.name,
+        lines_count: 0,
+        quantity: 0,
+        total: 0,
+      };
+      s.lines_count += 1;
+      s.quantity = round2(s.quantity + qty);
+      s.total = round2(s.total + total);
+      byService.set(serviceKey, s);
+    }
+
+    const grandTotal = round2([...byGroup.values()].reduce((acc, g) => acc + g.total, 0));
+    const by_group = [...byGroup.values()]
+      .map((g) => ({
+        ...g,
+        share_pct: grandTotal > 0 ? round2((g.total / grandTotal) * 100) : 0,
+      }))
+      .sort((a, b) => b.total - a.total);
+
+    const by_service = [...byService.values()].sort((a, b) => b.total - a.total).slice(0, 300);
+
+    return res.json({
+      period: { from: fromYmd, to: toYmd },
+      summary: {
+        receivables_count: ids.length,
+        lines_count: lines.length,
+        total: grandTotal,
+        groups_count: by_group.length,
+      },
+      by_group,
+      by_service,
+    });
+  } catch (e: unknown) {
+    console.error('getHubFinanceMovementBySectorReport', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
   }
 };

@@ -65,6 +65,44 @@ import type { HubQuotePricingVariantInput } from './hubPricingResolve';
 
 const uuidStr = z.string().uuid();
 
+/** Mapa item_id → cost_amount do catálogo (para snapshot unit_cost_amount nas linhas de produto). */
+async function loadInventoryCostByItemId(
+  clinicId: string,
+  items: Array<Record<string, unknown>>,
+): Promise<Map<string, number>> {
+  const ids = [
+    ...new Set(
+      items
+        .filter((it) => String(it.item_kind ?? '') === 'product' && it.hub_inventory_item_id)
+        .map((it) => it.hub_inventory_item_id as string),
+    ),
+  ];
+  const map = new Map<string, number>();
+  if (ids.length === 0) return map;
+  const { data } = await supabaseAdmin
+    .from('hub_inventory_items')
+    .select('id, cost_amount')
+    .eq('clinic_id', clinicId)
+    .in('id', ids);
+  for (const row of data ?? []) {
+    if (row.cost_amount != null && Number.isFinite(Number(row.cost_amount))) {
+      map.set(row.id as string, Number(row.cost_amount));
+    }
+  }
+  return map;
+}
+
+function productUnitCostSnapshot(
+  costByItem: Map<string, number>,
+  item: Record<string, unknown>,
+): number | null {
+  if (String(item.item_kind ?? '') !== 'product') return null;
+  const invId = item.hub_inventory_item_id as string | null;
+  if (!invId) return null;
+  const cost = costByItem.get(invId);
+  return cost != null ? round2(cost) : null;
+}
+
 async function resolveComandaItemPricingVariant(item: Record<string, unknown>): Promise<HubQuotePricingVariantInput | null> {
   const originType = String(item.origin_type ?? '');
   const originId = item.origin_id as string | null;
@@ -3418,6 +3456,7 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
       receivableIds.push(receivableId);
       nonEmptyGroupIndices.push(gi);
 
+      const costByItem = await loadInventoryCostByItemId(clinic_id, groupItems as Record<string, unknown>[]);
       let sort = 0;
       for (const it of groupItems) {
         const lineKind =
@@ -3438,6 +3477,7 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
           description: String(it.description),
           quantity: Number(it.quantity ?? 1),
           unit_sale_amount: Number(it.unit_amount ?? 0),
+          unit_cost_amount: productUnitCostSnapshot(costByItem, it as Record<string, unknown>),
           line_total: Number(it.line_total ?? 0),
           sort_order: sort++,
         });
@@ -3448,6 +3488,7 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
       }
     }
 
+    const checkoutCostByItem = await loadInventoryCostByItemId(clinic_id, items as Record<string, unknown>[]);
     for (const it of items) {
       if (String(it.item_kind ?? '') !== 'product') continue;
       // Já baixados no atendimento (encounter_out) — não repetir sale_out no checkout
@@ -3462,6 +3503,7 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
         itemId: invItemId,
         lotId: invLotId,
         qty,
+        unitCost: checkoutCostByItem.get(invItemId) ?? null,
         notes: `Venda na comanda ${comandaId}: ${String(it.description ?? 'Produto')}`,
         referenceType: 'hub_comanda_item',
         referenceId: it.id as string,
@@ -3898,6 +3940,7 @@ export async function leavePendingHandoffComanda(
     const receivableId = rec.id as string;
     receivableIds.push(receivableId);
 
+    const handoffCostByItem = await loadInventoryCostByItemId(clinicId, items as Record<string, unknown>[]);
     let sort = 0;
     for (const it of items) {
       const lineKind =
@@ -3918,6 +3961,7 @@ export async function leavePendingHandoffComanda(
         description: String(it.description),
         quantity: Number(it.quantity ?? 1),
         unit_sale_amount: Number(it.unit_amount ?? 0),
+        unit_cost_amount: productUnitCostSnapshot(handoffCostByItem, it as Record<string, unknown>),
         line_total: Number(it.line_total ?? 0),
         sort_order: sort++,
       });
@@ -3940,6 +3984,7 @@ export async function leavePendingHandoffComanda(
         itemId: invItemId,
         lotId: invLotId,
         qty,
+        unitCost: handoffCostByItem.get(invItemId) ?? null,
         notes: `Venda na comanda ${comandaId}: ${String(it.description ?? 'Produto')}`,
         referenceType: 'hub_comanda_item',
         referenceId: it.id as string,
@@ -5949,6 +5994,7 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
         }
         const receivableId = rec.id as string;
 
+        const batchCostByItem = await loadInventoryCostByItemId(clinic_id, items as Record<string, unknown>[]);
         const { error: linesErr } = await supabaseAdmin.from('hub_receivable_lines').insert(
           items.map((it, sort) => {
             const lineKind =
@@ -5969,6 +6015,7 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
               description: String(it.description),
               quantity: Number(it.quantity ?? 1),
               unit_sale_amount: Number(it.unit_amount ?? 0),
+              unit_cost_amount: productUnitCostSnapshot(batchCostByItem, it as Record<string, unknown>),
               line_total: Number(it.line_total ?? 0),
               sort_order: sort,
             };

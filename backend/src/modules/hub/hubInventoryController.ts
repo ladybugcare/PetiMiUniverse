@@ -9,6 +9,9 @@ import {
   stockUnitIsConsumption,
   stockUnitRequiresContent,
 } from './hubInventoryContentUtils';
+import { buildInventoryItemChangeRows } from './hubInventoryItemAudit';
+export { buildInventoryItemChangeRows, INVENTORY_ITEM_AUDIT_FIELDS } from './hubInventoryItemAudit';
+export type { InventoryItemAuditField } from './hubInventoryItemAudit';
 
 const uuidStr = z.string().uuid();
 
@@ -82,7 +85,7 @@ async function assertClinicItem(clinicId: string, itemId: string) {
   const { data, error } = await supabaseAdmin
     .from('hub_inventory_items')
     .select(
-      'id, clinic_id, deleted_at, name, min_stock_qty, expiry_alert_policy, unit_label, content_qty, content_unit',
+      'id, clinic_id, deleted_at, name, min_stock_qty, expiry_alert_policy, unit_label, content_qty, content_unit, cost_amount, sale_amount, active',
     )
     .eq('id', itemId)
     .maybeSingle();
@@ -90,6 +93,22 @@ async function assertClinicItem(clinicId: string, itemId: string) {
     return null;
   }
   return data;
+}
+
+/** Registra uma linha por campo auditado alterado no cadastro do item. */
+async function recordInventoryItemChanges(params: {
+  clinicId: string;
+  itemId: string;
+  actorUserId: string | null;
+  before: Record<string, unknown>;
+  afterPatch: Record<string, unknown>;
+}): Promise<void> {
+  const rows = buildInventoryItemChangeRows(params);
+  if (rows.length === 0) return;
+  const { error } = await supabaseAdmin.from('hub_inventory_item_changes').insert(rows);
+  if (error) {
+    console.error('[hub_inventory] item changes audit', error);
+  }
 }
 
 
@@ -801,6 +820,13 @@ export const patchHubInventoryItem = async (req: Request, res: Response) => {
 
     let data = existing as Record<string, unknown>;
     if (Object.keys(patch).length > 0) {
+      await recordInventoryItemChanges({
+        clinicId: d.clinic_id,
+        itemId: idParsed.data,
+        actorUserId: req.user?.id ?? null,
+        before: existing as Record<string, unknown>,
+        afterPatch: patch,
+      });
       const { data: updated, error } = await supabaseAdmin
         .from('hub_inventory_items')
         .update(patch)
@@ -846,6 +872,72 @@ export const patchHubInventoryItem = async (req: Request, res: Response) => {
     return res.json({ item: { ...data, qty_on_hand: byItem.get(data.id as string) ?? 0 } });
   } catch (e) {
     console.error('[hub_inventory] patch item', e);
+    return res.status(500).json({ error: 'Erro interno' });
+  }
+};
+
+export const listHubInventoryItemChanges = async (req: Request, res: Response) => {
+  try {
+    const idParsed = uuidStr.safeParse(req.params.id);
+    if (!idParsed.success) return res.status(400).json({ error: 'id inválido' });
+    const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
+    if (!clinicParsed.success) return res.status(400).json({ error: 'clinic_id inválido' });
+    const clinic_id = clinicParsed.data;
+    const itemId = idParsed.data;
+
+    const { data: item, error: itemErr } = await supabaseAdmin
+      .from('hub_inventory_items')
+      .select('id, clinic_id')
+      .eq('id', itemId)
+      .eq('clinic_id', clinic_id)
+      .maybeSingle();
+    if (itemErr) {
+      console.error('[hub_inventory] item changes item', itemErr);
+      return res.status(500).json({ error: 'Erro ao carregar item' });
+    }
+    if (!item) return res.status(404).json({ error: 'Item não encontrado' });
+
+    const limitParsed = z.coerce.number().int().min(1).max(200).safeParse(req.query.limit ?? 50);
+    const limit = limitParsed.success ? limitParsed.data : 50;
+
+    const { data: changes, error } = await supabaseAdmin
+      .from('hub_inventory_item_changes')
+      .select('id, clinic_id, item_id, field, old_value, new_value, actor_user_id, created_at')
+      .eq('clinic_id', clinic_id)
+      .eq('item_id', itemId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+    if (error) {
+      console.error('[hub_inventory] item changes', error);
+      return res.status(500).json({ error: 'Erro ao listar histórico' });
+    }
+
+    const actorIds = [
+      ...new Set((changes ?? []).map((c) => c.actor_user_id as string | null).filter(Boolean) as string[]),
+    ];
+    const actorNames = new Map<string, string>();
+    if (actorIds.length > 0) {
+      const { data: staff } = await supabaseAdmin
+        .from('hub_staff_members')
+        .select('user_id, display_name, full_name')
+        .eq('clinic_id', clinic_id)
+        .in('user_id', actorIds);
+      for (const s of staff ?? []) {
+        const uid = s.user_id as string | null;
+        if (!uid) continue;
+        const label = String(s.display_name || s.full_name || '').trim();
+        if (label) actorNames.set(uid, label);
+      }
+    }
+
+    return res.json({
+      changes: (changes ?? []).map((c) => ({
+        ...c,
+        actor_name: c.actor_user_id ? actorNames.get(c.actor_user_id as string) ?? null : null,
+      })),
+    });
+  } catch (e) {
+    console.error('[hub_inventory] item changes', e);
     return res.status(500).json({ error: 'Erro interno' });
   }
 };
@@ -1650,6 +1742,95 @@ export const getHubInventoryTurnoverReport = async (req: Request, res: Response)
     });
   } catch (e) {
     console.error('[hub_inventory] turnover report', e);
+    return res.status(500).json({ error: 'Erro interno' });
+  }
+};
+
+/** Valor em estoque a custo e a preço de venda de catálogo. */
+export const getHubInventoryValuationReport = async (req: Request, res: Response) => {
+  try {
+    const clinic = uuidStr.safeParse(req.query.clinic_id);
+    if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
+    const clinic_id = clinic.data;
+
+    const { data: items, error } = await supabaseAdmin
+      .from('hub_inventory_items')
+      .select('id, name, item_kind, unit_label, cost_amount, sale_amount, min_stock_qty, active')
+      .eq('clinic_id', clinic_id)
+      .is('deleted_at', null);
+    if (error) {
+      console.error('[hub_inventory] valuation', error);
+      return res.status(500).json({ error: 'Erro ao carregar itens' });
+    }
+
+    const { byItem } = await computeBalances(clinic_id);
+    const byKind = new Map<
+      string,
+      { item_kind: string; items_count: number; qty: number; value_cost: number; value_sale: number }
+    >();
+    let totalQty = 0;
+    let valueCost = 0;
+    let valueSale = 0;
+    let zero = 0;
+    let low = 0;
+
+    const rows = (items ?? [])
+      .map((it) => {
+        const qty = round2inv(byItem.get(it.id as string) ?? 0);
+        const cost = Number(it.cost_amount ?? 0);
+        const sale = Number(it.sale_amount ?? 0);
+        const vCost = round2inv(qty * cost);
+        const vSale = round2inv(qty * sale);
+        const min = Number(it.min_stock_qty ?? 0);
+        if (qty <= 0) zero += 1;
+        else if (min > 0 && qty < min) low += 1;
+        totalQty = round2inv(totalQty + qty);
+        valueCost = round2inv(valueCost + vCost);
+        valueSale = round2inv(valueSale + vSale);
+        const kind = String(it.item_kind ?? 'product');
+        const kindCur = byKind.get(kind) ?? {
+          item_kind: kind,
+          items_count: 0,
+          qty: 0,
+          value_cost: 0,
+          value_sale: 0,
+        };
+        kindCur.items_count += 1;
+        kindCur.qty = round2inv(kindCur.qty + qty);
+        kindCur.value_cost = round2inv(kindCur.value_cost + vCost);
+        kindCur.value_sale = round2inv(kindCur.value_sale + vSale);
+        byKind.set(kind, kindCur);
+        return {
+          item_id: it.id as string,
+          name: it.name as string,
+          item_kind: kind,
+          unit_label: (it.unit_label as string | null) ?? null,
+          active: Boolean(it.active),
+          qty_on_hand: qty,
+          cost_amount: cost,
+          sale_amount: sale,
+          value_cost: vCost,
+          value_sale: vSale,
+          min_stock_qty: min,
+        };
+      })
+      .filter((r) => r.qty_on_hand > 0 || r.active)
+      .sort((a, b) => b.value_cost - a.value_cost || a.name.localeCompare(b.name, 'pt-BR'));
+
+    return res.json({
+      summary: {
+        items_count: rows.length,
+        qty_total: totalQty,
+        value_cost: valueCost,
+        value_sale: valueSale,
+        zero_stock: zero,
+        low_stock: low,
+      },
+      by_kind: [...byKind.values()].sort((a, b) => b.value_cost - a.value_cost),
+      items: rows.slice(0, 1000),
+    });
+  } catch (e) {
+    console.error('[hub_inventory] valuation report', e);
     return res.status(500).json({ error: 'Erro interno' });
   }
 };

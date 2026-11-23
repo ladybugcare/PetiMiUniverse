@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, Package, PackageX } from 'lucide-react';
-import { hubInventoryApi, type HubInventoryItem } from '../../api/hubInventoryApi';
+import {
+  hubInventoryApi,
+  type HubInventoryItem,
+  type HubInventoryValuationReport,
+} from '../../api/hubInventoryApi';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
 import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
@@ -41,12 +45,16 @@ export const HubRelatoriosStockPosition: React.FC<HubRelatoriosStockPositionProp
   const { showError } = useAlert();
   const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [items, setItems] = useState<HubInventoryItem[]>([]);
+  const [valuation, setValuation] = useState<HubInventoryValuationReport | null>(null);
   const [filter, setFilter] = useState<'all' | StockStatus>('all');
 
   const load = useCallback(async () => {
     begin();
     try {
-      const res = await hubInventoryApi.items.list(clinicId);
+      const [res, val] = await Promise.all([
+        hubInventoryApi.items.list(clinicId),
+        hubInventoryApi.reports.valuation(clinicId),
+      ]);
       const active = (res.items ?? []).filter((i) => i.active && !i.deleted_at);
       active.sort((a, b) => {
         const order: Record<StockStatus, number> = { zero: 0, low: 1, ok: 2 };
@@ -55,6 +63,7 @@ export const HubRelatoriosStockPosition: React.FC<HubRelatoriosStockPositionProp
         return a.name.localeCompare(b.name, 'pt-BR');
       });
       setItems(active);
+      setValuation(val);
       succeed();
     } catch (e) {
       showError((e as Error)?.message || 'Erro ao carregar posição de estoque');
@@ -77,15 +86,26 @@ export const HubRelatoriosStockPosition: React.FC<HubRelatoriosStockPositionProp
     let low = 0;
     let ok = 0;
     let valueCost = 0;
+    let valueSale = 0;
     for (const item of items) {
       const st = stockStatus(item);
       if (st === 'zero') zero += 1;
       else if (st === 'low') low += 1;
       else ok += 1;
-      valueCost += Number(item.qty_on_hand ?? 0) * Number(item.cost_amount ?? 0);
+      const qty = Number(item.qty_on_hand ?? 0);
+      valueCost += qty * Number(item.cost_amount ?? 0);
+      valueSale += qty * Number(item.sale_amount ?? 0);
     }
-    return { total: items.length, zero, low, ok, valueCost, alerts: zero + low };
-  }, [items]);
+    return {
+      total: items.length,
+      zero: valuation?.summary.zero_stock ?? zero,
+      low: valuation?.summary.low_stock ?? low,
+      ok,
+      valueCost: valuation?.summary.value_cost ?? valueCost,
+      valueSale: valuation?.summary.value_sale ?? valueSale,
+      alerts: (valuation?.summary.zero_stock ?? zero) + (valuation?.summary.low_stock ?? low),
+    };
+  }, [items, valuation]);
 
   const statusBars = useMemo(() => {
     const rows = [
@@ -183,10 +203,20 @@ export const HubRelatoriosStockPosition: React.FC<HubRelatoriosStockPositionProp
           <div className="hub-servicos__metric-card__text">
             <div className="hub-servicos__metric-label">Valor em custo</div>
             <div className="hub-servicos__metric-value">{formatBrl(summary.valueCost)}</div>
-            <div className="hub-servicos__metric-sub">Estimativa saldo × custo</div>
+            <div className="hub-servicos__metric-sub">Saldo × custo de catálogo</div>
           </div>
           <div className="hub-servicos__metric-icon hub-servicos__metric-icon--muted" aria-hidden>
             <CheckCircle2 size={20} strokeWidth={2} />
+          </div>
+        </div>
+        <div className="hub-servicos__metric-card">
+          <div className="hub-servicos__metric-card__text">
+            <div className="hub-servicos__metric-label">Valor a venda</div>
+            <div className="hub-servicos__metric-value">{formatBrl(summary.valueSale)}</div>
+            <div className="hub-servicos__metric-sub">Saldo × preço de catálogo</div>
+          </div>
+          <div className="hub-servicos__metric-icon hub-servicos__metric-icon--muted" aria-hidden>
+            <Package size={20} strokeWidth={2} />
           </div>
         </div>
       </div>
