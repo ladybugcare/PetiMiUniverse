@@ -60,6 +60,28 @@ export async function sumPostedPaymentsForReceivable(receivableId: string): Prom
   return round2Ledger((data ?? []).reduce((s, r) => s + Number(r.amount ?? 0), 0));
 }
 
+/** Refunds de linha (payment_id null) — não descontar de novo se o payment já foi reversed. */
+export async function sumLineRefundAdjustmentsForReceivable(receivableId: string): Promise<number> {
+  const { data, error } = await supabaseAdmin
+    .from('hub_financial_adjustments')
+    .select('amount, payment_id')
+    .eq('receivable_id', receivableId)
+    .eq('adjustment_type', 'refund');
+  if (error) throw new Error(error.message);
+  return round2Ledger(
+    (data ?? [])
+      .filter((r) => r.payment_id == null)
+      .reduce((s, r) => s + Number(r.amount ?? 0), 0),
+  );
+}
+
+/** Pago líquido efetivo = posted − refunds de linha. */
+export async function netPaidEffectiveForReceivable(receivableId: string): Promise<number> {
+  const posted = await sumPostedPaymentsForReceivable(receivableId);
+  const lineRefunds = await sumLineRefundAdjustmentsForReceivable(receivableId);
+  return round2Ledger(Math.max(0, posted - lineRefunds));
+}
+
 export async function sumPostedPaymentsForReceivables(receivableIds: string[]): Promise<number> {
   if (!receivableIds.length) return 0;
   const { data, error } = await supabaseAdmin
@@ -83,10 +105,14 @@ export async function recalculateReceivableFromPosted(receivableId: string): Pro
     return String(rec.status);
   }
 
-  const paid = await sumPostedPaymentsForReceivable(receivableId);
+  const netPaid = await netPaidEffectiveForReceivable(receivableId);
   const finalAmount = Number(rec.final_amount ?? 0);
   const nextStatus =
-    paid <= 0.009 ? 'pending' : paid >= finalAmount - 0.009 ? 'paid' : 'partially_paid';
+    netPaid <= 0.009
+      ? 'pending'
+      : netPaid >= finalAmount - 0.009
+        ? 'paid'
+        : 'partially_paid';
   await supabaseAdmin.from('hub_receivables').update({ status: nextStatus }).eq('id', receivableId);
 
   if (rec.clinic_id) {
@@ -1051,7 +1077,7 @@ export async function postHistoricalCashPayment(opts: {
     throw new FinanceLedgerError('Recebível não aceita pagamentos neste estado', 409);
   }
 
-  const paid = await sumPostedPaymentsForReceivable(receivableId);
+  const paid = await netPaidEffectiveForReceivable(receivableId);
   const finalAmt = Number(rec.final_amount ?? 0);
   const remaining = round2Ledger(finalAmt - paid);
   if (round2Ledger(amount) > remaining + 0.02) {
@@ -1373,7 +1399,7 @@ export async function insertPostedPaymentWithIdempotency(opts: {
   if (recLock.status === 'cancelled' || recLock.status === 'refunded') {
     return { ok: false, error: 'Recebível não aceita pagamentos neste estado', status: 409 };
   }
-  const paidNow = await sumPostedPaymentsForReceivable(opts.receivableId);
+  const paidNow = await netPaidEffectiveForReceivable(opts.receivableId);
   const remaining = round2Ledger(Number(recLock.final_amount ?? 0) - paidNow);
   if (round2Ledger(opts.amount) > remaining + 0.02) {
     return {

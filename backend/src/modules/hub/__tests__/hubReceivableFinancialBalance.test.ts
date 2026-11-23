@@ -2,6 +2,8 @@ import {
   computeReceivableFinancialAfterReturn,
   commercialReturnForLines,
   eligibleFinancialRefundCap,
+  netPaidEffective,
+  balanceDue,
 } from '../hubReceivableFinancialBalance';
 
 describe('hubReceivableFinancialBalance — matriz comercial × financeiro', () => {
@@ -12,17 +14,23 @@ describe('hubReceivableFinancialBalance — matriz comercial × financeiro', () 
     lineRefundsAlreadyPaidOut: 0,
   };
 
-  const cases: Array<{ paid: number; refund: number; due: number; status: string }> = [
-    { paid: 0, refund: 0, due: 50, status: 'pending' },
-    { paid: 30, refund: 0, due: 20, status: 'partially_paid' },
-    { paid: 50, refund: 0, due: 0, status: 'paid' },
-    { paid: 80, refund: 30, due: 0, status: 'paid' },
-    { paid: 150, refund: 100, due: 0, status: 'paid' },
+  const cases: Array<{
+    paid: number;
+    refund: number;
+    due: number;
+    netPaid: number;
+    status: string;
+  }> = [
+    { paid: 0, refund: 0, due: 50, netPaid: 0, status: 'pending' },
+    { paid: 30, refund: 0, due: 20, netPaid: 30, status: 'partially_paid' },
+    { paid: 50, refund: 0, due: 0, netPaid: 50, status: 'paid' },
+    { paid: 80, refund: 30, due: 0, netPaid: 50, status: 'paid' },
+    { paid: 150, refund: 100, due: 0, netPaid: 50, status: 'paid' },
   ];
 
   it.each(cases)(
-    'pago $paid → refund $refund, a receber $due, status $status',
-    ({ paid, refund, due, status }) => {
+    'pago $paid → refund $refund, líquido $netPaid, a receber $due, status $status',
+    ({ paid, refund, due, netPaid, status }) => {
       const snap = computeReceivableFinancialAfterReturn({
         ...base,
         postedPayments: paid,
@@ -30,10 +38,39 @@ describe('hubReceivableFinancialBalance — matriz comercial × financeiro', () 
       expect(snap.commercialReturnedNow).toBe(100);
       expect(snap.finalAmountAfter).toBe(50);
       expect(snap.financialRefundNow).toBe(refund);
+      expect(snap.netPaidEffectiveAfter).toBe(netPaid);
       expect(snap.balanceDueAfter).toBe(due);
       expect(snap.suggestedStatus).toBe(status);
     },
   );
+
+  it('após devolução parcial paga: vigente 50, líquido 50, a receber 0, elegível restante 50', () => {
+    // Venda 150, pago 150, devolução comercial 100 com refund financeiro 100 já liquidado.
+    const posted = 150;
+    const final = 50;
+    const lineRefunds = 100;
+    expect(netPaidEffective({ postedPayments: posted, lineRefundsAlreadyPaidOut: lineRefunds })).toBe(50);
+    expect(balanceDue({ finalAmount: final, postedPayments: posted, lineRefundsAlreadyPaidOut: lineRefunds })).toBe(0);
+    expect(
+      eligibleFinancialRefundCap({
+        postedPayments: posted,
+        finalAmount: final,
+        lineRefundsAlreadyPaidOut: lineRefunds,
+      }),
+    ).toBe(0);
+    // Saldo comercial restante ainda elegível se devolver o resto (50).
+    const next = computeReceivableFinancialAfterReturn({
+      netAmountAtSale: 150,
+      returnedAmountBefore: 100,
+      commercialReturnNow: 50,
+      postedPayments: posted,
+      lineRefundsAlreadyPaidOut: lineRefunds,
+    });
+    expect(next.financialRefundNow).toBe(50);
+    expect(next.finalAmountAfter).toBe(0);
+    expect(next.netPaidEffectiveAfter).toBe(0);
+    expect(next.balanceDueAfter).toBe(0);
+  });
 
   it('segunda devolução não double-count de line refunds já liquidados', () => {
     const snap = computeReceivableFinancialAfterReturn({

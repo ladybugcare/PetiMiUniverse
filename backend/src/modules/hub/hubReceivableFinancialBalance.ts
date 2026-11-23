@@ -35,10 +35,51 @@ export type ReceivableFinancialSnapshot = {
   overpayTarget: number;
   /** Reembolso financeiro desta operação. */
   financialRefundNow: number;
+  /**
+   * Pago líquido efetivo após a operação (= posted − line_refunds_after).
+   * Não confundir com Σ payments posted bruto quando há refunds de linha.
+   */
+  netPaidEffectiveAfter: number;
   balanceDueAfter: number;
   /** Status sugerido após a operação (sem soft-reverse extra). */
   suggestedStatus: 'pending' | 'partially_paid' | 'paid' | 'refunded' | 'cancelled';
 };
+
+/**
+ * Pago líquido efetivo: posted ativo menos reembolsos de linha já liquidados
+ * (que não revertem o payment). Refunds de payment reverse já saem de posted.
+ */
+export function netPaidEffective(input: {
+  postedPayments: number;
+  lineRefundsAlreadyPaidOut: number;
+}): number {
+  return round2Money(
+    Math.max(0, round2Money(input.postedPayments) - round2Money(input.lineRefundsAlreadyPaidOut)),
+  );
+}
+
+/**
+ * Saldo a receber coerente com refunds de linha:
+ * max(0, final − net_paid_effective).
+ * Equivale a max(0, final − posted) quando não há line refunds;
+ * com line refunds, evita “crédito fictício” e AR negativo enganoso.
+ */
+export function balanceDue(input: {
+  finalAmount: number;
+  postedPayments: number;
+  lineRefundsAlreadyPaidOut: number;
+}): number {
+  return round2Money(
+    Math.max(
+      0,
+      round2Money(input.finalAmount) -
+        netPaidEffective({
+          postedPayments: input.postedPayments,
+          lineRefundsAlreadyPaidOut: input.lineRefundsAlreadyPaidOut,
+        }),
+    ),
+  );
+}
 
 /**
  * Calcula líquido vigente, reembolso financeiro e saldo a receber.
@@ -70,7 +111,16 @@ export function computeReceivableFinancialAfterReturn(
   const finalAfter = round2Money(Math.max(0, net - returnedAfter));
   const overpayTarget = round2Money(Math.max(0, posted - finalAfter));
   const financialRefundNow = round2Money(Math.max(0, overpayTarget - lineRefundsBefore));
-  const balanceDueAfter = round2Money(Math.max(0, finalAfter - posted));
+  const lineRefundsAfter = round2Money(lineRefundsBefore + financialRefundNow);
+  const netPaidAfter = netPaidEffective({
+    postedPayments: posted,
+    lineRefundsAlreadyPaidOut: lineRefundsAfter,
+  });
+  const balanceDueAfter = balanceDue({
+    finalAmount: finalAfter,
+    postedPayments: posted,
+    lineRefundsAlreadyPaidOut: lineRefundsAfter,
+  });
 
   let suggestedStatus: ReceivableFinancialSnapshot['suggestedStatus'];
   if (finalAfter <= 0.009) {
@@ -78,9 +128,9 @@ export function computeReceivableFinancialAfterReturn(
     suggestedStatus = posted > 0.009 || lineRefundsBefore > 0.009 || financialRefundNow > 0.009
       ? 'refunded'
       : 'cancelled';
-  } else if (posted <= 0.009) {
+  } else if (netPaidAfter <= 0.009) {
     suggestedStatus = 'pending';
-  } else if (posted >= finalAfter - 0.009) {
+  } else if (netPaidAfter >= finalAfter - 0.009) {
     suggestedStatus = 'paid';
   } else {
     suggestedStatus = 'partially_paid';
@@ -92,6 +142,7 @@ export function computeReceivableFinancialAfterReturn(
     finalAmountAfter: finalAfter,
     overpayTarget,
     financialRefundNow,
+    netPaidEffectiveAfter: netPaidAfter,
     balanceDueAfter,
     suggestedStatus,
   };

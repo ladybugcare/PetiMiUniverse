@@ -31,6 +31,7 @@ import {
   recalculateReceivableFromPosted,
   returnReceivableProductLines,
   reversePaymentSoft,
+  netPaidEffectiveForReceivable,
   sumPostedPaymentsForReceivable,
   validatePaymentCashSession,
   type PaymentReversalMode,
@@ -1382,7 +1383,7 @@ export const postHubFinanceReceivablePayment = async (req: Request, res: Respons
     }
     const validatedCashSessionId = cashCheck.cash_session_id;
 
-    const paidSoFar = await sumPostedPaymentsForReceivable(receivableId);
+    const paidSoFar = await netPaidEffectiveForReceivable(receivableId);
     const finalAmt = Number(rec.final_amount ?? 0);
     const remaining = round2(finalAmt - paidSoFar);
     if (round2(amount) > remaining + 0.02) {
