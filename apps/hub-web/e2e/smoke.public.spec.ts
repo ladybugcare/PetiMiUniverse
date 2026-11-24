@@ -140,8 +140,10 @@ test.describe('páginas públicas', () => {
     await expect(page.getByText('Cuidado completo para o seu pet')).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Serviços' })).toBeVisible();
     await expect(page.getByText('Consulta')).toBeVisible();
+    await expect(page.getByRole('link', { name: /perguntar no whatsapp/i }).first()).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Equipe' })).toBeVisible();
     await expect(page.getByText('Dra. Ana')).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Visite e fale conosco' })).toBeVisible();
     await expect(page.getByText(/CNPJ|cost_amount|crmv/i)).toHaveCount(0);
   });
 });
