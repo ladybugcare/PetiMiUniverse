@@ -94,7 +94,7 @@ const HubNotificationBell: React.FC = () => {
       /* ignore */
     }
     setOpen(false);
-    goToNotificationLink(n.link, navigate);
+    goToNotificationLink(n, navigate);
   };
 
   const markAll = async () => {

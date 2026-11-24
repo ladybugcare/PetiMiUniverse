@@ -1,36 +1,83 @@
 const vetBase = (import.meta.env.VITE_VET_WEB_URL || '').replace(/\/$/, '');
 
-/** Navega na mesma aba — nunca abre popup/nova aba. */
-export function goToNotificationLink(
-  link: string | undefined,
-  navigate: (to: string) => void,
-): void {
-  if (!link) return;
+export type HubNotificationNavInput = {
+  link?: string | null;
+  type?: string | null;
+  entity_id?: string | null;
+};
 
-  if (/^https?:\/\//i.test(link)) {
+/**
+ * Normaliza o destino da notificação (ex.: /hub/agenda legado → /hub/appointments)
+ * e, para série a renovar, anexa renew_series quando houver entity_id.
+ */
+export function resolveHubNotificationHref(n: HubNotificationNavInput): string | null {
+  const entityId = typeof n.entity_id === 'string' ? n.entity_id.trim() : '';
+  const isSeriesRenew = n.type === 'hub_series_ending_soon' && /^[0-9a-f-]{36}$/i.test(entityId);
+
+  let path = (n.link ?? '').trim();
+  if (!path) {
+    return isSeriesRenew
+      ? `/hub/appointments?renew_series=${encodeURIComponent(entityId)}`
+      : null;
+  }
+
+  if (/^https?:\/\//i.test(path)) {
     try {
-      const url = new URL(link);
-      if (url.origin === window.location.origin) {
-        navigate(`${url.pathname}${url.search}${url.hash}`);
-        return;
+      const url = new URL(path);
+      if (url.origin === (typeof window !== 'undefined' ? window.location.origin : url.origin)) {
+        path = `${url.pathname}${url.search}${url.hash}`;
+      } else {
+        return path;
       }
     } catch {
-      /* URL inválida — cai no assign abaixo */
+      return path;
     }
-    window.location.assign(link);
+  } else if (!path.startsWith('/')) {
+    path = `/${path}`;
+  }
+
+  if (path === '/hub/agenda' || path.startsWith('/hub/agenda?') || path.startsWith('/hub/agenda#')) {
+    path = `/hub/appointments${path.slice('/hub/agenda'.length)}`;
+  }
+
+  if (isSeriesRenew) {
+    try {
+      const url = new URL(path, 'https://hub.local');
+      if (url.pathname === '/hub/appointments' && !url.searchParams.has('renew_series')) {
+        url.searchParams.set('renew_series', entityId);
+        path = `${url.pathname}${url.search}${url.hash}`;
+      }
+    } catch {
+      /* mantém path */
+    }
+  }
+
+  return path;
+}
+
+/** Navega na mesma aba — nunca abre popup/nova aba. */
+export function goToNotificationLink(
+  notificationOrLink: HubNotificationNavInput | string | undefined | null,
+  navigate: (to: string) => void,
+): void {
+  const input: HubNotificationNavInput =
+    typeof notificationOrLink === 'string' || notificationOrLink == null
+      ? { link: notificationOrLink ?? undefined }
+      : notificationOrLink;
+
+  const resolved = resolveHubNotificationHref(input);
+  if (!resolved) return;
+
+  if (/^https?:\/\//i.test(resolved)) {
+    window.location.assign(resolved);
     return;
   }
 
-  const path = link.startsWith('/') ? link : `/${link}`;
-  if (path.startsWith('/hub')) {
-    navigate(path);
+  if (resolved.startsWith('/hub') || !vetBase) {
+    navigate(resolved);
     return;
   }
-  if (!vetBase) {
-    navigate(path);
-    return;
-  }
-  window.location.assign(`${vetBase}${path}`);
+  window.location.assign(`${vetBase}${resolved}`);
 }
 
 export function notificationRelativeTime(iso: string): string {

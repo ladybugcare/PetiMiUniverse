@@ -320,3 +320,25 @@ export const publicPrescriptionLimiter = rateLimit({
   legacyHeaders: false,
   skip: (req) => isRateLimitDisabled() || isRateLimitBypassUser(req),
 });
+
+/**
+ * Rate limiter para links públicos de orçamento e comanda (token bearer na URL).
+ * Mesmos defaults da receita; overrides: PUBLIC_BILLING_RATE_LIMIT_*.
+ */
+export const publicBillingLinkLimiter = rateLimit({
+  windowMs: parsePositiveInt(
+    process.env.PUBLIC_BILLING_RATE_LIMIT_WINDOW_MS ?? process.env.PUBLIC_PRESCRIPTION_RATE_LIMIT_WINDOW_MS,
+    15 * 60 * 1000,
+  ),
+  max: parsePositiveInt(
+    process.env.PUBLIC_BILLING_RATE_LIMIT_MAX ?? process.env.PUBLIC_PRESCRIPTION_RATE_LIMIT_MAX,
+    60,
+  ),
+  keyGenerator: rateLimitKey,
+  message: {
+    error: 'Muitas tentativas de acesso. Tente novamente em alguns minutos.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: (req) => isRateLimitDisabled() || isRateLimitBypassUser(req),
+});

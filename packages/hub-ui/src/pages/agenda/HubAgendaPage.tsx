@@ -223,7 +223,9 @@ const HubAgendaPage: React.FC = () => {
   const [remoteLoading, setRemoteLoading] = useState(false);
   const [appointmentsError, setAppointmentsError] = useState<string | null>(null);
   const [seriesEndingSoon, setSeriesEndingSoon] = useState<HubSeriesEndingSoon[]>([]);
+  const [seriesEndingLoaded, setSeriesEndingLoaded] = useState(false);
   const [seriesBannerExpanded, setSeriesBannerExpanded] = useState(false);
+  const consumedRenewSeriesRef = useRef<string | null>(null);
   const [rawList, setRawList] = useState<AgendaAppointment[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
   const [pollTick, setPollTick] = useState(0);
@@ -820,17 +822,20 @@ const HubAgendaPage: React.FC = () => {
   useEffect(() => {
     if (!clinicId || permLoading || !accessAllowed) return;
     let cancelled = false;
+    setSeriesEndingLoaded(false);
     (async () => {
       try {
         const { series } = await hubAgendaApi.listSeriesEndingSoon({ clinic_id: clinicId });
         if (!cancelled) {
           setSeriesEndingSoon(series ?? []);
           if ((series ?? []).length <= 2) setSeriesBannerExpanded(false);
+          setSeriesEndingLoaded(true);
         }
       } catch {
         if (!cancelled) {
           setSeriesEndingSoon([]);
           setSeriesBannerExpanded(false);
+          setSeriesEndingLoaded(true);
         }
       }
     })();
@@ -1105,6 +1110,49 @@ const HubAgendaPage: React.FC = () => {
     },
     [allAppointments, openCreateModal],
   );
+
+  /** Deep link: /hub/appointments?renew_series=<uuid> (sino / notificações). */
+  useEffect(() => {
+    const seriesId = searchParams.get('renew_series')?.trim() ?? '';
+    if (!seriesId || !/^[0-9a-f-]{36}$/i.test(seriesId)) return;
+    if (!clinicId || permLoading || !accessAllowed || !seriesEndingLoaded) return;
+
+    const consumeKey = `${location.key}:${seriesId}`;
+    if (consumedRenewSeriesRef.current === consumeKey) return;
+    consumedRenewSeriesRef.current = consumeKey;
+
+    const clearParam = () => {
+      const next = new URLSearchParams(searchParams);
+      next.delete('renew_series');
+      navigate(`${location.pathname}${next.toString() ? `?${next.toString()}` : ''}`, {
+        replace: true,
+      });
+    };
+
+    const series = seriesEndingSoon.find((s) => s.series_id === seriesId) ?? null;
+    if (!series) {
+      showInfo('Esta série já não precisa de renovação.', 'Agenda');
+      clearParam();
+      return;
+    }
+
+    setSeriesBannerExpanded(true);
+    if (canWrite) renewSeries(series);
+    clearParam();
+  }, [
+    searchParams,
+    clinicId,
+    permLoading,
+    accessAllowed,
+    seriesEndingLoaded,
+    seriesEndingSoon,
+    canWrite,
+    renewSeries,
+    location.key,
+    location.pathname,
+    navigate,
+    showInfo,
+  ]);
 
   const goToday = useCallback(() => {
     setCursorDate(startOfDay(new Date()));

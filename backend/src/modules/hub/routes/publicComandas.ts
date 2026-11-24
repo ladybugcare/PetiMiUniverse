@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { publicBillingLinkLimiter } from '../../../middleware/rateLimiter';
 import { getPublicComanda } from '../hubComandasController';
 
 /**
@@ -6,6 +7,8 @@ import { getPublicComanda } from '../hubComandasController';
  * Montado em app.ts como `/api/public`.
  */
 const router = Router();
+
+router.use(publicBillingLinkLimiter);
 
 router.get('/comandas/:token', getPublicComanda);
 

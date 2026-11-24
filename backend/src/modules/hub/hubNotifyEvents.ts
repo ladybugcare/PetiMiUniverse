@@ -395,7 +395,7 @@ export async function notifyHubSeriesEndingSoonBatch(opts: {
           message: `A série de ${label} termina em breve (${remaining} ${
             remaining === 1 ? 'restante' : 'restantes'
           }).`,
-          link: '/hub/agenda',
+          link: `/hub/appointments?renew_series=${encodeURIComponent(s.series_id)}`,
           entityType: 'appointment_series',
           entityId: s.series_id,
         });

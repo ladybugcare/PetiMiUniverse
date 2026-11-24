@@ -351,7 +351,8 @@ const HubServiceTypeFormPage: React.FC<HubServiceTypeFormPageProps> = ({ catalog
           ? form.checklist_mode === 'custom'
             ? form.checklist_items
                 .map((item) => ({
-                  key: item.key.trim(),
+                  // Omitir key vazia — Zod exige slug ou ausência; backend slugifica o label.
+                  key: item.key.trim() || undefined,
                   label: item.label.trim(),
                   default_checked: Boolean(item.default_checked),
                 }))

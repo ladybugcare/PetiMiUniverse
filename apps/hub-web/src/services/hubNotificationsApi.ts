@@ -7,6 +7,8 @@ export interface HubNotification {
   title: string;
   message: string;
   link?: string;
+  entity_type?: string | null;
+  entity_id?: string | null;
   read: boolean;
   created_at: string;
 }

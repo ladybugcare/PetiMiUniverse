@@ -46,9 +46,17 @@ function roundMoney2(n: number): number {
   return Math.round(n * 100) / 100;
 }
 
+const checklistItemKeySchema = z
+  .string()
+  .trim()
+  .transform((v) => (v === '' ? undefined : v))
+  .pipe(z.union([z.undefined(), z.string().regex(/^[a-z0-9_]{1,64}$/)]))
+  .optional();
+
 const checklistItemSchema = z
   .object({
-    key: z.string().trim().regex(/^[a-z0-9_]{1,64}$/).optional(),
+    /** Vazio/`""` = omitir; o normalize gera a chave a partir do label. */
+    key: checklistItemKeySchema,
     label: z.string().trim().min(1).max(200),
     default_checked: z.boolean().optional(),
   })

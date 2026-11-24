@@ -137,6 +137,10 @@ export function emptyPackageTables() {
       { id: TEST_PET_ID, clinic_id: TEST_CLINIC_ID, name: 'Atum', deleted_at: null },
       { id: TEST_PET_ID_2, clinic_id: TEST_CLINIC_ID, name: 'Mel', deleted_at: null },
     ],
+    hub_pet_guardians: [
+      { id: 'pg-pkg-1', pet_id: TEST_PET_ID, guardian_id: TEST_GUARDIAN_ID, role: 'primary' },
+      { id: 'pg-pkg-2', pet_id: TEST_PET_ID_2, guardian_id: TEST_GUARDIAN_ID, role: 'primary' },
+    ],
     hub_clinic_settings: [
       {
         clinic_id: TEST_CLINIC_ID,

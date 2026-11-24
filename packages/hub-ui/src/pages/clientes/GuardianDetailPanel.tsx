@@ -681,7 +681,7 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
           <section className="hub-pets-detail__history-section">
             <div className="hub-pets-detail__history-section-head">
               <h4 className="hub-clientes__label">Agendamentos</h4>
-              <Link to="/hub/agenda" className="hub-pets-detail__ver-mais">
+              <Link to="/hub/appointments" className="hub-pets-detail__ver-mais">
                 Ver agenda
               </Link>
             </div>
@@ -696,7 +696,7 @@ export const GuardianDetailPanel: React.FC<GuardianDetailPanelProps> = ({
                 return (
                   <li key={appointment.id} className="hub-pets-detail__history-row">
                     <Link
-                      to={`/hub/agenda?date=${encodeURIComponent(date)}`}
+                      to={`/hub/appointments?appointment_id=${encodeURIComponent(appointment.id)}&date=${encodeURIComponent(date)}`}
                       className="hub-pets-detail__history-row-title"
                     >
                       {title} · {appointmentStatusLabel(appointment.status)}

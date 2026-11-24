@@ -58,7 +58,7 @@ const HubNotificationsPage: React.FC = () => {
     } catch {
       /* ignore */
     }
-    goToNotificationLink(n.link, navigate);
+    goToNotificationLink(n, navigate);
   };
 
   const markAll = async () => {

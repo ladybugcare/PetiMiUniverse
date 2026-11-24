@@ -481,7 +481,7 @@ const HubTodayDashboardPage: React.FC = () => {
                         : 'séries precisam de renovação'}
                     </div>
                   </div>
-                  <Link className="hub-dash__alert-cta" to="/hub/agenda">
+                  <Link className="hub-dash__alert-cta" to="/hub/appointments">
                     Abrir agenda <ArrowRight size={14} />
                   </Link>
                 </div>

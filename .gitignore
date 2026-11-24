@@ -31,6 +31,7 @@
 **/.env.smoke.preprod.local
 backend/.env.smoke.preprod.local
 backend/.env.diana.staging.local
+backend/.env.thales.staging.local
 
 # Credentials (NEVER commit!)
 **/STAGING_CREDENTIALS.md

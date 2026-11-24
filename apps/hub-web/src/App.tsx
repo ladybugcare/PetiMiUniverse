@@ -6,6 +6,7 @@ import {
   createBrowserRouter,
   createRoutesFromElements,
   RouterProvider,
+  useSearchParams,
 } from 'react-router-dom';
 import { AuthProvider } from '@petimi/web-core';
 import HubAuthListener from './components/HubAuthListener';
@@ -138,6 +139,7 @@ const router = createBrowserRouter(
         <Route index element={<Navigate to="clientes" replace />} />
         <Route path="dashboard" element={<HubDashboardPage />} />
         <Route path="appointments" element={<HubAgendaPage />} />
+        <Route path="agenda" element={<LegacyHubAgendaRedirect />} />
         <Route path="clientes" element={<HubGuardiansPage />} />
         <Route path="clientes/:guardianId" element={<HubGuardianDetailPage />} />
         <Route path="pets/novo" element={<HubPetWizardPage />} />
@@ -182,6 +184,13 @@ const router = createBrowserRouter(
     },
   },
 );
+
+/** Links/notificações antigas usavam /hub/agenda; a rota real é /hub/appointments. */
+function LegacyHubAgendaRedirect() {
+  const [searchParams] = useSearchParams();
+  const q = searchParams.toString();
+  return <Navigate to={`/hub/appointments${q ? `?${q}` : ''}`} replace />;
+}
 
 const App: React.FC = () => {
   return (

@@ -42,11 +42,12 @@ export interface HubServiceType {
    * Override de checklist operacional (Banho & Tosa). Migration 116.
    * `null` / ausente = herda o template do grupo.
    */
-  checklist_items?: Array<{ key: string; label: string; default_checked?: boolean }> | null;
+  checklist_items?: HubServiceChecklistItem[] | null;
 }
 
 export type HubServiceChecklistItem = {
-  key: string;
+  /** Omitir ou vazio: o backend gera a chave a partir do label. */
+  key?: string;
   label: string;
   default_checked?: boolean;
 };
