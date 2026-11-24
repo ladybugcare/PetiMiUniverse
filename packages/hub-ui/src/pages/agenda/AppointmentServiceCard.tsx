@@ -22,6 +22,7 @@ import { normalizeServiceGroupSlug, serviceGroupLabel } from '../../utils/servic
 import {
   addonMetaLabel,
   addonNeedsVariantOnRow,
+  type AddonListPricingContext,
   type AppointmentServiceChip,
 } from './appointmentAddonsUtils';
 import type { AgendaPricingPreviewLine } from './agendaPortePricingPreview';
@@ -52,6 +53,8 @@ export type AppointmentServiceCardProps = {
   showSpecialPriceControls?: boolean;
   /** Override de porte/pelagem deste agendamento — só em serviços com tabela por porte/pelagem. */
   tableOverride?: ServiceTableOverride;
+  /** Porte/pelagem do atendimento para exibir o preço real dos extras. */
+  addonPricingContext?: AddonListPricingContext | null;
 };
 
 export type ServiceTableOverride = {
@@ -167,6 +170,7 @@ export const AppointmentServiceCard: React.FC<AppointmentServiceCardProps> = ({
   onPersistSpecialChange,
   showSpecialPriceControls = false,
   tableOverride,
+  addonPricingContext = null,
 }) => {
   const groupSlug = normalizeServiceGroupSlug(serviceType?.service_group);
   const groupLabel = serviceGroupLabel(groupSlug);
@@ -455,7 +459,7 @@ export const AppointmentServiceCard: React.FC<AppointmentServiceCardProps> = ({
                     const selectedPrice = selectedVariant
                       ? splitVariantLabel(selectedVariant.label).price
                       : '';
-                    const baseMeta = addonMetaLabel(addon);
+                    const baseMeta = addonMetaLabel(addon, addonPricingContext);
                     const meta =
                       checked && selectedPrice
                         ? [addon.default_duration_minutes != null ? `${addon.default_duration_minutes} min` : '', selectedPrice]

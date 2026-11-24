@@ -1,0 +1,26 @@
+---
+description: E2E Hub Playwright — local por padrão, fixtures QA, bypass Vercel só no Hub
+globs: apps/hub-web/e2e/**/*,apps/hub-web/playwright*.ts,apps/hub-web/qa_*.cjs
+alwaysApply: false
+---
+
+# Hub — E2E / Playwright
+
+## Default
+
+- Rodar **Hub + API locais** (`http://localhost:3002` / `http://localhost:3000`) com DB preprod.
+- Configs: `playwright.etapa-a.config.ts`, `playwright.etapa-b.config.ts` (já forçam local salvo `E2E_*`).
+- Comandos: `npm run test:etapa-a` / `test:etapa-b` em `apps/hub-web` (filtrar com `-g "T02"`).
+- Reutilizar `e2e/helpers/etapaA/*` e helpers em `e2e/helpers/`. **Não** criar `qa_*.cjs` novos se o helper/Playwright atender.
+
+## Credenciais e produção
+
+- Senha/QA: `backend/.env.smoke.preprod.local` / `apps/hub-web/.env.staging.local` (gitignored). **Nunca** imprimir secrets.
+- Fixtures isoladas (`QA STAGING`, produtos Antipulgas/Shampoo QA, clínicas seed). Não mutar dados de clientes reais.
+- **Proibido** apontar E2E para produção (`hub.petmi.app`, `api.petmi.app`, projeto Supabase de produção).
+
+## Vercel Protection (só se Hub remoto)
+
+- Preferir local. Remoto: `https://hub-staging.petmi.app`.
+- Bypass **apenas** via `attachVercelProtectionBypass` (`e2e/helpers/etapaA/vercelProtection.ts`) — header/cookie só em requests ao Hub (`petmi` / `vercel.app`), **nunca** na API Railway (quebra CORS).
+- Não usar `extraHTTPHeaders` global com bypass. Não desligar proteção. Não logar OIDC/bypass.

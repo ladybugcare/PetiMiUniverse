@@ -160,19 +160,30 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
       ? petSizeTier
       : 'medio';
 
+  const serviceTypesForPricing = useMemo(() => {
+    const merged = new Map(serviceTypes.map((st) => [st.id, st]));
+    for (const list of addonsByParent.values()) {
+      for (const addon of list) merged.set(addon.id, addon);
+    }
+    return [...merged.values()];
+  }, [serviceTypes, addonsByParent]);
+
   const serviceIds = useMemo(
-    () => config.services.map((s) => s.hub_service_type_id),
-    [config.services],
+    () => [
+      ...config.services.map((s) => s.hub_service_type_id),
+      ...config.selectedAddons.map((s) => s.hub_service_type_id),
+    ],
+    [config.services, config.selectedAddons],
   );
 
   const unionPricingTiers = useMemo(
-    () => unionPorteTiersForServiceSelection(serviceIds, serviceTypes),
-    [serviceIds, serviceTypes],
+    () => unionPorteTiersForServiceSelection(serviceIds, serviceTypesForPricing),
+    [serviceIds, serviceTypesForPricing],
   );
 
   const unionPricingCoatTypes = useMemo(
-    () => unionCoatTypesForServiceSelection(serviceIds, serviceTypes),
-    [serviceIds, serviceTypes],
+    () => unionCoatTypesForServiceSelection(serviceIds, serviceTypesForPricing),
+    [serviceIds, serviceTypesForPricing],
   );
 
   const pricingPreview = useMemo(
@@ -195,7 +206,7 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
           })),
         ],
         extraServices: [],
-        serviceTypes,
+        serviceTypes: serviceTypesForPricing,
         petSizeTier: bodyTier,
         petBirthDate,
         petCoatType,
@@ -204,7 +215,7 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
         appointmentOverrideTier: config.pricingApptPorteTier.trim() || null,
         appointmentOverrideCoatType: config.pricingApptCoatType.trim() || null,
       }),
-    [config, serviceTypes, bodyTier, petBirthDate, petCoatType, dateYmd, puppyMaxMonths],
+    [config, serviceTypesForPricing, bodyTier, petBirthDate, petCoatType, dateYmd, puppyMaxMonths],
   );
 
   const pricingLineByServiceId = useMemo(() => {
@@ -427,6 +438,15 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
                     onVariantChange={(v) => updateServiceVariant(idx, v)}
                     pricingLine={pricingLineByServiceId.get(chip.hub_service_type_id) ?? null}
                     tableOverride={serviceTableOverride}
+                    addonPricingContext={{
+                      petSizeTier: bodyTier,
+                      petBirthDate,
+                      petCoatType,
+                      appointmentDateYmd: dateYmd,
+                      puppyMaxMonths,
+                      appointmentOverrideTier: config.pricingApptPorteTier.trim() || null,
+                      appointmentOverrideCoatType: config.pricingApptCoatType.trim() || null,
+                    }}
                   />
                 ))}
                 <div className="nam-chips__duration-breakdown">

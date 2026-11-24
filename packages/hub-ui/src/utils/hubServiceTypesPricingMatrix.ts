@@ -229,6 +229,22 @@ export function validatePricingMatrixClient(
     return keys.length === 0 ? 'Defina pelo menos um campo de preço' : null;
   }
 
+  /** Porte/pelagem: válidos em Banho & Tosa, Hotel e também em adicionais (qualquer grupo). */
+  if (matrix.kind === 'porte' || matrix.kind === 'pelagem' || matrix.kind === 'porte_pelagem') {
+    for (const t of matrix.tiers) {
+      if (!isFiniteMoney(t.cost_amount) || !isFiniteMoney(t.sale_amount)) {
+        return 'Custos e vendas devem ser números ≥ 0';
+      }
+    }
+    const keys = tierKeys(matrix);
+    const seen = new Set<string>();
+    for (const k of keys) {
+      if (seen.has(k)) return 'Cada linha da matriz deve ter chave distinta';
+      seen.add(k);
+    }
+    return keys.length === 0 ? 'Defina pelo menos uma linha de preço' : null;
+  }
+
   if (!supportsPricingMatrixGroup(serviceGroup)) {
     return 'Este grupo não suporta matriz de preços';
   }

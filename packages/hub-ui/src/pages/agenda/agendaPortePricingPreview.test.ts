@@ -99,4 +99,42 @@ describe('buildAgendaPricingPreview', () => {
     });
     expect(preview.totalSale).toBe(80);
   });
+
+  it('resolve adicional por porte automaticamente pelo pet', () => {
+    const banho = stubService({ id: 'banho', name: 'Banho', sale_amount: 100 });
+    const desembolo = stubService({
+      id: 'desembolo',
+      name: 'Desembolo Leve',
+      sale_amount: 30.9,
+      is_addon: true,
+      pricing_matrix: {
+        kind: 'porte',
+        tiers: [
+          { porte: 'mini', cost_amount: 0, sale_amount: 30.9 },
+          { porte: 'pequeno', cost_amount: 0, sale_amount: 30.9 },
+          { porte: 'medio', cost_amount: 0, sale_amount: 38.9 },
+          { porte: 'grande', cost_amount: 0, sale_amount: 38.9 },
+          { porte: 'gigante', cost_amount: 0, sale_amount: 46.9 },
+        ],
+      },
+    });
+
+    const preview = buildAgendaPricingPreview({
+      ...previewBase,
+      petSizeTier: 'grande',
+      serviceTypes: [banho, desembolo],
+      mainServices: [
+        { hub_service_type_id: 'banho', name: 'Banho', isAddon: false },
+        { hub_service_type_id: 'desembolo', name: 'Desembolo Leve', isAddon: true },
+      ],
+    });
+
+    expect(preview.lines[1]).toMatchObject({
+      name: 'Desembolo Leve',
+      isAddon: true,
+      tierApplied: 'grande',
+      sale: 38.9,
+      effectiveSale: 38.9,
+    });
+  });
 });

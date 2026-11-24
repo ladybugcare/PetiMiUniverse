@@ -5,6 +5,7 @@ import {
   type HubServicePricingMatrix,
 } from '../../utils/hubServiceTypesPricingMatrix';
 import { matrixNeedsVariantChoice } from '../../utils/hubPricingVariantUi';
+import { resolvePorteLinePreview } from './agendaPortePricingPreview';
 
 export type AppointmentServiceChip = {
   hub_service_type_id: string;
@@ -26,17 +27,54 @@ export type AppointmentServiceChip = {
   } | null;
 };
 
+/** Contexto do atendimento para mostrar o preço real do adicional (porte/pelagem). */
+export type AddonListPricingContext = {
+  petSizeTier: string;
+  petBirthDate: string | null;
+  petCoatType: string | null;
+  appointmentDateYmd: string;
+  puppyMaxMonths: number;
+  appointmentOverrideTier: string | null;
+  appointmentOverrideCoatType: string | null;
+};
+
 function fmtBrl(n: number): string {
   return Number(n).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
-export function addonMetaLabel(addon: HubServiceType): string {
+export function addonMetaLabel(
+  addon: HubServiceType,
+  ctx?: AddonListPricingContext | null,
+): string {
   const dur = addon.default_duration_minutes != null ? `${addon.default_duration_minutes} min` : '';
   const m = coercePricingMatrixFromApi(addon.pricing_matrix);
   let price = '';
-  if (m?.kind === 'personalizado' && m.tiers.length > 0) {
+
+  if (
+    ctx &&
+    m &&
+    (m.kind === 'porte' || m.kind === 'pelagem' || m.kind === 'porte_pelagem')
+  ) {
+    const r = resolvePorteLinePreview({
+      serviceType: addon,
+      petSizeTier: ctx.petSizeTier,
+      petBirthDate: ctx.petBirthDate,
+      appointmentDateYmd: ctx.appointmentDateYmd,
+      puppyMaxMonths: ctx.puppyMaxMonths,
+      appointmentOverrideTier: ctx.appointmentOverrideTier,
+      petCoatType: ctx.petCoatType,
+      appointmentOverrideCoatType: ctx.appointmentOverrideCoatType,
+    });
+    price = r.needsCoatType ? 'informe a pelagem' : fmtBrl(r.sale);
+  } else if (m && m.tiers.length > 0) {
     const from = Math.min(...m.tiers.map((t) => t.sale_amount));
-    price = `a partir de ${fmtBrl(from)}`;
+    const to = Math.max(...m.tiers.map((t) => t.sale_amount));
+    price =
+      from === to
+        ? fmtBrl(from)
+        : m.kind === 'personalizado'
+          ? `a partir de ${fmtBrl(from)}`
+          : `${fmtBrl(from)} – ${fmtBrl(to)}`;
   } else if (addon.sale_amount != null) {
     price = fmtBrl(Number(addon.sale_amount));
   }

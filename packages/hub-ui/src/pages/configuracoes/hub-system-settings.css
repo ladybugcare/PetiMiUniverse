@@ -1,16 +1,61 @@
-/* Configurações do Sistema — abas no mobile */
+/* Configurações do Sistema — mesmo padrão de abas de Clientes (fundo da página, sem painel branco) */
 
-.hub-config-shell .hub-config-tabs {
-  /* herda .hub-servicos-shell--tabs; reforço visual da faixa de abas */
-  background: #fff;
+.hub-config-shell.hub-clientes {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  width: 100%;
+  max-width: 100%;
+  min-height: calc(100vh - 120px);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+}
+
+/* Anula o padding lateral de .hub-servicos-shell--tabs (Clientes não tem) */
+.hub-config-shell > .hub-clientes__tabs.hub-config-tabs {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  width: 100%;
+  margin: 0 0 20px;
+  padding: 0;
+  background: transparent;
+  border-bottom: 1px solid var(--hc-border, #e5dcd6);
+  box-sizing: border-box;
+}
+
+.hub-config-shell > .hub-clientes__tabs.hub-config-tabs .hub-clientes__tab {
+  background: transparent;
+}
+
+.hub-config-shell > .hub-clientes__tabs.hub-config-tabs a.hub-clientes__tab--active {
+  border-bottom-color: var(--hc-brand, #c86a4d);
+  color: var(--hc-brand, #c86a4d);
 }
 
 @media (max-width: 900px) {
-  .hub-config-shell .hub-config-tabs {
+  .hub-config-shell > .hub-clientes__tabs.hub-config-tabs {
     position: sticky;
     top: 0;
     z-index: 20;
-    background: #fff;
-    box-shadow: 0 1px 0 rgba(74, 59, 58, 0.08);
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    margin-bottom: 12px;
+    background: #faf7f4;
+  }
+
+  .hub-config-shell > .hub-clientes__tabs.hub-config-tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .hub-config-shell > .hub-clientes__tabs.hub-config-tabs .hub-clientes__tab {
+    flex-shrink: 0;
+    white-space: nowrap;
+    padding: 12px 14px;
+    min-height: 44px;
   }
 }

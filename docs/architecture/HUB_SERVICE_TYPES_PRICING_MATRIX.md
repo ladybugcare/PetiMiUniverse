@@ -128,6 +128,10 @@ Valores de `period`: `full_day`, `half_day`.
 - `km_min` / `km_max`: opcionais, número ≥ 0 ou `null` (sem limite desse lado).
 - Pelo menos uma linha em `tiers`.
 
+### Adicionais (`is_addon`)
+
+Além de preço único (sem matriz) e `personalizado`, adicionais aceitam `porte`, `pelagem` e `porte_pelagem` — a mesma resolução automática da agenda que os serviços de Banho & Tosa (`size_tier` / `coat_type` / filhote por idade, com override no agendamento).
+
 ### `personalizado`
 
 Campos de preço nomeados pelo utilizador (ex.: «Com escova do tutor» vs «Com escova da clínica»). Permitido em **qualquer** `service_group`, inclusive `outros` e grupos personalizados.

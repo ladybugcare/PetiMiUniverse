@@ -15,12 +15,15 @@ import {
   Wallet,
 } from 'lucide-react';
 import { hubOpsApi } from '../../api/hubOpsApi';
+import { hubFinancialApi, type HubFinanceCashFlowDay } from '../../api/hubFinancialApi';
 import { useAlert } from '../../components/AlertProvider';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { dayRangeIsoLocal } from '../agenda/agendaFilters';
 import { loadDayOpsSummaryClient, type DayOpsPermFlags } from './loadDayOpsSummaryClient';
 import { TODAY_DASHBOARD_PAGE_TITLE, TODAY_OPS_CARDS } from './todayDashboardSpec';
 import type { HubDayOpsSummary } from './todayOpsTypes';
+import { TodayCashFlowChart } from './TodayCashFlowChart';
+import { TodayOccupancyGauge, TodayOpsSegmentBar, type SegmentItem } from './TodayOpsSegmentBar';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
 import '../finance/hub-finance-page.css';
@@ -46,6 +49,13 @@ function formatDateLong(dateYmd: string): string {
     day: '2-digit',
     month: 'long',
   });
+}
+
+function greetingForNow(now = new Date()): string {
+  const h = now.getHours();
+  if (h >= 5 && h < 12) return 'Bom dia';
+  if (h >= 12 && h < 18) return 'Boa tarde';
+  return 'Boa noite';
 }
 
 function reportHref(relatorio: string, extra?: Record<string, string>): string {
@@ -106,9 +116,7 @@ function cardSecondary(id: string, summary: HubDayOpsSummary | null, loading: bo
     case 'boarding': {
       const b = summary.boarding;
       if (!b) return 'Sem dados de ocupação';
-      const hotelMax = b.hotel.max != null ? `/${b.hotel.max}` : '';
-      const dayMax = b.daycare.max != null ? `/${b.daycare.max}` : '';
-      return `Hotel ${b.hotel.current}${hotelMax} · Creche ${b.daycare.current}${dayMax} · ${b.checkins_today} no dia`;
+      return `${b.checkins_today} check-in(s) previstos hoje`;
     }
     case 'pickup': {
       const p = summary.pickup;
@@ -121,16 +129,113 @@ function cardSecondary(id: string, summary: HubDayOpsSummary | null, loading: bo
   }
 }
 
+function cardVisual(id: string, summary: HubDayOpsSummary | null, loading: boolean): React.ReactNode {
+  if (loading || !summary) return null;
+
+  switch (id) {
+    case 'agenda': {
+      const groups = summary.agenda?.by_group ?? [];
+      if (!groups.length) return null;
+      const segments: SegmentItem[] = groups.slice(0, 5).map((g) => ({
+        key: g.key,
+        label: g.label,
+        count: g.count,
+      }));
+      return <TodayOpsSegmentBar segments={segments} />;
+    }
+    case 'clinic': {
+      const c = summary.clinic;
+      if (!c || c.total === 0) return null;
+      return (
+        <TodayOpsSegmentBar
+          segments={[
+            { key: 'waiting', label: 'Aguardando', count: c.waiting, tone: 'waiting' },
+            { key: 'progress', label: 'Em atendimento', count: c.in_progress, tone: 'active' },
+            { key: 'done', label: 'Concluídos', count: c.done, tone: 'done' },
+          ]}
+        />
+      );
+    }
+    case 'grooming': {
+      const g = summary.grooming;
+      if (!g || g.total === 0) return null;
+      return (
+        <TodayOpsSegmentBar
+          segments={[
+            { key: 'waiting', label: 'Aguardando', count: g.waiting, tone: 'waiting' },
+            { key: 'service', label: 'Em serviço', count: g.in_service, tone: 'active' },
+            { key: 'ready', label: 'Prontos', count: g.ready, tone: 'done' },
+          ]}
+        />
+      );
+    }
+    case 'boarding': {
+      const b = summary.boarding;
+      if (!b) return null;
+      return (
+        <div className="hub-today-dash__occ-stack">
+          <TodayOccupancyGauge
+            label="Hotel"
+            current={b.hotel.current}
+            max={b.hotel.max}
+            overCapacity={b.hotel.over_capacity}
+          />
+          <TodayOccupancyGauge
+            label="Creche"
+            current={b.daycare.current}
+            max={b.daycare.max}
+            overCapacity={b.daycare.over_capacity}
+          />
+        </div>
+      );
+    }
+    case 'pickup': {
+      const p = summary.pickup;
+      if (!p || (p.routes === 0 && p.stops_pending === 0)) return null;
+      return (
+        <TodayOpsSegmentBar
+          showLegend
+          segments={[
+            {
+              key: 'pending',
+              label: 'Paradas pendentes',
+              count: p.stops_pending,
+              tone: 'waiting',
+            },
+            {
+              key: 'nodriver',
+              label: 'Sem motorista',
+              count: p.routes_without_driver,
+              tone: 'warn',
+            },
+            {
+              key: 'ok',
+              label: 'Rotas ok',
+              count: Math.max(0, p.routes - p.routes_without_driver),
+              tone: 'done',
+            },
+          ]}
+        />
+      );
+    }
+    default:
+      return null;
+  }
+}
+
 const HubTodayDashboardPage: React.FC = () => {
   const { hasPermission, loading: permLoading } = usePermissions();
   const { showError } = useAlert();
   const clinicId = getStoredClinicId();
   const unitId = useSelectedUnitId();
   const todayYmd = useMemo(() => dayRangeIsoLocal(new Date()).dateYmd, []);
+  const greeting = useMemo(() => greetingForNow(), []);
 
   const [summary, setSummary] = useState<HubDayOpsSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [updatedAt, setUpdatedAt] = useState<Date | null>(null);
+  const [cashDays, setCashDays] = useState<HubFinanceCashFlowDay[]>([]);
+  const [cashLoading, setCashLoading] = useState(false);
 
   const canAppointments = hasPermission('hub.appointments.read');
   const canClinic = hasPermission('hub.clinic.read');
@@ -206,19 +311,40 @@ const HubTodayDashboardPage: React.FC = () => {
     }
   }, [clinicId, unitId, todayYmd, perms, showError]);
 
+  const loadCashFlow = useCallback(async () => {
+    if (!clinicId || !unitId || !canFinancial) {
+      setCashDays([]);
+      return;
+    }
+    setCashLoading(true);
+    try {
+      const res = await hubFinancialApi.getCashFlow(clinicId, unitId, {
+        days: 7,
+        date_basis: 'payment_date',
+      });
+      setCashDays(res.days ?? []);
+    } catch {
+      setCashDays([]);
+    } finally {
+      setCashLoading(false);
+    }
+  }, [clinicId, unitId, canFinancial]);
+
   useEffect(() => {
     if (permLoading || !canAccessPage) return;
     if (!clinicId || !unitId) return;
     void load();
-  }, [permLoading, canAccessPage, clinicId, unitId, load]);
+    void loadCashFlow();
+  }, [permLoading, canAccessPage, clinicId, unitId, load, loadCashFlow]);
 
   useEffect(() => {
     if (permLoading || !canAccessPage || !clinicId || !unitId) return;
     const id = window.setInterval(() => {
       void load();
+      void loadCashFlow();
     }, REFRESH_MS);
     return () => window.clearInterval(id);
-  }, [permLoading, canAccessPage, clinicId, unitId, load]);
+  }, [permLoading, canAccessPage, clinicId, unitId, load, loadCashFlow]);
 
   const shell = (children: React.ReactNode) => (
     <div className="hub-clientes hub-servicos-page hub-finance-page hub-finance-page--dashboard hub-today-dash">
@@ -256,13 +382,16 @@ const HubTodayDashboardPage: React.FC = () => {
     Boolean(summary?.boarding?.daycare.over_capacity) ||
     (summary?.pickup?.routes_without_driver ?? 0) > 0;
 
+  const cashPeriodNet = cashDays.reduce((acc, d) => acc + d.net, 0);
+
   return shell(
     <>
-      <header className="hub-today-dash__header">
-        <div>
+      <header className="hub-today-dash__hero">
+        <div className="hub-today-dash__hero-copy">
+          <p className="hub-today-dash__hello">{greeting}</p>
           <h1 className="hub-today-dash__title">{TODAY_DASHBOARD_PAGE_TITLE}</h1>
           <p className="hub-today-dash__subtitle">
-            {formatDateLong(todayYmd)}
+            {formatDateLong(todayYmd)} — resumo da operação
             {updatedAt
               ? ` · atualizado às ${updatedAt.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`
               : ''}
@@ -272,8 +401,11 @@ const HubTodayDashboardPage: React.FC = () => {
           <button
             type="button"
             className="hub-clientes__btn hub-clientes__btn--primary"
-            onClick={() => void load()}
-            disabled={loading}
+            onClick={() => {
+              void load();
+              void loadCashFlow();
+            }}
+            disabled={loading || cashLoading}
           >
             Atualizar
           </button>
@@ -285,49 +417,25 @@ const HubTodayDashboardPage: React.FC = () => {
         </div>
       </header>
 
-      {visibleCards.length > 0 ? (
-        <section className="hub-today-dash__ops" aria-labelledby="today-ops-title">
-          <h2 id="today-ops-title" className="hub-dash__panel-title">
-            Operação agora
-          </h2>
-          <p className="hub-dash__panel-sub">Resumo do dia por área. Clique para abrir a fila ou o painel.</p>
-          <div className="hub-today-dash__ops-grid">
-            {visibleCards.map((card) => {
-              const Icon = CARD_ICONS[card.id] ?? CalendarDays;
-              const primary = cardPrimary(card.id, summary, loading);
-              const secondary = cardSecondary(card.id, summary, loading);
-              const warn =
-                (card.id === 'boarding' &&
-                  (summary?.boarding?.hotel.over_capacity || summary?.boarding?.daycare.over_capacity)) ||
-                (card.id === 'pickup' && (summary?.pickup?.routes_without_driver ?? 0) > 0);
-              const empty = !loading && primary === '0';
-              return (
-                <Link
-                  key={card.id}
-                  to={card.href}
-                  className={`hub-today-dash__ops-card${warn ? ' hub-today-dash__ops-card--warn' : ''}${loading ? ' hub-today-dash__ops-card--loading' : ''}${empty ? ' hub-today-dash__ops-card--empty' : ''}`}
-                >
-                  <div className="hub-today-dash__ops-card-top">
-                    <Icon size={18} strokeWidth={1.75} aria-hidden />
-                    <span className="hub-today-dash__ops-card-label">{card.label}</span>
-                    <ArrowRight size={14} className="hub-today-dash__ops-card-arrow" aria-hidden />
-                  </div>
-                  <div className="hub-today-dash__ops-card-value">{primary}</div>
-                  <div className="hub-today-dash__ops-card-meta">{secondary}</div>
-                </Link>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
-
       {canFinancial ? (
-        <section className="hub-today-dash__finance" aria-labelledby="today-finance-title">
-          <h2 id="today-finance-title" className="hub-dash__panel-title">
-            Financeiro do dia
-          </h2>
+        <section
+          className="hub-today-dash__finance-hero hub-today-dash__reveal"
+          aria-labelledby="today-finance-title"
+        >
+          <div className="hub-today-dash__finance-hero-head">
+            <div>
+              <h2 id="today-finance-title" className="hub-dash__panel-title">
+                Financeiro do dia
+              </h2>
+              <p className="hub-dash__panel-sub">Recebido hoje e fluxo dos últimos 7 dias</p>
+            </div>
+            <Link className="hub-today-dash__finance-link" to={reportHref('cash-flow', { days: '7' })}>
+              Ver fluxo completo <ArrowRight size={14} aria-hidden />
+            </Link>
+          </div>
+
           <div className="hub-dash__kpi-row hub-today-dash__finance-row">
-            <div className="hub-dash__panel hub-dash__kpi-card">
+            <div className="hub-dash__panel hub-dash__kpi-card hub-today-dash__kpi-accent">
               <div className="hub-dash__kpi-label">Recebido hoje</div>
               <div className="hub-dash__kpi-value">
                 {loading ? '—' : formatBrl(finance?.received_today ?? 0)}
@@ -352,17 +460,72 @@ const HubTodayDashboardPage: React.FC = () => {
                 </Link>
               </div>
             </div>
+            <div className="hub-dash__panel hub-dash__kpi-card">
+              <div className="hub-dash__kpi-label">Líquido 7 dias</div>
+              <div
+                className={`hub-dash__kpi-value${cashPeriodNet < 0 ? ' hub-today-dash__kpi-neg' : ''}`}
+              >
+                {cashLoading ? '—' : formatBrl(cashPeriodNet)}
+              </div>
+              <div className="hub-dash__kpi-hint">Entradas − saídas</div>
+            </div>
+          </div>
+
+          <div className="hub-today-dash__chart-panel">
+            <TodayCashFlowChart days={cashDays} loading={cashLoading} />
           </div>
         </section>
       ) : null}
 
-      <div className="hub-dash__two-col" style={{ marginTop: 18 }}>
+      {visibleCards.length > 0 ? (
+        <section className="hub-today-dash__ops hub-today-dash__reveal" aria-labelledby="today-ops-title">
+          <h2 id="today-ops-title" className="hub-dash__panel-title">
+            Operação agora
+          </h2>
+          <p className="hub-dash__panel-sub">Resumo do dia por área. Clique para abrir a fila ou o painel.</p>
+          <div className="hub-today-dash__ops-grid">
+            {visibleCards.map((card) => {
+              const Icon = CARD_ICONS[card.id] ?? CalendarDays;
+              const primary = cardPrimary(card.id, summary, loading);
+              const secondary = cardSecondary(card.id, summary, loading);
+              const visual = cardVisual(card.id, summary, loading);
+              const warn =
+                (card.id === 'boarding' &&
+                  (summary?.boarding?.hotel.over_capacity || summary?.boarding?.daycare.over_capacity)) ||
+                (card.id === 'pickup' && (summary?.pickup?.routes_without_driver ?? 0) > 0);
+              const empty = !loading && primary === '0';
+              return (
+                <Link
+                  key={card.id}
+                  to={card.href}
+                  className={`hub-today-dash__ops-card${warn ? ' hub-today-dash__ops-card--warn' : ''}${loading ? ' hub-today-dash__ops-card--loading' : ''}${empty ? ' hub-today-dash__ops-card--empty' : ''}`}
+                >
+                  <div className="hub-today-dash__ops-card-top">
+                    <span className="hub-today-dash__ops-card-icon" aria-hidden>
+                      <Icon size={18} strokeWidth={1.75} />
+                    </span>
+                    <span className="hub-today-dash__ops-card-label">{card.label}</span>
+                    <ArrowRight size={14} className="hub-today-dash__ops-card-arrow" aria-hidden />
+                  </div>
+                  <div className="hub-today-dash__ops-card-value">{primary}</div>
+                  {visual ? <div className="hub-today-dash__ops-card-viz">{visual}</div> : null}
+                  <div className="hub-today-dash__ops-card-meta">{secondary}</div>
+                </Link>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
+      <div className="hub-dash__two-col hub-today-dash__reveal" style={{ marginTop: 18 }}>
         <section className="hub-dash__panel" aria-labelledby="today-alerts-title">
           <h2 id="today-alerts-title" className="hub-dash__panel-title">
             Precisa de atenção
           </h2>
           {!hasAttention && !loading ? (
-            <p className="hub-clientes__muted">Nada urgente no momento.</p>
+            <p className="hub-clientes__muted hub-today-dash__calm">
+              Tudo em ordem por agora — nada urgente na unidade.
+            </p>
           ) : (
             <div className="hub-dash__alerts">
               {finance?.cash_open ? (
@@ -539,18 +702,8 @@ const HubTodayDashboardPage: React.FC = () => {
           <h2 id="today-shortcuts-title" className="hub-dash__panel-title">
             Atalhos
           </h2>
-          <p className="hub-dash__panel-sub">Operação e análise — sem misturar modos.</p>
+          <p className="hub-dash__panel-sub">Análise e ferramentas — as filas estão nos cards acima.</p>
           <div className="hub-dash__shortcuts">
-            {visibleCards.map((card) => (
-              <Link
-                key={card.id}
-                className="hub-dash__shortcut hub-today-dash__shortcut--ops"
-                to={card.href}
-              >
-                {card.label}
-                <ArrowRight size={14} aria-hidden />
-              </Link>
-            ))}
             {canFinancial ? (
               <>
                 <Link className="hub-dash__shortcut" to="/hub/financeiro">
@@ -559,6 +712,10 @@ const HubTodayDashboardPage: React.FC = () => {
                 </Link>
                 <Link className="hub-dash__shortcut" to={reportHref('finance-overview')}>
                   Visão financeira (período)
+                  <ArrowRight size={14} aria-hidden />
+                </Link>
+                <Link className="hub-dash__shortcut" to="/hub/caixa">
+                  Caixa
                   <ArrowRight size={14} aria-hidden />
                 </Link>
               </>

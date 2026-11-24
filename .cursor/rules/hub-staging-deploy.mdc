@@ -1,0 +1,26 @@
+---
+description: Deploy staging Hub/API — SHA validado no Railway; nunca railway up para homologar
+alwaysApply: true
+---
+
+# Hub — Deploy staging (API Railway)
+
+## Ritual Git (já existe)
+
+- Codar em `staging`. Ritual: `./scripts/hub-git-staging.sh` (`start` / `push` / `promote` / `status`).
+- Runbook: `docs/architecture/HUB_STAGING_AND_BACKUP_RUNBOOK.md`.
+- URLs: Hub `https://hub-staging.petmi.app` · API `https://backend-staging-334260f3.up.railway.app`.
+
+## API Railway — regra de ouro
+
+- **Proibido** `railway up` / upload de working tree para homologar ou gate.
+- Deploy da API staging **somente** com SHA do Git:
+  `./scripts/hub-staging-api-deploy.sh deploy <sha>`
+- Antes de testar contra staging remoto: confirmar que o deploy ativo tem o **mesmo** `commitHash` (script faz poll + health).
+- Ambiente padrão: `staging` / serviço `backend`. **Não** redeploy em produção nesta rotina.
+- Se o SHA não bater ou o health falhar no timeout → **parar e reportar**; não improvisar outros comandos Railway.
+
+## Vercel (Hub)
+
+- Push em `staging` via `hub-git-staging.sh push` dispara o Hub staging.
+- Não desligar Deployment Protection. Bypass de automação: ver rule `hub-e2e` e `e2e/helpers/etapaA/vercelProtection.ts`.

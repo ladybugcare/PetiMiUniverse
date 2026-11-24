@@ -3,6 +3,7 @@ import { Navigate, Route, Routes } from 'react-router-dom';
 import HubSystemSettingsShell from './HubSystemSettingsShell';
 import HubServicosConfigPage from '../servicos/HubServicosConfigPage';
 import HubMessageTemplatesPage from './HubMessageTemplatesPage';
+import HubClinicalTermsPage from './HubClinicalTermsPage';
 import HubServiceGroupChecklistsPage from './HubServiceGroupChecklistsPage';
 import HubPaymentMethodsPage from './HubPaymentMethodsPage';
 import HubPrintSettingsPage from './HubPrintSettingsPage';
@@ -22,6 +23,7 @@ const HubSystemSettingsRoutes: React.FC = () => {
         <Route path="servicos-funcoes" element={<HubServicosConfigPage />} />
         <Route path="recursos" element={<HubResourcesSettingsPage />} />
         <Route path="templates-mensagem" element={<HubMessageTemplatesPage />} />
+        <Route path="termos-clinicos" element={<HubClinicalTermsPage />} />
         <Route path="checklists" element={<HubServiceGroupChecklistsPage />} />
         <Route path="formas-pagamento" element={<HubPaymentMethodsPage />} />
         <Route path="impressao" element={<HubPrintSettingsPage />} />

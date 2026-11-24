@@ -345,25 +345,6 @@ export function buildAgendaPricingPreview(input: {
     if (!st) continue;
     const isAddon = row.isAddon === true || st.is_addon === true;
     const matrix = parsePricingMatrix(st);
-    if (isAddon) {
-      const p = resolveVariantLinePreview(st, row.pricing_variant);
-      const applied = resolveEffectiveSale(p.sale, row.sale_amount_override);
-      lines.push({
-        hub_service_type_id: row.hub_service_type_id,
-        name: row.name,
-        tierApplied: null,
-        coatTypeApplied: null,
-        sale: p.sale,
-        effectiveSale: applied.effectiveSale,
-        hasSpecialOverride: applied.hasSpecialOverride,
-        cost: p.cost,
-        needsCoatType: false,
-        isAddon: true,
-      });
-      totalSale += applied.effectiveSale;
-      totalCost += p.cost;
-      continue;
-    }
     const variantPricing =
       matrix &&
       (matrix.kind === 'personalizado' ||
@@ -402,7 +383,7 @@ export function buildAgendaPricingPreview(input: {
       hasSpecialOverride: applied.hasSpecialOverride,
       cost: r.cost,
       needsCoatType: r.needsCoatType,
-      isAddon: false,
+      isAddon,
     });
     totalSale += applied.effectiveSale;
     totalCost += r.cost;

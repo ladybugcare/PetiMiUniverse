@@ -249,6 +249,12 @@ import {
   deleteHubPartnerClinic,
 } from '../hubPartnerClinicsController';
 import {
+  listHubClinicalTermTemplates,
+  uploadHubClinicalTermTemplate,
+  patchHubClinicalTermTemplate,
+  deleteHubClinicalTermTemplate,
+} from '../hubClinicalTermTemplatesController';
+import {
   getHubGroomingSessionDrawer,
   postHubGroomingSessionExtra,
   patchHubGroomingAppointmentServiceLine,
@@ -1592,6 +1598,31 @@ router.post(
   authenticateUser,
   requirePermission('hub.clinic.write'), requireClinicWrite,
   uploadHubClinicalAttachment
+);
+
+router.get(
+  '/clinical/term-templates',
+  authenticateUser,
+  requirePermission('hub.clinic.read'), requireClinicModule,
+  listHubClinicalTermTemplates
+);
+router.post(
+  '/clinical/term-templates/upload',
+  authenticateUser,
+  requirePermission('hub.clinic.write'), requireClinicWrite,
+  uploadHubClinicalTermTemplate
+);
+router.patch(
+  '/clinical/term-templates/:id',
+  authenticateUser,
+  requirePermission('hub.clinic.write'), requireClinicWrite,
+  patchHubClinicalTermTemplate
+);
+router.delete(
+  '/clinical/term-templates/:id',
+  authenticateUser,
+  requirePermission('hub.clinic.write'), requireClinicWrite,
+  deleteHubClinicalTermTemplate
 );
 
 router.get(

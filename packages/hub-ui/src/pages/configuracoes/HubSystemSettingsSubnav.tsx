@@ -7,6 +7,7 @@ const links = [
   { to: `${BASE}/servicos-funcoes`, label: 'Serviços e Funções' },
   { to: `${BASE}/recursos`, label: 'Recursos' },
   { to: `${BASE}/templates-mensagem`, label: 'Templates de Mensagem' },
+  { to: `${BASE}/termos-clinicos`, label: 'Termos clínicos' },
   { to: `${BASE}/checklists`, label: 'Checklists' },
   { to: `${BASE}/formas-pagamento`, label: 'Formas de pagamento' },
   { to: `${BASE}/impressao`, label: 'Impressão' },

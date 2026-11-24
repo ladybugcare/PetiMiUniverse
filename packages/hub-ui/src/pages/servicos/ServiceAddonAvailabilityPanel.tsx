@@ -35,7 +35,7 @@ type Props = {
 
 function addonPriceSummary(addon: HubServiceType): string {
   const m = coercePricingMatrixFromApi(addon.pricing_matrix);
-  if (m?.kind === 'personalizado' && m.tiers.length > 0) {
+  if (m && m.tiers.length > 0) {
     const from = Math.min(...m.tiers.map((t) => t.sale_amount));
     const to = Math.max(...m.tiers.map((t) => t.sale_amount));
     if (from === to) return formatMoneyCurrencyBrl(from);

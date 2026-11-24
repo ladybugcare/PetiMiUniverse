@@ -346,10 +346,16 @@ export function groupComboOptionsFromGroups(
 
 const PERSONALIZADO_OPTION = { kind: 'personalizado' as const, label: 'Personalizado' };
 
-/** Adicionais: apenas preço único ou personalizado. */
+/**
+ * Adicionais: preço único, personalizado, ou porte/pelagem (igual Banho & Tosa)
+ * para resolução automática pelo pet na agenda.
+ */
 export function pricingCategoryOptionsForAddon(): Array<{ kind: PricingCategoryKind; label: string }> {
   return [
     { kind: 'simple', label: 'Preço único' },
+    { kind: 'porte', label: 'Por porte' },
+    { kind: 'pelagem', label: 'Por pelagem' },
+    { kind: 'porte_pelagem', label: 'Por porte + pelagem' },
     PERSONALIZADO_OPTION,
   ];
 }

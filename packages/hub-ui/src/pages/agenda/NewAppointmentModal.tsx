@@ -1530,25 +1530,36 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     const ids = isMultiPetSelection
       ? petVisitConfigs.flatMap((c) => [
           ...c.services.map((s) => s.hub_service_type_id),
+          ...c.selectedAddons.map((s) => s.hub_service_type_id),
           ...c.extraBlocks.flatMap((b) => b.services.map((s) => s.hub_service_type_id)),
         ])
-      : services.map((s) => s.hub_service_type_id);
+      : [
+          ...services.map((s) => s.hub_service_type_id),
+          ...selectedAddons.map((s) => s.hub_service_type_id),
+        ];
     if (!isMultiPetSelection) {
       for (const b of extraBlocks) {
         for (const s of b.services) ids.push(s.hub_service_type_id);
       }
     }
     return ids;
-  }, [isMultiPetSelection, petVisitConfigs, services, extraBlocks]);
+  }, [isMultiPetSelection, petVisitConfigs, services, selectedAddons, extraBlocks]);
+
+  /** Adicionais não vêm em `serviceTypes` (lista exclui `is_addon`); incluir para precificar o resumo. */
+  const serviceTypesForPricing = useMemo(() => {
+    const merged = new Map(serviceTypes.map((st) => [st.id, st]));
+    for (const addon of availableAddons) merged.set(addon.id, addon);
+    return [...merged.values()];
+  }, [serviceTypes, availableAddons]);
 
   const unionPricingTiers = useMemo(
-    () => unionPorteTiersForServiceSelection(serviceIdsForPorteUnion, serviceTypes),
-    [serviceIdsForPorteUnion, serviceTypes],
+    () => unionPorteTiersForServiceSelection(serviceIdsForPorteUnion, serviceTypesForPricing),
+    [serviceIdsForPorteUnion, serviceTypesForPricing],
   );
 
   const unionPricingCoatTypes = useMemo(
-    () => unionCoatTypesForServiceSelection(serviceIdsForPorteUnion, serviceTypes),
-    [serviceIdsForPorteUnion, serviceTypes],
+    () => unionCoatTypesForServiceSelection(serviceIdsForPorteUnion, serviceTypesForPricing),
+    [serviceIdsForPorteUnion, serviceTypesForPricing],
   );
 
   useEffect(() => {
@@ -1570,13 +1581,6 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     if (st && PET_BODY_PORTE_VALUES.includes(st as PetBodyPorteValue)) return st;
     return 'medio';
   }, [selectedPet]);
-
-  /** Adicionais não vêm em `serviceTypes` (lista exclui `is_addon`); incluir para precificar o resumo. */
-  const serviceTypesForPricing = useMemo(() => {
-    const merged = new Map(serviceTypes.map((st) => [st.id, st]));
-    for (const addon of availableAddons) merged.set(addon.id, addon);
-    return [...merged.values()];
-  }, [serviceTypes, availableAddons]);
 
   const multiPetPricingSummaries = useMemo(() => {
     if (!isMultiPetSelection || petVisitConfigs.length < 2) return null;
@@ -2190,7 +2194,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     const tierErr = validateAppointmentPorteOverride(
       pricingApptPorteTier.trim() || null,
       serviceIdsForPorteUnion,
-      serviceTypes,
+      serviceTypesForPricing,
     );
     if (!isMultiPetSelection && tierErr) {
       setSaveError(tierErr);
@@ -2198,14 +2202,25 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     }
     if (isMultiPetSelection) {
       for (const cfg of petVisitConfigs) {
-        const ids = cfg.services.map((s) => s.hub_service_type_id);
-        const te = validateAppointmentPorteOverride(cfg.pricingApptPorteTier.trim() || null, ids, serviceTypes);
+        const ids = [
+          ...cfg.services.map((s) => s.hub_service_type_id),
+          ...cfg.selectedAddons.map((s) => s.hub_service_type_id),
+        ];
+        const te = validateAppointmentPorteOverride(
+          cfg.pricingApptPorteTier.trim() || null,
+          ids,
+          serviceTypesForPricing,
+        );
         if (te) {
           const name = guardianPets.find((p) => p.id === cfg.petId)?.name ?? 'pet';
           setSaveError(`${name}: ${te}`);
           return;
         }
-        const ce = validateAppointmentCoatOverride(cfg.pricingApptCoatType.trim() || null, ids, serviceTypes);
+        const ce = validateAppointmentCoatOverride(
+          cfg.pricingApptCoatType.trim() || null,
+          ids,
+          serviceTypesForPricing,
+        );
         if (ce) {
           const name = guardianPets.find((p) => p.id === cfg.petId)?.name ?? 'pet';
           setSaveError(`${name}: ${ce}`);
@@ -2216,7 +2231,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     const coatErr = validateAppointmentCoatOverride(
       pricingApptCoatType.trim() || null,
       serviceIdsForPorteUnion,
-      serviceTypes,
+      serviceTypesForPricing,
     );
     if (!isMultiPetSelection && coatErr) {
       setSaveError(coatErr);
@@ -3935,6 +3950,15 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                     updateServicePersistSpecial(idx, persist, scope)
                   }
                   tableOverride={serviceTableOverride}
+                  addonPricingContext={{
+                    petSizeTier: petBodyTierForPricing,
+                    petBirthDate: selectedPet?.birth_date ?? null,
+                    petCoatType: selectedPet?.coat_type ?? null,
+                    appointmentDateYmd: dateYmd,
+                    puppyMaxMonths,
+                    appointmentOverrideTier: pricingApptPorteTier.trim() || null,
+                    appointmentOverrideCoatType: pricingApptCoatType.trim() || null,
+                  }}
                 />
               ))}
               <div className="nam-chips__duration-breakdown">

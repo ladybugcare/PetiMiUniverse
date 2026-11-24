@@ -1,0 +1,28 @@
+---
+description: Loop de desenvolvimento Hub — fatiar chats, testes direcionados, gate, handoff curto
+alwaysApply: true
+---
+
+# Hub — Dev loop
+
+## Fatiar trabalho
+
+- **Não** misturar no mesmo pedido: implementação de produto + deploy Railway/Vercel + matriz E2E completa.
+- Chats preferidos: (1) fix/produto + testes baratos · (2) smoke E2E direcionado · (3) deploy SHA · (4) gate/regressão.
+- Specs longas vivem em `docs/` ou nos specs Playwright — **não** recolar briefs de vários KB a cada mensagem.
+
+## Pirâmide de testes
+
+- Durante o fix: unitário/integração do módulo (Vitest/Jest no backend ou testes do pacote) → Playwright **filtrado** (`-g`).
+- Regressão completa (`test:etapa-a` / `test:etapa-b` sem filtro, ou suite acordada): **somente no gate**, após SHA estável em staging (ou aceite local explícito).
+- Não alterar testes para mascarar falhas. Não inventar scripts de diagnóstico se helpers/scripts existentes bastarem.
+
+## Deploy e bloqueios
+
+- Staging API: `./scripts/hub-staging-api-deploy.sh` (ver rule `hub-staging-deploy`). Sem `railway up` para QA.
+- Bloqueio de infra (SHA errado, health, proteção Vercel, migrations ausentes): **parar e reportar** em poucas linhas — sem ciclo de tentativa/erro.
+
+## Handoff entre chats (≤15 linhas)
+
+Incluir: objetivo da fatia · decisões travadas · SHA/branch · comandos de teste já rodados (PASS/FAIL) · pendências · o que **não** fazer.
+Detalhe operacional: `docs/architecture/HUB_DEV_LOOP.md`.

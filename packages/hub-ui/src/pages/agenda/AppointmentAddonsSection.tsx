@@ -12,6 +12,7 @@ import {
 import {
   addonMetaLabel,
   addonNeedsVariantOnRow,
+  type AddonListPricingContext,
   type AppointmentServiceChip,
 } from './appointmentAddonsUtils';
 
@@ -22,6 +23,7 @@ export type AppointmentAddonsSectionProps = {
   selectedAddons: AppointmentServiceChip[];
   onToggle: (addon: HubServiceType) => void;
   onVariantChange: (addonId: string, variant: HubQuotePricingVariant | null) => void;
+  addonPricingContext?: AddonListPricingContext | null;
 };
 
 const EMPTY_ADDONS_HINT =
@@ -34,6 +36,7 @@ const AppointmentAddonsSection: React.FC<AppointmentAddonsSectionProps> = ({
   selectedAddons,
   onToggle,
   onVariantChange,
+  addonPricingContext = null,
 }) => {
   if (!hasMainServices) return null;
 
@@ -73,7 +76,7 @@ const AppointmentAddonsSection: React.FC<AppointmentAddonsSectionProps> = ({
               const chip = selectedAddons.find((s) => s.hub_service_type_id === addon.id);
               const checked = Boolean(chip);
               const variantRow = checked ? addonNeedsVariantOnRow(addon, chip) : null;
-              const meta = addonMetaLabel(addon);
+              const meta = addonMetaLabel(addon, addonPricingContext);
 
               return (
                 <li key={addon.id} className="nam-addon-row">
