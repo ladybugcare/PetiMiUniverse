@@ -1586,25 +1586,49 @@ export const getHubInventoryAbcReport = async (req: Request, res: Response) => {
     const fromIso = `${fromYmd}T00:00:00.000Z`;
     const toIso = `${toYmd}T23:59:59.999Z`;
 
-    const { data: movs, error } = await supabaseAdmin
-      .from('hub_stock_movements')
-      .select('item_id, movement_type, qty, unit_cost')
-      .eq('clinic_id', clinic_id)
-      .gte('created_at', fromIso)
-      .lte('created_at', toIso)
-      .limit(20000);
-    if (error) return res.status(500).json({ error: error.message });
+    // Paginação completa; saídas líquidas = outs − reentrada sellable de devolução
+    const movs: Array<{
+      item_id: string;
+      movement_type: string;
+      qty: number | string;
+      unit_cost: number | string | null;
+      reference_type: string | null;
+    }> = [];
+    for (let from = 0; ; from += MOVEMENT_PAGE_SIZE) {
+      const to = from + MOVEMENT_PAGE_SIZE - 1;
+      const { data, error } = await supabaseAdmin
+        .from('hub_stock_movements')
+        .select('item_id, movement_type, qty, unit_cost, reference_type')
+        .eq('clinic_id', clinic_id)
+        .gte('created_at', fromIso)
+        .lte('created_at', toIso)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to);
+      if (error) return res.status(500).json({ error: error.message });
+      const chunk = data ?? [];
+      movs.push(...(chunk as typeof movs));
+      if (chunk.length < MOVEMENT_PAGE_SIZE) break;
+    }
 
     const consumption = new Map<string, { qty_out: number; value: number }>();
-    for (const m of movs ?? []) {
+    for (const m of movs) {
       const type = String(m.movement_type ?? '');
-      if (movementSign(type) >= 0) continue;
       const itemId = m.item_id as string;
       const qty = Number(m.qty ?? 0);
       const unitCost = m.unit_cost != null ? Number(m.unit_cost) : null;
       const cur = consumption.get(itemId) ?? { qty_out: 0, value: 0 };
-      cur.qty_out += qty;
-      if (unitCost != null) cur.value += qty * unitCost;
+      if (movementSign(type) < 0) {
+        cur.qty_out += qty;
+        if (unitCost != null) cur.value += qty * unitCost;
+      } else if (
+        type === 'adjustment_in' &&
+        String(m.reference_type ?? '') === 'hub_receivable_product_restock'
+      ) {
+        // Devolução sellable: reduz saída líquida (não qualquer adjustment_in)
+        cur.qty_out -= qty;
+        if (unitCost != null) cur.value -= qty * unitCost;
+      }
       consumption.set(itemId, cur);
     }
 
@@ -1682,6 +1706,8 @@ export const getHubInventoryAbcReport = async (req: Request, res: Response) => {
         class_c: items.filter((i) => i.abc_class === 'C').length,
       },
       items: items.slice(0, 500),
+      notes:
+        'Consumo líquido = saídas − reentradas de devolução sellable (reference hub_receivable_product_restock). Unsellable e adjustment_in genérico não reduzem o consumo.',
     });
   } catch (e) {
     console.error('[hub_inventory] abc report', e);
@@ -1707,24 +1733,48 @@ export const getHubInventoryTurnoverReport = async (req: Request, res: Response)
       ) + 1
     );
 
-    const { data: movs, error } = await supabaseAdmin
-      .from('hub_stock_movements')
-      .select('item_id, movement_type, qty')
-      .eq('clinic_id', clinic_id)
-      .gte('created_at', fromIso)
-      .lte('created_at', toIso)
-      .limit(20000);
-    if (error) return res.status(500).json({ error: error.message });
+    // Paginação; qty_out líquido = saídas − reentrada sellable de devolução
+    const movs: Array<{
+      item_id: string;
+      movement_type: string;
+      qty: number | string;
+      reference_type: string | null;
+    }> = [];
+    for (let from = 0; ; from += MOVEMENT_PAGE_SIZE) {
+      const to = from + MOVEMENT_PAGE_SIZE - 1;
+      const { data, error } = await supabaseAdmin
+        .from('hub_stock_movements')
+        .select('item_id, movement_type, qty, reference_type')
+        .eq('clinic_id', clinic_id)
+        .gte('created_at', fromIso)
+        .lte('created_at', toIso)
+        .order('created_at', { ascending: true })
+        .order('id', { ascending: true })
+        .range(from, to);
+      if (error) return res.status(500).json({ error: error.message });
+      const chunk = data ?? [];
+      movs.push(...(chunk as typeof movs));
+      if (chunk.length < MOVEMENT_PAGE_SIZE) break;
+    }
 
     const periodNet = new Map<string, { qty_in: number; qty_out: number }>();
-    for (const m of movs ?? []) {
+    for (const m of movs) {
       const type = String(m.movement_type ?? '');
       const sign = movementSign(type);
       const itemId = m.item_id as string;
       const qty = Number(m.qty ?? 0);
       const cur = periodNet.get(itemId) ?? { qty_in: 0, qty_out: 0 };
-      if (sign > 0) cur.qty_in += qty;
-      else if (sign < 0) cur.qty_out += qty;
+      if (sign < 0) {
+        cur.qty_out += qty;
+      } else if (
+        type === 'adjustment_in' &&
+        String(m.reference_type ?? '') === 'hub_receivable_product_restock'
+      ) {
+        // Devolução sellable: reduz saída líquida (não conta como entrada genérica no giro)
+        cur.qty_out -= qty;
+      } else if (sign > 0) {
+        cur.qty_in += qty;
+      }
       periodNet.set(itemId, cur);
     }
 
@@ -1799,6 +1849,8 @@ export const getHubInventoryTurnoverReport = async (req: Request, res: Response)
             : null,
       },
       items: rows.slice(0, 500),
+      notes:
+        'Giro usa saídas líquidas (sale_out − adjustment_in vinculado a devolução sellable). Período só com devoluções: qty_out pode zerar; divisão por estoque médio zero → turnover null.',
     });
   } catch (e) {
     console.error('[hub_inventory] turnover report', e);

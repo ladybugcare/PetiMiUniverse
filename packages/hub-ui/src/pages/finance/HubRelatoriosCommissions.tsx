@@ -133,11 +133,13 @@ export const HubRelatoriosCommissions: React.FC<Props> = ({ clinicId, unitId, pe
       <div className="hub-servicos__metrics hub-relatorios__kpi-row" aria-live="polite">
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Comissão total</div>
+            <div className="hub-servicos__metric-label">Comissão estimada</div>
             <div className="hub-servicos__metric-value">
               {formatBrl(data?.summary.total_commission ?? 0)}
             </div>
-            <div className="hub-servicos__metric-sub">{periodLabel}</div>
+            <div className="hub-servicos__metric-sub">
+              {data?.notes ? 'Estimativa · regras ativas atuais' : periodLabel}
+            </div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>
             <Percent size={20} strokeWidth={2} />

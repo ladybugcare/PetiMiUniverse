@@ -12,6 +12,7 @@
     "preview": "vite preview",
     "test:e2e": "playwright test",
     "test:etapa-a": "playwright test --config=playwright.etapa-a.config.ts",
+    "test:etapa-b": "playwright test --config=playwright.etapa-b.config.ts",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:install": "playwright install chromium"
   },

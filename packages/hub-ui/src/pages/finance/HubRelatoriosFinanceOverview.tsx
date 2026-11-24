@@ -198,9 +198,9 @@ export const HubRelatoriosFinanceOverview: React.FC<HubRelatoriosFinanceOverview
       <div className="hub-servicos__metrics hub-relatorios__kpi-row" aria-live="polite">
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Faturamento recebido</div>
+            <div className="hub-servicos__metric-label">Recebimentos</div>
             <div className="hub-servicos__metric-value">{formatBrl(revenue?.total ?? 0)}</div>
-            <div className="hub-servicos__metric-sub">{periodLabel}</div>
+            <div className="hub-servicos__metric-sub">Pagamentos posted · {periodLabel}</div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>
             <Wallet size={20} strokeWidth={2} />
@@ -208,10 +208,14 @@ export const HubRelatoriosFinanceOverview: React.FC<HubRelatoriosFinanceOverview
         </div>
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Ticket médio</div>
-            <div className="hub-servicos__metric-value">{formatBrl(ticket?.ticket_average ?? 0)}</div>
+            <div className="hub-servicos__metric-label">Ticket histórico</div>
+            <div className="hub-servicos__metric-value">
+              {ticket?.ticket_average != null && (ticket?.receivables_count ?? 0) > 0
+                ? formatBrl(ticket.ticket_average)
+                : '—'}
+            </div>
             <div className="hub-servicos__metric-sub">
-              {(ticket?.receivables_count ?? 0).toLocaleString('pt-BR')} recebíveis
+              {(ticket?.receivables_count ?? 0).toLocaleString('pt-BR')} cobranças · data da cobrança
             </div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>

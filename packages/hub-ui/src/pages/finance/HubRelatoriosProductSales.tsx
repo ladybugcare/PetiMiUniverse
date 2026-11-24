@@ -55,6 +55,7 @@ export const HubRelatoriosProductSales: React.FC<Props> = ({ clinicId, unitId, p
   const items = data?.items ?? [];
   const mix = data?.mix;
   const summary = data?.summary;
+  const marginIncomplete = summary?.margin_complete === false;
 
   const mixBars = useMemo(() => {
     if (!mix || mix.total <= 0) return [];
@@ -76,15 +77,29 @@ export const HubRelatoriosProductSales: React.FC<Props> = ({ clinicId, unitId, p
     title: 'Vendas por produto',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: 'vendas-produto',
-    headers: ['Item', 'Tipo', 'Qtd', 'Receita', 'COGS', 'Margem', 'Margem %'],
+    headers: [
+      'Item',
+      'Tipo',
+      'Qtd líquida',
+      'Receita bruta',
+      'Devoluções',
+      'Receita líquida',
+      'Custo dos produtos vendidos',
+      'Margem',
+      'Margem %',
+      'Margem completa',
+    ],
     rows: items.map((row) => [
       row.name,
       ITEM_KIND_LABELS[row.item_kind ?? ''] ?? row.item_kind ?? '—',
       row.quantity,
+      row.revenue_gross ?? row.revenue,
+      row.returns_commercial ?? 0,
       row.revenue,
       row.cogs,
-      row.margin,
+      row.margin ?? '',
       row.margin_pct ?? '',
+      row.margin_complete === false ? 'Não' : 'Sim',
     ]),
     showError,
   });
@@ -97,7 +112,7 @@ export const HubRelatoriosProductSales: React.FC<Props> = ({ clinicId, unitId, p
     <div className="hub-relatorios__overview">
       <div className="hub-relatorios__overview-toolbar">
         <p className="hub-relatorios__overview-period">
-          Período: <strong>{periodLabel}</strong>
+          Data da cobrança / devoluções no período: <strong>{periodLabel}</strong>
           {data?.notes ? (
             <>
               {' '}
@@ -113,11 +128,11 @@ export const HubRelatoriosProductSales: React.FC<Props> = ({ clinicId, unitId, p
       <div className="hub-servicos__metrics hub-relatorios__kpi-row" aria-live="polite">
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Receita produtos</div>
+            <div className="hub-servicos__metric-label">Receita líquida</div>
             <div className="hub-servicos__metric-value">{formatBrl(summary?.revenue ?? 0)}</div>
             <div className="hub-servicos__metric-sub">
-              {(summary?.quantity ?? 0).toLocaleString('pt-BR')} un. ·{' '}
-              {(summary?.items_count ?? 0).toLocaleString('pt-BR')} itens
+              Bruta {formatBrl(summary?.revenue_gross ?? summary?.revenue ?? 0)} · Devoluções{' '}
+              {formatBrl(summary?.returns_commercial ?? 0)}
             </div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>
@@ -126,9 +141,11 @@ export const HubRelatoriosProductSales: React.FC<Props> = ({ clinicId, unitId, p
         </div>
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">COGS</div>
+            <div className="hub-servicos__metric-label">Custo dos produtos vendidos</div>
             <div className="hub-servicos__metric-value">{formatBrl(summary?.cogs ?? 0)}</div>
-            <div className="hub-servicos__metric-sub">Custo das mercadorias vendidas</div>
+            <div className="hub-servicos__metric-sub">
+              {(summary?.quantity ?? 0).toLocaleString('pt-BR')} un. líquidas · só custo histórico
+            </div>
           </div>
           <div className="hub-servicos__metric-icon hub-servicos__metric-icon--muted" aria-hidden>
             <Package size={20} strokeWidth={2} />
@@ -136,9 +153,17 @@ export const HubRelatoriosProductSales: React.FC<Props> = ({ clinicId, unitId, p
         </div>
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Margem</div>
-            <div className="hub-servicos__metric-value">{formatBrl(summary?.margin ?? 0)}</div>
-            <div className="hub-servicos__metric-sub">Receita − COGS</div>
+            <div className="hub-servicos__metric-label">
+              {marginIncomplete ? 'Margem incompleta' : 'Margem'}
+            </div>
+            <div className="hub-servicos__metric-value">
+              {summary?.margin != null ? formatBrl(summary.margin) : '—'}
+            </div>
+            <div className="hub-servicos__metric-sub">
+              {marginIncomplete
+                ? 'Há linhas sem unit_cost_amount registrado'
+                : 'Receita líquida − custo dos produtos vendidos'}
+            </div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>
             <CircleDollarSign size={20} strokeWidth={2} />
@@ -152,7 +177,7 @@ export const HubRelatoriosProductSales: React.FC<Props> = ({ clinicId, unitId, p
                 ? `${summary.margin_pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`
                 : '—'}
             </div>
-            <div className="hub-servicos__metric-sub">Sobre receita de produtos</div>
+            <div className="hub-servicos__metric-sub">Sobre receita líquida de produtos</div>
           </div>
           <div className="hub-servicos__metric-icon hub-servicos__metric-icon--muted" aria-hidden>
             <Percent size={20} strokeWidth={2} />
@@ -167,7 +192,7 @@ export const HubRelatoriosProductSales: React.FC<Props> = ({ clinicId, unitId, p
               <h2 id="relatorios-product-mix-title" className="hub-relatorios__section-title">
                 Mix do período
               </h2>
-              <p className="hub-relatorios__panel-sub">Receita por tipo de linha nos recebíveis</p>
+              <p className="hub-relatorios__panel-sub">Receita líquida por tipo de linha (data da cobrança)</p>
             </div>
             <div className="hub-relatorios__panel-stat">
               <span className="hub-relatorios__panel-stat-label">Total</span>
@@ -197,7 +222,10 @@ export const HubRelatoriosProductSales: React.FC<Props> = ({ clinicId, unitId, p
       ) : null}
 
       {items.length === 0 ? (
-        <HubRelatoriosEmpty title="Nenhuma venda de produto" description="Não há linhas de produto nos recebíveis deste período." />
+        <HubRelatoriosEmpty
+          title="Nenhuma venda de produto"
+          description="Não há linhas de produto nas cobranças deste período (nem devoluções líquidas a exibir)."
+        />
       ) : (
         <section className="hub-relatorios__panel" aria-labelledby="relatorios-product-sales-title">
           <div className="hub-relatorios__panel-head">
@@ -205,7 +233,7 @@ export const HubRelatoriosProductSales: React.FC<Props> = ({ clinicId, unitId, p
               <h2 id="relatorios-product-sales-title" className="hub-relatorios__section-title">
                 Ranking de produtos
               </h2>
-              <p className="hub-relatorios__panel-sub">Ordenado por receita</p>
+              <p className="hub-relatorios__panel-sub">Ordenado por receita líquida</p>
             </div>
           </div>
           <div className="hub-clientes__table-wrap">
@@ -214,9 +242,10 @@ export const HubRelatoriosProductSales: React.FC<Props> = ({ clinicId, unitId, p
                 <tr>
                   <th>Item</th>
                   <th>Tipo</th>
-                  <th className="hub-relatorios__num">Qtd</th>
-                  <th className="hub-relatorios__num">Receita</th>
-                  <th className="hub-relatorios__num">COGS</th>
+                  <th className="hub-relatorios__num">Qtd líq.</th>
+                  <th className="hub-relatorios__num">Receita líquida</th>
+                  <th className="hub-relatorios__num">Devoluções</th>
+                  <th className="hub-relatorios__num">Custo</th>
                   <th className="hub-relatorios__num">Margem</th>
                   <th className="hub-relatorios__num">%</th>
                 </tr>
@@ -239,8 +268,17 @@ export const HubRelatoriosProductSales: React.FC<Props> = ({ clinicId, unitId, p
                     <td>{ITEM_KIND_LABELS[row.item_kind ?? ''] ?? row.item_kind ?? '—'}</td>
                     <td className="hub-relatorios__num">{row.quantity.toLocaleString('pt-BR')}</td>
                     <td className="hub-relatorios__num">{formatBrl(row.revenue)}</td>
+                    <td className="hub-relatorios__num">
+                      {formatBrl(row.returns_commercial ?? 0)}
+                    </td>
                     <td className="hub-relatorios__num">{formatBrl(row.cogs)}</td>
-                    <td className="hub-relatorios__num">{formatBrl(row.margin)}</td>
+                    <td className="hub-relatorios__num">
+                      {row.margin_complete === false
+                        ? 'Incompleta'
+                        : row.margin != null
+                          ? formatBrl(row.margin)
+                          : '—'}
+                    </td>
                     <td className="hub-relatorios__num">
                       {row.margin_pct != null
                         ? `${row.margin_pct.toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%`

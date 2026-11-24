@@ -40,6 +40,15 @@ import {
   balanceDue as balanceDueFromNetPaid,
   netPaidEffective as netPaidEffectiveFromParts,
 } from './hubReceivableFinancialBalance';
+import {
+  aggregateMovementBySectorNet,
+  aggregateProductSalesNet,
+  commercialAmountForReturnedLine,
+  computeHistoricalTicketAverage,
+  loadCommercialPeriodBundle,
+  netAtSaleFromHeader,
+  round2Report,
+} from './hubReportCommercialNet';
 import { applyQuoteDiscount, quoteDiscountAmount } from './hubQuoteDiscount';
 import { getOrCreateHubClinicSettings } from './hubClinicSettingsController';
 import {
@@ -231,8 +240,9 @@ async function fetchActiveReceivableKeys(clinicId: string): Promise<Set<string>>
   return set;
 }
 
+/** Unidade estrita (Etapa B): unit_id null NÃO entra no total da unidade selecionada. */
 function unitMatchesSelected(rowUnitId: string | null | undefined, selectedUnitId: string): boolean {
-  return !rowUnitId || rowUnitId === selectedUnitId;
+  return rowUnitId === selectedUnitId;
 }
 
 /** Entradas de adiantamento em dinheiro na sessão (Fase 5; tabela pode não existir). */
@@ -5227,7 +5237,7 @@ export const getHubFinanceDashboardSummary = async (req: Request, res: Response)
       .from('hub_receivables')
       .select('id, final_amount')
       .eq('clinic_id', clinic_id)
-      .or(`unit_id.eq.${unit_id},unit_id.is.null`)
+      .eq('unit_id', unit_id)
       .is('deleted_at', null)
       .in('status', ['pending', 'partially_paid']);
     if (rErr) return res.status(500).json({ error: rErr.message });
@@ -5235,21 +5245,41 @@ export const getHubFinanceDashboardSummary = async (req: Request, res: Response)
     const recIds = openRecsWithValue.map((r) => r.id as string);
     let receivables_outstanding = 0;
     if (recIds.length > 0) {
-      const { data: payRows, error: pErr } = await supabaseAdmin
-        .from('hub_payments')
-        .select('receivable_id, amount')
-        .in('receivable_id', recIds)
-        .eq('status', 'posted');
-      if (pErr) return res.status(500).json({ error: pErr.message });
-      const paidByRec = new Map<string, number>();
-      for (const row of payRows ?? []) {
-        const id = row.receivable_id as string;
-        paidByRec.set(id, round2((paidByRec.get(id) ?? 0) + Number(row.amount ?? 0)));
+      const postedByRec = new Map<string, number>();
+      const lineRefundByRec = new Map<string, number>();
+      for (let i = 0; i < recIds.length; i += 200) {
+        const chunk = recIds.slice(i, i + 200);
+        const { data: payRows, error: pErr } = await supabaseAdmin
+          .from('hub_payments')
+          .select('receivable_id, amount')
+          .in('receivable_id', chunk)
+          .eq('status', 'posted');
+        if (pErr) return res.status(500).json({ error: pErr.message });
+        for (const row of payRows ?? []) {
+          const id = row.receivable_id as string;
+          postedByRec.set(id, round2((postedByRec.get(id) ?? 0) + Number(row.amount ?? 0)));
+        }
+        const { data: adjRows, error: aErr } = await supabaseAdmin
+          .from('hub_financial_adjustments')
+          .select('receivable_id, amount, payment_id')
+          .in('receivable_id', chunk)
+          .eq('adjustment_type', 'refund')
+          .is('payment_id', null);
+        if (aErr) return res.status(500).json({ error: aErr.message });
+        for (const row of adjRows ?? []) {
+          const id = row.receivable_id as string;
+          lineRefundByRec.set(id, round2((lineRefundByRec.get(id) ?? 0) + Number(row.amount ?? 0)));
+        }
       }
       for (const r of openRecsWithValue) {
-        const fin = Number(r.final_amount ?? 0);
-        const paid = paidByRec.get(r.id as string) ?? 0;
-        receivables_outstanding = round2(receivables_outstanding + round2(fin - paid));
+        receivables_outstanding = round2(
+          receivables_outstanding +
+            balanceDueFromNetPaid({
+              finalAmount: Number(r.final_amount ?? 0),
+              postedPayments: postedByRec.get(r.id as string) ?? 0,
+              lineRefundsAlreadyPaidOut: lineRefundByRec.get(r.id as string) ?? 0,
+            }),
+        );
       }
     }
 
@@ -5486,7 +5516,10 @@ export const getHubFinanceCashFlow = async (req: Request, res: Response) => {
     return res.json({
       period: { from: fromYmd, to: toYmd },
       date_basis: payDateCol === 'created_at' ? 'created_at' : 'payment_date',
+      kind: 'movimentacao_caixa',
       days,
+      notes:
+        'Movimentação física de dinheiro/pagamentos (não é receita líquida comercial). Saídas de caixa por reembolso em dinheiro entram em withdrawals. Unidade estrita.',
     });
   } catch (e: unknown) {
     console.error('getHubFinanceCashFlow', e);
@@ -5532,8 +5565,11 @@ export const getHubFinanceRevenueReport = async (req: Request, res: Response) =>
     return res.json({
       period: { from: fromYmd, to: toYmd },
       date_basis: payDateCol === 'created_at' ? 'created_at' : 'payment_date',
+      kind: 'recebimentos',
       total,
       by_method,
+      notes:
+        'Recebimentos (pagamentos posted). Não é receita líquida comercial. Unidade estrita — registros sem unidade ficam fora deste total.',
     });
   } catch (e: unknown) {
     console.error('getHubFinanceRevenueReport', e);
@@ -5644,25 +5680,28 @@ export const getHubFinanceTicketAverageReport = async (req: Request, res: Respon
     const parsed = parsePeriodQuery(req.query);
     if (!parsed.ok) return res.status(400).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
-    const fromIso = utcDayStartIso(fromYmd);
-    const toIso = utcDayEndIso(toYmd);
-    const { data: recs, error } = await supabaseAdmin
-      .from('hub_receivables')
-      .select('id, final_amount, created_at')
-      .eq('clinic_id', clinic_id)
-      .or(`unit_id.eq.${unit_id},unit_id.is.null`)
-      .is('deleted_at', null)
-      .neq('status', 'cancelled')
-      .gte('created_at', fromIso)
-      .lte('created_at', toIso);
-    if (error) return res.status(500).json({ error: error.message });
-    const count = recs?.length ?? 0;
-    const total = round2((recs ?? []).reduce((sum, row) => sum + Number(row.final_amount ?? 0), 0));
+
+    const bundle = await loadCommercialPeriodBundle({
+      clinicId: clinic_id,
+      unitFilter: { mode: 'unit', unitId: unit_id },
+      fromYmd,
+      toYmd,
+    });
+    if (!bundle.ok) return res.status(500).json({ error: bundle.error });
+
+    const ticket = computeHistoricalTicketAverage(bundle.salesHeaders);
     return res.json({
       period: { from: fromYmd, to: toYmd },
-      receivables_count: count,
-      total,
-      ticket_average: count ? round2(total / count) : 0,
+      kind: 'historical_commercial_ticket',
+      receivables_count: ticket.sales_count,
+      total: ticket.total_at_sale,
+      ticket_average: ticket.ticket_average,
+      reliable_snapshot_count: ticket.reliable_snapshot_count,
+      legacy_incomplete_count: ticket.legacy_incomplete_count,
+      competence: ticket.competence,
+      formula: ticket.formula,
+      notes:
+        'Ticket histórico do período da cobrança (net_amount_at_sale ÷ nº de cobranças). Devoluções posteriores não alteram. Período só com devoluções → ticket N/A. Unidade estrita.',
     });
   } catch (e: unknown) {
     console.error('getHubFinanceTicketAverageReport', e);
@@ -5681,7 +5720,7 @@ export const getHubFinanceTopServicesReport = async (req: Request, res: Response
       .from('hub_receivables')
       .select('id')
       .eq('clinic_id', clinic_id)
-      .or(`unit_id.eq.${unit_id},unit_id.is.null`)
+      .eq('unit_id', unit_id)
       .is('deleted_at', null)
       .neq('status', 'cancelled')
       .gte('created_at', fromIso)
@@ -5724,161 +5763,99 @@ export const getHubFinanceTopServicesReport = async (req: Request, res: Response
 
 /**
  * Vendas por produto + mix (serviços vs produtos vs demais) + margem/COGS.
- * COGS usa unit_cost_amount (snapshot); fallback: cost_amount atual do catálogo.
+ * COGS só com unit_cost_amount histórico da linha — sem fallback de catálogo.
  */
 export const getHubFinanceProductSalesReport = async (req: Request, res: Response) => {
   try {
     const parsed = parsePeriodQuery(req.query);
     if (!parsed.ok) return res.status(400).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
-    const fromIso = utcDayStartIso(fromYmd);
-    const toIso = utcDayEndIso(toYmd);
 
-    const { data: recs, error: recErr } = await supabaseAdmin
-      .from('hub_receivables')
-      .select('id')
-      .eq('clinic_id', clinic_id)
-      .or(`unit_id.eq.${unit_id},unit_id.is.null`)
-      .is('deleted_at', null)
-      .neq('status', 'cancelled')
-      .gte('created_at', fromIso)
-      .lte('created_at', toIso);
-    if (recErr) return res.status(500).json({ error: recErr.message });
-    const ids = (recs ?? []).map((r) => r.id as string);
-    if (ids.length === 0) {
-      return res.json({
-        period: { from: fromYmd, to: toYmd },
-        mix: { services: 0, products: 0, other: 0, total: 0 },
-        summary: {
-          items_count: 0,
-          quantity: 0,
-          revenue: 0,
-          cogs: 0,
-          margin: 0,
-          margin_pct: null as number | null,
-        },
-        items: [],
-      });
-    }
+    const bundle = await loadCommercialPeriodBundle({
+      clinicId: clinic_id,
+      unitFilter: { mode: 'unit', unitId: unit_id },
+      fromYmd,
+      toYmd,
+    });
+    if (!bundle.ok) return res.status(500).json({ error: bundle.error });
 
-    const { data: lines, error: lineErr } = await supabaseAdmin
-      .from('hub_receivable_lines')
-      .select(
-        'line_kind, hub_inventory_item_id, description, quantity, line_total, unit_cost_amount',
-      )
-      .eq('clinic_id', clinic_id)
-      .in('receivable_id', ids);
-    if (lineErr) return res.status(500).json({ error: lineErr.message });
-
-    let mixServices = 0;
-    let mixProducts = 0;
-    let mixOther = 0;
-    for (const line of lines ?? []) {
-      const total = Number(line.line_total ?? 0);
-      const kind = String(line.line_kind ?? '');
-      if (kind === 'product') mixProducts = round2(mixProducts + total);
-      else if (kind === 'appointment_service' || kind === 'grooming_extra' || kind === 'quote_line') {
-        mixServices = round2(mixServices + total);
-      } else mixOther = round2(mixOther + total);
-    }
-    const mixTotal = round2(mixServices + mixProducts + mixOther);
-
-    const productLines = (lines ?? []).filter((l) => String(l.line_kind) === 'product');
     const itemIds = [
       ...new Set(
-        productLines
-          .map((l) => l.hub_inventory_item_id as string | null)
-          .filter(Boolean) as string[],
+        [...bundle.saleLines, ...bundle.returnLinesById.values()]
+          .map((l) => l.hub_inventory_item_id)
+          .filter((id): id is string => Boolean(id)),
       ),
     ];
-    const catalogCost = new Map<string, number>();
     const catalogName = new Map<string, string>();
     const catalogKind = new Map<string, string>();
-    if (itemIds.length > 0) {
+    for (let i = 0; i < itemIds.length; i += 200) {
+      const chunk = itemIds.slice(i, i + 200);
+      if (!chunk.length) continue;
       const { data: inv } = await supabaseAdmin
         .from('hub_inventory_items')
-        .select('id, name, item_kind, cost_amount')
-        .in('id', itemIds);
+        .select('id, name, item_kind')
+        .in('id', chunk);
       for (const it of inv ?? []) {
         catalogName.set(it.id as string, String(it.name ?? ''));
         catalogKind.set(it.id as string, String(it.item_kind ?? 'product'));
-        if (it.cost_amount != null && Number.isFinite(Number(it.cost_amount))) {
-          catalogCost.set(it.id as string, Number(it.cost_amount));
-        }
       }
     }
 
-    type Agg = {
-      item_id: string | null;
-      name: string;
-      item_kind: string | null;
-      quantity: number;
-      revenue: number;
-      cogs: number;
-    };
-    const byItem = new Map<string, Agg>();
-    for (const line of productLines) {
-      const itemId = (line.hub_inventory_item_id as string | null) ?? null;
-      const key = itemId ?? `desc:${String(line.description ?? 'Produto')}`;
-      const qty = Number(line.quantity ?? 0);
-      const revenue = Number(line.line_total ?? 0);
-      let unitCost: number | null =
-        line.unit_cost_amount != null && Number.isFinite(Number(line.unit_cost_amount))
-          ? Number(line.unit_cost_amount)
-          : null;
-      if (unitCost == null && itemId && catalogCost.has(itemId)) {
-        unitCost = catalogCost.get(itemId)!;
-      }
-      const cogs = unitCost != null ? round2(qty * unitCost) : 0;
-      const cur = byItem.get(key) ?? {
-        item_id: itemId,
-        name: itemId
-          ? catalogName.get(itemId) || String(line.description || 'Produto')
-          : String(line.description || 'Produto'),
-        item_kind: itemId ? catalogKind.get(itemId) ?? null : null,
-        quantity: 0,
-        revenue: 0,
-        cogs: 0,
-      };
-      cur.quantity = round2(cur.quantity + qty);
-      cur.revenue = round2(cur.revenue + revenue);
-      cur.cogs = round2(cur.cogs + cogs);
-      byItem.set(key, cur);
-    }
+    const { items: aggItems, totals, mix } = aggregateProductSalesNet({
+      saleLines: bundle.saleLines,
+      returnEvents: bundle.returnEvents,
+      returnLinesById: bundle.returnLinesById,
+      returnHeadersById: bundle.returnHeadersById,
+      catalogName,
+      catalogKind,
+    });
 
-    const items = [...byItem.values()]
-      .map((r) => {
-        const margin = round2(r.revenue - r.cogs);
-        const margin_pct = r.revenue > 0 ? round2((margin / r.revenue) * 100) : null;
-        return { ...r, margin, margin_pct };
-      })
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 200);
-
-    const revenue = round2(items.reduce((s, i) => s + i.revenue, 0));
-    const cogs = round2(items.reduce((s, i) => s + i.cogs, 0));
-    const margin = round2(revenue - cogs);
-    const quantity = round2(items.reduce((s, i) => s + i.quantity, 0));
+    const items = aggItems.slice(0, 200).map((r) => ({
+      item_id: r.item_id,
+      name: r.name,
+      item_kind: r.item_kind,
+      quantity: r.quantity_net,
+      quantity_sold: r.quantity_sold,
+      quantity_returned: r.quantity_returned,
+      revenue: r.revenue_net,
+      revenue_gross: r.revenue_gross,
+      returns_commercial: r.returns_commercial,
+      cogs: r.cogs_net,
+      cogs_recorded: r.cogs_recorded,
+      cogs_recovered: r.cogs_recovered,
+      margin: r.margin,
+      margin_pct: r.margin_pct,
+      margin_complete: r.margin_complete,
+      cost_unregistered_revenue: r.cost_unregistered_revenue,
+    }));
 
     return res.json({
       period: { from: fromYmd, to: toYmd },
-      mix: {
-        services: mixServices,
-        products: mixProducts,
-        other: mixOther,
-        total: mixTotal,
+      competence: {
+        sales: 'receivable.created_at (data da cobrança gerada)',
+        returns: 'hub_product_return_events.created_at',
       },
+      mix,
       summary: {
         items_count: items.length,
-        quantity,
-        revenue,
-        cogs,
-        margin,
-        margin_pct: revenue > 0 ? round2((margin / revenue) * 100) : null,
+        quantity: totals.quantity_net,
+        quantity_sold: totals.quantity_sold,
+        quantity_returned: totals.quantity_returned,
+        revenue: totals.revenue_net,
+        revenue_gross: totals.revenue_gross,
+        returns_commercial: totals.returns_commercial,
+        cogs: totals.cogs_net,
+        margin: totals.margin,
+        margin_pct: totals.margin_pct,
+        margin_complete: totals.margin_complete,
+        cost_unregistered_revenue: totals.cost_unregistered_revenue,
+        unallocated_financial_refunds: bundle.unallocatedFinancialRefunds,
+        legacy_snapshot_incomplete_count: bundle.legacy_snapshot_incomplete_count,
+        unassigned_unit_excluded: true,
       },
       items,
       notes:
-        'COGS usa unit_cost_amount da linha; linhas antigas sem snapshot usam cost_amount atual do catálogo.',
+        'Receita líquida = bruta do período − devoluções comerciais no período (return events + rateio). COGS só com unit_cost_amount histórico; sem snapshot = custo não registrado (margem incompleta). Unidade estrita (sem misturar unit_id null). Reembolsos financeiros sem linha → Não alocado (financeiro).',
     });
   } catch (e: unknown) {
     console.error('getHubFinanceProductSalesReport', e);
@@ -5895,161 +5872,76 @@ export const getHubFinanceMovementBySectorReport = async (req: Request, res: Res
     const parsed = parsePeriodQuery(req.query);
     if (!parsed.ok) return res.status(400).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
-    const fromIso = utcDayStartIso(fromYmd);
-    const toIso = utcDayEndIso(toYmd);
 
-    const empty = () =>
-      res.json({
-        period: { from: fromYmd, to: toYmd },
-        summary: {
-          receivables_count: 0,
-          lines_count: 0,
-          total: 0,
-          groups_count: 0,
-        },
-        by_group: [],
-        by_service: [],
-      });
-
-    const { data: recs, error: recErr } = await supabaseAdmin
-      .from('hub_receivables')
-      .select('id')
-      .eq('clinic_id', clinic_id)
-      .or(`unit_id.eq.${unit_id},unit_id.is.null`)
-      .is('deleted_at', null)
-      .neq('status', 'cancelled')
-      .gte('created_at', fromIso)
-      .lte('created_at', toIso);
-    if (recErr) return res.status(500).json({ error: recErr.message });
-    const ids = (recs ?? []).map((r) => r.id as string);
-    if (ids.length === 0) return empty();
-
-    const { data: lines, error: lineErr } = await supabaseAdmin
-      .from('hub_receivable_lines')
-      .select('hub_service_type_id, line_kind, description, quantity, line_total')
-      .eq('clinic_id', clinic_id)
-      .in('receivable_id', ids);
-    if (lineErr) return res.status(500).json({ error: lineErr.message });
-    if (!lines?.length) return empty();
+    const bundle = await loadCommercialPeriodBundle({
+      clinicId: clinic_id,
+      unitFilter: { mode: 'unit', unitId: unit_id },
+      fromYmd,
+      toYmd,
+    });
+    if (!bundle.ok) return res.status(500).json({ error: bundle.error });
 
     const serviceIds = [
       ...new Set(
-        (lines ?? [])
-          .map((l) => l.hub_service_type_id as string | null)
+        [...bundle.saleLines, ...bundle.returnLinesById.values()]
+          .map((l) => l.hub_service_type_id)
           .filter((id): id is string => Boolean(id)),
       ),
     ];
     const serviceMeta = new Map<string, { name: string; service_group: string }>();
-    if (serviceIds.length > 0) {
+    for (let i = 0; i < serviceIds.length; i += 200) {
+      const chunk = serviceIds.slice(i, i + 200);
+      if (!chunk.length) continue;
       const { data: services } = await supabaseAdmin
         .from('hub_service_types')
         .select('id, name, service_group')
-        .in('id', serviceIds);
+        .in('id', chunk);
       for (const svc of services ?? []) {
-        const group = String(svc.service_group ?? 'outros').trim() || 'outros';
         serviceMeta.set(svc.id as string, {
           name: String(svc.name || svc.id),
-          service_group: group,
+          service_group: String(svc.service_group ?? 'outros').trim() || 'outros',
         });
       }
     }
 
-    type GroupAgg = { service_group: string; lines_count: number; quantity: number; total: number };
-    type ServiceAgg = {
-      service_group: string;
-      service_id: string | null;
-      name: string;
-      lines_count: number;
-      quantity: number;
-      total: number;
-    };
+    const agg = aggregateMovementBySectorNet({
+      saleLines: bundle.saleLines,
+      returnEvents: bundle.returnEvents,
+      returnLinesById: bundle.returnLinesById,
+      returnHeadersById: bundle.returnHeadersById,
+      serviceMeta,
+    });
 
-    const byGroup = new Map<string, GroupAgg>();
-    const byService = new Map<string, ServiceAgg>();
-
-    const resolveBucket = (line: {
-      hub_service_type_id?: string | null;
-      line_kind?: string | null;
-      description?: string | null;
-    }): { service_group: string; service_id: string | null; name: string } => {
-      const kind = String(line.line_kind ?? '');
-      if (kind === 'product') {
-        return {
-          service_group: 'produtos',
-          service_id: null,
-          name: String(line.description || 'Produto').trim() || 'Produto',
-        };
-      }
-      const serviceId = (line.hub_service_type_id as string | null) ?? null;
-      if (serviceId) {
-        const meta = serviceMeta.get(serviceId);
-        const fallbackName = String(line.description || 'Serviço').trim() || 'Serviço';
-        return {
-          service_group: meta?.service_group ?? 'outros',
-          service_id: serviceId,
-          name: meta?.name ?? fallbackName,
-        };
-      }
-      return {
-        service_group: 'outros',
-        service_id: null,
-        name: String(line.description || 'Outros').trim() || 'Outros',
-      };
-    };
-
-    for (const line of lines ?? []) {
-      const bucket = resolveBucket(line);
-      const qty = Number(line.quantity ?? 0);
-      const total = Number(line.line_total ?? 0);
-
-      const g = byGroup.get(bucket.service_group) ?? {
-        service_group: bucket.service_group,
-        lines_count: 0,
+    // Bucket explícito para reembolsos financeiros sem linha
+    const by_group = [...agg.by_group];
+    if (bundle.unallocatedFinancialRefunds > 0.009) {
+      by_group.push({
+        service_group: 'nao_alocado_financeiro',
+        lines_count: bundle.unallocatedFinancialRefundRows.length,
         quantity: 0,
-        total: 0,
-      };
-      g.lines_count += 1;
-      g.quantity = round2(g.quantity + qty);
-      g.total = round2(g.total + total);
-      byGroup.set(bucket.service_group, g);
-
-      const serviceKey = bucket.service_id
-        ? `svc:${bucket.service_id}`
-        : `name:${bucket.service_group}:${bucket.name}`;
-      const s = byService.get(serviceKey) ?? {
-        service_group: bucket.service_group,
-        service_id: bucket.service_id,
-        name: bucket.name,
-        lines_count: 0,
-        quantity: 0,
-        total: 0,
-      };
-      s.lines_count += 1;
-      s.quantity = round2(s.quantity + qty);
-      s.total = round2(s.total + total);
-      byService.set(serviceKey, s);
+        total: round2Report(-bundle.unallocatedFinancialRefunds),
+        share_pct: 0,
+      });
     }
-
-    const grandTotal = round2([...byGroup.values()].reduce((acc, g) => acc + g.total, 0));
-    const by_group = [...byGroup.values()]
-      .map((g) => ({
-        ...g,
-        share_pct: grandTotal > 0 ? round2((g.total / grandTotal) * 100) : 0,
-      }))
-      .sort((a, b) => b.total - a.total);
-
-    const by_service = [...byService.values()].sort((a, b) => b.total - a.total).slice(0, 300);
 
     return res.json({
       period: { from: fromYmd, to: toYmd },
+      competence: {
+        sales: 'receivable.created_at (data da cobrança gerada)',
+        returns: 'hub_product_return_events.created_at',
+      },
       summary: {
-        receivables_count: ids.length,
-        lines_count: lines.length,
-        total: grandTotal,
+        receivables_count: bundle.salesHeaders.length,
+        lines_count: agg.summary.lines_count,
+        total: agg.summary.total,
         groups_count: by_group.length,
+        returns_commercial: agg.summary.returns_commercial,
+        unallocated_financial_refunds: bundle.unallocatedFinancialRefunds,
       },
       by_group,
-      by_service,
+      by_service: agg.by_service,
+      notes:
+        'Totais líquidos comerciais (vendas − devoluções no período). “nao_alocado_financeiro” = reembolso sem vínculo de linha (não é devolução comercial). Unidade estrita.',
     });
   } catch (e: unknown) {
     console.error('getHubFinanceMovementBySectorReport', e);
@@ -6073,6 +5965,32 @@ export const getHubFinanceAgingReport = async (req: Request, res: Response) => {
       .is('deleted_at', null)
       .in('status', ['pending', 'partially_paid']);
     if (error) return res.status(500).json({ error: error.message });
+    const recIds = (recs ?? []).map((r) => r.id as string);
+    const postedByRec = new Map<string, number>();
+    const lineRefundByRec = new Map<string, number>();
+    for (let i = 0; i < recIds.length; i += 200) {
+      const chunk = recIds.slice(i, i + 200);
+      if (!chunk.length) continue;
+      const { data: payRows } = await supabaseAdmin
+        .from('hub_payments')
+        .select('receivable_id, amount')
+        .in('receivable_id', chunk)
+        .eq('status', 'posted');
+      for (const row of payRows ?? []) {
+        const id = row.receivable_id as string;
+        postedByRec.set(id, round2((postedByRec.get(id) ?? 0) + Number(row.amount ?? 0)));
+      }
+      const { data: adjRows } = await supabaseAdmin
+        .from('hub_financial_adjustments')
+        .select('receivable_id, amount')
+        .in('receivable_id', chunk)
+        .eq('adjustment_type', 'refund')
+        .is('payment_id', null);
+      for (const row of adjRows ?? []) {
+        const id = row.receivable_id as string;
+        lineRefundByRec.set(id, round2((lineRefundByRec.get(id) ?? 0) + Number(row.amount ?? 0)));
+      }
+    }
     const buckets = {
       no_due_date: { count: 0, total: 0 },
       not_due: { count: 0, total: 0 },
@@ -6081,7 +5999,12 @@ export const getHubFinanceAgingReport = async (req: Request, res: Response) => {
       overdue_61_plus: { count: 0, total: 0 },
     };
     for (const rec of recs ?? []) {
-      const amount = Number(rec.final_amount ?? 0);
+      const amount = balanceDueFromNetPaid({
+        finalAmount: Number(rec.final_amount ?? 0),
+        postedPayments: postedByRec.get(rec.id as string) ?? 0,
+        lineRefundsAlreadyPaidOut: lineRefundByRec.get(rec.id as string) ?? 0,
+      });
+      if (amount <= 0.009) continue;
       let key: keyof typeof buckets = 'no_due_date';
       if (rec.due_date) {
         if (String(rec.due_date) >= asOf) {
@@ -6096,7 +6019,11 @@ export const getHubFinanceAgingReport = async (req: Request, res: Response) => {
       buckets[key].count += 1;
       buckets[key].total = round2(buckets[key].total + amount);
     }
-    return res.json({ as_of: asOf, buckets });
+    return res.json({
+      as_of: asOf,
+      buckets,
+      notes: 'Totais = saldo a receber (final − pago líquido efetivo). Unidade estrita.',
+    });
   } catch (e: unknown) {
     console.error('getHubFinanceAgingReport', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
@@ -6114,28 +6041,42 @@ export const getHubFinanceSalesAdjustmentsReport = async (req: Request, res: Res
 
     const { data: recs, error: recErr } = await supabaseAdmin
       .from('hub_receivables')
-      .select('id, final_amount, status, created_at, guardian_id, guardian:hub_guardians(id, full_name)')
+      .select(
+        'id, final_amount, original_amount, net_amount_at_sale, returned_amount, status, created_at, guardian_id, guardian:hub_guardians(id, full_name)',
+      )
       .eq('clinic_id', clinic_id)
-      .or(`unit_id.eq.${unit_id},unit_id.is.null`)
+      .eq('unit_id', unit_id)
       .is('deleted_at', null)
       .gte('created_at', fromIso)
       .lte('created_at', toIso)
       .order('created_at', { ascending: false })
-      .limit(500);
+      .order('id', { ascending: false });
     if (recErr) return res.status(500).json({ error: recErr.message });
 
-    const salesByStatus: Record<string, { count: number; total: number }> = {};
-    let salesTotal = 0;
+    const salesByStatus: Record<string, { count: number; total_at_sale: number; final_total: number }> = {};
+    let salesTotalAtSale = 0;
+    let salesFinalTotal = 0;
     let salesCount = 0;
+    let cancelledWithoutReturn = 0;
     for (const rec of recs ?? []) {
+      if (rec.status === 'cancelled' && Number(rec.returned_amount ?? 0) <= 0.009) {
+        cancelledWithoutReturn += 1;
+        continue;
+      }
       if (rec.status === 'cancelled') continue;
-      const amount = Number(rec.final_amount ?? 0);
+      const atSale =
+        rec.net_amount_at_sale != null && Number.isFinite(Number(rec.net_amount_at_sale))
+          ? Number(rec.net_amount_at_sale)
+          : Number(rec.final_amount ?? 0) + Number(rec.returned_amount ?? 0);
+      const finalAmt = Number(rec.final_amount ?? 0);
       const st = String(rec.status ?? 'unknown');
-      const cur = salesByStatus[st] ?? { count: 0, total: 0 };
+      const cur = salesByStatus[st] ?? { count: 0, total_at_sale: 0, final_total: 0 };
       cur.count += 1;
-      cur.total = round2(cur.total + amount);
+      cur.total_at_sale = round2(cur.total_at_sale + atSale);
+      cur.final_total = round2(cur.final_total + finalAmt);
       salesByStatus[st] = cur;
-      salesTotal = round2(salesTotal + amount);
+      salesTotalAtSale = round2(salesTotalAtSale + atSale);
+      salesFinalTotal = round2(salesFinalTotal + finalAmt);
       salesCount += 1;
     }
 
@@ -6183,7 +6124,8 @@ export const getHubFinanceSalesAdjustmentsReport = async (req: Request, res: Res
 
     for (const adj of adjustments ?? []) {
       const meta = recMeta.get(adj.receivable_id as string);
-      if (meta && !unitMatchesSelected(meta.unit_id, unit_id)) continue;
+      // Unidade estrita: sem meta ou unit diferente → exclui; null unit não entra na unidade selecionada
+      if (!meta || meta.unit_id !== unit_id) continue;
       const amount = Number(adj.amount ?? 0);
       const type = String(adj.adjustment_type ?? 'unknown');
       const cur = by_type[type] ?? { count: 0, total: 0 };
@@ -6206,15 +6148,20 @@ export const getHubFinanceSalesAdjustmentsReport = async (req: Request, res: Res
       period: { from: fromYmd, to: toYmd },
       sales: {
         receivables_count: salesCount,
-        total: salesTotal,
+        total_at_sale: salesTotalAtSale,
+        total: salesFinalTotal,
         by_status: salesByStatus,
+        cancelled_without_commercial_return: cancelledWithoutReturn,
       },
       adjustments: {
         count: items.length,
         total: adjustmentsTotal,
         by_type,
         items: items.slice(0, 200),
+        note: 'Acertos financeiros (refund/discount/reversal). Não confundir refund financeiro com devolução comercial.',
       },
+      notes:
+        'Vendas na data da cobrança (total_at_sale = líquido na venda). Cancelamentos sem devolução comercial excluídos. Unidade estrita.',
     });
   } catch (e: unknown) {
     console.error('getHubFinanceSalesAdjustmentsReport', e);
@@ -6224,6 +6171,8 @@ export const getHubFinanceSalesAdjustmentsReport = async (req: Request, res: Res
 
 type CommissionReportPayload = {
   period: { from: string; to: string };
+  estimation?: boolean;
+  notes?: string;
   summary: {
     receivables_count: number;
     lines_with_commission: number;
@@ -6275,8 +6224,6 @@ async function buildCommissionsReport(params: {
   onlyStaffId?: string | null;
 }): Promise<{ ok: true; data: CommissionReportPayload } | { ok: false; status: number; error: string }> {
   const { clinic_id, unit_id, fromYmd, toYmd, onlyStaffId } = params;
-  const fromIso = utcDayStartIso(fromYmd);
-  const toIso = utcDayEndIso(toYmd);
 
   const { data: rules, error: ruErr } = await supabaseAdmin
     .from('hub_commission_rules')
@@ -6308,110 +6255,130 @@ async function buildCommissionsReport(params: {
     if (pid) ruleByProduct.set(pid, entry);
   }
 
-  const { data: recs, error: recErr } = await supabaseAdmin
-    .from('hub_receivables')
-    .select('id, source_type, source_id, final_amount, status, created_at')
-    .eq('clinic_id', clinic_id)
-    .or(`unit_id.eq.${unit_id},unit_id.is.null`)
-    .is('deleted_at', null)
-    .neq('status', 'cancelled')
-    .gte('created_at', fromIso)
-    .lte('created_at', toIso)
-    .limit(800);
-  if (recErr) return { ok: false, status: 500, error: recErr.message };
-  const recIds = (recs ?? []).map((r) => r.id as string);
-  if (recIds.length === 0) {
-    return {
-      ok: true,
-      data: {
-        period: { from: fromYmd, to: toYmd },
-        summary: { receivables_count: 0, lines_with_commission: 0, total_commission: 0, total_sales: 0 },
-        by_service: [],
-        by_product: [],
-        by_staff: [],
-        items: [],
-      },
-    };
+  const bundle = await loadCommercialPeriodBundle({
+    clinicId: clinic_id,
+    unitFilter: { mode: 'unit', unitId: unit_id },
+    fromYmd,
+    toYmd,
+  });
+  if (!bundle.ok) return { ok: false, status: 500, error: bundle.error };
+
+  // Metadados de staff/origem: vendas do período + headers de devolução
+  const allHeaders = [
+    ...bundle.salesHeaders,
+    ...[...bundle.returnHeadersById.values()].filter(
+      (h) => !bundle.salesHeaders.some((s) => s.id === h.id),
+    ),
+  ];
+  const headerIds = allHeaders.map((h) => h.id);
+  const sourceMeta = new Map<string, { source_type: string | null; source_id: string | null }>();
+  for (let i = 0; i < headerIds.length; i += 200) {
+    const chunk = headerIds.slice(i, i + 200);
+    if (!chunk.length) continue;
+    const { data: rows, error } = await supabaseAdmin
+      .from('hub_receivables')
+      .select('id, source_type, source_id')
+      .in('id', chunk);
+    if (error) return { ok: false, status: 500, error: error.message };
+    for (const r of rows ?? []) {
+      sourceMeta.set(r.id as string, {
+        source_type: (r.source_type as string | null) ?? null,
+        source_id: (r.source_id as string | null) ?? null,
+      });
+    }
   }
 
-  const { data: lines, error: lnErr } = await supabaseAdmin
-    .from('hub_receivable_lines')
-    .select('id, receivable_id, hub_service_type_id, hub_inventory_item_id, description, line_total')
-    .eq('clinic_id', clinic_id)
-    .in('receivable_id', recIds);
-  if (lnErr) return { ok: false, status: 500, error: lnErr.message };
-
-  const appointmentIds = (recs ?? [])
-    .filter((r) => r.source_type === 'appointment' && r.source_id)
-    .map((r) => r.source_id as string);
-  const encounterIds = (recs ?? [])
-    .filter((r) => r.source_type === 'encounter' && r.source_id)
-    .map((r) => r.source_id as string);
+  const appointmentIds = [...sourceMeta.values()]
+    .filter((m) => m.source_type === 'appointment' && m.source_id)
+    .map((m) => m.source_id as string);
+  const encounterIds = [...sourceMeta.values()]
+    .filter((m) => m.source_type === 'encounter' && m.source_id)
+    .map((m) => m.source_id as string);
 
   const staffByAppointment = new Map<string, string>();
-  if (appointmentIds.length > 0) {
+  for (let i = 0; i < appointmentIds.length; i += 200) {
+    const chunk = appointmentIds.slice(i, i + 200);
+    if (!chunk.length) continue;
     const { data: appts } = await supabaseAdmin
       .from('hub_appointments')
       .select('id, hub_staff_member_id')
-      .in('id', appointmentIds);
+      .in('id', chunk);
     for (const a of appts ?? []) {
       if (a.hub_staff_member_id) staffByAppointment.set(a.id as string, a.hub_staff_member_id as string);
     }
   }
-
   const staffByEncounter = new Map<string, string>();
-  if (encounterIds.length > 0) {
+  for (let i = 0; i < encounterIds.length; i += 200) {
+    const chunk = encounterIds.slice(i, i + 200);
+    if (!chunk.length) continue;
     const { data: encs } = await supabaseAdmin
       .from('hub_encounters')
       .select('id, hub_staff_member_id')
-      .in('id', encounterIds);
+      .in('id', chunk);
     for (const e of encs ?? []) {
       if (e.hub_staff_member_id) staffByEncounter.set(e.id as string, e.hub_staff_member_id as string);
     }
   }
 
-  const staffIds = [
-    ...new Set([...staffByAppointment.values(), ...staffByEncounter.values()]),
-  ];
+  const staffIds = [...new Set([...staffByAppointment.values(), ...staffByEncounter.values()])];
   const staffNames = new Map<string, string>();
-  if (staffIds.length > 0) {
+  for (let i = 0; i < staffIds.length; i += 200) {
+    const chunk = staffIds.slice(i, i + 200);
+    if (!chunk.length) continue;
     const { data: staffRows } = await supabaseAdmin
       .from('hub_staff_members')
       .select('id, full_name, display_name')
-      .in('id', staffIds);
+      .in('id', chunk);
     for (const s of staffRows ?? []) {
       staffNames.set(
         s.id as string,
-        String((s.display_name as string | null) || (s.full_name as string | null) || s.id)
+        String((s.display_name as string | null) || (s.full_name as string | null) || s.id),
       );
     }
   }
 
+  const allLines = [...bundle.saleLines, ...bundle.returnLinesById.values()];
   const serviceIds = [
-    ...new Set((lines ?? []).map((l) => l.hub_service_type_id as string | null).filter(Boolean) as string[]),
+    ...new Set(allLines.map((l) => l.hub_service_type_id).filter((id): id is string => Boolean(id))),
   ];
   const serviceNames = new Map<string, string>();
-  if (serviceIds.length > 0) {
-    const { data: svcRows } = await supabaseAdmin
-      .from('hub_service_types')
-      .select('id, name')
-      .in('id', serviceIds);
+  for (let i = 0; i < serviceIds.length; i += 200) {
+    const chunk = serviceIds.slice(i, i + 200);
+    if (!chunk.length) continue;
+    const { data: svcRows } = await supabaseAdmin.from('hub_service_types').select('id, name').in('id', chunk);
     for (const s of svcRows ?? []) serviceNames.set(s.id as string, String(s.name ?? s.id));
   }
-
   const productIds = [
-    ...new Set((lines ?? []).map((l) => l.hub_inventory_item_id as string | null).filter(Boolean) as string[]),
+    ...new Set(allLines.map((l) => l.hub_inventory_item_id).filter((id): id is string => Boolean(id))),
   ];
   const productNames = new Map<string, string>();
-  if (productIds.length > 0) {
-    const { data: itemRows } = await supabaseAdmin
-      .from('hub_inventory_items')
-      .select('id, name')
-      .in('id', productIds);
+  for (let i = 0; i < productIds.length; i += 200) {
+    const chunk = productIds.slice(i, i + 200);
+    if (!chunk.length) continue;
+    const { data: itemRows } = await supabaseAdmin.from('hub_inventory_items').select('id, name').in('id', chunk);
     for (const p of itemRows ?? []) productNames.set(p.id as string, String(p.name ?? p.id));
   }
 
-  const recById = new Map((recs ?? []).map((r) => [r.id as string, r]));
+  const estimateCommission = (
+    rule: { basis: string; rate: number } | undefined,
+    commercialBase: number,
+  ): { commission: number; basis: string | null; rate: number | null } => {
+    if (!rule || commercialBase <= 0.009) return { commission: 0, basis: null, rate: null };
+    if (rule.basis === 'percent_of_sale') {
+      return {
+        commission: round2(commercialBase * (rule.rate / 100)),
+        basis: rule.basis,
+        rate: rule.rate,
+      };
+    }
+    // fixed_per_sale: preserva natureza fixa; teto no base comercial da linha
+    return {
+      commission: round2(Math.min(rule.rate, commercialBase)),
+      basis: rule.basis,
+      rate: rule.rate,
+    };
+  };
+
   const byService = new Map<
     string,
     { service_id: string; name: string; lines_count: number; sales_total: number; commission_total: number }
@@ -6425,70 +6392,67 @@ async function buildCommissionsReport(params: {
     { staff_id: string; name: string; lines_count: number; sales_total: number; commission_total: number }
   >();
   const items: CommissionReportPayload['items'] = [];
-
   let totalCommission = 0;
   let totalSales = 0;
   let linesWithCommission = 0;
   const receivableIdsWithKeptLines = new Set<string>();
 
-  for (const ln of lines ?? []) {
-    const lineTotal = round2(Number(ln.line_total ?? 0));
-    const stId = (ln.hub_service_type_id as string) ?? null;
-    const itemId = (ln.hub_inventory_item_id as string) ?? null;
-    const rule = stId ? ruleByService.get(stId) : itemId ? ruleByProduct.get(itemId) : undefined;
-    let commission = 0;
-    let basis: string | null = null;
-    let rate: number | null = null;
-    if (rule) {
-      basis = rule.basis;
-      rate = rule.rate;
-      if (rule.basis === 'percent_of_sale') commission = round2(lineTotal * (rule.rate / 100));
-      else commission = round2(Math.min(rule.rate, lineTotal));
-    }
-    if (commission <= 0) continue;
+  const resolveStaff = (receivableId: string): string | null => {
+    const meta = sourceMeta.get(receivableId);
+    if (!meta?.source_id) return null;
+    if (meta.source_type === 'appointment') return staffByAppointment.get(meta.source_id) ?? null;
+    if (meta.source_type === 'encounter') return staffByEncounter.get(meta.source_id) ?? null;
+    return null;
+  };
 
-    const rec = recById.get(ln.receivable_id as string);
-    let staffId: string | null = null;
-    if (rec?.source_id) {
-      if (rec.source_type === 'appointment') {
-        staffId = staffByAppointment.get(rec.source_id as string) ?? null;
-      } else if (rec.source_type === 'encounter') {
-        staffId = staffByEncounter.get(rec.source_id as string) ?? null;
-      }
-    }
+  const pushEntry = (opts: {
+    receivableId: string;
+    lineId: string;
+    description: string;
+    stId: string | null;
+    itemId: string | null;
+    commercialBase: number;
+    commission: number;
+    basis: string | null;
+    rate: number | null;
+    sign: 1 | -1;
+  }) => {
+    if (opts.commission <= 0.009 && opts.sign === 1) return;
+    const staffId = resolveStaff(opts.receivableId);
+    if (onlyStaffId && staffId !== onlyStaffId) return;
 
-    if (onlyStaffId && staffId !== onlyStaffId) continue;
-
+    const signedCommission = round2(opts.sign * opts.commission);
+    const signedSales = round2(opts.sign * opts.commercialBase);
     linesWithCommission += 1;
-    totalCommission = round2(totalCommission + commission);
-    totalSales = round2(totalSales + lineTotal);
-    receivableIdsWithKeptLines.add(ln.receivable_id as string);
+    totalCommission = round2(totalCommission + signedCommission);
+    totalSales = round2(totalSales + signedSales);
+    receivableIdsWithKeptLines.add(opts.receivableId);
 
-    if (stId) {
-      const cur = byService.get(stId) ?? {
-        service_id: stId,
-        name: serviceNames.get(stId) ?? 'Serviço',
+    if (opts.stId) {
+      const cur = byService.get(opts.stId) ?? {
+        service_id: opts.stId,
+        name: serviceNames.get(opts.stId) ?? 'Serviço',
         lines_count: 0,
         sales_total: 0,
         commission_total: 0,
       };
-      cur.lines_count += 1;
-      cur.sales_total = round2(cur.sales_total + lineTotal);
-      cur.commission_total = round2(cur.commission_total + commission);
-      byService.set(stId, cur);
+      cur.lines_count += opts.sign === 1 ? 1 : 0;
+      cur.sales_total = round2(cur.sales_total + signedSales);
+      cur.commission_total = round2(cur.commission_total + signedCommission);
+      byService.set(opts.stId, cur);
     }
-    if (itemId) {
-      const cur = byProduct.get(itemId) ?? {
-        product_id: itemId,
-        name: productNames.get(itemId) ?? 'Produto',
+    if (opts.itemId) {
+      const cur = byProduct.get(opts.itemId) ?? {
+        product_id: opts.itemId,
+        name: productNames.get(opts.itemId) ?? 'Produto',
         lines_count: 0,
         sales_total: 0,
         commission_total: 0,
       };
-      cur.lines_count += 1;
-      cur.sales_total = round2(cur.sales_total + lineTotal);
-      cur.commission_total = round2(cur.commission_total + commission);
-      byProduct.set(itemId, cur);
+      cur.lines_count += opts.sign === 1 ? 1 : 0;
+      cur.sales_total = round2(cur.sales_total + signedSales);
+      cur.commission_total = round2(cur.commission_total + signedCommission);
+      byProduct.set(opts.itemId, cur);
     }
     if (staffId) {
       const cur = byStaff.get(staffId) ?? {
@@ -6498,23 +6462,72 @@ async function buildCommissionsReport(params: {
         sales_total: 0,
         commission_total: 0,
       };
-      cur.lines_count += 1;
-      cur.sales_total = round2(cur.sales_total + lineTotal);
-      cur.commission_total = round2(cur.commission_total + commission);
+      cur.lines_count += opts.sign === 1 ? 1 : 0;
+      cur.sales_total = round2(cur.sales_total + signedSales);
+      cur.commission_total = round2(cur.commission_total + signedCommission);
       byStaff.set(staffId, cur);
     }
     items.push({
-      receivable_id: ln.receivable_id as string,
-      line_id: ln.id as string,
-      description: String(ln.description ?? ''),
-      service_name: stId ? serviceNames.get(stId) ?? null : null,
-      product_name: itemId ? productNames.get(itemId) ?? null : null,
+      receivable_id: opts.receivableId,
+      line_id: opts.lineId,
+      description: opts.description,
+      service_name: opts.stId ? serviceNames.get(opts.stId) ?? null : null,
+      product_name: opts.itemId ? productNames.get(opts.itemId) ?? null : null,
       staff_name: staffId ? staffNames.get(staffId) ?? null : null,
       staff_id: staffId,
-      line_total: lineTotal,
-      commission_amount: commission,
-      basis,
-      rate,
+      line_total: signedSales,
+      commission_amount: signedCommission,
+      basis: opts.basis,
+      rate: opts.rate,
+    });
+  };
+
+  for (const ln of bundle.saleLines) {
+    const stId = (ln.hub_service_type_id as string) ?? null;
+    const itemId = (ln.hub_inventory_item_id as string) ?? null;
+    const rule = stId ? ruleByService.get(stId) : itemId ? ruleByProduct.get(itemId) : undefined;
+    const commercialBase = round2(Number(ln.line_total ?? 0));
+    const est = estimateCommission(rule, commercialBase);
+    pushEntry({
+      receivableId: ln.receivable_id,
+      lineId: ln.id,
+      description: String(ln.description ?? ''),
+      stId,
+      itemId,
+      commercialBase,
+      commission: est.commission,
+      basis: est.basis,
+      rate: est.rate,
+      sign: 1,
+    });
+  }
+
+  for (const ev of bundle.returnEvents) {
+    const ln = bundle.returnLinesById.get(ev.receivable_line_id);
+    const hdr = bundle.returnHeadersById.get(ev.receivable_id);
+    if (!ln || !hdr) continue;
+    const netInfo = netAtSaleFromHeader(hdr);
+    const original = Number(hdr.original_amount ?? 0);
+    const commercialBase = commercialAmountForReturnedLine({
+      lineTotal: Number(ln.line_total ?? 0),
+      originalAmount: original > 0.009 ? original : netInfo.net,
+      netAmountAtSale: netInfo.net,
+    });
+    const stId = (ln.hub_service_type_id as string) ?? null;
+    const itemId = (ln.hub_inventory_item_id as string) ?? null;
+    const rule = stId ? ruleByService.get(stId) : itemId ? ruleByProduct.get(itemId) : undefined;
+    const est = estimateCommission(rule, commercialBase);
+    pushEntry({
+      receivableId: ln.receivable_id,
+      lineId: ln.id,
+      description: `Devolução: ${String(ln.description ?? '')}`,
+      stId,
+      itemId,
+      commercialBase,
+      commission: est.commission,
+      basis: est.basis,
+      rate: est.rate,
+      sign: -1,
     });
   }
 
@@ -6523,7 +6536,7 @@ async function buildCommissionsReport(params: {
     data: {
       period: { from: fromYmd, to: toYmd },
       summary: {
-        receivables_count: onlyStaffId ? receivableIdsWithKeptLines.size : recIds.length,
+        receivables_count: onlyStaffId ? receivableIdsWithKeptLines.size : bundle.salesHeaders.length,
         lines_with_commission: linesWithCommission,
         total_commission: totalCommission,
         total_sales: totalSales,
@@ -6532,6 +6545,9 @@ async function buildCommissionsReport(params: {
       by_product: [...byProduct.values()].sort((a, b) => b.commission_total - a.commission_total),
       by_staff: [...byStaff.values()].sort((a, b) => b.commission_total - a.commission_total),
       items: items.slice(0, 300),
+      estimation: true,
+      notes:
+        'Comissão estimada (regras ativas atuais). Sem snapshot histórico de regra — alteração de regra muda estimativas. Devoluções geram ajuste negativo na competência do evento. Unidade estrita.',
     },
   };
 }

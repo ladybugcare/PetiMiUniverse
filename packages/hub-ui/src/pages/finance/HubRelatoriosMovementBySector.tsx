@@ -27,6 +27,7 @@ type Props = { clinicId: string; unitId: string; period: HubReportPeriod };
 
 function sectorLabel(group: string): string {
   if (group === 'produtos') return 'Produtos';
+  if (group === 'nao_alocado_financeiro') return 'Não alocado (financeiro)';
   return serviceGroupLabel(group);
 }
 
@@ -121,7 +122,13 @@ export const HubRelatoriosMovementBySector: React.FC<Props> = ({ clinicId, unitI
     <div className="hub-relatorios__overview">
       <div className="hub-relatorios__overview-toolbar">
         <p className="hub-relatorios__overview-period">
-          Período analisado: <strong>{periodLabel}</strong>
+          Data da cobrança / devoluções no período: <strong>{periodLabel}</strong>
+          {data?.notes ? (
+            <>
+              {' '}
+              · <span className="hub-clientes__muted">{data.notes}</span>
+            </>
+          ) : null}
         </p>
         <HubRelatoriosExportButton
           onClick={onExport}
@@ -135,9 +142,11 @@ export const HubRelatoriosMovementBySector: React.FC<Props> = ({ clinicId, unitI
       <div className="hub-servicos__metrics hub-relatorios__kpi-row" aria-live="polite">
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Total vendido</div>
+            <div className="hub-servicos__metric-label">Receita líquida</div>
             <div className="hub-servicos__metric-value">{formatBrl(data?.summary.total ?? 0)}</div>
-            <div className="hub-servicos__metric-sub">{periodLabel}</div>
+            <div className="hub-servicos__metric-sub">
+              Devoluções {formatBrl(data?.summary.returns_commercial ?? 0)}
+            </div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>
             <CircleDollarSign size={20} strokeWidth={2} />

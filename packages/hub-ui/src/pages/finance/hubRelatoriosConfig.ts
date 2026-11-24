@@ -81,7 +81,8 @@ export const HUB_REPORTS: HubReportDefinition[] = [
     id: 'sales-adjustments',
     category: 'financeiro',
     title: 'Vendas e acertos',
-    description: 'Recebíveis criados no período e acertos (descontos, estornos, baixas).',
+    description:
+      'Cobranças geradas (data da cobrança) e acertos financeiros (reembolsos/descontos) — semânticas separadas.',
     permission: 'hub.financial.read',
     requiresUnit: true,
     periodFilter: 'standard',
@@ -90,7 +91,8 @@ export const HUB_REPORTS: HubReportDefinition[] = [
     id: 'product-sales',
     category: 'financeiro',
     title: 'Vendas por produto',
-    description: 'Receita, COGS e margem por produto; mix serviços vs produtos no período.',
+    description:
+      'Receita líquida, devoluções, custo histórico e margem por produto (data da cobrança).',
     permission: 'hub.financial.read',
     requiresUnit: true,
     periodFilter: 'standard',
@@ -100,7 +102,7 @@ export const HUB_REPORTS: HubReportDefinition[] = [
     category: 'financeiro',
     title: 'Movimentação por setor',
     description:
-      'Vendas do período agrupadas por grupo de serviço (banho e tosa, clínica, hotel, produtos etc.).',
+      'Receita líquida por setor (serviços/produtos), com bucket Não alocado para reembolso financeiro sem linha.',
     permission: 'hub.financial.read',
     requiresUnit: true,
     periodFilter: 'standard',
@@ -119,7 +121,7 @@ export const HUB_REPORTS: HubReportDefinition[] = [
     id: 'commissions',
     category: 'financeiro',
     title: 'Comissões',
-    description: 'Estimativa de comissões por serviço e profissional no período.',
+    description: 'Comissão estimada por serviço e profissional (não liquidada).',
     permission: 'hub.financial.read',
     requiresUnit: true,
     periodFilter: 'standard',

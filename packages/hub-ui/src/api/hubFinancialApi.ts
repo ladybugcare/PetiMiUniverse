@@ -507,9 +507,15 @@ export type HubFinanceRevenueReport = {
 
 export type HubFinanceTicketAverageReport = {
   period: { from: string; to: string };
+  kind?: string;
   receivables_count: number;
   total: number;
-  ticket_average: number;
+  ticket_average: number | null;
+  reliable_snapshot_count?: number;
+  legacy_incomplete_count?: number;
+  competence?: string;
+  formula?: string;
+  notes?: string;
 };
 
 export type HubFinanceTopServicesReport = {
@@ -519,11 +525,14 @@ export type HubFinanceTopServicesReport = {
 
 export type HubFinanceMovementBySectorReport = {
   period: { from: string; to: string };
+  competence?: { sales: string; returns: string };
   summary: {
     receivables_count: number;
     lines_count: number;
     total: number;
     groups_count: number;
+    returns_commercial?: number;
+    unallocated_financial_refunds?: number;
   };
   by_group: Array<{
     service_group: string;
@@ -540,28 +549,47 @@ export type HubFinanceMovementBySectorReport = {
     quantity: number;
     total: number;
   }>;
+  notes?: string;
 };
 
 export type HubFinanceProductSalesReport = {
   period: { from: string; to: string };
+  competence?: { sales: string; returns: string };
   mix: { services: number; products: number; other: number; total: number };
   summary: {
     items_count: number;
     quantity: number;
+    quantity_sold?: number;
+    quantity_returned?: number;
     revenue: number;
+    revenue_gross?: number;
+    returns_commercial?: number;
     cogs: number;
-    margin: number;
+    margin: number | null;
     margin_pct: number | null;
+    margin_complete?: boolean;
+    cost_unregistered_revenue?: number;
+    unallocated_financial_refunds?: number;
+    legacy_snapshot_incomplete_count?: number;
+    unassigned_unit_excluded?: boolean;
   };
   items: Array<{
     item_id: string | null;
     name: string;
     item_kind: string | null;
     quantity: number;
+    quantity_sold?: number;
+    quantity_returned?: number;
     revenue: number;
+    revenue_gross?: number;
+    returns_commercial?: number;
     cogs: number;
-    margin: number;
+    cogs_recorded?: number;
+    cogs_recovered?: number;
+    margin: number | null;
     margin_pct: number | null;
+    margin_complete?: boolean;
+    cost_unregistered_revenue?: number;
   }>;
   notes?: string;
 };
@@ -583,8 +611,13 @@ export type HubFinanceSalesAdjustmentsReport = {
   period: { from: string; to: string };
   sales: {
     receivables_count: number;
+    total_at_sale?: number;
     total: number;
-    by_status: Record<string, { count: number; total: number }>;
+    by_status: Record<
+      string,
+      { count: number; total_at_sale?: number; final_total?: number; total?: number }
+    >;
+    cancelled_without_commercial_return?: number;
   };
   adjustments: {
     count: number;
@@ -599,7 +632,9 @@ export type HubFinanceSalesAdjustmentsReport = {
       created_at: string;
       guardian_name: string | null;
     }>;
+    note?: string;
   };
+  notes?: string;
 };
 
 export type HubAbsentClientsReport = {
@@ -626,6 +661,8 @@ export type HubAbsentClientsReport = {
 
 export type HubFinanceCommissionsReport = {
   period: { from: string; to: string };
+  estimation?: boolean;
+  notes?: string;
   summary: {
     receivables_count: number;
     lines_with_commission: number;

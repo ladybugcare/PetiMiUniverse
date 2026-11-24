@@ -64,21 +64,39 @@ type HubRelatoriosSalesAdjustmentsProps = {
   period: HubReportPeriod;
 };
 
+function breakdownAmount(value: {
+  count: number;
+  total?: number;
+  total_at_sale?: number;
+  final_total?: number;
+}): number {
+  if (typeof value.total_at_sale === 'number') return value.total_at_sale;
+  if (typeof value.total === 'number') return value.total;
+  if (typeof value.final_total === 'number') return value.final_total;
+  return 0;
+}
+
 function toBreakdown(
-  entries: Array<[string, { count: number; total: number }]>,
+  entries: Array<
+    [string, { count: number; total?: number; total_at_sale?: number; final_total?: number }]
+  >,
   labels: Record<string, string>,
   tones: Record<string, string>,
 ): BreakdownRow[] {
-  const maxTotal = Math.max(0, ...entries.map(([, value]) => value.total));
+  const amounts = entries.map(([, value]) => breakdownAmount(value));
+  const maxTotal = Math.max(0, ...amounts);
   return entries
-    .map(([key, value]) => ({
-      key,
-      label: labels[key] ?? key,
-      tone: tones[key] ?? 'muted',
-      count: value.count,
-      total: value.total,
-      widthPct: maxTotal > 0 ? (value.total / maxTotal) * 100 : 0,
-    }))
+    .map(([key, value], idx) => {
+      const total = amounts[idx] ?? 0;
+      return {
+        key,
+        label: labels[key] ?? key,
+        tone: tones[key] ?? 'muted',
+        count: value.count,
+        total,
+        widthPct: maxTotal > 0 ? (total / maxTotal) * 100 : 0,
+      };
+    })
     .sort((a, b) => b.total - a.total);
 }
 
@@ -173,11 +191,11 @@ export const HubRelatoriosSalesAdjustments: React.FC<HubRelatoriosSalesAdjustmen
       <div className="hub-servicos__metrics hub-relatorios__kpi-row" aria-live="polite">
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Vendas (recebíveis)</div>
+            <div className="hub-servicos__metric-label">Cobranças geradas</div>
             <div className="hub-servicos__metric-value">
               {(data?.sales.receivables_count ?? 0).toLocaleString('pt-BR')}
             </div>
-            <div className="hub-servicos__metric-sub">{periodLabel}</div>
+            <div className="hub-servicos__metric-sub">Data da cobrança · {periodLabel}</div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>
             <Receipt size={20} strokeWidth={2} />
@@ -185,9 +203,13 @@ export const HubRelatoriosSalesAdjustments: React.FC<HubRelatoriosSalesAdjustmen
         </div>
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Valor das vendas</div>
-            <div className="hub-servicos__metric-value">{formatBrl(data?.sales.total ?? 0)}</div>
-            <div className="hub-servicos__metric-sub">Recebíveis criados no período</div>
+            <div className="hub-servicos__metric-label">Total na venda</div>
+            <div className="hub-servicos__metric-value">
+              {formatBrl(data?.sales.total_at_sale ?? data?.sales.total ?? 0)}
+            </div>
+            <div className="hub-servicos__metric-sub">
+              Vigente {formatBrl(data?.sales.total ?? 0)} · histórico imutável na cobrança
+            </div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>
             <CircleDollarSign size={20} strokeWidth={2} />
@@ -195,11 +217,11 @@ export const HubRelatoriosSalesAdjustments: React.FC<HubRelatoriosSalesAdjustmen
         </div>
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Acertos</div>
+            <div className="hub-servicos__metric-label">Acertos financeiros</div>
             <div className="hub-servicos__metric-value">
               {(data?.adjustments.count ?? 0).toLocaleString('pt-BR')}
             </div>
-            <div className="hub-servicos__metric-sub">Descontos, estornos e baixas</div>
+            <div className="hub-servicos__metric-sub">Reembolsos / descontos / anulações (≠ devolução comercial)</div>
           </div>
           <div
             className={`hub-servicos__metric-icon${(data?.adjustments.count ?? 0) > 0 ? '' : ' hub-servicos__metric-icon--muted'}`}
