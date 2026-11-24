@@ -125,17 +125,32 @@ describe('resolveComandaCheckoutCTA', () => {
     ).toEqual({ kind: 'none' });
   });
 
-  it('respeita edit_scopes.financeiro', () => {
+  it('respeita edit_scopes.financeiro sem recebível ativo', () => {
     expect(
       resolveComandaCheckoutCTA(
         'financeiro',
         comandaInput({
           open_item_ids: ['item-a'],
           balance_due: 50,
+          active_receivable_ids: [],
           edit_scopes: { caixa: false, financeiro: false, locked_reason: 'paid_and_complete' },
         }),
       ),
     ).toEqual({ kind: 'none' });
+  });
+
+  it('financeiro quitada ainda oferece Ver cobrança para devolução/estorno', () => {
+    expect(
+      resolveComandaCheckoutCTA(
+        'financeiro',
+        comandaInput({
+          open_item_ids: [],
+          balance_due: 0,
+          active_receivable_ids: ['recv-1'],
+          edit_scopes: { caixa: false, financeiro: false, locked_reason: 'paid_and_complete' },
+        }),
+      ),
+    ).toEqual({ kind: 'receivable_drawer', label: 'Ver cobrança' });
   });
 });
 

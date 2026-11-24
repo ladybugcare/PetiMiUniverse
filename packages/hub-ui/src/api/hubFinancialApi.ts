@@ -88,6 +88,10 @@ export type HubFinanceReceivable = {
   source_id: string;
   original_amount: number;
   final_amount: number;
+  /** Snapshot do líquido na finalização (quando preenchido). */
+  net_amount_at_sale?: number | null;
+  /** Acumulado comercial já devolvido. */
+  returned_amount?: number;
   currency: string;
   status: string;
   due_date?: string | null;
@@ -200,7 +204,12 @@ export type HubFinanceReceivableDetail = HubFinanceReceivable & {
   adjustments?: HubFinanceAdjustment[];
   product_returns?: HubProductReturnEvent[];
   stock_return_status?: HubStockReturnStatus;
+  /** Pago líquido efetivo (posted − refunds de linha). */
   paid_amount?: number;
+  /** Soma bruta dos payments posted. */
+  posted_amount?: number;
+  /** Refunds de linha já liquidados (payment_id null). */
+  line_refunds_amount?: number;
   balance_amount?: number;
 };
 

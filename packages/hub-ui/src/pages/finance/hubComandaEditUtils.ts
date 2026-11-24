@@ -58,17 +58,19 @@ export function resolveComandaCheckoutCTA(
     return { kind: 'checkout_drawer', label: 'Cobrar' };
   }
 
+  // Mesmo com comanda quitada/bloqueada para edição, o financeiro precisa abrir a
+  // cobrança para devolução/estorno (Etapa A — devoluções sucessivas).
+  if (activeReceivableIds.length > 0) {
+    if (balanceDue > BALANCE_EPSILON && scopes?.financeiro !== false) {
+      return { kind: 'receivable_drawer', label: 'Registrar pagamento' };
+    }
+    return { kind: 'receivable_drawer', label: 'Ver cobrança' };
+  }
+
   if (scopes && !scopes.financeiro) return { kind: 'none' };
 
   if (openItemIds.length > 0) {
     return { kind: 'checkout_drawer', label: 'Faturar itens' };
-  }
-
-  if (activeReceivableIds.length > 0) {
-    if (balanceDue > BALANCE_EPSILON) {
-      return { kind: 'receivable_drawer', label: 'Registrar pagamento' };
-    }
-    return { kind: 'receivable_drawer', label: 'Ver cobrança' };
   }
 
   return { kind: 'none' };

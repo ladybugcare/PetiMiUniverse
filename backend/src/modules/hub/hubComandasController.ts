@@ -691,7 +691,16 @@ async function computeComandaCardFeeTotals(
 async function computeComandaBalancePayload(
   comandaId: string,
   clinicId: string
-): Promise<{ paid_total: number; balance_due: number; total_amount: number }> {
+): Promise<{
+  paid_total: number;
+  balance_due: number;
+  total_amount: number;
+  /** Soma dos líquidos vigentes dos recebíveis ativos (após devoluções). */
+  net_total: number;
+  returned_amount: number;
+  posted_total: number;
+  line_refunds_total: number;
+}> {
   const { data: comandaRow, error: cErr } = await supabaseAdmin
     .from('hub_comandas')
     .select('total_amount, discount_amount')
@@ -716,17 +725,33 @@ async function computeComandaBalancePayload(
     .not('comanda_item_id', 'is', null);
 
   const recIds = [...new Set((lineRows ?? []).map((r) => r.receivable_id as string))];
-  let activeRecById = new Map<string, boolean>();
+  /** Recebível “conta” para faturamento de itens (não reabre linha na comanda). */
+  let billsItemByRecId = new Map<string, boolean>();
+  /** Recebível listável na ficha financeira (exclui cancelamento puro sem devolução). */
+  let listableRecById = new Map<string, boolean>();
   if (recIds.length) {
-    const { data: recs } = await supabaseAdmin.from('hub_receivables').select('id, status').in('id', recIds);
-    activeRecById = new Map((recs ?? []).map((r) => [r.id as string, String(r.status) !== 'cancelled']));
+    const { data: recs } = await supabaseAdmin
+      .from('hub_receivables')
+      .select('id, status, returned_amount')
+      .in('id', recIds);
+    for (const r of recs ?? []) {
+      const id = r.id as string;
+      const status = String(r.status ?? '');
+      const returned = Number(r.returned_amount ?? 0);
+      // Cancelamento comercial puro (sem devolução) pode reabrir itens; devolução total
+      // marca cancelled/refunded mas o histórico da venda e o líquido vigente devem permanecer.
+      const closedByReturn = returned > 0.009 || status === 'refunded';
+      const isPureCancel = status === 'cancelled' && !closedByReturn;
+      billsItemByRecId.set(id, !isPureCancel);
+      listableRecById.set(id, !isPureCancel);
+    }
   }
 
   const invoicedItemIds = new Set<string>();
   for (const row of lineRows ?? []) {
     const cid = row.comanda_item_id as string;
     const rid = row.receivable_id as string;
-    if (cid && activeRecById.get(rid)) invoicedItemIds.add(cid);
+    if (cid && billsItemByRecId.get(rid)) invoicedItemIds.add(cid);
   }
 
   const allItems = items ?? [];
@@ -737,27 +762,67 @@ async function computeComandaBalancePayload(
   );
   const allLinesTotal = round2(allItems.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
 
-  const paid = await sumPaymentsForComandaReceivables(comandaId, clinicId);
+  const postedGross = await sumPaymentsForComandaReceivables(comandaId, clinicId);
 
   const { data: recs, error: rErr } = await supabaseAdmin
     .from('hub_receivables')
-    .select('id, final_amount, status')
+    .select('id, final_amount, status, returned_amount')
     .eq('comanda_id', comandaId)
-    .eq('clinic_id', clinicId)
-    .neq('status', 'cancelled');
+    .eq('clinic_id', clinicId);
   if (rErr) throw new Error(rErr.message);
+
   let receivableResidual = 0;
+  let netTotal = 0;
+  let returnedTotal = 0;
+  let lineRefundsTotal = 0;
+  let paidNetTotal = 0;
+
   for (const r of recs ?? []) {
     const rid = r.id as string;
+    const status = String(r.status ?? '');
+    const returnedAmt = Number(r.returned_amount ?? 0);
+    const closedByReturn = returnedAmt > 0.009 || status === 'refunded';
+    const isPureCancel = status === 'cancelled' && !closedByReturn;
+    // Cancelamento puro sem devolução não entra no líquido vigente da comanda.
+    if (isPureCancel) continue;
+
     const fa = Number(r.final_amount ?? 0);
-    const { data: pays } = await supabaseAdmin
-      .from('hub_payments')
-      .select('amount')
-      .eq('receivable_id', rid)
-      .eq('status', 'posted');
-    const paidRec = round2((pays ?? []).reduce((a, row) => a + Number(row.amount ?? 0), 0));
-    receivableResidual += round2(Math.max(0, fa - paidRec));
+    netTotal = round2(netTotal + fa);
+    returnedTotal = round2(returnedTotal + returnedAmt);
+
+    const [{ data: pays }, { data: refundAdjs }] = await Promise.all([
+      supabaseAdmin
+        .from('hub_payments')
+        .select('amount')
+        .eq('receivable_id', rid)
+        .eq('status', 'posted'),
+      supabaseAdmin
+        .from('hub_financial_adjustments')
+        .select('amount, payment_id')
+        .eq('receivable_id', rid)
+        .eq('adjustment_type', 'refund'),
+    ]);
+    const postedRec = round2((pays ?? []).reduce((a, row) => a + Number(row.amount ?? 0), 0));
+    const lineRefundsRec = round2(
+      (refundAdjs ?? [])
+        .filter((row) => row.payment_id == null)
+        .reduce((a, row) => a + Number(row.amount ?? 0), 0),
+    );
+    lineRefundsTotal = round2(lineRefundsTotal + lineRefundsRec);
+    const netPaidRec = round2(Math.max(0, postedRec - lineRefundsRec));
+    paidNetTotal = round2(paidNetTotal + netPaidRec);
+    receivableResidual += round2(Math.max(0, fa - netPaidRec));
   }
+
+  // Itens ainda não faturados entram no líquido vigente da comanda.
+  const openHeaderDisc = openLinesHeaderDiscount({
+    openLinesTotal,
+    allLinesTotal,
+    headerDiscount,
+    openItemsCount: openItemIds.length,
+    allItemsCount: allItems.length,
+  });
+  netTotal = round2(netTotal + Math.max(0, openLinesTotal - openHeaderDisc));
 
   const balance_due = computeBalanceDueFromParts({
     openLinesTotal,
@@ -767,7 +832,17 @@ async function computeComandaBalancePayload(
     allItemsCount: allItems.length,
     receivableResidual,
   });
-  return { paid_total: paid, balance_due, total_amount: totalAmount };
+  return {
+    /** Pago líquido efetivo (posted − refunds de linha). */
+    paid_total: paidNetTotal,
+    balance_due,
+    /** Bruto original da comanda (linhas históricas preservadas). */
+    total_amount: totalAmount,
+    net_total: netTotal,
+    returned_amount: returnedTotal,
+    posted_total: postedGross,
+    line_refunds_total: lineRefundsTotal,
+  };
 }
 
 /** Preenche finance_handoff_at sem criar recebíveis (ex.: saldo restante após pagamento parcial). */
@@ -2630,24 +2705,38 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
     .not('comanda_item_id', 'is', null);
 
   const recIds = [...new Set((lineRows ?? []).map((r) => r.receivable_id as string))];
-  let activeRecById = new Map<string, boolean>();
+  /** Itens permanecem faturados salvo cancelamento puro (sem devolução). */
+  let billsItemByRecId = new Map<string, boolean>();
+  /** Listáveis na ficha: paid/pending/refunded + cancelled-com-devolução. */
+  let listableRecById = new Map<string, boolean>();
   if (recIds.length) {
-    const { data: recs } = await supabaseAdmin.from('hub_receivables').select('id, status').in('id', recIds);
-    activeRecById = new Map((recs ?? []).map((r) => [r.id as string, String(r.status) !== 'cancelled']));
+    const { data: recs } = await supabaseAdmin
+      .from('hub_receivables')
+      .select('id, status, returned_amount')
+      .in('id', recIds);
+    for (const r of recs ?? []) {
+      const id = r.id as string;
+      const status = String(r.status ?? '');
+      const returned = Number(r.returned_amount ?? 0);
+      const closedByReturn = returned > 0.009 || status === 'refunded';
+      const isPureCancel = status === 'cancelled' && !closedByReturn;
+      billsItemByRecId.set(id, !isPureCancel);
+      listableRecById.set(id, !isPureCancel);
+    }
   }
 
   const invoicedItemIds = new Set<string>();
   for (const row of lineRows ?? []) {
     const cid = row.comanda_item_id as string;
     const rid = row.receivable_id as string;
-    if (cid && activeRecById.get(rid)) invoicedItemIds.add(cid);
+    if (cid && billsItemByRecId.get(rid)) invoicedItemIds.add(cid);
   }
 
   const openItemIds = (items ?? []).map((it) => it.id as string).filter((id) => !invoicedItemIds.has(id));
-  const activeReceivableIds = recIds.filter((id) => activeRecById.get(id));
+  const activeReceivableIds = recIds.filter((id) => listableRecById.get(id));
 
   const comandaRow = comanda as Record<string, unknown>;
-  const [{ paid_total, balance_due }, cardFeeTotals] = await Promise.all([
+  const [balancePayload, cardFeeTotals] = await Promise.all([
     computeComandaBalancePayload(comandaId, clinicId),
     computeComandaCardFeeTotals(comandaId, clinicId).catch((e) => {
       // Colunas de taxa ausentes (migration 154) → zera sem quebrar o detail.
@@ -2655,6 +2744,14 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
       return EMPTY_CARD_FEE_TOTALS;
     }),
   ]);
+  const {
+    paid_total,
+    balance_due,
+    net_total,
+    returned_amount,
+    posted_total,
+    line_refunds_total,
+  } = balancePayload;
   const operational_complete = await isOperationalCompleteForComanda(comandaRow);
   const edit_scopes = computeComandaEditScopes(comandaRow, operational_complete, balance_due);
 
@@ -2775,6 +2872,11 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
     active_receivable_ids: activeReceivableIds,
     paid_total,
     balance_due,
+    /** Líquido vigente (recebíveis após devoluções + itens abertos). */
+    net_total,
+    returned_amount,
+    posted_total,
+    line_refunds_total,
     card_gross_total: cardFeeTotals.card_gross_total,
     card_fee_total: cardFeeTotals.card_fee_total,
     card_net_total: cardFeeTotals.card_net_total,

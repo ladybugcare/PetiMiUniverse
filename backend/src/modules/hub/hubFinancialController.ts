@@ -36,6 +36,10 @@ import {
   validatePaymentCashSession,
   type PaymentReversalMode,
 } from './hubFinanceLedger';
+import {
+  balanceDue as balanceDueFromNetPaid,
+  netPaidEffective as netPaidEffectiveFromParts,
+} from './hubReceivableFinancialBalance';
 import { applyQuoteDiscount, quoteDiscountAmount } from './hubQuoteDiscount';
 import { getOrCreateHubClinicSettings } from './hubClinicSettingsController';
 import {
@@ -2492,11 +2496,24 @@ async function buildReceivableDetail(receivableId: string, clinicId: string): Pr
       };
     },
   );
-  const paidAmount = round2(
+  const postedAmount = round2(
     paymentRows
       .filter((row) => String(row.status ?? 'posted') === 'posted')
       .reduce((sum, row) => sum + Number(row.amount ?? 0), 0),
   );
+  const lineRefundsPaidOut = round2(
+    ((adjustments ?? []) as Array<Record<string, unknown>>)
+      .filter(
+        (row) =>
+          String(row.adjustment_type ?? '') === 'refund' &&
+          (row.payment_id == null || row.payment_id === undefined),
+      )
+      .reduce((sum, row) => sum + Number(row.amount ?? 0), 0),
+  );
+  const paidAmount = netPaidEffectiveFromParts({
+    postedPayments: postedAmount,
+    lineRefundsAlreadyPaidOut: lineRefundsPaidOut,
+  });
   const finalAmount = Number(rec.final_amount ?? 0);
   const productLineIds = (lines as Array<Record<string, unknown>>)
     .filter((l) => isProductStockLine(l))
@@ -2519,8 +2536,19 @@ async function buildReceivableDetail(receivableId: string, clinicId: string): Pr
     adjustments: adjustments ?? [],
     product_returns: productReturns ?? [],
     stock_return_status,
+    /** Pago líquido efetivo (posted − refunds de linha). */
     paid_amount: paidAmount,
-    balance_amount: round2(Math.max(0, finalAmount - paidAmount)),
+    /** Soma bruta dos payments posted (antes de refunds de linha). */
+    posted_amount: postedAmount,
+    line_refunds_amount: lineRefundsPaidOut,
+    returned_amount: Number(rec.returned_amount ?? 0),
+    net_amount_at_sale:
+      rec.net_amount_at_sale != null ? Number(rec.net_amount_at_sale) : null,
+    balance_amount: balanceDueFromNetPaid({
+      finalAmount,
+      postedPayments: postedAmount,
+      lineRefundsAlreadyPaidOut: lineRefundsPaidOut,
+    }),
   };
 }
 

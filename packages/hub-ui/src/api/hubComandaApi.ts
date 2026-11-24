@@ -85,8 +85,14 @@ export type HubComandaDetailResponse = {
   open_item_ids: string[];
   invoiced_item_ids: string[];
   active_receivable_ids?: string[];
+  /** Pago líquido efetivo (posted − refunds de linha). */
   paid_total?: number;
   balance_due?: number;
+  /** Líquido vigente (após devoluções comerciais) + itens abertos. */
+  net_total?: number;
+  returned_amount?: number;
+  posted_total?: number;
+  line_refunds_total?: number;
   /** Totais internos de taxa da maquininha (não expor ao tutor). */
   card_gross_total?: number;
   card_fee_total?: number;

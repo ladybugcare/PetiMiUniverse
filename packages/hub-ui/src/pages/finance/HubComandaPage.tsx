@@ -533,6 +533,14 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
     [mode, payload],
   );
 
+  /** Comanda quitada/fechada: ainda abre o painel do recebível (devolução/estorno). */
+  useEffect(() => {
+    if (mode !== 'financeiro' || !payload) return;
+    if (checkoutCta.kind !== 'receivable_drawer') return;
+    if (!searchParams.get('receivable_id') && !(payload.active_receivable_ids?.length)) return;
+    setShowReceivableDrawer(true);
+  }, [mode, payload, checkoutCta.kind, searchParams]);
+
   const showSendToFinanceiro = useMemo(
     () =>
       mode === 'caixa' &&
@@ -734,6 +742,8 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
         subtotal={summary.subtotal}
         discountAmount={summary.discountAmount}
         total={summary.total}
+        netTotal={payload.net_total}
+        returnedAmount={payload.returned_amount}
         paidTotal={payload.paid_total}
         balanceDue={payload.balance_due}
         cardFeeTotal={payload.card_fee_total}
@@ -750,10 +760,11 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
         onGuardianChange={allowedGuardians.length > 1 ? (id) => void handleGuardianChange(id) : undefined}
         onSave={() => void handleSave()}
         onCheckout={
-          canEdit &&
-          (checkoutCta.kind === 'checkout_drawer' || checkoutCta.kind === 'receivable_drawer')
+          checkoutCta.kind === 'receivable_drawer'
             ? handleCheckout
-            : undefined
+            : canEdit && checkoutCta.kind === 'checkout_drawer'
+              ? handleCheckout
+              : undefined
         }
         checkoutLabel={checkoutLabel}
         onSendToFinancial={showSendToFinanceiro ? handleSendToFinancial : undefined}

@@ -559,19 +559,26 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     standaloneReturnIdemKeyRef.current = null;
   }, []);
 
-  /** Estimativa de reembolso financeiro (pago − líquido após devolução comercial). */
+  /**
+   * Estimativa de reembolso financeiro desta operação.
+   * Usa pago líquido efetivo (posted − refunds de linha já liquidados), alinhado à RPC.
+   */
   const estimatedFinancialRefund = useMemo(() => {
     if (!detail) return 0;
     const commercial = selectedMerchandiseAmount(merchandiseLines, standaloneMerchandiseReturn);
     if (commercial <= 0) return 0;
-    const returnedBefore = Number((detail as { returned_amount?: number }).returned_amount ?? 0);
+    const returnedBefore = Number(detail.returned_amount ?? 0);
     const netAtSale = Number(
-      (detail as { net_amount_at_sale?: number | null }).net_amount_at_sale ??
-        Number(detail.final_amount ?? 0) + returnedBefore,
+      detail.net_amount_at_sale ?? Number(detail.final_amount ?? 0) + returnedBefore,
     );
     const finalAfter = Math.max(0, Math.round((netAtSale - returnedBefore - commercial) * 100) / 100);
-    const posted = postedPayments.reduce((s, p) => s + Number(p.amount ?? 0), 0);
-    return Math.max(0, Math.round((posted - finalAfter) * 100) / 100);
+    const posted =
+      detail.posted_amount != null
+        ? Number(detail.posted_amount)
+        : postedPayments.reduce((s, p) => s + Number(p.amount ?? 0), 0);
+    const lineRefundsBefore = Number(detail.line_refunds_amount ?? 0);
+    const overpay = Math.max(0, Math.round((posted - finalAfter) * 100) / 100);
+    return Math.max(0, Math.round((overpay - lineRefundsBefore) * 100) / 100);
   }, [detail, merchandiseLines, standaloneMerchandiseReturn, postedPayments]);
 
   useEffect(() => {
@@ -1076,10 +1083,14 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       </CheckoutDrawerBillingShell>
     ) : null;
 
+  // Em cobrança já paga a única aba é Cancelar (pré-selecionada). Esconder a
+  // devolução avulsa nesse caso bloqueava T02/T03 e devoluções sucessivas na UI.
+  // Só ocultamos quando o operador está no cancelamento com saldo ainda a receber
+  // (nesse fluxo a devolução física já aparece no formulário de cancel).
   const showStandaloneMerchandiseReturn =
     pendingMerchandiseLines.length > 0 &&
     hasPermission('hub.financial.write') &&
-    billingAction !== 'cancel';
+    (billingAction !== 'cancel' || !canRegisterPayment);
 
   const reversePayment = useMemo(
     () => (detail?.payments ?? []).find((p) => p.id === reversePaymentId) ?? null,
@@ -1364,8 +1375,18 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       />
 
       <CheckoutDrawerSummaryGrid>
-        <CheckoutDrawerSummaryCell label="Valor final" value={formatBrl(Number(detail.final_amount ?? 0))} />
-        <CheckoutDrawerSummaryCell label="Pago" value={formatBrl(selectedPaid)} />
+        <CheckoutDrawerSummaryCell
+          label="Original"
+          value={formatBrl(Number(detail.original_amount ?? detail.final_amount ?? 0))}
+        />
+        {Number(detail.returned_amount ?? 0) > 0.009 ? (
+          <CheckoutDrawerSummaryCell
+            label="Devolvido"
+            value={formatBrl(Number(detail.returned_amount ?? 0))}
+          />
+        ) : null}
+        <CheckoutDrawerSummaryCell label="Vigente" value={formatBrl(Number(detail.final_amount ?? 0))} />
+        <CheckoutDrawerSummaryCell label="Pago líquido" value={formatBrl(selectedPaid)} />
         <CheckoutDrawerSummaryCell label="Saldo" value={formatBrl(selectedBalance)} highlight />
       </CheckoutDrawerSummaryGrid>
 
@@ -1682,12 +1703,18 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
             <span>Original</span>
             <strong>{formatBrl(Number(detail.original_amount ?? 0))}</strong>
           </div>
+          {Number(detail.returned_amount ?? 0) > 0.009 ? (
+            <div>
+              <span>Devolvido</span>
+              <strong>{formatBrl(Number(detail.returned_amount ?? 0))}</strong>
+            </div>
+          ) : null}
           <div>
-            <span>Final</span>
+            <span>Vigente</span>
             <strong>{formatBrl(Number(detail.final_amount ?? 0))}</strong>
           </div>
           <div>
-            <span>Pago</span>
+            <span>Pago líquido</span>
             <strong>{formatBrl(selectedPaid)}</strong>
           </div>
           <div>

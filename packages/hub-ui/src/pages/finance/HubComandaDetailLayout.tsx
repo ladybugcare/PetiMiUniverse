@@ -50,6 +50,9 @@ export interface HubComandaDetailLayoutProps {
   subtotal: number;
   discountAmount: number;
   total: number;
+  /** Líquido vigente após devoluções (quando distinto do total bruto). */
+  netTotal?: number;
+  returnedAmount?: number;
   paidTotal?: number;
   balanceDue?: number;
   cardFeeTotal?: number;
@@ -89,6 +92,8 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
   subtotal,
   discountAmount,
   total,
+  netTotal,
+  returnedAmount = 0,
   paidTotal = 0,
   balanceDue = 0,
   cardFeeTotal = 0,
@@ -178,7 +183,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
             {metaParts.length > 0 ? <p className="hub-quote-detail__meta-line">{metaParts.join(' · ')}</p> : null}
           </div>
           <div className="hub-quote-detail__hero-actions">
-            {canEdit && onCheckout ? (
+            {onCheckout ? (
               <button
                 type="button"
                 className="hub-quote-detail__btn hub-quote-detail__btn--primary"
@@ -412,9 +417,21 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
                   <span>Total</span>
                   <span>{fmtBrl(total)}</span>
                 </div>
-                {paidTotal > 0 ? (
+                {returnedAmount > 0.009 ? (
+                  <div className="hub-quote-detail__money-row hub-quote-detail__money-row--discount">
+                    <span>Devolvido</span>
+                    <span>−{fmtBrl(returnedAmount)}</span>
+                  </div>
+                ) : null}
+                {netTotal != null && Math.abs(netTotal - total) > 0.009 ? (
+                  <div className="hub-quote-detail__money-row hub-quote-detail__money-row--total">
+                    <span>Vigente</span>
+                    <span>{fmtBrl(netTotal)}</span>
+                  </div>
+                ) : null}
+                {paidTotal > 0.009 || returnedAmount > 0.009 ? (
                   <div className="hub-quote-detail__money-row">
-                    <span>Pago</span>
+                    <span>Pago líquido</span>
                     <span>{fmtBrl(paidTotal)}</span>
                   </div>
                 ) : null}
