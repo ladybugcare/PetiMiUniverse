@@ -37,6 +37,7 @@ import {
   uiRegisterPaymentOnReceivable,
   ensureOpenCashSessionApi,
   closeCashSessionApi,
+  attachVercelProtectionBypass,
   type SaleFixture,
   type QaProductCatalog,
   type QaGuardian,
@@ -79,7 +80,11 @@ test.afterEach(async ({}, testInfo) => {
 
 async function financeSession(browser: import('@playwright/test').Browser): Promise<Page> {
   if (financePage && !financePage.isClosed()) return financePage;
-  const ctx = await browser.newContext();
+  const ctx = await browser.newContext({
+    baseURL: process.env.E2E_HUB_BASE_URL || undefined,
+    locale: 'pt-BR',
+  });
+  await attachVercelProtectionBypass(ctx);
   financePage = await ctx.newPage();
   const pw = qaStagingPassword();
   if (!pw) throw new Error('QA_STAGING_PASSWORD ausente');

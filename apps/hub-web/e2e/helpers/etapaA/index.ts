@@ -9,3 +9,4 @@ export * from './sales';
 export * from './assertions';
 export * from './returnUi';
 export * from './reverseUi';
+export * from './vercelProtection';
