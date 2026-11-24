@@ -51,9 +51,8 @@ export async function openFinanceComandaReceivable(
   await expect(page.locator('.hub-refreshing-banner')).toHaveCount(0, { timeout: 60_000 }).catch(() => {});
 
   const shortId = fixture.comandaId.slice(0, 8).toUpperCase();
-  await expect(
-    page.getByRole('heading', { name: new RegExp(shortId, 'i') }).or(page.getByText(new RegExp(`#?${shortId}`, 'i')).first()),
-  ).toBeVisible({
+  // Preferir o h1 — o crumb também tem #SHORTID e o .or() estoura strict mode.
+  await expect(page.getByRole('heading', { name: new RegExp(`Comanda\\s*#?${shortId}`, 'i') })).toBeVisible({
     timeout: 90_000,
   });
 
