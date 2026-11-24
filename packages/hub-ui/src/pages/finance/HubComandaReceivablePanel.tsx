@@ -176,9 +176,6 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
   const paymentIdempotencyKeysRef = useRef<Record<string, string>>({});
   const [billingAction, setBillingAction] = useState<CheckoutDrawerBillingAction>('receive_now');
   const [cancelReason, setCancelReason] = useState('');
-  const [merchandiseReturn, setMerchandiseReturn] = useState<MerchandiseReturnValue>(() =>
-    emptyMerchandiseReturnValue(),
-  );
   const [standaloneReturnOpen, setStandaloneReturnOpen] = useState(false);
   const [standaloneReturnReason, setStandaloneReturnReason] = useState('');
   const [standaloneMerchandiseReturn, setStandaloneMerchandiseReturn] = useState<MerchandiseReturnValue>(
@@ -768,22 +765,15 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       showError('Informe o motivo do cancelamento (mín. 3 caracteres).');
       return;
     }
-    const pendingMerchandise = merchandiseLines.some((l) => !l.alreadyReturned);
-    if (pendingMerchandise && merchandiseReturn.returned && !merchandiseReturn.condition) {
-      showError('Selecione se a mercadoria está apta ou não para revenda.');
-      return;
-    }
     setPaymentLoading(true);
     try {
-      const stockFields = pendingMerchandise ? merchandiseReturnApiFields(merchandiseReturn) : {};
+      // Devolução física na comanda é só via "Registrar devolução" (abaixo).
       const res = await hubFinancialApi.cancelReceivable(detail.id, {
         clinic_id: clinicId,
         reason: cancelReason.trim(),
-        ...stockFields,
       });
       showSuccess(res.warning || 'Recebível cancelado.');
       setCancelReason('');
-      setMerchandiseReturn(emptyMerchandiseReturnValue());
       await loadDetail();
       onRefreshComanda?.();
       onCancelSuccess?.();
@@ -797,8 +787,6 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     detail,
     hasPermission,
     cancelReason,
-    merchandiseLines,
-    merchandiseReturn,
     showError,
     showSuccess,
     loadDetail,
@@ -1043,17 +1031,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       >
         <CheckoutDrawerActionTabs
           action={billingAction}
-          onActionChange={(next) => {
-            setBillingAction(next);
-            if (next === 'cancel') {
-              // Um único fluxo de devolução física: o do cancelamento.
-              setStandaloneReturnOpen(false);
-              setStandaloneReturnReason('');
-              setStandaloneMerchandiseReturn(assumedMerchandiseReturnValue(pendingMerchandiseLines));
-            } else {
-              setMerchandiseReturn(emptyMerchandiseReturnValue());
-            }
-          }}
+          onActionChange={setBillingAction}
           tabs={[
             ...(canRegisterPayment ? [{ value: 'receive_now' as const, label: 'Receber agora' }] : []),
             ...(canCancelReceivable ? [{ value: 'cancel' as const, label: 'Cancelar' }] : []),
@@ -1063,34 +1041,19 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
         {billingAction === 'receive_now' && canRegisterPayment ? paymentLinesEditor : null}
 
         {billingAction === 'cancel' && canCancelReceivable ? (
-          <>
-            <CheckoutDrawerCancelReasonField
-              id="comanda-fin-cancel-reason"
-              value={cancelReason}
-              onChange={setCancelReason}
-            />
-            {merchandiseLines.length > 0 ? (
-              <HubMerchandiseReturnSection
-                idPrefix="comanda-fin-stock"
-                lines={merchandiseLines}
-                value={merchandiseReturn}
-                onChange={setMerchandiseReturn}
-                disabled={paymentLoading}
-              />
-            ) : null}
-          </>
+          <CheckoutDrawerCancelReasonField
+            id="comanda-fin-cancel-reason"
+            value={cancelReason}
+            onChange={setCancelReason}
+          />
         ) : null}
       </CheckoutDrawerBillingShell>
     ) : null;
 
-  // Em cobrança já paga a única aba é Cancelar (pré-selecionada). Esconder a
-  // devolução avulsa nesse caso bloqueava T02/T03 e devoluções sucessivas na UI.
-  // Só ocultamos quando o operador está no cancelamento com saldo ainda a receber
-  // (nesse fluxo a devolução física já aparece no formulário de cancel).
+  // Único fluxo de devolução física na comanda: "Registrar devolução"
+  // (motivo + itens + condição). Cancelamento financeiro não embute estoque.
   const showStandaloneMerchandiseReturn =
-    pendingMerchandiseLines.length > 0 &&
-    hasPermission('hub.financial.write') &&
-    (billingAction !== 'cancel' || !canRegisterPayment);
+    pendingMerchandiseLines.length > 0 && hasPermission('hub.financial.write');
 
   const reversePayment = useMemo(
     () => (detail?.payments ?? []).find((p) => p.id === reversePaymentId) ?? null,
@@ -1152,15 +1115,13 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
                   onChange={(e) => setHistoricalAmount(e.target.value)}
                 />
               </label>
-              <label className="hub-clientes__label">
-                Data efetiva
-                <input
-                  type="date"
-                  className="hub-clientes__input"
-                  value={historicalDate}
-                  onChange={(e) => setHistoricalDate(e.target.value)}
-                />
-              </label>
+              <HubDateField
+                id="historical-cash-date-drawer"
+                label="Data efetiva"
+                valueIso={historicalDate}
+                onChangeIso={setHistoricalDate}
+                showTodayButton={false}
+              />
               <label className="hub-clientes__label">
                 Justificativa
                 <textarea
@@ -1205,15 +1166,13 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
               onChange={(e) => setHistoricalAmount(e.target.value)}
             />
           </label>
-          <label className="hub-clientes__label">
-            Data efetiva
-            <input
-              type="date"
-              className="hub-clientes__input"
-              value={historicalDate}
-              onChange={(e) => setHistoricalDate(e.target.value)}
-            />
-          </label>
+          <HubDateField
+            id="historical-cash-date"
+            label="Data efetiva"
+            valueIso={historicalDate}
+            onChangeIso={setHistoricalDate}
+            showTodayButton={false}
+          />
           <label className="hub-clientes__label">
             Justificativa
             <textarea
@@ -1510,7 +1469,6 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
                 type="button"
                 className="hub-quote-detail__text-btn"
                 onClick={() => {
-                  setMerchandiseReturn(emptyMerchandiseReturnValue());
                   setStandaloneNeedFinanceHandoff(false);
                   setStandaloneReturnOpen(true);
                   setStandaloneMerchandiseReturn(assumedMerchandiseReturnValue(pendingMerchandiseLines));
@@ -1741,7 +1699,6 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
               className="hub-clientes__btn hub-clientes__btn--ghost"
               style={{ marginTop: 8 }}
               onClick={() => {
-                setMerchandiseReturn(emptyMerchandiseReturnValue());
                 setStandaloneNeedFinanceHandoff(false);
                 setStandaloneReturnOpen(true);
                 setStandaloneMerchandiseReturn(assumedMerchandiseReturnValue(pendingMerchandiseLines));
