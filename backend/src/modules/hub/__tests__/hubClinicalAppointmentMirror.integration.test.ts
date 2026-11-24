@@ -15,6 +15,7 @@ import {
   TEST_PET_ID,
   TEST_UNIT_ID,
 } from '../../../__tests__/helpers/mockAuth';
+import { betaClinicSubscription } from '../../../__tests__/helpers/fixtures/hubSubscription';
 
 const SURGERY_SERVICE_TYPE_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const INTERNACAO_SERVICE_TYPE_ID = 'dddddddd-dddd-4ddd-8ddd-ddddddddddd2';
@@ -48,6 +49,7 @@ function baseTables(opts?: { withSurgeryService?: boolean; withInternacaoService
     serviceType(CLINIC_SERVICE_TYPE_ID, 'clinica', 'Consulta'),
   ];
   return {
+    clinic_hub_subscriptions: [betaClinicSubscription(TEST_CLINIC_ID)],
     hub_service_types,
     units: [{ id: TEST_UNIT_ID, clinic_id: TEST_CLINIC_ID, name: 'Matriz', is_main: true }],
     hub_pets: [
@@ -152,6 +154,35 @@ describe('Consultório → Agenda (espelho clínico)', () => {
       expect(surgeriesTable()[0]!.hub_appointment_id ?? null).toBeNull();
     });
 
+    it('sem scheduled_at espelha slot agora (in_progress / walk-in)', async () => {
+      const before = Date.now();
+      const res = await request(app)
+        .post('/api/hub/clinical/surgeries')
+        .send({
+          clinic_id: TEST_CLINIC_ID,
+          unit_id: TEST_UNIT_ID,
+          pet_id: TEST_PET_ID,
+          guardian_id: TEST_GUARDIAN_ID,
+          title: 'Cirurgia imediata',
+          create_new_case: true,
+          services: [{ hub_service_type_id: SURGERY_SERVICE_TYPE_ID }],
+        });
+
+      expect(res.status).toBe(201);
+      expect(appointmentsTable()).toHaveLength(1);
+      const appt = appointmentsTable()[0]!;
+      expect(appt).toMatchObject({
+        status: 'in_progress',
+        appointment_kind: 'clinical_walk_in',
+        hub_service_type_id: SURGERY_SERVICE_TYPE_ID,
+      });
+      const startMs = new Date(String(appt.starts_at)).getTime();
+      expect(startMs).toBeGreaterThanOrEqual(before - 1000);
+      expect(startMs).toBeLessThan(before + 15_000);
+      expect(surgeriesTable()[0]!.hub_appointment_id).toBe(appt.id);
+      expect(surgeriesTable()[0]!.scheduled_at).toBeTruthy();
+    });
+
     it('cancela o slot ao cancelar a cirurgia', async () => {
       const created = await request(app)
         .post('/api/hub/clinical/surgeries')
@@ -235,6 +266,55 @@ describe('Consultório → Agenda (espelho clínico)', () => {
 
       expect(res.status).toBe(200);
       expect(appointmentsTable()[0]?.status).toBe('done');
+    });
+
+    it('retorna 400 quando não há tipo de serviço de internação', async () => {
+      configureSupabaseMock({ tables: baseTables({ withInternacaoService: false }) });
+
+      const res = await request(app)
+        .post('/api/hub/clinical/hospitalizations')
+        .send({
+          clinic_id: TEST_CLINIC_ID,
+          unit_id: TEST_UNIT_ID,
+          pet_id: TEST_PET_ID,
+          guardian_id: TEST_GUARDIAN_ID,
+          reason: 'Sem diária cadastrada',
+          create_new_case: true,
+        });
+
+      expect(res.status).toBe(400);
+      expect(String(res.body.error || '')).toMatch(/Internação/i);
+      expect(hospitalizationsTable().every((h) => h.status === 'cancelled')).toBe(true);
+      expect(appointmentsTable()).toHaveLength(0);
+    });
+  });
+
+  describe('atendimento avulso (POST /encounters)', () => {
+    beforeEach(() => {
+      configureSupabaseMock({ tables: baseTables() });
+    });
+
+    it('cria slot na agenda ao abrir encounter sem hub_appointment_id', async () => {
+      const res = await request(app)
+        .post('/api/hub/encounters')
+        .send({
+          clinic_id: TEST_CLINIC_ID,
+          unit_id: TEST_UNIT_ID,
+          pet_id: TEST_PET_ID,
+          guardian_id: TEST_GUARDIAN_ID,
+          create_new_case: true,
+          new_case_title: 'Consulta avulsa',
+        });
+
+      expect(res.status).toBe(201);
+      expect(res.body.encounter?.hub_appointment_id).toBeTruthy();
+      expect(appointmentsTable()).toHaveLength(1);
+      expect(appointmentsTable()[0]).toMatchObject({
+        status: 'in_progress',
+        appointment_kind: 'clinical_walk_in',
+        hub_service_type_id: CLINIC_SERVICE_TYPE_ID,
+        pet_id: TEST_PET_ID,
+      });
     });
   });
 

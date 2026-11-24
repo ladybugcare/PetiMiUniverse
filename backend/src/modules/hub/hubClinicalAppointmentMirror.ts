@@ -126,23 +126,40 @@ export type InsertLinkedClinicalAppointmentOpts = {
   notes?: string | null;
   /** Caso clínico já resolvido no Consultório (intake na agenda). */
   intakeHubCaseId?: string | null;
+  /**
+   * Quando true, exige tipo de serviço do grupo e propaga falhas de insert
+   * (em vez de retornar `null` em best-effort).
+   */
+  required?: boolean;
+};
+
+const MISSING_SERVICE_MESSAGES: Record<'cirurgia' | 'internacao', string> = {
+  internacao:
+    'Não há tipo de serviço ativo no grupo Internação. Cadastre uma diária/serviço de internação para espelhar a admissão na agenda.',
+  cirurgia:
+    'Não há tipo de serviço ativo no grupo Cirurgia. Cadastre um serviço de cirurgia para espelhar o horário na agenda.',
 };
 
 /**
  * Cria um slot mínimo na agenda + uma linha de serviço.
- * Retorna o id do agendamento, ou `null` se não houver tipo de serviço / falha best-effort.
+ * Retorna o id do agendamento, ou `null` se não houver tipo de serviço / falha best-effort
+ * (quando `required` é false/omitido).
  * Nunca chama sync de cirurgia.
  */
 export async function insertLinkedClinicalAppointment(
   opts: InsertLinkedClinicalAppointmentOpts,
 ): Promise<string | null> {
+  const required = opts.required === true;
   try {
     const st = await resolveMirrorServiceType({
       clinicId: opts.clinicId,
       serviceGroup: opts.serviceGroup,
       serviceTypeId: opts.serviceTypeId,
     });
-    if (!st) return null;
+    if (!st) {
+      if (required) throw new Error(MISSING_SERVICE_MESSAGES[opts.serviceGroup]);
+      return null;
+    }
 
     const durationMin = durationMinutesOf(st);
     const startsAt = opts.startsAt;
@@ -209,6 +226,7 @@ export async function insertLinkedClinicalAppointment(
       opts.petId,
       (e as Error)?.message,
     );
+    if (required) throw e;
     return null;
   }
 }

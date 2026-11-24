@@ -42,6 +42,7 @@ import { resolveServiceAccentColor } from '../../utils/serviceTypeSlug';
 import {
   appointmentKindLabel,
   buildPanelActions,
+  clinicalAgendaOriginLabel,
   displayAppointmentTitle,
   formatBrl,
   formatPanelDate,
@@ -598,7 +599,13 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
                 </div>
                 <div>
                   <dt>Tipo</dt>
-                  <dd>{appointmentKindLabel(appt.appointment_kind)}</dd>
+                  <dd>
+                    {clinicalAgendaOriginLabel({
+                      appointment_kind: appt.appointment_kind,
+                      status: appt.status,
+                      serviceGroup: appt.group,
+                    }) || appointmentKindLabel(appt.appointment_kind)}
+                  </dd>
                 </div>
               </dl>
               {editable ? (

@@ -19,6 +19,7 @@ import {
   isPartnerCareLocation,
 } from './agendaModel';
 import { AGENDA_DRAG_THRESHOLD_PX } from './agendaPointerDrag';
+import { clinicalAgendaOriginLabel } from './appointmentPanelActions';
 
 export type AgendaAppointmentCardVariant = 'day' | 'week' | 'month' | 'stay';
 
@@ -114,17 +115,22 @@ function CardBadges({
     );
   }
 
+  const clinicalOrigin = clinicalAgendaOriginLabel({
+    appointment_kind: appt.appointment_kind,
+    status: appt.status,
+    serviceGroup: appt.group,
+  });
   if (
+    clinicalOrigin ||
     appt.appointment_kind === 'walk_in' ||
     appt.appointment_kind === 'clinical_walk_in' ||
     appt.appointment_kind === 'clinical_emergency'
   ) {
-    const isEmergency = appt.appointment_kind === 'clinical_emergency';
     badges.push(
       <span
         key="kind"
         className="hub-agenda-card__badge hub-agenda-card__badge--warn"
-        title={isEmergency ? 'Emergência' : 'Encaixe'}
+        title={clinicalOrigin || (appt.appointment_kind === 'clinical_emergency' ? 'Emergência' : 'Encaixe')}
       >
         <Zap size={compact ? 10 : 11} aria-hidden />
       </span>,

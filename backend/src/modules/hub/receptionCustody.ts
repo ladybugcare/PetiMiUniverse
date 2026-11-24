@@ -13,6 +13,7 @@ export const RECEPTION_HANDOFF_KINDS = [
   'embarque',
   'lt_falha',
   'saida_prevista',
+  'no_consultorio',
 ] as const;
 
 export type ReceptionHandoffKind = (typeof RECEPTION_HANDOFF_KINDS)[number];
@@ -194,6 +195,8 @@ export type StoredHandoff = {
 };
 
 const ARRIVAL_GROUPS = new Set(['banho_tosa', 'clinica', 'internacao', 'cirurgia']);
+const CLINICAL_OPS_GROUPS = new Set(['clinica', 'internacao', 'cirurgia']);
+const CLINICAL_WALK_IN_KINDS = new Set(['clinical_walk_in', 'clinical_emergency']);
 const TERMINAL_APPT = new Set(['done', 'cancelled', 'paid']);
 const OPEN_GROOMING = new Set(['scheduled', 'checked_in', 'queued', 'in_service', 'finishing']);
 
@@ -356,6 +359,18 @@ function isArrivalCandidate(snap: CustodySnapshot, appt: CustodyAppointment): bo
   );
   // Banho já passou do agendado: pet já está no salão (ou pronto).
   if (session && session.grooming_stage !== 'scheduled') return false;
+  return true;
+}
+
+/** Pet clínico já no consultório (encaixe / em atendimento) — sinal informativo. */
+function isInConsultorioCandidate(snap: CustodySnapshot, appt: CustodyAppointment): boolean {
+  if (appt.deleted_at) return false;
+  if (appt.appointment_kind === 'pickup_route') return false;
+  if (appt.status !== 'checked_in' && appt.status !== 'in_progress') return false;
+  const isClinicalGroup = !!appt.service_group && CLINICAL_OPS_GROUPS.has(appt.service_group);
+  const isWalkInKind = !!appt.appointment_kind && CLINICAL_WALK_IN_KINDS.has(appt.appointment_kind);
+  if (!isClinicalGroup && !isWalkInKind) return false;
+  if (!appt.starts_at || ymdInSaoPaulo(appt.starts_at) !== snap.dayYmd) return false;
   return true;
 }
 
@@ -530,6 +545,24 @@ export function planCustody(snap: CustodySnapshot): CustodyPlan {
       opened_at: appt.starts_at,
       context: {
         label: appt.service_name || 'Chegada',
+        starts_at: appt.starts_at,
+        appointment_id: appt.id,
+      },
+    });
+  }
+
+  for (const appt of snap.appointments) {
+    if (!isInConsultorioCandidate(snap, appt)) continue;
+    handoffs.push({
+      kind: 'no_consultorio',
+      source_type: 'appointment',
+      source_id: appt.id,
+      pet_id: snap.petId,
+      guardian_id: appt.guardian_id,
+      unit_id: appt.unit_id,
+      opened_at: appt.starts_at || snap.nowIso,
+      context: {
+        label: appt.service_name || 'Consultório',
         starts_at: appt.starts_at,
         appointment_id: appt.id,
       },

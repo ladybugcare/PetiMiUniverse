@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { Inbox, MessageCircle } from 'lucide-react';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubLoading } from '../../components/HubLoading';
+import { HubDateField } from '../../components/HubDateField';
+import { HubTimeField } from '../../components/HubTimeField';
 import { useAlert } from '../../components/AlertProvider';
 import { buildWhatsappLink } from '../../utils/whatsappLink';
 import { digitsOnlyBrPhone, formatBrPhoneDisplay } from '../../utils/formatBrPhone';
@@ -82,6 +84,16 @@ function taskTimeline(view: ReceptionHandoffDetail): Array<{ label: string; valu
         });
       }
     }
+  } else if (view.kind === 'no_consultorio') {
+    rows.push({
+      label: 'No consultório desde',
+      value: formatWhen(starts || view.opened_at),
+      hint: openedRel?.kind === 'past' || openedRel?.kind === 'now' ? openedRel.text : undefined,
+    });
+    rows.push({
+      label: 'Situação',
+      value: 'Pet já em atendimento clínico — sem ação de chegada',
+    });
   } else if (view.kind === 'retirada_balcao' || view.kind === 'embarque') {
     rows.push({
       label: view.kind === 'embarque' ? 'Aguardando embarque desde' : 'Pronto para retirar desde',
@@ -164,6 +176,7 @@ function kindLabel(item: Pick<ReceptionBoardItem, 'kind' | 'status'>): string {
 
 function taskKindLabel(kind: ReceptionBoardItem['kind']): string {
   if (kind === 'chegada') return 'Chegada';
+  if (kind === 'no_consultorio') return 'Já no consultório';
   if (kind === 'autorizar_extra') return 'Autorizar extra';
   if (kind === 'encaminhar') return 'Encaminhar';
   if (kind === 'embarque') return 'Embarque';
@@ -176,6 +189,7 @@ function taskKindLabel(kind: ReceptionBoardItem['kind']): string {
 function columnTitle(item: Pick<ReceptionBoardItem, 'kind' | 'status'>): string {
   if (item.status === 'done' || item.status === 'cancelled') return 'Feitos';
   if (item.kind === 'chegada') return 'Chegada';
+  if (item.kind === 'no_consultorio') return 'Já no consultório';
   if (item.kind === 'autorizar_extra' || item.kind === 'encaminhar' || item.kind === 'lt_falha') {
     return 'Atenção';
   }
@@ -190,6 +204,17 @@ function defaultRetryLocal(): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function splitRetryLocal(local: string): { dateIso: string; hm: string } {
+  const [dateIso = '', hm = ''] = local.split('T');
+  return { dateIso, hm: hm.slice(0, 5) };
+}
+
+function joinRetryLocal(dateIso: string, hm: string): string {
+  const safeDate = dateIso.trim() || splitRetryLocal(defaultRetryLocal()).dateIso;
+  const safeHm = hm.trim() || '00:00';
+  return `${safeDate}T${safeHm}`;
+}
+
 function parseMoneyInput(raw: string): number | null {
   const cleaned = raw.trim().replace(/[^\d,.-]/g, '').replace(/\.(?=\d{3}(\D|$))/g, '').replace(',', '.');
   if (!cleaned) return null;
@@ -199,9 +224,9 @@ function parseMoneyInput(raw: string): number | null {
 
 function primaryAction(item: ReceptionBoardItem): { action: ReceptionResolveAction; label: string } | null {
   if (item.status !== 'open') return null;
+  if (item.kind === 'no_consultorio') return null;
   if (item.kind === 'chegada') return { action: 'chegou', label: 'Chegou' };
-  if (item.kind === 'retirada_balcao') return { action: 'entreguei', label: 'Entreguei' };
-  if (item.kind === 'embarque') return { action: 'embarquei', label: 'Entreguei ao motorista' };
+  if (item.kind === 'retirada_balcao') return { action: 'entreguei', label: 'Entreguei' };  if (item.kind === 'embarque') return { action: 'embarquei', label: 'Entreguei ao motorista' };
   if (item.kind === 'autorizar_extra' && item.context?.hub_service_type_id) {
     return { action: 'autorizar', label: 'Autorizar' };
   }
@@ -243,6 +268,7 @@ const ReceptionHandoffPanel: React.FC<ReceptionHandoffPanelProps> = ({
   const [chargeLeg, setChargeLeg] = useState(true);
   const [customAmount, setCustomAmount] = useState('');
   const [retryAt, setRetryAt] = useState(defaultRetryLocal);
+  const retryParts = useMemo(() => splitRetryLocal(retryAt), [retryAt]);
 
   useEffect(() => {
     setChargeLeg(true);
@@ -537,15 +563,23 @@ const ReceptionHandoffPanel: React.FC<ReceptionHandoffPanelProps> = ({
             <section className="hub-reception-panel__section" aria-label="Novo Leva e Traz">
               <h3 className="hub-reception-panel__section-title">Se for novo Leva e Traz</h3>
               <div className="hub-reception-panel__retry">
-                <label className="hub-reception-panel__retry-field">
+                <div className="hub-reception-panel__retry-field">
                   <span>Horário da nova entrega</span>
-                  <input
-                    type="datetime-local"
-                    className="hub-clientes__input"
-                    value={retryAt}
-                    onChange={(e) => setRetryAt(e.target.value)}
-                  />
-                </label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <HubDateField
+                      id="reception-retry-date"
+                      valueIso={retryParts.dateIso}
+                      onChangeIso={(iso) => setRetryAt(joinRetryLocal(iso, retryParts.hm))}
+                      showTodayButton={false}
+                    />
+                    <HubTimeField
+                      id="reception-retry-time"
+                      valueHm={retryParts.hm}
+                      onChangeHm={(hm) => setRetryAt(joinRetryLocal(retryParts.dateIso, hm))}
+                      minuteStep={5}
+                    />
+                  </div>
+                </div>
                 <label className="hub-reception-panel__retry-toggle">
                   <input
                     type="checkbox"

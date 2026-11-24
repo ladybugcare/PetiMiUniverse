@@ -1604,21 +1604,40 @@ export const createHubHospitalization = async (req: Request, res: Response) => {
     (data as { admitted_at?: string | null }).admitted_at ?? new Date().toISOString();
 
   // Consultório → Agenda: marco de admissão no dia (não modela estadia multi-dia).
-  const appointmentId = await insertLinkedClinicalAppointment({
-    clinicId: b.clinic_id,
-    unitId: b.unit_id,
-    petId: b.pet_id,
-    guardianId: b.guardian_id,
-    staffMemberId: b.hub_staff_member_id,
-    serviceTypeId: b.daily_hub_service_type_id,
-    serviceGroup: 'internacao',
-    startsAt: admittedAt,
-    title: b.reason?.trim() || 'Internação',
-    status: 'in_progress',
-    appointmentKind: 'clinical_walk_in',
-    notes: b.admission_notes ?? null,
-    intakeHubCaseId: caseId,
-  });
+  let appointmentId: string | null = null;
+  try {
+    appointmentId = await insertLinkedClinicalAppointment({
+      clinicId: b.clinic_id,
+      unitId: b.unit_id,
+      petId: b.pet_id,
+      guardianId: b.guardian_id,
+      staffMemberId: b.hub_staff_member_id,
+      serviceTypeId: b.daily_hub_service_type_id,
+      serviceGroup: 'internacao',
+      startsAt: admittedAt,
+      title: b.reason?.trim() || 'Internação',
+      status: 'in_progress',
+      appointmentKind: 'clinical_walk_in',
+      notes: b.admission_notes ?? null,
+      intakeHubCaseId: caseId,
+      required: true,
+    });
+  } catch (mirrorErr: unknown) {
+    await supabaseAdmin
+      .from('hub_hospitalizations')
+      .update({ status: 'cancelled', hub_hospital_bed_id: null })
+      .eq('id', hospitalizationId)
+      .eq('clinic_id', b.clinic_id);
+    await supabaseAdmin
+      .from('hub_encounters')
+      .update({ status: 'cancelled', completed_at: new Date().toISOString() })
+      .eq('id', encounterId)
+      .eq('clinic_id', b.clinic_id)
+      .in('status', ['in_progress', 'waiting']);
+    return res.status(400).json({
+      error: (mirrorErr as Error)?.message || 'Não foi possível espelhar a internação na agenda.',
+    });
+  }
 
   let hospitalization = data as Record<string, unknown>;
   if (appointmentId) {
@@ -2137,8 +2156,11 @@ export const createHubSurgery = async (req: Request, res: Response) => {
   }
 
   // Consultório → Agenda: cria o slot sem sync (evita ficha duplicada).
+  // Sem scheduled_at: espelha "agora" para a recepção ver na grade.
   let appointmentId = b.hub_appointment_id ?? null;
-  if (!appointmentId && b.scheduled_at) {
+  const scheduledAt = b.scheduled_at ?? new Date().toISOString();
+  const mirroredFromNow = !b.scheduled_at && !b.hub_appointment_id;
+  if (!appointmentId) {
     appointmentId = await insertLinkedClinicalAppointment({
       clinicId: b.clinic_id,
       unitId: b.unit_id,
@@ -2147,10 +2169,10 @@ export const createHubSurgery = async (req: Request, res: Response) => {
       staffMemberId: b.hub_staff_member_id,
       serviceTypeId: primaryServiceTypeId,
       serviceGroup: 'cirurgia',
-      startsAt: b.scheduled_at,
+      startsAt: scheduledAt,
       title: b.title,
-      status: 'confirmed',
-      appointmentKind: 'standard',
+      status: mirroredFromNow ? 'in_progress' : 'confirmed',
+      appointmentKind: mirroredFromNow ? 'clinical_walk_in' : 'standard',
       intakeHubCaseId: caseId,
     });
   }
@@ -2176,7 +2198,7 @@ export const createHubSurgery = async (req: Request, res: Response) => {
       hub_appointment_id: appointmentId,
       hub_staff_member_id: b.hub_staff_member_id ?? null,
       title: b.title,
-      scheduled_at: b.scheduled_at ?? null,
+      scheduled_at: scheduledAt,
       anesthetic_risk: b.anesthetic_risk ?? null,
       pre_op: b.pre_op ?? {},
       procedure: b.procedure ?? {},

@@ -7,7 +7,8 @@ export type ReceptionHandoffKind =
   | 'retirada_balcao'
   | 'embarque'
   | 'lt_falha'
-  | 'saida_prevista';
+  | 'saida_prevista'
+  | 'no_consultorio';
 
 export type ReceptionHandoffStatus = 'open' | 'done' | 'cancelled';
 

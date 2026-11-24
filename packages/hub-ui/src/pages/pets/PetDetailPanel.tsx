@@ -33,6 +33,7 @@ import {
   hubEncountersApi,
   hubClinicalApi,
   hubClinicalCasesApi,
+  type DayBoardItem,
   type HubClinicalCase,
   type HubEncounter,
   type HubEncounterStatus,
@@ -41,6 +42,7 @@ import {
   type HubPrescription,
   type HubVaccination,
 } from '../../api/hubClinicalApi';
+import StartEncounterModal from '../clinica/StartEncounterModal';
 import { HubTabs } from '../../components/HubTabs';
 import { profileInitials } from '../../components/HubProfileAvatar';
 import { HubLoading } from '../../components/HubLoading';
@@ -403,6 +405,26 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
   }, [tab, clinicId, pet.id, canAppointmentsRead]);
 
   const [startingEncounter, setStartingEncounter] = useState(false);
+  const [startEncounterOpen, setStartEncounterOpen] = useState(false);
+
+  const startEncounterBoardItem = useMemo((): DayBoardItem | null => {
+    if (!startEncounterOpen) return null;
+    return {
+      kind: 'appointment_slot',
+      pet_id: pet.id,
+      guardian_id: pet.primary_guardian?.guardian_id ?? null,
+      pet: {
+        id: pet.id,
+        name: pet.name,
+        species: pet.species,
+        breed: pet.breed ?? null,
+      },
+      guardian: pet.primary_guardian
+        ? { id: pet.primary_guardian.guardian_id, full_name: pet.primary_guardian.guardian_name }
+        : null,
+      title: 'Novo atendimento',
+    };
+  }, [startEncounterOpen, pet]);
 
   const loadPackageBalances = useCallback(async () => {
     if (!clinicId) return;
@@ -580,7 +602,19 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
     }
   };
 
-  const handleStartEncounter = async () => {
+  const openStartEncounterModal = () => {
+    if (!clinicId || !canClinicWrite) return;
+    if (!unitId) {
+      showError('Selecione uma unidade no cabeçalho para abrir o atendimento.');
+      return;
+    }
+    setStartEncounterOpen(true);
+  };
+
+  const handleStartEncounter = async (
+    _item: DayBoardItem,
+    opts: { hub_case_id?: string | null; create_new_case?: boolean; new_case_title?: string | null },
+  ) => {
     if (!clinicId || !canClinicWrite) return;
     if (!unitId) {
       showError('Selecione uma unidade no cabeçalho para abrir o atendimento.');
@@ -592,10 +626,15 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
         clinic_id: clinicId,
         pet_id: pet.id,
         unit_id: unitId,
+        hub_case_id: opts.hub_case_id ?? null,
+        create_new_case: opts.create_new_case,
+        new_case_title: opts.new_case_title ?? null,
       });
+      setStartEncounterOpen(false);
       navigate(`/hub/clinica/atendimentos/${encounter.id}`, { state: { from: 'pet' } });
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao iniciar atendimento');
+      throw e;
     } finally {
       setStartingEncounter(false);
     }
@@ -1353,7 +1392,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
             className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
             disabled={startingEncounter || !clinicId || !unitId}
             title={!unitId ? 'Selecione uma unidade no cabeçalho para abrir o atendimento' : undefined}
-            onClick={() => void handleStartEncounter()}
+            onClick={openStartEncounterModal}
           >
             <Stethoscope size={14} aria-hidden />
             {startingEncounter ? 'Abrindo…' : 'Novo atendimento'}
@@ -1456,7 +1495,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
               className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
               disabled={startingEncounter || !clinicId || !unitId}
               title={!unitId ? 'Selecione uma unidade no cabeçalho para abrir o atendimento' : undefined}
-              onClick={() => void handleStartEncounter()}
+              onClick={openStartEncounterModal}
             >
               <Stethoscope size={14} aria-hidden />
               {startingEncounter ? 'Abrindo…' : 'Novo atendimento'}
@@ -2202,6 +2241,17 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
       {receivablePanel}
       {batchChargePanel}
       {sellPackagePanel}
+
+      {clinicId ? (
+        <StartEncounterModal
+          open={startEncounterOpen}
+          clinicId={clinicId}
+          item={startEncounterBoardItem}
+          onClose={() => setStartEncounterOpen(false)}
+          onStart={handleStartEncounter}
+          starting={startingEncounter}
+        />
+      ) : null}
 
       {canWrite && !hideFooter ? (
         <div className="hub-clientes__footer-btns">

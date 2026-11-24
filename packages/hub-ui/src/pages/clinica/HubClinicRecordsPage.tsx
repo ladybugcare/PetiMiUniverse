@@ -10,6 +10,7 @@ import {
   hubClinicalTimelineApi,
   hubEncountersApi,
   hubSpecialistReferralsApi,
+  type DayBoardItem,
   type HubClinicalAttachment,
   type HubClinicalCase,
   type HubClinicalExam,
@@ -27,6 +28,7 @@ import ClinicRecordsDetail from './clinic-records/ClinicRecordsDetail';
 import ClinicRecordsPetList from './clinic-records/ClinicRecordsPetList';
 import type { ClinicRecordsTabId } from './clinic-records/clinicRecordsUtils';
 import { defaultClinicalFlagLabel } from '../pets/petClinicalFlags';
+import StartEncounterModal from './StartEncounterModal';
 import '../clientes/clientes.css';
 import '../pets/pets-page.css';
 import './clinica-page.css';
@@ -117,6 +119,7 @@ const HubClinicRecordsPage: React.FC = () => {
   const [newFlagKey, setNewFlagKey] = useState('allergy');
   const [newFlagLabel, setNewFlagLabel] = useState('');
   const [startingEncounter, setStartingEncounter] = useState(false);
+  const [startEncounterOpen, setStartEncounterOpen] = useState(false);
   const [savingFicha, setSavingFicha] = useState(false);
 
   const syncUrl = useCallback(
@@ -319,7 +322,41 @@ const HubClinicRecordsPage: React.FC = () => {
     }
   };
 
-  const startEncounterFromRecord = async () => {
+  const startEncounterBoardItem = useMemo((): DayBoardItem | null => {
+    if (!startEncounterOpen || !selectedPet) return null;
+    return {
+      kind: 'appointment_slot',
+      pet_id: selectedPet.id,
+      guardian_id: selectedPet.primary_guardian?.guardian_id ?? null,
+      pet: {
+        id: selectedPet.id,
+        name: selectedPet.name,
+        species: selectedPet.species,
+        breed: selectedPet.breed ?? null,
+      },
+      guardian: selectedPet.primary_guardian
+        ? {
+            id: selectedPet.primary_guardian.guardian_id,
+            full_name: selectedPet.primary_guardian.guardian_name,
+          }
+        : null,
+      title: 'Novo atendimento',
+    };
+  }, [startEncounterOpen, selectedPet]);
+
+  const openStartEncounterModal = () => {
+    if (!clinicId || !selectedId || !canWrite) return;
+    if (!getSelectedUnitId()) {
+      showError('Selecione uma unidade no cabeçalho para abrir o atendimento.');
+      return;
+    }
+    setStartEncounterOpen(true);
+  };
+
+  const startEncounterFromRecord = async (
+    _item: DayBoardItem,
+    opts: { hub_case_id?: string | null; create_new_case?: boolean; new_case_title?: string | null },
+  ) => {
     if (!clinicId || !selectedId || !canWrite) return;
     const unitId = getSelectedUnitId();
     if (!unitId) {
@@ -332,10 +369,15 @@ const HubClinicRecordsPage: React.FC = () => {
         clinic_id: clinicId,
         pet_id: selectedId,
         unit_id: unitId,
+        hub_case_id: opts.hub_case_id ?? null,
+        create_new_case: opts.create_new_case,
+        new_case_title: opts.new_case_title ?? null,
       });
+      setStartEncounterOpen(false);
       navigate(`/hub/clinica/atendimentos/${encounter.id}`, { state: { from: 'cockpit' } });
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao iniciar atendimento');
+      throw e;
     } finally {
       setStartingEncounter(false);
     }
@@ -382,12 +424,22 @@ const HubClinicRecordsPage: React.FC = () => {
         onNewFlagLabelChange={setNewFlagLabel}
         startingEncounter={startingEncounter}
         savingFicha={savingFicha}
-        onStartEncounter={() => void startEncounterFromRecord()}
+        onStartEncounter={openStartEncounterModal}
         onAddFlag={() => void addFlag()}
         onRemoveFlag={(flag) => void removeFlag(flag)}
         onSaveHealthFicha={(patch) => void saveHealthFicha(patch)}
         onExamResultSaved={() => void loadPetClinical()}
       />
+      {clinicId ? (
+        <StartEncounterModal
+          open={startEncounterOpen}
+          clinicId={clinicId}
+          item={startEncounterBoardItem}
+          onClose={() => setStartEncounterOpen(false)}
+          onStart={startEncounterFromRecord}
+          starting={startingEncounter}
+        />
+      ) : null}
     </div>
   );
 };

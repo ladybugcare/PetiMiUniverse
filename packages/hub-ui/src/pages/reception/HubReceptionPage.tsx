@@ -48,6 +48,7 @@ function kindLabel(item: ReceptionBoardItem): string {
   if (item.status === 'cancelled') return 'Cancelada';
   if (item.status === 'done') return 'Concluída';
   if (item.kind === 'chegada') return 'Chegada';
+  if (item.kind === 'no_consultorio') return 'Consultório';
   if (item.kind === 'autorizar_extra') return 'Extra';
   if (item.kind === 'encaminhar') return 'Encaminhar';
   if (item.kind === 'embarque') return 'Embarque';
@@ -71,6 +72,9 @@ function pillClass(item: ReceptionBoardItem): string {
   if (item.status === 'done') return 'hub-clientes__pill hub-clinic-queue__pill--done';
   if (item.status === 'cancelled') return 'hub-clientes__pill hub-clinic-queue__pill--waiting';
   if (item.kind === 'lt_falha') return 'hub-clientes__pill hub-reception__pill--failure';
+  if (item.kind === 'no_consultorio') {
+    return 'hub-clientes__pill hub-clinic-queue__pill--progress';
+  }
   if (item.kind === 'autorizar_extra' || item.kind === 'encaminhar' || item.kind === 'saida_prevista') {
     return 'hub-clientes__pill hub-clinic-queue__pill--waiting';
   }
@@ -82,6 +86,7 @@ function pillClass(item: ReceptionBoardItem): string {
 
 function primaryAction(item: ReceptionBoardItem): { action: ReceptionResolveAction; label: string } | null {
   if (item.status !== 'open') return null;
+  if (item.kind === 'no_consultorio') return null;
   if (item.kind === 'chegada') return { action: 'chegou', label: 'Chegou' };
   if (item.kind === 'retirada_balcao') return { action: 'entreguei', label: 'Entreguei' };
   if (item.kind === 'embarque') return { action: 'embarquei', label: 'Entreguei ao motorista' };
@@ -177,6 +182,9 @@ const HubReceptionPage: React.FC = () => {
     const chegadas = open
       .filter((i) => i.kind === 'chegada')
       .sort((a, b) => String(a.context?.starts_at || a.opened_at).localeCompare(String(b.context?.starts_at || b.opened_at)));
+    const noConsultorio = open
+      .filter((i) => i.kind === 'no_consultorio')
+      .sort((a, b) => String(a.context?.starts_at || a.opened_at).localeCompare(String(b.context?.starts_at || b.opened_at)));
     const atencao = open
       .filter((i) => i.kind === 'lt_falha' || i.kind === 'autorizar_extra' || i.kind === 'encaminhar')
       .sort((a, b) => Number(b.kind === 'lt_falha') - Number(a.kind === 'lt_falha'));
@@ -191,7 +199,7 @@ const HubReceptionPage: React.FC = () => {
     const feitos = items
       .filter((i) => i.status === 'done' || i.status === 'cancelled')
       .sort((a, b) => String(b.resolved_at || b.opened_at).localeCompare(String(a.resolved_at || a.opened_at)));
-    return { chegadas, atencao, saidasAcao, saidasPrevistas, feitos };
+    return { chegadas, noConsultorio, atencao, saidasAcao, saidasPrevistas, feitos };
   }, [items]);
 
   const run = async (
@@ -395,6 +403,12 @@ const HubReceptionPage: React.FC = () => {
 
   const columns: { id: string; title: string; empty: string; rows: ReceptionBoardItem[] }[] = [
     { id: 'chegadas', title: 'Chegadas', empty: 'Nenhuma chegada agora.', rows: groups.chegadas },
+    {
+      id: 'no_consultorio',
+      title: 'Já no consultório',
+      empty: 'Nenhum pet em atendimento clínico agora.',
+      rows: groups.noConsultorio,
+    },
     { id: 'atencao', title: 'Atenção', empty: 'Nada pedindo a recepção.', rows: groups.atencao },
     { id: 'feitos', title: 'Feitos', empty: 'Nada concluído neste dia.', rows: groups.feitos },
   ];

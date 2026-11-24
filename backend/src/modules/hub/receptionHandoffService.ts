@@ -1012,6 +1012,8 @@ const ACTION_BY_KIND: Record<string, string[]> = {
   autorizar_extra: ['autorizar', 'dispensar'],
   encaminhar: ['recebi'],
   lt_falha: ['tutor_busca', 'novo_lt'],
+  // Informativo: pet já no consultório — sem ação operacional na recepção.
+  no_consultorio: [],
 };
 
 export type ReceptionResolvePayload = {

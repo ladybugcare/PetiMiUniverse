@@ -19,6 +19,51 @@ function snap(partial: Partial<Parameters<typeof planCustody>[0]> = {}) {
 }
 
 describe('planCustody', () => {
+  it('encaixe clínico checked_in gera no_consultorio e não chegada', () => {
+    const plan = planCustody(
+      snap({
+        appointments: [
+          {
+            id: 'walk-1',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            status: 'checked_in',
+            appointment_kind: 'clinical_walk_in',
+            starts_at: '2026-11-06T14:30:00.000Z',
+            service_group: 'clinica',
+            service_name: 'Consulta',
+            parent_appointment_id: null,
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs.map((h) => h.kind)).toEqual(['no_consultorio']);
+    expect(plan.handoffs[0].source_id).toBe('walk-1');
+    expect(plan.handoffs.some((h) => h.kind === 'chegada')).toBe(false);
+  });
+
+  it('consulta confirmada continua em chegada (não no_consultorio)', () => {
+    const plan = planCustody(
+      snap({
+        appointments: [
+          {
+            id: 'a-conf',
+            unit_id: 'u1',
+            guardian_id: 'g1',
+            status: 'confirmed',
+            appointment_kind: 'standard',
+            starts_at: '2026-11-06T16:00:00.000Z',
+            service_group: 'clinica',
+            service_name: 'Consulta',
+            parent_appointment_id: null,
+          },
+        ],
+      }),
+    );
+    expect(plan.handoffs.map((h) => h.kind)).toEqual(['chegada']);
+    expect(plan.handoffs.some((h) => h.kind === 'no_consultorio')).toBe(false);
+  });
+
   it('banho pronto sem transporte e sem estadia vira retirada no balcão', () => {
     const plan = planCustody(
       snap({

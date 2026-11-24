@@ -175,6 +175,32 @@ export function appointmentKindLabel(kind: string | undefined): string {
   return 'Atendimento';
 }
 
+/** Rótulo estável para recepção reconhecer origem clínica na agenda. */
+export function clinicalAgendaOriginLabel(appt: {
+  appointment_kind?: string | null;
+  status?: string | null;
+  serviceGroup?: string | null;
+}): string | null {
+  const group = String(appt.serviceGroup || '');
+  const kind = String(appt.appointment_kind || '');
+  const status = String(appt.status || '');
+  if (kind === 'clinical_emergency') return 'Emergência';
+  if (group === 'internacao' && (status === 'in_progress' || kind === 'clinical_walk_in')) {
+    return 'Internação (admissão)';
+  }
+  if (group === 'cirurgia') {
+    if (status === 'in_progress') return 'Cirurgia em andamento';
+    return 'Cirurgia';
+  }
+  if (kind === 'clinical_walk_in') {
+    return status === 'in_progress' ? 'Em atendimento' : 'Encaixe';
+  }
+  if (group === 'clinica' && (status === 'checked_in' || status === 'in_progress')) {
+    return status === 'in_progress' ? 'Em atendimento' : 'Encaixe';
+  }
+  return null;
+}
+
 export function displayAppointmentTitle(appt: { serviceName: string; petName: string; title?: string }): string {
   const pet = appt.petName && appt.petName !== '—' ? appt.petName : null;
   const svc = appt.title || appt.serviceName || 'Serviço';

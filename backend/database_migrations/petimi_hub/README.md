@@ -336,3 +336,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 159. **`159_alter_hub_receivable_lines_product_cost.sql`** — `unit_cost_amount` em `hub_receivable_lines` (snapshot de custo na venda de produto para margem/COGS). Executar depois do item 042.
 
 160. **`160_alter_hub_commission_rules_products.sql`** — unifica comissão: `hub_service_type_id` nullable + `hub_inventory_item_id`; CHECK de exatamente um alvo; índices únicos parciais por serviço e por produto. Executar depois dos itens 038 e 008. Ver [HUB_FINANCIAL_MODEL.md](../../docs/architecture/HUB_FINANCIAL_MODEL.md) (comissões).
+
+167. **`167_alter_hub_reception_handoffs_no_consultorio.sql`** — kind `no_consultorio` em `hub_reception_handoffs` (pet já no consultório via encaixe/atendimento espelhado; informativo, sem ação de Chegada). Executar depois do item 132.
