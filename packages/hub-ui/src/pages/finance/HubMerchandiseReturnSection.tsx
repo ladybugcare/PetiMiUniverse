@@ -55,12 +55,12 @@ export function emptyMerchandiseReturnValue(): MerchandiseReturnValue {
   return { returned: false, condition: null, selectedLineIds: [] };
 }
 
-/** Valor inicial do formulário avulso (devolução já assumida): todos os pendentes marcados. */
-export function assumedMerchandiseReturnValue(lines: MerchandiseReturnLine[]): MerchandiseReturnValue {
+/** Valor inicial do formulário avulso: itens desmarcados — operador marca só o que devolve. */
+export function assumedMerchandiseReturnValue(_lines?: MerchandiseReturnLine[]): MerchandiseReturnValue {
   return {
     returned: true,
     condition: null,
-    selectedLineIds: pendingMerchandiseLineIds(lines),
+    selectedLineIds: [],
   };
 }
 
@@ -181,10 +181,11 @@ export function HubMerchandiseReturnSection({
                     onChange({ returned: false, condition: null, selectedLineIds: [] });
                     return;
                   }
+                  // Abre o seletor sem pré-marcar itens — escolha explícita do que volta.
                   onChange({
                     returned: true,
-                    condition: value.condition,
-                    selectedLineIds: pending.map((l) => l.id),
+                    condition: null,
+                    selectedLineIds: [],
                   });
                 }}
               >
