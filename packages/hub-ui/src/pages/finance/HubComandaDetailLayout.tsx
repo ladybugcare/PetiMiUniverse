@@ -22,6 +22,7 @@ import {
   CARD_FEE_PARTIAL_COVERAGE_HINT,
   cardFeeTotalCentsPositive,
 } from '../../utils/hubCardMachineFees';
+import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 
 function fmtBrl(n: number): string {
   return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -325,19 +326,19 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
                     canChangeGuardian ? (
                       <div className="hub-quote-detail__field hub-quote-detail__field--wide" style={{ marginBottom: 12 }}>
                         <span className="hub-quote-detail__field-label">Cobrança para</span>
-                        <select
-                          className="hub-orcamento-novo__input"
+                        <HubSearchableCombobox
+                          id="comanda-billing-guardian"
+                          className="hub-combobox--clientes"
+                          options={allowedGuardians.map((g) => ({
+                            value: g.id,
+                            label: g.role === 'secondary' ? `${g.full_name} (co-tutor)` : g.full_name,
+                          }))}
                           value={selectedGuardianId ?? guardian.id}
+                          onChange={(v) => onGuardianChange!(v)}
                           disabled={saving}
-                          onChange={(e) => onGuardianChange!(e.target.value)}
-                        >
-                          {allowedGuardians.map((g) => (
-                            <option key={g.id} value={g.id}>
-                              {g.full_name}
-                              {g.role === 'secondary' ? ' (co-tutor)' : ''}
-                            </option>
-                          ))}
-                        </select>
+                          clearable={false}
+                          ariaLabel="Cobrança para"
+                        />
                       </div>
                     ) : null
                   }
@@ -413,8 +414,12 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
                     <span>−{fmtBrl(discountAmount)}</span>
                   </div>
                 ) : null}
-                <div className="hub-quote-detail__money-row hub-quote-detail__money-row--total">
-                  <span>Total</span>
+                <div
+                  className={`hub-quote-detail__money-row${
+                    returnedAmount > 0.009 ? '' : ' hub-quote-detail__money-row--total'
+                  }`}
+                >
+                  <span>{returnedAmount > 0.009 ? 'Total original' : 'Total'}</span>
                   <span>{fmtBrl(total)}</span>
                 </div>
                 {returnedAmount > 0.009 ? (
@@ -423,10 +428,10 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
                     <span>−{fmtBrl(returnedAmount)}</span>
                   </div>
                 ) : null}
-                {netTotal != null && Math.abs(netTotal - total) > 0.009 ? (
+                {returnedAmount > 0.009 || (netTotal != null && Math.abs((netTotal ?? total) - total) > 0.009) ? (
                   <div className="hub-quote-detail__money-row hub-quote-detail__money-row--total">
                     <span>Vigente</span>
-                    <span>{fmtBrl(netTotal)}</span>
+                    <span>{fmtBrl(netTotal ?? Math.max(0, total - returnedAmount))}</span>
                   </div>
                 ) : null}
                 {paidTotal > 0.009 || returnedAmount > 0.009 ? (

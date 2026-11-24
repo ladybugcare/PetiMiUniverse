@@ -23,6 +23,7 @@ import {
   snapshotFromReceivable,
   fetchReceivableDetail,
   assertReceivableAndComanda,
+  assertComandaDetailUi,
   pendingProductLines,
   returnedProductLines,
   readFinanceUiHints,
@@ -120,6 +121,10 @@ async function runReturnCase(
   const afterRaw = await fetchReceivableDetail(token, fixture.receivableId);
   const after = snapshotFromReceivable(afterRaw);
   const { comandaOk } = await assertReceivableAndComanda(token, fixture, expected);
+  const comandaUiText = await assertComandaDetailUi(page, fixture, {
+    returned: expected.returned,
+    final: expected.final,
+  });
 
   let stockOk: boolean | null = null;
   if (stockCheck) {
@@ -144,7 +149,11 @@ async function runReturnCase(
     before,
     after,
     expected,
-    observed: { ui_excerpt: uiText.slice(0, 500), pending_lines: pendingProductLines(afterRaw) },
+    observed: {
+      ui_excerpt: uiText.slice(0, 400),
+      comanda_ui_excerpt: comandaUiText.slice(0, 400),
+      pending_lines: pendingProductLines(afterRaw),
+    },
     comanda_ok: comandaOk,
     receivable_ok: true,
     stock_ok: stockOk,
@@ -236,6 +245,7 @@ test('T03 — Devolução sucessiva: continua T02, devolve Shampoo', async ({ br
     returned: MATRIX_SALE_TOTAL,
     status: 'refunded',
   });
+  await assertComandaDetailUi(page, fixture, { returned: MATRIX_SALE_TOTAL, final: 0 });
   const afterRaw = await fetchReceivableDetail(token, fixture.receivableId);
   expect(pendingProductLines(afterRaw)).toHaveLength(0);
   recordMatrixRow({

@@ -835,6 +835,33 @@ export async function returnReceivableProductLines(opts: {
           condition: opts.condition,
         });
       }
+      const { data: recMeta } = await supabaseAdmin
+        .from('hub_receivables')
+        .select('comanda_id')
+        .eq('id', opts.receivableId)
+        .eq('clinic_id', opts.clinicId)
+        .maybeSingle();
+      const comandaId = (recMeta?.comanda_id as string | null) ?? null;
+      if (comandaId) {
+        try {
+          const { refreshComandaFinancialStatus } = await import('./hubComandasController.js');
+          const { data: comandaRow } = await supabaseAdmin
+            .from('hub_comandas')
+            .select('*')
+            .eq('id', comandaId)
+            .eq('clinic_id', opts.clinicId)
+            .maybeSingle();
+          if (comandaRow) {
+            await refreshComandaFinancialStatus(
+              comandaId,
+              opts.clinicId,
+              comandaRow as Record<string, unknown>,
+            );
+          }
+        } catch (e) {
+          console.warn('[hub_finance] refreshComandaFinancialStatus after RPC return', e);
+        }
+      }
     } catch (e) {
       const msg = (e as Error)?.message ?? '';
       if (msg.startsWith('PACKAGE_BALANCE_HAS_REDEMPTIONS')) {
@@ -1165,6 +1192,28 @@ async function returnReceivableProductLinesTsFallback(opts: {
     financialRefund: snap.financialRefundNow,
     condition: opts.condition,
   });
+
+  const comandaId = (rec.comanda_id as string | null) ?? null;
+  if (comandaId) {
+    try {
+      const { refreshComandaFinancialStatus } = await import('./hubComandasController.js');
+      const { data: comandaRow } = await supabaseAdmin
+        .from('hub_comandas')
+        .select('*')
+        .eq('id', comandaId)
+        .eq('clinic_id', opts.clinicId)
+        .maybeSingle();
+      if (comandaRow) {
+        await refreshComandaFinancialStatus(
+          comandaId,
+          opts.clinicId,
+          comandaRow as Record<string, unknown>,
+        );
+      }
+    } catch (e) {
+      console.warn('[hub_finance] refreshComandaFinancialStatus after product return', e);
+    }
+  }
 
   return response;
 }

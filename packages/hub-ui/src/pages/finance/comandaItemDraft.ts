@@ -16,6 +16,8 @@ export type ComandaItemDraft = {
   hub_inventory_item_id: string | null;
   hub_inventory_lot_id: string | null;
   invoiced: boolean;
+  /** Devolução física registrada — linha histórica permanece. */
+  returned?: boolean;
   isNew?: boolean;
   package_balance_id?: string | null;
 };
@@ -38,7 +40,11 @@ export function computeLineTotal(d: ComandaItemDraft): number {
   return round2(Math.max(0, qty * unit - disc));
 }
 
-export function apiItemToDraft(item: HubComandaItem, invoiced: boolean): ComandaItemDraft {
+export function apiItemToDraft(
+  item: HubComandaItem,
+  invoiced: boolean,
+  returned = false,
+): ComandaItemDraft {
   return {
     id: item.id,
     item_kind: item.item_kind === 'product' ? 'product' : 'service',
@@ -53,6 +59,7 @@ export function apiItemToDraft(item: HubComandaItem, invoiced: boolean): Comanda
     hub_inventory_item_id: item.hub_inventory_item_id ?? null,
     hub_inventory_lot_id: item.hub_inventory_lot_id ?? null,
     invoiced,
+    returned,
     package_balance_id: item.package_balance_id ?? null,
   };
 }

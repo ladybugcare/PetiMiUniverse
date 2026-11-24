@@ -1922,17 +1922,26 @@ type PaymentListRow = {
   notes: unknown;
   cash_session_status: 'open' | 'closed' | null;
   status: 'posted' | 'reversed';
+  /** payment = lançamento; line_refund = devolução parcial de produto (ajuste sem anular o payment). */
+  list_kind: 'payment' | 'line_refund';
+  /** partial = há devolução de mercadoria/valor sem estorno integral do lançamento. */
+  settlement: 'full' | 'partial';
+  line_refunds_amount: number;
   receivable: {
     id: unknown;
     status: unknown;
     final_amount: number;
+    returned_amount: number;
     source_type: unknown;
     comanda_id: string | null;
     guardian_name: string | null;
   } | null;
 };
 
-function mapPaymentListRow(row: Record<string, unknown>): PaymentListRow {
+function mapPaymentListRow(
+  row: Record<string, unknown>,
+  extras?: { lineRefundsAmount?: number },
+): PaymentListRow {
   const receivable = oneEmbed(row.receivable as Record<string, unknown> | Record<string, unknown>[] | null);
   const guardian = receivable
     ? oneEmbed(receivable.guardian as { full_name?: string } | { full_name?: string }[] | null)
@@ -1940,6 +1949,10 @@ function mapPaymentListRow(row: Record<string, unknown>): PaymentListRow {
   const session = oneEmbed(row.cash_session as { status?: string } | { status?: string }[] | null);
   const sessionStatus = session?.status === 'open' || session?.status === 'closed' ? session.status : null;
   const payStatus = String(row.status ?? 'posted') === 'reversed' ? 'reversed' : 'posted';
+  const returnedAmount = Number(receivable?.returned_amount ?? 0);
+  const lineRefundsAmount = round2(Number(extras?.lineRefundsAmount ?? 0));
+  const isPartial =
+    payStatus === 'posted' && (returnedAmount > 0.009 || lineRefundsAmount > 0.009);
   return {
     id: row.id,
     amount: Number(row.amount ?? 0),
@@ -1949,17 +1962,82 @@ function mapPaymentListRow(row: Record<string, unknown>): PaymentListRow {
     notes: row.notes ?? null,
     cash_session_status: sessionStatus,
     status: payStatus,
+    list_kind: 'payment',
+    settlement: isPartial ? 'partial' : 'full',
+    line_refunds_amount: lineRefundsAmount,
     receivable: receivable
       ? {
           id: receivable.id,
           status: receivable.status,
           final_amount: Number(receivable.final_amount ?? 0),
+          returned_amount: returnedAmount,
           source_type: receivable.source_type,
           comanda_id: receivable.comanda_id == null ? null : String(receivable.comanda_id),
           guardian_name: guardian?.full_name ?? null,
         }
       : null,
   };
+}
+
+function mapLineRefundListRow(adj: Record<string, unknown>): PaymentListRow | null {
+  const receivable = oneEmbed(adj.receivable as Record<string, unknown> | Record<string, unknown>[] | null);
+  if (!receivable || receivable.deleted_at) return null;
+  const guardian = oneEmbed(
+    receivable.guardian as { full_name?: string } | { full_name?: string }[] | null,
+  );
+  const amount = round2(Number(adj.amount ?? 0));
+  if (amount <= 0.009) return null;
+  const effectiveDate =
+    adj.refund_effective_date != null && String(adj.refund_effective_date).trim()
+      ? `${String(adj.refund_effective_date).slice(0, 10)}T12:00:00.000-03:00`
+      : adj.created_at;
+  return {
+    id: `line-refund:${String(adj.id)}`,
+    amount,
+    payment_method: adj.refund_method ?? 'other',
+    installments: 1,
+    payment_date: effectiveDate,
+    notes: adj.reason ?? null,
+    cash_session_status: null,
+    status: 'reversed',
+    list_kind: 'line_refund',
+    settlement: 'partial',
+    line_refunds_amount: amount,
+    receivable: {
+      id: receivable.id,
+      status: receivable.status,
+      final_amount: Number(receivable.final_amount ?? 0),
+      returned_amount: Number(receivable.returned_amount ?? 0),
+      source_type: receivable.source_type,
+      comanda_id: receivable.comanda_id == null ? null : String(receivable.comanda_id),
+      guardian_name: guardian?.full_name ?? null,
+    },
+  };
+}
+
+async function sumLineRefundsByReceivable(
+  clinicId: string,
+  receivableIds: string[],
+): Promise<Map<string, number>> {
+  const totals = new Map<string, number>();
+  if (receivableIds.length === 0) return totals;
+  const { data, error } = await supabaseAdmin
+    .from('hub_financial_adjustments')
+    .select('receivable_id, amount')
+    .eq('clinic_id', clinicId)
+    .eq('adjustment_type', 'refund')
+    .is('payment_id', null)
+    .in('receivable_id', receivableIds);
+  if (error) {
+    if (/does not exist|schema cache|42P01/i.test(String(error.message))) return totals;
+    throw new Error(error.message);
+  }
+  for (const row of data ?? []) {
+    const id = String((row as { receivable_id?: string }).receivable_id ?? '');
+    if (!id) continue;
+    totals.set(id, round2((totals.get(id) ?? 0) + Number((row as { amount?: number }).amount ?? 0)));
+  }
+  return totals;
 }
 
 /** Comandas com cancelamento operacional ainda sem decisão do financeiro. */
@@ -2007,7 +2085,7 @@ export const getHubFinancePayment = async (req: Request, res: Response) => {
         id, amount, payment_method, installments, payment_date, notes, status, clinic_id,
         cash_session:hub_cash_sessions(status),
         receivable:hub_receivables(
-          id, unit_id, status, final_amount, source_type, comanda_id, deleted_at,
+          id, unit_id, status, final_amount, returned_amount, source_type, comanda_id, deleted_at,
           guardian:hub_guardians(full_name)
         )
       `,
@@ -2022,7 +2100,14 @@ export const getHubFinancePayment = async (req: Request, res: Response) => {
         null,
     );
     if (receivable?.deleted_at) return res.status(404).json({ error: 'Pagamento não encontrado' });
-    return res.json({ payment: mapPaymentListRow(row as Record<string, unknown>) });
+    const refundTotals = receivable?.id
+      ? await sumLineRefundsByReceivable(clinicId.data, [String(receivable.id)])
+      : new Map<string, number>();
+    return res.json({
+      payment: mapPaymentListRow(row as Record<string, unknown>, {
+        lineRefundsAmount: receivable?.id ? refundTotals.get(String(receivable.id)) ?? 0 : 0,
+      }),
+    });
   } catch (e: unknown) {
     console.error('getHubFinancePayment', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
@@ -2040,7 +2125,7 @@ export const listHubFinancePayments = async (req: Request, res: Response) => {
       id, amount, payment_method, installments, payment_date, notes, status,
       cash_session:hub_cash_sessions(status),
       receivable:hub_receivables!inner(
-        id, unit_id, status, final_amount, source_type, comanda_id, deleted_at,
+        id, unit_id, status, final_amount, returned_amount, source_type, comanda_id, deleted_at,
         guardian:hub_guardians(full_name)
       )
     `;
@@ -2087,16 +2172,119 @@ export const listHubFinancePayments = async (req: Request, res: Response) => {
     }
 
     const seen = new Set<string>();
-    const payments = rawRows
-      .filter((row) => {
-        const id = String(row.id ?? '');
-        if (!id || seen.has(id)) return false;
-        seen.add(id);
-        const receivable = oneEmbed(row.receivable as Record<string, unknown> | Record<string, unknown>[] | null);
-        return !receivable?.deleted_at;
+    const uniqueRows = rawRows.filter((row) => {
+      const id = String(row.id ?? '');
+      if (!id || seen.has(id)) return false;
+      seen.add(id);
+      const receivable = oneEmbed(row.receivable as Record<string, unknown> | Record<string, unknown>[] | null);
+      return !receivable?.deleted_at;
+    });
+
+    const receivableIds = [
+      ...new Set(
+        uniqueRows
+          .map((row) => {
+            const receivable = oneEmbed(
+              row.receivable as Record<string, unknown> | Record<string, unknown>[] | null,
+            );
+            return receivable?.id == null ? null : String(receivable.id);
+          })
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const refundTotals = await sumLineRefundsByReceivable(clinic_id, receivableIds);
+
+    let payments: PaymentListRow[] = uniqueRows
+      .map((row) => {
+        const receivable = oneEmbed(
+          row.receivable as Record<string, unknown> | Record<string, unknown>[] | null,
+        );
+        const receivableId = receivable?.id == null ? null : String(receivable.id);
+        return mapPaymentListRow(row, {
+          lineRefundsAmount: receivableId ? refundTotals.get(receivableId) ?? 0 : 0,
+        });
       })
-      .sort((a, b) => String(b.payment_date ?? '').localeCompare(String(a.payment_date ?? '')))
-      .map(mapPaymentListRow);
+      .sort((a, b) => String(b.payment_date ?? '').localeCompare(String(a.payment_date ?? '')));
+
+    // Histórico: inclui devoluções parciais de produto (ajustes refund sem anular o payment).
+    if (paymentStatus === 'reversed') {
+      const lineRefundSelect = `
+        id, amount, reason, created_at, refund_method, refund_effective_date, payment_id, adjustment_type,
+        receivable:hub_receivables!inner(
+          id, unit_id, status, final_amount, returned_amount, source_type, comanda_id, deleted_at,
+          guardian:hub_guardians(full_name)
+        )
+      `;
+      const buildLineRefunds = (matchNullUnit: boolean) => {
+        let q = supabaseAdmin
+          .from('hub_financial_adjustments')
+          .select(lineRefundSelect)
+          .eq('clinic_id', clinic_id)
+          .eq('adjustment_type', 'refund')
+          .is('payment_id', null)
+          .order('created_at', { ascending: false })
+          .limit(300);
+        q = matchNullUnit
+          ? q.is('receivable.unit_id', null)
+          : q.eq('receivable.unit_id', unit_id);
+        if (from) q = q.gte('created_at', `${from}T00:00:00.000-03:00`);
+        if (to) q = q.lte('created_at', `${to}T23:59:59.999-03:00`);
+        return q;
+      };
+      const [lineByUnit, lineLegacy] = await Promise.all([
+        buildLineRefunds(false),
+        buildLineRefunds(true),
+      ]);
+      let lineRaw: Array<Record<string, unknown>> = [];
+      if (lineByUnit.error || lineLegacy.error) {
+        const errMsg = String((lineByUnit.error ?? lineLegacy.error)?.message ?? '');
+        if (!/does not exist|schema cache|42P01/i.test(errMsg)) {
+          let fallback = supabaseAdmin
+            .from('hub_financial_adjustments')
+            .select(lineRefundSelect)
+            .eq('clinic_id', clinic_id)
+            .eq('adjustment_type', 'refund')
+            .is('payment_id', null)
+            .order('created_at', { ascending: false })
+            .limit(400);
+          if (from) fallback = fallback.gte('created_at', `${from}T00:00:00.000-03:00`);
+          if (to) fallback = fallback.lte('created_at', `${to}T23:59:59.999-03:00`);
+          const recovered = await fallback;
+          if (recovered.error) {
+            if (!/does not exist|schema cache|42P01/i.test(String(recovered.error.message))) {
+              return res.status(500).json({
+                error: (lineByUnit.error ?? lineLegacy.error ?? recovered.error).message,
+              });
+            }
+          } else {
+            lineRaw = ((recovered.data ?? []) as Array<Record<string, unknown>>).filter((row) => {
+              const receivable = oneEmbed(
+                row.receivable as Record<string, unknown> | Record<string, unknown>[] | null,
+              );
+              const rowUnit = receivable?.unit_id == null ? null : String(receivable.unit_id);
+              return rowUnit == null || rowUnit === unit_id;
+            });
+          }
+        }
+      } else {
+        lineRaw = [...(lineByUnit.data ?? []), ...(lineLegacy.data ?? [])] as Array<
+          Record<string, unknown>
+        >;
+      }
+      const lineSeen = new Set<string>();
+      const lineRows = lineRaw
+        .filter((row) => {
+          const id = String(row.id ?? '');
+          if (!id || lineSeen.has(id)) return false;
+          lineSeen.add(id);
+          return true;
+        })
+        .map(mapLineRefundListRow)
+        .filter((row): row is PaymentListRow => row != null);
+      payments = [...payments, ...lineRows].sort((a, b) =>
+        String(b.payment_date ?? '').localeCompare(String(a.payment_date ?? '')),
+      );
+    }
 
     // Na lista de ação (posted), esconde pagamentos de cancelamento operacional ainda pendente.
     // No histórico (reversed) mostra tudo do período.

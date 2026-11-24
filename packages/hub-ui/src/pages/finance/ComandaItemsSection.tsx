@@ -178,22 +178,21 @@ export const ComandaItemsSection: React.FC<Props> = ({
             <span className="hub-clientes__pill hub-dayboard__pill--open">Pacote</span>
           ) : eligibleBalances.length > 0 && onTogglePackage && it.id && editable ? (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 140 }}>
-              <select
-                className="hub-orcamento-novo__input"
-                value={it.package_balance_id ?? ''}
-                onChange={(e) => onTogglePackage(it.id!, e.target.value || null)}
-                aria-label="Usar pacote"
-              >
-                <option value="">Avulso</option>
-                {eligibleBalances.map((b) => {
+              <HubSearchableCombobox
+                id={`comanda-item-pkg-${it.id}`}
+                className="hub-combobox--clientes"
+                options={eligibleBalances.map((b) => {
                   const pkg = Array.isArray(b.hub_packages) ? b.hub_packages[0] : b.hub_packages;
-                  return (
-                    <option key={b.id} value={b.id}>
-                      {pkg?.name ?? 'Pacote'} ({b.sessions_remaining})
-                    </option>
-                  );
+                  return {
+                    value: b.id,
+                    label: `${pkg?.name ?? 'Pacote'} (${b.sessions_remaining})`,
+                  };
                 })}
-              </select>
+                value={it.package_balance_id ?? ''}
+                onChange={(v) => onTogglePackage(it.id!, v || null)}
+                placeholder="Avulso"
+                ariaLabel="Usar pacote"
+              />
               <button
                 type="button"
                 className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
@@ -298,7 +297,7 @@ export const ComandaItemsSection: React.FC<Props> = ({
   };
 
   const renderProductRow = ({ it, idx }: { it: ComandaItemDraft; idx: number }) => {
-    const editable = canEdit && !it.invoiced;
+    const editable = canEdit && !it.invoiced && !it.returned;
     const isManual = it.origin_type === 'manual' || it.origin_type === 'manual_line';
     const inv = it.hub_inventory_item_id
       ? inventoryItems.find((p) => p.id === it.hub_inventory_item_id)
@@ -309,7 +308,12 @@ export const ComandaItemsSection: React.FC<Props> = ({
     const unitNum = Number(String(it.unit_amount).replace(',', '.')) || 0;
     const maxDiscountAmount = Math.round(((qtyNum * unitNum * maxDiscountPct) / 100) * 100) / 100;
     return (
-      <tr key={it.id ?? `prd-${idx}`} className={it.invoiced ? 'hub-comanda-row--invoiced' : ''}>
+      <tr
+        key={it.id ?? `prd-${idx}`}
+        className={`${it.invoiced ? 'hub-comanda-row--invoiced' : ''}${
+          it.returned ? ' hub-comanda-row--returned' : ''
+        }`.trim()}
+      >
         <td style={{ minWidth: 220 }}>
           {editable && it.isNew ? (
             <HubSearchableCombobox
@@ -323,7 +327,14 @@ export const ComandaItemsSection: React.FC<Props> = ({
               ariaLabel="Produto"
             />
           ) : (
-            <span className="hub-public-quote__svc-title">{it.description}</span>
+            <span className="hub-public-quote__svc-title">
+              {it.description}
+              {it.returned ? (
+                <span className="hub-payables__chip hub-payables__chip--partial" style={{ marginLeft: 8 }}>
+                  Devolvido
+                </span>
+              ) : null}
+            </span>
           )}
         </td>
         <td style={{ minWidth: 160 }}>

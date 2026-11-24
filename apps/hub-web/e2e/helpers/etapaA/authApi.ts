@@ -35,6 +35,16 @@ export async function loginQaToken(
 
 export async function pingApiHealth(): Promise<void> {
   const base = apiBaseUrl();
-  const res = await fetch(`${base}/api/hub/health`);
-  if (!res.ok) throw new Error(`API indisponível em ${base}/api/hub/health (${res.status})`);
+  let lastErr: Error | null = null;
+  for (let attempt = 0; attempt < 12; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, 1000 * Math.min(attempt, 5)));
+    try {
+      const res = await fetch(`${base}/api/hub/health`);
+      if (res.ok) return;
+      lastErr = new Error(`API indisponível em ${base}/api/hub/health (${res.status})`);
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+    }
+  }
+  throw lastErr ?? new Error(`API indisponível em ${base}/api/hub/health`);
 }

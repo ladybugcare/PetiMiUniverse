@@ -57,6 +57,7 @@ import { HubComandaReceivableDrawer } from './HubComandaReceivableDrawer';
 import { HubReceivableCancelPanel } from './HubReceivableCancelPanel';
 import HubPaymentReversalPanel from './HubPaymentReversalPanel';
 import { HubSidePanel } from '../../components/HubSidePanel';
+import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { PackageSaleScheduleContext } from './packageSaleScheduleUtils';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { filterEnabledPaymentMethods } from '../../utils/hubPaymentMethods';
@@ -1460,15 +1461,18 @@ const HubCaixaPage: React.FC = () => {
         <div className="hub-caixa-page__form-row">
           <div className="hub-clientes__field">
             <span className="hub-clientes__label">Tipo</span>
-            <select
-              className="hub-clientes__select-input"
+            <HubSearchableCombobox
+              id="caixa-mov-type"
+              className="hub-combobox--clientes"
+              options={[
+                { value: 'withdrawal', label: 'Sangria (retirada)' },
+                { value: 'deposit', label: 'Suprimento (entrada)' },
+              ]}
               value={movType}
-              onChange={(e) => setMovType(e.target.value as 'withdrawal' | 'deposit')}
-              aria-label="Tipo de movimento"
-            >
-              <option value="withdrawal">Sangria (retirada)</option>
-              <option value="deposit">Suprimento (entrada)</option>
-            </select>
+              onChange={(v) => setMovType(v as 'withdrawal' | 'deposit')}
+              clearable={false}
+              ariaLabel="Tipo de movimento"
+            />
           </div>
           <div className="hub-clientes__field">
             <label className="hub-clientes__label" htmlFor="caixa-mov-amt">

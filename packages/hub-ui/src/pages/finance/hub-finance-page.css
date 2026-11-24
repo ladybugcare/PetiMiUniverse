@@ -673,6 +673,12 @@
   font-weight: 500;
 }
 
+.hub-payables__chip--partial {
+  color: #9a5b16;
+  background: #fff8eb;
+  border-color: #f0d9a8;
+}
+
 .hub-payables__chip--link {
   color: var(--hc-brand, #c86a4d);
   background: #fff8f4;
@@ -689,6 +695,17 @@
   font-variant-numeric: tabular-nums;
   color: var(--hc-text, #4a3b3a);
   line-height: 1.2;
+  white-space: nowrap;
+}
+
+.hub-payables__amount-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: #8a7570;
+  line-height: 1.25;
   white-space: nowrap;
 }
 
@@ -2803,6 +2820,24 @@
   font-size: 14px;
   font-weight: 650;
   color: var(--hc-text, #4a3b3a);
+}
+
+.hub-pay-rev-form__fact-value--muted {
+  color: #8a7570 !important;
+  font-weight: 600 !important;
+}
+
+.hub-pay-rev-form__fact-value--accent {
+  color: #9a5b16 !important;
+}
+
+.hub-pay-rev-form__fact-hint {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 500;
+  color: #8a7570;
 }
 
 .hub-pay-rev-form__fact--wide {

@@ -2858,6 +2858,33 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
 
   const events = await listComandaEvents(comandaId, clinicId);
 
+  // Itens da comanda já devolvidos fisicamente (preserva histórico; só marca UI).
+  const returnedComandaItemIds = new Set<string>();
+  if (recIds.length) {
+    const { data: returnEvents, error: retErr } = await supabaseAdmin
+      .from('hub_product_return_events')
+      .select('receivable_line_id')
+      .eq('clinic_id', clinicId)
+      .in('receivable_id', recIds);
+    if (retErr && !/does not exist|schema cache|42P01/i.test(String(retErr.message))) {
+      throw new Error(retErr.message);
+    }
+    const returnedLineIds = [
+      ...new Set((returnEvents ?? []).map((r) => String(r.receivable_line_id ?? '')).filter(Boolean)),
+    ];
+    if (returnedLineIds.length) {
+      const { data: returnedLines } = await supabaseAdmin
+        .from('hub_receivable_lines')
+        .select('id, comanda_item_id')
+        .eq('comanda_id', comandaId)
+        .in('id', returnedLineIds);
+      for (const row of returnedLines ?? []) {
+        const cid = row.comanda_item_id == null ? null : String(row.comanda_item_id);
+        if (cid) returnedComandaItemIds.add(cid);
+      }
+    }
+  }
+
   const encounterIdForPending =
     (comandaRow.hub_encounter_id as string | null) ||
     (String(comandaRow.origin_type) === 'encounter' ? (comandaRow.origin_id as string | null) : null);
@@ -2869,6 +2896,7 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
     pets,
     open_item_ids: openItemIds,
     invoiced_item_ids: [...invoicedItemIds],
+    returned_item_ids: [...returnedComandaItemIds],
     active_receivable_ids: activeReceivableIds,
     paid_total,
     balance_due,

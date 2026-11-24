@@ -165,10 +165,17 @@ export type HubFinancePaymentListItem = {
   notes: string | null;
   cash_session_status: 'open' | 'closed' | null;
   status?: 'posted' | 'reversed';
+  /** payment = lançamento; line_refund = devolução parcial de produto. */
+  list_kind?: 'payment' | 'line_refund';
+  /** partial = devolução parcial sem estorno integral do lançamento. */
+  settlement?: 'full' | 'partial';
+  /** Soma de refunds de linha já liquidados no recebível. */
+  line_refunds_amount?: number;
   receivable: {
     id: string;
     status: string;
     final_amount: number;
+    returned_amount?: number;
     source_type: string;
     comanda_id: string | null;
     guardian_name: string | null;

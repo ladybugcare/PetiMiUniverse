@@ -84,6 +84,8 @@ export type HubComandaDetailResponse = {
   items: HubComandaItem[];
   open_item_ids: string[];
   invoiced_item_ids: string[];
+  /** Itens com devolução física registrada (histórico preservado). */
+  returned_item_ids?: string[];
   active_receivable_ids?: string[];
   /** Pago líquido efetivo (posted − refunds de linha). */
   paid_total?: number;

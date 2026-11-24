@@ -1,5 +1,6 @@
 import React, { forwardRef } from 'react';
 import { Phone, User } from 'lucide-react';
+import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import { formatBrPhoneDisplay } from '../../utils/formatBrPhone';
 
 export type CheckoutDrawerHeroProps = {
@@ -235,18 +236,16 @@ export function CheckoutDrawerPaymentFields({
         <label className="hub-clientes__label" htmlFor={methodId}>
           {methodLabel}
         </label>
-        <select
+        <HubSearchableCombobox
           id={methodId}
-          className="hub-clientes__select-input"
+          className="hub-combobox--clientes"
+          options={paymentMethodOptions}
           value={paymentMethod}
-          onChange={(e) => onPaymentMethodChange(e.target.value)}
-        >
-          {paymentMethodOptions.map((opt) => (
-            <option key={opt.value} value={opt.value}>
-              {opt.label}
-            </option>
-          ))}
-        </select>
+          onChange={onPaymentMethodChange}
+          placeholder="Selecionar forma"
+          clearable={false}
+          ariaLabel={methodLabel}
+        />
         {methodHint}
       </div>
 

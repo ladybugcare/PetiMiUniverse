@@ -14,11 +14,13 @@ export async function loginQaFinance(
   email: string = 'qa.staging.a.cfinance@petmi.test',
 ) {
   await page.goto('/login');
-  await expect(page.getByRole('heading', { name: /bem-vindo de volta/i })).toBeVisible({
-    timeout: 45_000,
-  });
-  await page.getByLabel('Email', { exact: true }).fill(email);
-  await page.getByRole('textbox', { name: 'Senha' }).fill(password);
+  // Proteção Vercel / redirect: falha explícita em vez de timeout no heading PetMi.
+  await expect(page).not.toHaveURL(/vercel\.com\/login/i, { timeout: 15_000 });
+  const emailField = page.getByLabel('Email', { exact: true }).or(page.getByPlaceholder(/email/i));
+  await expect(emailField.first()).toBeVisible({ timeout: 45_000 });
+  await emailField.first().fill(email);
+  const passwordField = page.getByRole('textbox', { name: 'Senha' }).or(page.getByLabel(/senha/i));
+  await passwordField.first().fill(password);
   await page.getByRole('button', { name: /Entrar/i }).click();
   await expect(page).not.toHaveURL(/\/login(?:\?|$)/, { timeout: 90_000 });
   await ensureUnitSelected(page);
@@ -49,8 +51,10 @@ export async function openFinanceComandaReceivable(
   await expect(page.locator('.hub-refreshing-banner')).toHaveCount(0, { timeout: 60_000 }).catch(() => {});
 
   const shortId = fixture.comandaId.slice(0, 8).toUpperCase();
-  await expect(page.getByRole('heading', { name: new RegExp(shortId, 'i') })).toBeVisible({
-    timeout: 60_000,
+  await expect(
+    page.getByRole('heading', { name: new RegExp(shortId, 'i') }).or(page.getByText(new RegExp(`#?${shortId}`, 'i')).first()),
+  ).toBeVisible({
+    timeout: 90_000,
   });
 
   const drawer = receivableDrawer(page);

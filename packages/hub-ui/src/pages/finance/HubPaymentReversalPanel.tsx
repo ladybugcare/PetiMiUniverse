@@ -267,6 +267,24 @@ export const HubPaymentReversalPanel: React.FC<HubPaymentReversalPanelProps> = (
   const loadingMerchandise =
     lookupBusy || Boolean(target?.receivable?.id && !receivableDetail);
   const hasPendingMerch = merchandiseLines.some((l) => !l.alreadyReturned);
+  const receivableSnapshot =
+    receivableDetail || target?.receivable
+      ? {
+          final_amount: Number(
+            receivableDetail?.final_amount ?? target?.receivable?.final_amount ?? 0,
+          ),
+          returned_amount: Number(
+            receivableDetail?.returned_amount ?? target?.receivable?.returned_amount ?? 0,
+          ),
+          line_refunds_amount: Number(
+            receivableDetail?.line_refunds_amount ?? target?.line_refunds_amount ?? 0,
+          ),
+          paid_amount:
+            receivableDetail?.paid_amount != null
+              ? Number(receivableDetail.paid_amount)
+              : undefined,
+        }
+      : null;
 
   const reversalForm = panelOpen ? (
     <HubPaymentReversalForm
@@ -279,13 +297,19 @@ export const HubPaymentReversalPanel: React.FC<HubPaymentReversalPanelProps> = (
       allowCustomerCreditRefund={Boolean(
         receivableDetail?.guardian_id || receivableDetail?.guardian?.id,
       )}
+      receivableSnapshot={receivableSnapshot}
       merchandiseLines={merchandiseLines}
       stockReturnStatus={receivableDetail?.stock_return_status}
       loadingMerchandise={loadingMerchandise}
       initialMode={hasPendingMerch ? 'refund' : 'payment_reversal'}
       idPrefix={embedded ? 'caixa-rev' : 'fin-rev'}
       cancelLabel="Voltar"
-      subtitle={embedded ? undefined : null}
+      subtitle={
+        Number(receivableSnapshot?.returned_amount ?? 0) > 0.009 ||
+        Number(receivableSnapshot?.line_refunds_amount ?? 0) > 0.009
+          ? 'Já houve devolução parcial: o vigente abaixo é o que ainda conta na cobrança. Ao marcar itens, só esses valores são reembolsados.'
+          : null
+      }
       onCancel={closePanel}
       onSuccess={() => void onFormSuccess()}
     />
@@ -328,8 +352,8 @@ export const HubPaymentReversalPanel: React.FC<HubPaymentReversalPanelProps> = (
               <p className="hub-clientes__subtitle">
                 {isHistory ? (
                   <>
-                    Histórico de pagamentos já anulados no período. Eles saem da listagem do caixa e de “A
-                    estornar”. O acerto também aparece em{' '}
+                    Histórico do período: estornos integrais e devoluções parciais (com o valor reembolsado). O acerto
+                    também aparece em{' '}
                     <Link to="/hub/relatorios?relatorio=sales-adjustments" className="hub-clientes__link-btn">
                       Relatórios → Vendas e acertos
                     </Link>
@@ -347,13 +371,14 @@ export const HubPaymentReversalPanel: React.FC<HubPaymentReversalPanelProps> = (
                 ) : context === 'caixa' ? (
                   <>
                     Pagamentos ainda válidos desta unidade — inclusive vendas rápidas de dias anteriores. Devolução
-                    parcial de produto mantém o pagamento aqui até o líquido zerar; só o estorno integral do lançamento
-                    vai para “Já estornados”.
+                    parcial de produto fica marcada como Parcial e permanece aqui até o líquido zerar; o valor
+                    devolvido entra em “Já estornados”.
                   </>
                 ) : (
                   <>
-                    Pagamentos ainda válidos desta unidade. Depois do estorno, o item some daqui e do caixa — abra
-                    “Já estornados” para o histórico. Cancelamento operacional fica em Cancelamentos até a decisão.
+                    Pagamentos ainda válidos desta unidade. Devolução parcial fica como Parcial aqui; o valor
+                    reembolsado e o estorno integral aparecem em “Já estornados”. Cancelamento operacional fica em
+                    Cancelamentos até a decisão.
                   </>
                 )}
               </p>
@@ -513,7 +538,7 @@ export const HubPaymentReversalPanel: React.FC<HubPaymentReversalPanelProps> = (
               {filtersNarrowed
                 ? 'Limpe a busca, troque a forma ou amplie as datas.'
                 : isHistory
-                  ? 'Pagamentos anulados no período aparecem aqui. Amplie as datas se o estorno foi feito em outro dia.'
+                  ? 'Estornos integrais e devoluções parciais do período aparecem aqui. Amplie as datas se o acerto foi em outro dia.'
                   : 'Os recebimentos da unidade aparecem aqui para estorno. Depois de anular, mude para “Já estornados”.'}
             </p>
           </div>
@@ -537,6 +562,8 @@ export const HubPaymentReversalPanel: React.FC<HubPaymentReversalPanelProps> = (
                     ? formatComandaOriginLabel(row.receivable.source_type)
                     : '—';
                   const active = target?.id === row.id;
+                  const isPartial = row.settlement === 'partial' || row.list_kind === 'line_refund';
+                  const refundedShown = Number(row.line_refunds_amount ?? 0);
                   const comandaHref = row.receivable?.comanda_id
                     ? `/hub/financeiro/comanda/${row.receivable.comanda_id}`
                     : row.receivable?.id
@@ -568,12 +595,33 @@ export const HubPaymentReversalPanel: React.FC<HubPaymentReversalPanelProps> = (
                       </td>
                       <td className="hub-finance-page__td-num">
                         <span className="hub-payables__amount">{formatBrl(Number(row.amount))}</span>
+                        {!isHistory && isPartial && refundedShown > 0.009 ? (
+                          <span className="hub-payables__amount-meta">
+                            −{formatBrl(refundedShown)} devolvido
+                          </span>
+                        ) : null}
+                        {isHistory && isPartial ? (
+                          <span className="hub-payables__amount-meta">Devolução parcial</span>
+                        ) : null}
                       </td>
                       <td className="hub-clientes__td-actions">
                         {isHistory ? (
-                          <span className="hub-payables__chip hub-payables__chip--muted">Estornado</span>
+                          <span
+                            className={`hub-payables__chip${
+                              isPartial
+                                ? ' hub-payables__chip--partial'
+                                : ' hub-payables__chip--muted'
+                            }`}
+                          >
+                            {isPartial ? 'Parcial' : 'Estornado'}
+                          </span>
                         ) : canReverse ? (
                           <div className="hub-clientes__td-actions-inner hub-dayboard__actions">
+                            {isPartial ? (
+                              <span className="hub-payables__chip hub-payables__chip--partial">
+                                Parcial
+                              </span>
+                            ) : null}
                             <button
                               type="button"
                               className="hub-dayboard__action-btn hub-dayboard__action-btn--danger"

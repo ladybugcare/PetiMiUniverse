@@ -59,31 +59,35 @@ async function ensureProduct(
     lots.lots?.find((l) => l.item_id === item!.id && (l.qty_on_hand ?? 0) > 0) ??
     lots.lots?.find((l) => l.item_id === item!.id);
 
-  // Reabastece só se não houver lote com saldo — evita PATCH frágil de qty_on_hand.
-  if (!lot || (lot.qty_on_hand ?? 0) < 5) {
-    try {
-      await hubApi(token, `/api/hub/inventory/items/${encodeURIComponent(item!.id)}/lots`, {
-        method: 'POST',
-        body: {
-          clinic_id: QA_CLINIC_ID,
+  // Reabastece via purchase_in (+ new_lot) — PATCH qty_on_hand falha em alguns estados de lote.
+  const need = Math.max(10, Math.floor(stockQty / 4));
+  if (!lot || (lot.qty_on_hand ?? 0) < need) {
+    await hubApi(token, '/api/hub/inventory/movements', {
+      method: 'POST',
+      body: {
+        clinic_id: QA_CLINIC_ID,
+        item_id: item!.id,
+        movement_type: 'purchase_in',
+        qty: stockQty,
+        notes: 'QA Etapa A top-up',
+        new_lot: {
           received_at: new Date().toISOString().slice(0, 10),
-          qty: stockQty,
           lot_code: `QA-ETAPA-A-TOPUP-${Date.now()}`,
         },
-      });
-      const lots2 = await hubApi<{ lots: Array<{ id: string; item_id: string; qty_on_hand: number }> }>(
-        token,
-        `/api/hub/inventory/lots?clinic_id=${encodeURIComponent(QA_CLINIC_ID)}`,
-      );
-      lot =
-        lots2.lots?.find((l) => l.item_id === item!.id && (l.qty_on_hand ?? 0) > 0) ??
-        lots2.lots?.find((l) => l.item_id === item!.id);
-    } catch {
-      // Mantém lote existente se top-up falhar (estoque já suficiente em runs anteriores).
-    }
+      },
+    });
+    const lots2 = await hubApi<{ lots: Array<{ id: string; item_id: string; qty_on_hand: number }> }>(
+      token,
+      `/api/hub/inventory/lots?clinic_id=${encodeURIComponent(QA_CLINIC_ID)}`,
+    );
+    lot =
+      lots2.lots?.find((l) => l.item_id === item!.id && (l.qty_on_hand ?? 0) > 0) ??
+      lots2.lots?.find((l) => l.item_id === item!.id);
   }
 
-  if (!lot) throw new Error(`Sem lote ativo para ${name}`);
+  if (!lot || (lot.qty_on_hand ?? 0) <= 0) {
+    throw new Error(`Sem lote ativo para ${name}`);
+  }
 
   return {
     itemId: item.id,

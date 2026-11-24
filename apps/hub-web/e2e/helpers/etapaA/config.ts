@@ -11,13 +11,18 @@ let loaded = false;
 
 export function ensureEtapaAEnv() {
   if (loaded) return;
-  // Local primeiro (API com correções da Etapa A); staging só preenche o que faltar.
-  loadDotEnvFile(join(HUB_WEB_ROOT, '.env.local'));
+  // Staging/smoke preenchem secrets; .env.local e E2E_* vencem para API/Hub locais.
   loadDotEnvFile(join(HUB_WEB_ROOT, '.env.staging.local'));
   const smokePath = join(REPO_ROOT, 'backend/.env.smoke.preprod.local');
   if (existsSync(smokePath)) loadDotEnvFile(smokePath);
   const preprodPath = join(REPO_ROOT, 'backend/.env.preprod.local');
   if (existsSync(preprodPath)) loadDotEnvFile(preprodPath);
+  loadDotEnvFile(join(HUB_WEB_ROOT, '.env.local'));
+  if (!process.env.E2E_HUB_BASE_URL) process.env.E2E_HUB_BASE_URL = 'http://localhost:3002';
+  if (!process.env.E2E_API_URL) process.env.E2E_API_URL = 'http://localhost:3000';
+  if (!process.env.E2E_ALLOW_REMOTE_API) {
+    process.env.VITE_API_URL = process.env.E2E_API_URL;
+  }
   loaded = true;
 }
 

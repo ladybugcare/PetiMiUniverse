@@ -36,6 +36,7 @@ import {
   emptyMerchandiseReturnValue,
   HubMerchandiseReturnSection,
   merchandiseReturnApiFields,
+  selectedMerchandiseAmount,
   type MerchandiseReturnLine,
   type MerchandiseReturnValue,
 } from './HubMerchandiseReturnSection';
@@ -83,6 +84,14 @@ export type PaymentReversalSummary = {
   cash_session_status?: 'open' | 'closed' | null;
 };
 
+/** Snapshot financeiro do recebível (após devoluções parciais). */
+export type PaymentReversalReceivableSnapshot = {
+  final_amount: number;
+  returned_amount: number;
+  line_refunds_amount: number;
+  paid_amount?: number;
+};
+
 export type HubPaymentReversalFormProps = {
   clinicId?: string | null;
   /** Pagamento conhecido; se null, mostra campo para colar o código. */
@@ -98,6 +107,8 @@ export type HubPaymentReversalFormProps = {
    * Venda rápida sem tutor: omitir a opção (evita erro 409 no backend).
    */
   allowCustomerCreditRefund?: boolean;
+  /** Valores vigentes do recebível — evita mostrar só o bruto do lançamento após parcial. */
+  receivableSnapshot?: PaymentReversalReceivableSnapshot | null;
   merchandiseLines?: MerchandiseReturnLine[];
   stockReturnStatus?: StockReturnStatus;
   /** Enquanto carrega linhas/recebível (ex.: após abrir o pagamento). */
@@ -123,6 +134,7 @@ export const HubPaymentReversalForm: React.FC<HubPaymentReversalFormProps> = ({
   onLookupPaymentId,
   originLabel = null,
   allowCustomerCreditRefund = true,
+  receivableSnapshot = null,
   merchandiseLines = [],
   stockReturnStatus,
   loadingMerchandise = false,
@@ -143,6 +155,18 @@ export const HubPaymentReversalForm: React.FC<HubPaymentReversalFormProps> = ({
     merchandiseLines.length > 0 && merchandiseLines.every((l) => l.alreadyReturned);
   const hasPhysicalProducts = merchandiseLines.length > 0;
   const methodOptions = refundMethodOptions(allowCustomerCreditRefund);
+  const returnedAmount = Number(receivableSnapshot?.returned_amount ?? 0);
+  const lineRefundsAmount = Number(receivableSnapshot?.line_refunds_amount ?? 0);
+  const finalAmount = Number(receivableSnapshot?.final_amount ?? NaN);
+  const hasPartialReturn = returnedAmount > 0.009 || lineRefundsAmount > 0.009;
+  const vigenteAmount = Number.isFinite(finalAmount)
+    ? finalAmount
+    : hasPartialReturn && payment
+      ? Math.max(0, Number(payment.amount) - Math.max(returnedAmount, lineRefundsAmount))
+      : payment
+        ? Number(payment.amount)
+        : 0;
+  const alreadyRefundedAmount = Math.max(returnedAmount, lineRefundsAmount);
 
   const [manualDraft, setManualDraft] = useState(payment?.id ?? seedPaymentId);
   const [reason, setReason] = useState(initialReason);
@@ -192,6 +216,7 @@ export const HubPaymentReversalForm: React.FC<HubPaymentReversalFormProps> = ({
 
   const cashClosed =
     payment?.payment_method === 'cash' && payment.cash_session_status === 'closed';
+  const selectedReturnAmount = selectedMerchandiseAmount(merchandiseLines, merchandiseReturn);
   const confirmLabel = saving
     ? 'Salvando…'
     : reversalMode === 'refund'
@@ -296,10 +321,46 @@ export const HubPaymentReversalForm: React.FC<HubPaymentReversalFormProps> = ({
               </strong>
             </div>
           ) : null}
-          <div className="hub-pay-rev-form__fact">
-            <span>Valor</span>
-            <strong>{formatBrl(Number(payment.amount))}</strong>
-          </div>
+          {hasPartialReturn ? (
+            <>
+              <div className="hub-pay-rev-form__fact">
+                <span>Lançamento</span>
+                <strong>{formatBrl(Number(payment.amount))}</strong>
+              </div>
+              <div className="hub-pay-rev-form__fact">
+                <span>Já devolvido</span>
+                <strong className="hub-pay-rev-form__fact-value--muted">
+                  −{formatBrl(alreadyRefundedAmount)}
+                </strong>
+              </div>
+              <div className="hub-pay-rev-form__fact">
+                <span>Vigente</span>
+                <strong>{formatBrl(vigenteAmount)}</strong>
+              </div>
+              {selectedReturnAmount > 0.009 ? (
+                <div className="hub-pay-rev-form__fact">
+                  <span>A devolver agora</span>
+                  <strong className="hub-pay-rev-form__fact-value--accent">
+                    {formatBrl(selectedReturnAmount)}
+                  </strong>
+                </div>
+              ) : null}
+            </>
+          ) : (
+            <div className="hub-pay-rev-form__fact">
+              <span>Valor</span>
+              <strong>
+                {selectedReturnAmount > 0.009
+                  ? formatBrl(selectedReturnAmount)
+                  : formatBrl(Number(payment.amount))}
+              </strong>
+              {selectedReturnAmount > 0.009 ? (
+                <em className="hub-pay-rev-form__fact-hint">
+                  dos {formatBrl(Number(payment.amount))} do lançamento
+                </em>
+              ) : null}
+            </div>
+          )}
           <div className="hub-pay-rev-form__fact">
             <span>Forma</span>
             <strong>

@@ -1632,6 +1632,12 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
             payment={reversePaymentSummary}
             originLabel={formatComandaOriginLabel(detail.source_type)}
             allowCustomerCreditRefund={Boolean(detail.guardian_id || detail.guardian?.id)}
+            receivableSnapshot={{
+              final_amount: Number(detail.final_amount ?? 0),
+              returned_amount: Number(detail.returned_amount ?? 0),
+              line_refunds_amount: Number(detail.line_refunds_amount ?? 0),
+              paid_amount: Number(detail.paid_amount ?? 0),
+            }}
             merchandiseLines={merchandiseLines}
             stockReturnStatus={detail.stock_return_status}
             initialMode={reverseInitialMode}
@@ -1847,6 +1853,12 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
             payment={reversePaymentSummary}
             originLabel={formatComandaOriginLabel(detail.source_type)}
             allowCustomerCreditRefund={Boolean(detail.guardian_id || detail.guardian?.id)}
+            receivableSnapshot={{
+              final_amount: Number(detail.final_amount ?? 0),
+              returned_amount: Number(detail.returned_amount ?? 0),
+              line_refunds_amount: Number(detail.line_refunds_amount ?? 0),
+              paid_amount: Number(detail.paid_amount ?? 0),
+            }}
             merchandiseLines={merchandiseLines}
             stockReturnStatus={detail.stock_return_status}
             initialMode={reverseInitialMode}

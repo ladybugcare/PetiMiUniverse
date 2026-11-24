@@ -146,9 +146,10 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
       setInventoryLots(lotsRes.lots ?? []);
 
       const invoicedSet = new Set(detail.invoiced_item_ids ?? []);
+      const returnedSet = new Set(detail.returned_item_ids ?? []);
       const drafts = (detail.items ?? [])
         .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-        .map((it) => apiItemToDraft(it, invoicedSet.has(it.id)));
+        .map((it) => apiItemToDraft(it, invoicedSet.has(it.id), returnedSet.has(it.id)));
       setItems(drafts);
 
       const info = detail.comanda as Record<string, unknown>;
@@ -200,10 +201,11 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
         });
         setPayload(detail);
         const invoicedSet = new Set(detail.invoiced_item_ids ?? []);
+      const returnedSet = new Set(detail.returned_item_ids ?? []);
         setItems(
           (detail.items ?? [])
             .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-            .map((it) => apiItemToDraft(it, invoicedSet.has(it.id)))
+            .map((it) => apiItemToDraft(it, invoicedSet.has(it.id), returnedSet.has(it.id)))
         );
       } catch (e: unknown) {
         showError((e as Error)?.message || 'Erro ao aplicar pacote');
@@ -280,10 +282,11 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
         const detail = await hubComandaApi.deleteItem(comandaId, item.id!, clinicId, editContext);
         setPayload(detail);
         const invoicedSet = new Set(detail.invoiced_item_ids ?? []);
+      const returnedSet = new Set(detail.returned_item_ids ?? []);
         setItems(
           (detail.items ?? [])
             .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-            .map((it) => apiItemToDraft(it, invoicedSet.has(it.id))),
+            .map((it) => apiItemToDraft(it, invoicedSet.has(it.id), returnedSet.has(it.id))),
         );
         showSuccess('Item removido.');
       } catch (e: unknown) {
@@ -355,10 +358,11 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
       if (detail) {
         setPayload(detail);
         const invoicedSet = new Set(detail.invoiced_item_ids ?? []);
+      const returnedSet = new Set(detail.returned_item_ids ?? []);
         setItems(
           (detail.items ?? [])
             .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
-            .map((it) => apiItemToDraft(it, invoicedSet.has(it.id))),
+            .map((it) => apiItemToDraft(it, invoicedSet.has(it.id), returnedSet.has(it.id))),
         );
       }
       showSuccess('Comanda salva.');

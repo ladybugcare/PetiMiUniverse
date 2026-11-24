@@ -24,13 +24,20 @@ export async function hubApi<T = Record<string, unknown>>(
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';
 
   let lastErr: Error | null = null;
-  for (let attempt = 0; attempt < 4; attempt++) {
+  for (let attempt = 0; attempt < 6; attempt++) {
     if (attempt > 0) await new Promise((r) => setTimeout(r, 1500 * attempt));
-    const res = await fetch(url, {
-      method: opts.method || 'GET',
-      headers,
-      body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
-    });
+    let res: Response;
+    try {
+      res = await fetch(url, {
+        method: opts.method || 'GET',
+        headers,
+        body: opts.body === undefined ? undefined : JSON.stringify(opts.body),
+      });
+    } catch (err) {
+      lastErr = err instanceof Error ? err : new Error(String(err));
+      // tsx watch reinicia a API no meio do request — retenta.
+      continue;
+    }
     const text = await res.text();
     let data: Record<string, unknown> = {};
     try {
