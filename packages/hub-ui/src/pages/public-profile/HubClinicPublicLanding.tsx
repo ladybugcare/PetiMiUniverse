@@ -459,14 +459,16 @@ const HubClinicPublicLanding: React.FC<HubClinicPublicLandingProps> = ({
                       {m.name.charAt(0).toUpperCase()}
                     </div>
                   )}
-                  <div>
-                    <h3>{m.name}</h3>
-                    <p className="hub-cpp__staff-role">{m.job_title}</p>
+                  <div className="hub-cpp__staff-body">
+                    <div className="hub-cpp__staff-head">
+                      <h3>{m.name}</h3>
+                      <p className="hub-cpp__staff-role">{m.job_title}</p>
+                    </div>
+                    {m.bio ? <p className="hub-cpp__staff-bio">{m.bio}</p> : null}
+                    {m.specialties?.length ? (
+                      <p className="hub-cpp__staff-specs">{m.specialties.join(' · ')}</p>
+                    ) : null}
                   </div>
-                  {m.bio ? <p>{m.bio}</p> : null}
-                  {m.specialties?.length ? (
-                    <p className="hub-cpp__staff-specs">{m.specialties.join(' · ')}</p>
-                  ) : null}
                 </article>
               ))}
             </div>

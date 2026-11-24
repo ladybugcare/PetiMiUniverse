@@ -428,45 +428,66 @@
 
 .hub-cpp__staff {
   display: grid;
-  gap: 1rem;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.85rem;
+  grid-template-columns: 1fr;
+}
+
+@media (min-width: 720px) {
+  .hub-cpp__staff:has(> :nth-child(2)) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .hub-cpp__staff-card {
   background: var(--cpp-surface);
   border: 1px solid var(--cpp-border);
   border-radius: 16px;
-  padding: 1.15rem;
+  padding: 1.1rem 1.25rem;
   display: grid;
-  gap: 0.65rem;
-  justify-items: start;
-  transition: transform 0.2s ease;
+  grid-template-columns: auto 1fr;
+  gap: 0.95rem 1.1rem;
+  align-items: start;
+  transition: transform 0.2s ease, border-color 0.2s ease;
 }
 
 .hub-cpp__staff-card:hover {
   transform: translateY(-2px);
+  border-color: color-mix(in srgb, var(--cpp-accent) 28%, var(--cpp-border));
 }
 
 .hub-cpp__staff-photo {
-  width: 64px;
-  height: 64px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
   object-fit: cover;
   background: var(--cpp-border);
+  flex-shrink: 0;
 }
 
 .hub-cpp__staff-photo--ph {
   display: grid;
   place-items: center;
   font-family: var(--cpp-display);
+  font-size: 1.35rem;
   font-weight: 700;
   color: var(--cpp-muted);
+}
+
+.hub-cpp__staff-body {
+  display: grid;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.hub-cpp__staff-head {
+  display: grid;
+  gap: 0.15rem;
 }
 
 .hub-cpp__staff-card h3 {
   margin: 0;
   font-family: var(--cpp-display);
-  font-size: 1.05rem;
+  font-size: 1.08rem;
 }
 
 .hub-cpp__staff-role {
@@ -474,6 +495,13 @@
   color: var(--cpp-accent);
   font-size: 0.88rem;
   font-weight: 600;
+}
+
+.hub-cpp__staff-bio {
+  margin: 0;
+  color: var(--cpp-muted);
+  font-size: 0.94rem;
+  line-height: 1.5;
 }
 
 .hub-cpp__staff-specs {
