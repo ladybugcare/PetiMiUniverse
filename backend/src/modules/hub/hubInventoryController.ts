@@ -496,6 +496,24 @@ export const patchHubManufacturer = async (req: Request, res: Response) => {
 const ITEM_SELECT =
   'id, clinic_id, item_kind, ean, name, unit_label, manufacturer_id, allow_fractional, store_sku, sale_purpose, product_group, default_supplier_id, description, cost_amount, sale_amount, supplier_discount_pct, max_sale_discount_pct, allow_price_override_on_sale, generates_staff_commission, min_stock_qty, expiry_alert_policy, content_qty, content_unit, active, created_at, updated_at, deleted_at';
 
+const SALE_PURPOSE_FILTERS = new Set(['SALE', 'INTERNAL', 'CLINICAL']);
+
+function parseSalePurposeFilter(raw: unknown): string | null {
+  const s = String(raw ?? '')
+    .trim()
+    .toUpperCase();
+  return SALE_PURPOSE_FILTERS.has(s) ? s : null;
+}
+
+function matchesSalePurpose(value: string | null | undefined, filter: string | null): boolean {
+  if (!filter) return true;
+  return (
+    String(value ?? '')
+      .trim()
+      .toUpperCase() === filter
+  );
+}
+
 function normalizeContentFields(opts: {
   unit_label: string | null | undefined;
   content_qty: number | null | undefined;
@@ -575,6 +593,7 @@ export const listHubInventoryItems = async (req: Request, res: Response) => {
     const clinic_id = parsed.data;
     const kind = req.query.item_kind as string | undefined;
     const search = (req.query.search as string | undefined)?.trim().toLowerCase();
+    const salePurpose = parseSalePurposeFilter(req.query.sale_purpose);
 
     let q = supabaseAdmin
       .from('hub_inventory_items')
@@ -585,6 +604,9 @@ export const listHubInventoryItems = async (req: Request, res: Response) => {
 
     if (kind && ['product', 'medication', 'vaccine'].includes(kind)) {
       q = q.eq('item_kind', kind);
+    }
+    if (salePurpose) {
+      q = q.eq('sale_purpose', salePurpose);
     }
 
     const { data: items, error } = await q;
@@ -1041,6 +1063,7 @@ export const getHubInventoryMovementsReport = async (req: Request, res: Response
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
     const direction = (req.query.direction as string) || 'all';
+    const salePurpose = parseSalePurposeFilter(req.query.sale_purpose);
     const fromRaw = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).safeParse(req.query.from);
     const toRaw = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).safeParse(req.query.to);
     const daysParsed = z.coerce.number().int().min(1).max(366).safeParse(req.query.days);
@@ -1064,7 +1087,7 @@ export const getHubInventoryMovementsReport = async (req: Request, res: Response
     const { data, error } = await supabaseAdmin
       .from('hub_stock_movements')
       .select(
-        'id, clinic_id, item_id, lot_id, movement_type, qty, unit_cost, notes, created_at, item:hub_inventory_items(id, name, item_kind, unit_label)'
+        'id, clinic_id, item_id, lot_id, movement_type, qty, unit_cost, notes, created_at, item:hub_inventory_items(id, name, item_kind, unit_label, sale_purpose)'
       )
       .eq('clinic_id', clinic_id)
       .gte('created_at', fromIso)
@@ -1086,27 +1109,43 @@ export const getHubInventoryMovementsReport = async (req: Request, res: Response
     const by_type: Record<string, { count: number; qty: number; label: string }> = {};
     let qty_in = 0;
     let qty_out = 0;
-    const items = rows.map((r) => {
+    const items = rows
+      .map((r) => {
       const type = String(r.movement_type ?? '');
       const sign = movementSign(type);
       const qty = Number(r.qty ?? 0);
+      const itemEmb = r.item as
+        | {
+            id: string;
+            name: string;
+            item_kind: string;
+            unit_label: string | null;
+            sale_purpose: string | null;
+          }
+        | {
+            id: string;
+            name: string;
+            item_kind: string;
+            unit_label: string | null;
+            sale_purpose: string | null;
+          }[]
+        | null;
+      const item = Array.isArray(itemEmb) ? itemEmb[0] ?? null : itemEmb;
+      const purpose = (item?.sale_purpose as string | null) ?? null;
+      if (!matchesSalePurpose(purpose, salePurpose)) return null;
       const cur = by_type[type] ?? { count: 0, qty: 0, label: MOVEMENT_TYPE_LABELS[type] ?? type };
       cur.count += 1;
       cur.qty += qty;
       by_type[type] = cur;
       if (sign > 0) qty_in += qty;
       else if (sign < 0) qty_out += qty;
-      const itemEmb = r.item as
-        | { id: string; name: string; item_kind: string; unit_label: string | null }
-        | { id: string; name: string; item_kind: string; unit_label: string | null }[]
-        | null;
-      const item = Array.isArray(itemEmb) ? itemEmb[0] ?? null : itemEmb;
       return {
         id: r.id as string,
         item_id: r.item_id as string,
         item_name: item?.name ?? '—',
         item_kind: item?.item_kind ?? null,
         unit_label: item?.unit_label ?? null,
+        sale_purpose: purpose,
         lot_id: (r.lot_id as string | null) ?? null,
         movement_type: type,
         movement_label: MOVEMENT_TYPE_LABELS[type] ?? type,
@@ -1116,7 +1155,8 @@ export const getHubInventoryMovementsReport = async (req: Request, res: Response
         notes: (r.notes as string | null) ?? null,
         created_at: r.created_at as string,
       };
-    });
+    })
+      .filter((row): row is NonNullable<typeof row> => row != null);
 
     return res.json({
       period: { from: fromYmd, to: toYmd },
@@ -1251,6 +1291,7 @@ export const listHubExpiringLots = async (req: Request, res: Response) => {
     const parsed = uuidStr.safeParse(req.query.clinic_id);
     if (!parsed.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = parsed.data;
+    const salePurpose = parseSalePurposeFilter(req.query.sale_purpose);
     const byPolicy =
       String(req.query.by_policy || '') === '1' ||
       String(req.query.by_policy || '').toLowerCase() === 'true';
@@ -1278,17 +1319,21 @@ export const listHubExpiringLots = async (req: Request, res: Response) => {
 
     const { byLot } = await computeBalances(clinic_id);
     const itemIds = [...new Set((lots ?? []).map((l) => l.item_id as string))];
-    let itemMap = new Map<string, { name: string; item_kind: string; expiry_alert_policy: string }>();
+    let itemMap = new Map<
+      string,
+      { name: string; item_kind: string; expiry_alert_policy: string; sale_purpose: string | null }
+    >();
     if (itemIds.length) {
       const { data: items } = await supabaseAdmin
         .from('hub_inventory_items')
-        .select('id, name, item_kind, expiry_alert_policy')
+        .select('id, name, item_kind, expiry_alert_policy, sale_purpose')
         .in('id', itemIds);
       for (const it of items ?? []) {
         itemMap.set(it.id as string, {
           name: it.name as string,
           item_kind: it.item_kind as string,
           expiry_alert_policy: String(it.expiry_alert_policy ?? 'none'),
+          sale_purpose: (it.sale_purpose as string | null) ?? null,
         });
       }
     }
@@ -1313,16 +1358,23 @@ export const listHubExpiringLots = async (req: Request, res: Response) => {
           name: '?',
           item_kind: 'product',
           expiry_alert_policy: 'none',
+          sale_purpose: null as string | null,
         };
         return {
           ...l,
           qty_on_hand: qty,
-          item: { name: meta.name, item_kind: meta.item_kind },
+          item: {
+            name: meta.name,
+            item_kind: meta.item_kind,
+            sale_purpose: meta.sale_purpose,
+          },
           expiry_alert_policy: meta.expiry_alert_policy,
+          sale_purpose: meta.sale_purpose,
         };
       })
       .filter((l) => {
         if (l.qty_on_hand <= 0) return false;
+        if (!matchesSalePurpose(l.sale_purpose, salePurpose)) return false;
         if (!byPolicy) return true;
         const days = policyDays(l.expiry_alert_policy);
         if (days == null) return false;
@@ -1342,12 +1394,15 @@ export const listHubLowStock = async (req: Request, res: Response) => {
     const parsed = uuidStr.safeParse(req.query.clinic_id);
     if (!parsed.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = parsed.data;
-    const { data: items, error } = await supabaseAdmin
+    const salePurpose = parseSalePurposeFilter(req.query.sale_purpose);
+    let q = supabaseAdmin
       .from('hub_inventory_items')
-      .select('id, name, item_kind, min_stock_qty')
+      .select('id, name, item_kind, min_stock_qty, sale_purpose')
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
       .eq('active', true);
+    if (salePurpose) q = q.eq('sale_purpose', salePurpose);
+    const { data: items, error } = await q;
     if (error) {
       console.error('[hub_inventory] low stock', error);
       return res.status(500).json({ error: 'Erro ao listar estoque baixo' });
@@ -1374,14 +1429,17 @@ export const listHubNearlyEmptyLots = async (req: Request, res: Response) => {
     const parsed = uuidStr.safeParse(req.query.clinic_id);
     if (!parsed.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = parsed.data;
+    const salePurpose = parseSalePurposeFilter(req.query.sale_purpose);
 
-    const { data: items, error: itemsErr } = await supabaseAdmin
+    let itemsQ = supabaseAdmin
       .from('hub_inventory_items')
-      .select('id, name, item_kind, unit_label, content_qty, content_unit')
+      .select('id, name, item_kind, unit_label, content_qty, content_unit, sale_purpose')
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
       .eq('active', true)
       .not('content_qty', 'is', null);
+    if (salePurpose) itemsQ = itemsQ.eq('sale_purpose', salePurpose);
+    const { data: items, error: itemsErr } = await itemsQ;
     if (itemsErr) {
       if (String(itemsErr.message || '').includes('content_qty')) {
         return res.json({ lots: [] });
@@ -1403,6 +1461,7 @@ export const listHubNearlyEmptyLots = async (req: Request, res: Response) => {
           unit_label: (it.unit_label as string | null) ?? null,
           content_qty: Number(it.content_qty),
           content_unit: (it.content_unit as string | null) ?? null,
+          sale_purpose: (it.sale_purpose as string | null) ?? null,
         },
       ]),
     );
@@ -1440,6 +1499,7 @@ export const listHubNearlyEmptyLots = async (req: Request, res: Response) => {
             unit_label: meta.unit_label,
             content_qty: meta.content_qty,
             content_unit: meta.content_unit,
+            sale_purpose: meta.sale_purpose,
           },
         };
       })
@@ -1752,12 +1812,17 @@ export const getHubInventoryValuationReport = async (req: Request, res: Response
     const clinic = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
+    const salePurpose = parseSalePurposeFilter(req.query.sale_purpose);
 
-    const { data: items, error } = await supabaseAdmin
+    let valuationQ = supabaseAdmin
       .from('hub_inventory_items')
-      .select('id, name, item_kind, unit_label, cost_amount, sale_amount, min_stock_qty, active')
+      .select(
+        'id, name, item_kind, unit_label, cost_amount, sale_amount, min_stock_qty, active, sale_purpose',
+      )
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null);
+    if (salePurpose) valuationQ = valuationQ.eq('sale_purpose', salePurpose);
+    const { data: items, error } = await valuationQ;
     if (error) {
       console.error('[hub_inventory] valuation', error);
       return res.status(500).json({ error: 'Erro ao carregar itens' });

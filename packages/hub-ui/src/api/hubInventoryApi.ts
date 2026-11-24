@@ -95,6 +95,7 @@ export interface HubInventoryLotRow {
     unit_label?: string | null;
     content_qty?: number | null;
     content_unit?: string | null;
+    sale_purpose?: string | null;
   } | null;
 }
 
@@ -112,6 +113,7 @@ export type HubInventoryMovementsReport = {
     item_name: string;
     item_kind: string | null;
     unit_label: string | null;
+    sale_purpose?: string | null;
     lot_id: string | null;
     movement_type: string;
     movement_label: string;
@@ -276,11 +278,18 @@ export const hubInventoryApi = {
     },
   },
   items: {
-    list(clinicId: string, bustCache = false, itemKind?: HubItemKind, search?: string) {
+    list(
+      clinicId: string,
+      bustCache = false,
+      itemKind?: HubItemKind,
+      search?: string,
+      opts?: { salePurpose?: string },
+    ) {
       const p = new URLSearchParams({ clinic_id: clinicId });
       if (bustCache) p.set('_', String(Date.now()));
       if (itemKind) p.set('item_kind', itemKind);
       if (search?.trim()) p.set('search', search.trim());
+      if (opts?.salePurpose) p.set('sale_purpose', opts.salePurpose);
       return apiRequest(`${base}/items?${p}`) as Promise<{ items: HubInventoryItem[] }>;
     },
     create(payload: {
@@ -388,30 +397,43 @@ export const hubInventoryApi = {
     list(clinicId: string) {
       return apiRequest(`${base}/lots?clinic_id=${encodeURIComponent(clinicId)}`) as Promise<{ lots: HubInventoryLotRow[] }>;
     },
-    expiring(clinicId: string, withinDays = 30, opts?: { byPolicy?: boolean }) {
+    expiring(clinicId: string, withinDays = 30, opts?: { byPolicy?: boolean; salePurpose?: string }) {
       const p = new URLSearchParams({
         clinic_id: clinicId,
         within_days: String(withinDays),
       });
       if (opts?.byPolicy) p.set('by_policy', '1');
+      if (opts?.salePurpose) p.set('sale_purpose', opts.salePurpose);
       return apiRequest(`${base}/lots/expiring?${p}`) as Promise<{ lots: HubInventoryLotRow[] }>;
     },
   },
   reports: {
-    lowStock(clinicId: string) {
-      return apiRequest(`${base}/reports/low-stock?clinic_id=${encodeURIComponent(clinicId)}`) as Promise<{ items: HubInventoryItem[] }>;
+    lowStock(clinicId: string, opts?: { salePurpose?: string }) {
+      const p = new URLSearchParams({ clinic_id: clinicId });
+      if (opts?.salePurpose) p.set('sale_purpose', opts.salePurpose);
+      return apiRequest(`${base}/reports/low-stock?${p}`) as Promise<{ items: HubInventoryItem[] }>;
     },
-    nearlyEmptyLots(clinicId: string) {
-      return apiRequest(
-        `${base}/reports/nearly-empty-lots?clinic_id=${encodeURIComponent(clinicId)}`,
-      ) as Promise<{ lots: HubInventoryLotRow[] }>;
+    nearlyEmptyLots(clinicId: string, opts?: { salePurpose?: string }) {
+      const p = new URLSearchParams({ clinic_id: clinicId });
+      if (opts?.salePurpose) p.set('sale_purpose', opts.salePurpose);
+      return apiRequest(`${base}/reports/nearly-empty-lots?${p}`) as Promise<{ lots: HubInventoryLotRow[] }>;
     },
-    movements(clinicId: string, opts?: { days?: number; from?: string; to?: string; direction?: 'all' | 'in' | 'out' }) {
+    movements(
+      clinicId: string,
+      opts?: {
+        days?: number;
+        from?: string;
+        to?: string;
+        direction?: 'all' | 'in' | 'out';
+        salePurpose?: string;
+      },
+    ) {
       const p = new URLSearchParams({ clinic_id: clinicId });
       if (opts?.days != null) p.set('days', String(opts.days));
       if (opts?.from) p.set('from', opts.from);
       if (opts?.to) p.set('to', opts.to);
       if (opts?.direction) p.set('direction', opts.direction);
+      if (opts?.salePurpose) p.set('sale_purpose', opts.salePurpose);
       return apiRequest(`${base}/reports/movements?${p}`) as Promise<HubInventoryMovementsReport>;
     },
     abc(clinicId: string, opts?: { days?: number; from?: string; to?: string }) {
@@ -428,10 +450,10 @@ export const hubInventoryApi = {
       if (opts?.to) p.set('to', opts.to);
       return apiRequest(`${base}/reports/turnover?${p}`) as Promise<HubInventoryTurnoverReport>;
     },
-    valuation(clinicId: string) {
-      return apiRequest(
-        `${base}/reports/valuation?clinic_id=${encodeURIComponent(clinicId)}`,
-      ) as Promise<HubInventoryValuationReport>;
+    valuation(clinicId: string, opts?: { salePurpose?: string }) {
+      const p = new URLSearchParams({ clinic_id: clinicId });
+      if (opts?.salePurpose) p.set('sale_purpose', opts.salePurpose);
+      return apiRequest(`${base}/reports/valuation?${p}`) as Promise<HubInventoryValuationReport>;
     },
   },
 };

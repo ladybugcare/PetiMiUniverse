@@ -303,6 +303,22 @@ export const HUB_REPORT_LINKS: HubReportLinkDefinition[] = [
 
 const VALID_REPORT_IDS = new Set<string>(HUB_REPORTS.map((r) => r.id));
 
+/**
+ * Catálogo enxuto para quem atua só na clínica (ex.: médico vet sem financeiro/relatórios gerais).
+ * Evita CRM, gestão de compra e no-shows da clínica inteira.
+ */
+export const CLINICAL_AUDIENCE_REPORT_IDS = new Set<HubReportId>([
+  'my-attendances',
+  'my-no-shows',
+  'my-commissions',
+  'vaccines-due',
+  'exams-requested',
+  'stock-position',
+  'stock-movements',
+]);
+
+export const CLINICAL_AUDIENCE_REPORT_LINK_IDS = new Set<string>(['stock-alerts', 'day-prints']);
+
 export function parseHubReportId(raw: string | null): HubReportId | null {
   if (!raw || !VALID_REPORT_IDS.has(raw)) return null;
   return raw as HubReportId;
@@ -321,15 +337,36 @@ function needsFinancialRead(permission: string | string[]): boolean {
   return permission === 'hub.financial.read';
 }
 
+/** Clínica sem backoffice de relatórios/financeiro — perfil típico do veterinário. */
+export function isClinicalReportsAudience(hasPermission: (p: string) => boolean): boolean {
+  return (
+    hasPermission('hub.clinic.read') &&
+    !hasPermission('hub.reports.read') &&
+    !hasPermission('hub.financial.read')
+  );
+}
+
+/**
+ * Estoque só de uso clínico (exclui venda e consumo interno).
+ * Quem tem hub.inventory.write (área estoque) vê o catálogo completo.
+ */
+export function usesClinicalStockScope(hasPermission: (p: string) => boolean): boolean {
+  return isClinicalReportsAudience(hasPermission) && !hasPermission('hub.inventory.write');
+}
+
 /**
  * Visibilidade no catálogo.
  * - Relatórios `scope: 'self'`: só a permissão listada (não via hub.reports.read).
  * - Relatórios financeiros: exigem hub.financial.read (hub.reports.read sozinho não basta).
  * - Demais: hub.reports.read libera o card, ou a permissão do domínio.
+ * - Audiência clínica: só allowlist (mesmo com permissão de domínio).
  */
 export function reportAllowed(
   hasPermission: (p: string) => boolean,
-  permissionOrReport: string | string[] | Pick<HubReportDefinition, 'permission' | 'scope'>,
+  permissionOrReport:
+    | string
+    | string[]
+    | Pick<HubReportDefinition, 'id' | 'permission' | 'scope'>,
 ): boolean {
   const isReportDef =
     typeof permissionOrReport === 'object' &&
@@ -339,13 +376,35 @@ export function reportAllowed(
 
   const permission = isReportDef ? permissionOrReport.permission : permissionOrReport;
   const scope = isReportDef ? permissionOrReport.scope : undefined;
+  const reportId = isReportDef ? permissionOrReport.id : undefined;
 
-  if (scope === 'self') return permissionMatches(hasPermission, permission);
-
-  if (needsFinancialRead(permission)) {
-    return hasPermission('hub.financial.read');
+  let allowed = false;
+  if (scope === 'self') {
+    allowed = permissionMatches(hasPermission, permission);
+  } else if (needsFinancialRead(permission)) {
+    allowed = hasPermission('hub.financial.read');
+  } else if (hasPermission('hub.reports.read')) {
+    allowed = true;
+  } else {
+    allowed = permissionMatches(hasPermission, permission);
   }
 
-  if (hasPermission('hub.reports.read')) return true;
-  return permissionMatches(hasPermission, permission);
+  if (!allowed) return false;
+
+  if (isClinicalReportsAudience(hasPermission) && reportId) {
+    return CLINICAL_AUDIENCE_REPORT_IDS.has(reportId);
+  }
+
+  return true;
+}
+
+export function reportLinkAllowed(
+  hasPermission: (p: string) => boolean,
+  link: Pick<HubReportLinkDefinition, 'id' | 'permission'>,
+): boolean {
+  if (!reportAllowed(hasPermission, link.permission)) return false;
+  if (isClinicalReportsAudience(hasPermission)) {
+    return CLINICAL_AUDIENCE_REPORT_LINK_IDS.has(link.id);
+  }
+  return true;
 }

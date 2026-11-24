@@ -17,6 +17,8 @@ import {
   type EstoqueAlertasView,
 } from './estoqueShared';
 import { formatStockQty } from './inventoryContentUtils';
+import { filterItemsBySalePurpose, isClinicalSalePurpose } from '../../utils/inventorySalePurpose';
+import { usesClinicalStockScope } from '../finance/hubRelatoriosConfig';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
 import './estoque.css';
@@ -40,8 +42,10 @@ const HubEstoqueAlertasPage: React.FC = () => {
   const clinicId = getStoredClinicId();
   const accessAllowed = hasPermission('hub.inventory.read');
   const canWrite = hasPermission('hub.inventory.write');
+  const clinicalStock = usesClinicalStockScope(hasPermission);
+  const salePurpose = clinicalStock ? 'CLINICAL' : undefined;
   const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(
-    clinicId ? `${clinicId}:${view}` : null,
+    clinicId ? `${clinicId}:${view}:${clinicalStock ? 'clinical' : 'all'}` : null,
   );
   const [low, setLow] = useState<HubInventoryItem[]>([]);
   const [nearlyEmpty, setNearlyEmpty] = useState<HubInventoryLotRow[]>([]);
@@ -57,17 +61,33 @@ const HubEstoqueAlertasPage: React.FC = () => {
     begin();
     try {
       if (view === 'validade') {
-        const res = await hubInventoryApi.lots.expiring(clinicId, within);
-        setExpiringPeriod(res.lots || []);
+        const res = await hubInventoryApi.lots.expiring(clinicId, within, { salePurpose });
+        const lots = res.lots || [];
+        setExpiringPeriod(
+          clinicalStock
+            ? lots.filter((l) => isClinicalSalePurpose(l.item?.sale_purpose))
+            : lots,
+        );
       } else {
         const [a, b, c] = await Promise.all([
-          hubInventoryApi.reports.lowStock(clinicId),
-          hubInventoryApi.lots.expiring(clinicId, 90, { byPolicy: true }),
-          hubInventoryApi.reports.nearlyEmptyLots(clinicId),
+          hubInventoryApi.reports.lowStock(clinicId, { salePurpose }),
+          hubInventoryApi.lots.expiring(clinicId, 90, { byPolicy: true, salePurpose }),
+          hubInventoryApi.reports.nearlyEmptyLots(clinicId, { salePurpose }),
         ]);
-        setLow(a.items || []);
-        setExpiringPolicy(b.lots || []);
-        setNearlyEmpty(c.lots || []);
+        const lowItems = a.items || [];
+        const expiring = b.lots || [];
+        const nearly = c.lots || [];
+        setLow(clinicalStock ? filterItemsBySalePurpose(lowItems, 'CLINICAL') : lowItems);
+        setExpiringPolicy(
+          clinicalStock
+            ? expiring.filter((l) => isClinicalSalePurpose(l.item?.sale_purpose))
+            : expiring,
+        );
+        setNearlyEmpty(
+          clinicalStock
+            ? nearly.filter((l) => isClinicalSalePurpose(l.item?.sale_purpose))
+            : nearly,
+        );
       }
       succeed();
     } catch (e: unknown) {
@@ -75,7 +95,7 @@ const HubEstoqueAlertasPage: React.FC = () => {
     } finally {
       finish();
     }
-  }, [clinicId, view, within, showError, begin, succeed, finish]);
+  }, [clinicId, view, within, clinicalStock, salePurpose, showError, begin, succeed, finish]);
 
   useEffect(() => {
     if (permLoading) return;
@@ -168,9 +188,13 @@ const HubEstoqueAlertasPage: React.FC = () => {
             <div>
               <h1 className="hub-servicos-config__title">Alertas</h1>
               <p className="hub-clientes__muted hub-servicos-config__lead">
-                {view === 'validade'
-                  ? 'Consulta livre de lotes a vencer no período escolhido, independente da política do item.'
-                  : 'Estoque abaixo do mínimo, embalagens quase vazias e lotes dentro da política de validade de cada item.'}
+                {clinicalStock
+                  ? view === 'validade'
+                    ? 'Lotes de uso clínico a vencer no período escolhido.'
+                    : 'Alertas só de itens de uso clínico — sem produtos de venda ou consumo interno.'
+                  : view === 'validade'
+                    ? 'Consulta livre de lotes a vencer no período escolhido, independente da política do item.'
+                    : 'Estoque abaixo do mínimo, embalagens quase vazias e lotes dentro da política de validade de cada item.'}
               </p>
             </div>
           </div>

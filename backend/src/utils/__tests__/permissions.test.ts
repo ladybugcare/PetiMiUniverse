@@ -27,6 +27,7 @@ describe('permissions', () => {
       expect(hasPermission('CVET_INTERNAL', 'hub.receivables.create')).toBe(false);
       expect(hasPermission('CVET_INTERNAL', 'hub.cash.session')).toBe(false);
       expect(hasPermission('CVET_INTERNAL', 'hub.commissions.read_own')).toBe(true);
+      expect(hasPermission('CVET_INTERNAL', 'hub.reports.read')).toBe(false);
     });
 
     it('CGROOMER não tem hub.financial.write', () => {

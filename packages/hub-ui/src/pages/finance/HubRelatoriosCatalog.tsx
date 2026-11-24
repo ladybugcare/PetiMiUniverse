@@ -38,6 +38,7 @@ import {
   HUB_REPORT_LINKS,
   HUB_REPORTS,
   reportAllowed,
+  reportLinkAllowed,
   type HubReportCategoryId,
   type HubReportId,
 } from './hubRelatoriosConfig';
@@ -110,7 +111,7 @@ export const HubRelatoriosCatalog: React.FC<HubRelatoriosCatalogProps> = ({
     [hasPermission],
   );
   const links = useMemo(
-    () => HUB_REPORT_LINKS.filter((r) => reportAllowed(hasPermission, r.permission)),
+    () => HUB_REPORT_LINKS.filter((r) => reportLinkAllowed(hasPermission, r)),
     [hasPermission],
   );
 

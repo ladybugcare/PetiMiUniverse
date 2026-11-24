@@ -32,6 +32,8 @@ import {
   type EstoqueStockFilter,
 } from './estoqueShared';
 import { stockUnitRequiresContent, stockUnitShowsContentFields } from './inventoryContentUtils';
+import { filterItemsBySalePurpose } from '../../utils/inventorySalePurpose';
+import { usesClinicalStockScope } from '../finance/hubRelatoriosConfig';
 import '../clientes/clientes.css';
 import '../clientes/clientes-drawer.css';
 import '../pets/pets-page.css';
@@ -156,13 +158,14 @@ const HubEstoqueItemsPage: React.FC = () => {
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.inventory.write');
   const accessAllowed = hasPermission('hub.inventory.read');
+  const clinicalStock = usesClinicalStockScope(hasPermission);
   const [searchParams, setSearchParams] = useSearchParams();
   const kindFilter = parseKindFilter(searchParams.get('kind'));
   const stockFilter = parseStockFilter(searchParams.get('stock'));
   const itemKind = kindFilter === 'all' ? undefined : kindFilter;
 
   const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(
-    clinicId ? `${clinicId}:${kindFilter}` : null,
+    clinicId ? `${clinicId}:${kindFilter}:${clinicalStock ? 'clinical' : 'all'}` : null,
   );
   const [items, setItems] = useState<HubInventoryItem[]>([]);
   const [suppliers, setSuppliers] = useState<HubSupplier[]>([]);
@@ -183,15 +186,18 @@ const HubEstoqueItemsPage: React.FC = () => {
     begin();
     try {
       const s = searchRef.current.trim();
-      const res = await hubInventoryApi.items.list(clinicId, true, itemKind, s || undefined);
-      setItems(res.items || []);
+      const res = await hubInventoryApi.items.list(clinicId, true, itemKind, s || undefined, {
+        salePurpose: clinicalStock ? 'CLINICAL' : undefined,
+      });
+      const list = res.items || [];
+      setItems(clinicalStock ? filterItemsBySalePurpose(list, 'CLINICAL') : list);
       succeed();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar itens');
     } finally {
       finish();
     }
-  }, [clinicId, itemKind, showError, begin, succeed, finish]);
+  }, [clinicId, itemKind, clinicalStock, showError, begin, succeed, finish]);
 
   const onSearchChange = useCallback((value: string) => {
     setSearch(value);
@@ -610,7 +616,9 @@ const HubEstoqueItemsPage: React.FC = () => {
             <div>
               <h1 className="hub-servicos-config__title">Itens de estoque</h1>
               <p className="hub-clientes__muted hub-servicos-config__lead">
-                Catálogo de produtos, medicamentos e vacinas — quantidade, preços e alertas em um só lugar.
+                {clinicalStock
+                  ? 'Itens de uso clínico disponíveis no consultório — venda e consumo interno ficam de fora.'
+                  : 'Catálogo de produtos, medicamentos e vacinas — quantidade, preços e alertas em um só lugar.'}
               </p>
             </div>
           </div>
@@ -760,8 +768,12 @@ const HubEstoqueItemsPage: React.FC = () => {
                       <th>SKU</th>
                       <th>Qtd</th>
                       <th>Mín.</th>
-                      <th className="hub-servicos__td-money">Custo</th>
-                      <th className="hub-servicos__td-money">Venda</th>
+                      {!clinicalStock ? (
+                        <>
+                          <th className="hub-servicos__td-money">Custo</th>
+                          <th className="hub-servicos__td-money">Venda</th>
+                        </>
+                      ) : null}
                       {canWrite ? <th className="hub-clientes__th-actions">Ações</th> : null}
                     </tr>
                   </thead>
@@ -815,8 +827,16 @@ const HubEstoqueItemsPage: React.FC = () => {
                             </span>
                           </td>
                           <td>{t.min_stock_qty}</td>
-                          <td className="hub-servicos__td-money">{formatMoneyCurrencyBrl(Number(t.cost_amount))}</td>
-                          <td className="hub-servicos__td-money">{formatMoneyCurrencyBrl(Number(t.sale_amount))}</td>
+                          {!clinicalStock ? (
+                            <>
+                              <td className="hub-servicos__td-money">
+                                {formatMoneyCurrencyBrl(Number(t.cost_amount))}
+                              </td>
+                              <td className="hub-servicos__td-money">
+                                {formatMoneyCurrencyBrl(Number(t.sale_amount))}
+                              </td>
+                            </>
+                          ) : null}
                           {canWrite ? (
                             <td className="hub-clientes__td-actions" onClick={(e) => e.stopPropagation()}>
                               <div className="hub-servicos__row-actions">
@@ -885,9 +905,11 @@ const HubEstoqueItemsPage: React.FC = () => {
                         <span className="hub-clientes__muted" style={{ fontSize: 12 }}>
                           Mín. {t.min_stock_qty}
                         </span>
-                        <span className="hub-clientes__muted hub-clientes__mobile-card-pets">
-                          {formatMoneyCurrencyBrl(Number(t.sale_amount))}
-                        </span>
+                        {!clinicalStock ? (
+                          <span className="hub-clientes__muted hub-clientes__mobile-card-pets">
+                            {formatMoneyCurrencyBrl(Number(t.sale_amount))}
+                          </span>
+                        ) : null}
                       </div>
                     </button>
                   );

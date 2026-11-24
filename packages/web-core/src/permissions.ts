@@ -160,7 +160,6 @@ export const PERMISSIONS: Record<ClinicStaffRole, string[]> = {
     'hub.clinic.med_orders.manage',
     'hub.clinic.med_admin.write',
     'hub.service_types.read',
-    'hub.reports.read',
     'hub.commissions.read_own',
   ],
   CGROOMER: [

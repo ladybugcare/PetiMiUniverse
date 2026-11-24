@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AlertTriangle, CheckCircle2, Package, PackageX } from 'lucide-react';
+import { usePermissions } from '@petimi/web-core';
 import {
   hubInventoryApi,
   type HubInventoryItem,
@@ -9,10 +10,12 @@ import {
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
 import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
+import { filterItemsBySalePurpose } from '../../utils/inventorySalePurpose';
 import { HubRelatoriosExportButton } from './HubRelatoriosExportButton';
 import { HubRelatoriosEmpty } from './HubRelatoriosEmpty';
 import { makeReportExporters } from './hubRelatoriosExport';
 import { stockItemDrillHref } from './hubRelatoriosLinks';
+import { usesClinicalStockScope } from './hubRelatoriosConfig';
 import { formatBrl } from './hubRelatoriosUtils';
 
 type StockStatus = 'zero' | 'low' | 'ok';
@@ -43,7 +46,11 @@ type HubRelatoriosStockPositionProps = {
 
 export const HubRelatoriosStockPosition: React.FC<HubRelatoriosStockPositionProps> = ({ clinicId }) => {
   const { showError } = useAlert();
-  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
+  const { hasPermission } = usePermissions();
+  const clinicalStock = usesClinicalStockScope(hasPermission);
+  const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(
+    clinicId ? `${clinicId}:${clinicalStock ? 'clinical' : 'all'}` : null,
+  );
   const [items, setItems] = useState<HubInventoryItem[]>([]);
   const [valuation, setValuation] = useState<HubInventoryValuationReport | null>(null);
   const [filter, setFilter] = useState<'all' | StockStatus>('all');
@@ -52,10 +59,15 @@ export const HubRelatoriosStockPosition: React.FC<HubRelatoriosStockPositionProp
     begin();
     try {
       const [res, val] = await Promise.all([
-        hubInventoryApi.items.list(clinicId),
-        hubInventoryApi.reports.valuation(clinicId),
+        hubInventoryApi.items.list(clinicId, false, undefined, undefined, {
+          salePurpose: clinicalStock ? 'CLINICAL' : undefined,
+        }),
+        hubInventoryApi.reports.valuation(clinicId, {
+          salePurpose: clinicalStock ? 'CLINICAL' : undefined,
+        }),
       ]);
-      const active = (res.items ?? []).filter((i) => i.active && !i.deleted_at);
+      let active = (res.items ?? []).filter((i) => i.active && !i.deleted_at);
+      if (clinicalStock) active = filterItemsBySalePurpose(active, 'CLINICAL');
       active.sort((a, b) => {
         const order: Record<StockStatus, number> = { zero: 0, low: 1, ok: 2 };
         const diff = order[stockStatus(a)] - order[stockStatus(b)];
@@ -70,7 +82,7 @@ export const HubRelatoriosStockPosition: React.FC<HubRelatoriosStockPositionProp
     } finally {
       finish();
     }
-  }, [clinicId, showError, begin, succeed, finish]);
+  }, [clinicId, clinicalStock, showError, begin, succeed, finish]);
 
   useEffect(() => {
     void load();
@@ -96,6 +108,18 @@ export const HubRelatoriosStockPosition: React.FC<HubRelatoriosStockPositionProp
       valueCost += qty * Number(item.cost_amount ?? 0);
       valueSale += qty * Number(item.sale_amount ?? 0);
     }
+    // Com recorte clínico, recalcula a partir dos itens filtrados (não confia no valuation global).
+    if (clinicalStock) {
+      return {
+        total: items.length,
+        zero,
+        low,
+        ok,
+        valueCost,
+        valueSale,
+        alerts: zero + low,
+      };
+    }
     return {
       total: items.length,
       zero: valuation?.summary.zero_stock ?? zero,
@@ -105,7 +129,7 @@ export const HubRelatoriosStockPosition: React.FC<HubRelatoriosStockPositionProp
       valueSale: valuation?.summary.value_sale ?? valueSale,
       alerts: (valuation?.summary.zero_stock ?? zero) + (valuation?.summary.low_stock ?? low),
     };
-  }, [items, valuation]);
+  }, [items, valuation, clinicalStock]);
 
   const statusBars = useMemo(() => {
     const rows = [
@@ -122,19 +146,23 @@ export const HubRelatoriosStockPosition: React.FC<HubRelatoriosStockPositionProp
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
-    title: 'Posição de estoque',
-    slug: 'posicao-estoque',
-    headers: ['Item', 'SKU', 'Tipo', 'Saldo', 'Mínimo', 'Situação', 'Custo', 'Venda'],
-    rows: filtered.map((item) => [
-      item.name,
-      item.store_sku,
-      ITEM_KIND_LABELS[item.item_kind] ?? item.item_kind,
-      Number(item.qty_on_hand ?? 0),
-      Number(item.min_stock_qty ?? 0),
-      STATUS_LABELS[stockStatus(item)],
-      Number(item.cost_amount ?? 0),
-      Number(item.sale_amount ?? 0),
-    ]),
+    title: clinicalStock ? 'Posição de estoque (uso clínico)' : 'Posição de estoque',
+    slug: clinicalStock ? 'posicao-estoque-clinico' : 'posicao-estoque',
+    headers: clinicalStock
+      ? ['Item', 'SKU', 'Tipo', 'Saldo', 'Mínimo', 'Situação']
+      : ['Item', 'SKU', 'Tipo', 'Saldo', 'Mínimo', 'Situação', 'Custo', 'Venda'],
+    rows: filtered.map((item) => {
+      const base = [
+        item.name,
+        item.store_sku,
+        ITEM_KIND_LABELS[item.item_kind] ?? item.item_kind,
+        Number(item.qty_on_hand ?? 0),
+        Number(item.min_stock_qty ?? 0),
+        STATUS_LABELS[stockStatus(item)],
+      ];
+      if (clinicalStock) return base;
+      return [...base, Number(item.cost_amount ?? 0), Number(item.sale_amount ?? 0)];
+    }),
     showError,
   });
 
@@ -146,7 +174,9 @@ export const HubRelatoriosStockPosition: React.FC<HubRelatoriosStockPositionProp
     <div className="hub-relatorios__overview">
       <div className="hub-relatorios__overview-toolbar">
         <p className="hub-relatorios__overview-period">
-          Saldo atual dos itens ativos ·{' '}
+          {clinicalStock
+            ? 'Saldo atual dos itens de uso clínico · '
+            : 'Saldo atual dos itens ativos · '}
           <Link to="/hub/estoque/alertas" className="hub-finance-page__dash-link">
             Ver alertas de validade e mínimo
           </Link>
@@ -199,26 +229,30 @@ export const HubRelatoriosStockPosition: React.FC<HubRelatoriosStockPositionProp
             <PackageX size={20} strokeWidth={2} />
           </div>
         </div>
-        <div className="hub-servicos__metric-card">
-          <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Valor em custo</div>
-            <div className="hub-servicos__metric-value">{formatBrl(summary.valueCost)}</div>
-            <div className="hub-servicos__metric-sub">Saldo × custo de catálogo</div>
-          </div>
-          <div className="hub-servicos__metric-icon hub-servicos__metric-icon--muted" aria-hidden>
-            <CheckCircle2 size={20} strokeWidth={2} />
-          </div>
-        </div>
-        <div className="hub-servicos__metric-card">
-          <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Valor a venda</div>
-            <div className="hub-servicos__metric-value">{formatBrl(summary.valueSale)}</div>
-            <div className="hub-servicos__metric-sub">Saldo × preço de catálogo</div>
-          </div>
-          <div className="hub-servicos__metric-icon hub-servicos__metric-icon--muted" aria-hidden>
-            <Package size={20} strokeWidth={2} />
-          </div>
-        </div>
+        {!clinicalStock ? (
+          <>
+            <div className="hub-servicos__metric-card">
+              <div className="hub-servicos__metric-card__text">
+                <div className="hub-servicos__metric-label">Valor em custo</div>
+                <div className="hub-servicos__metric-value">{formatBrl(summary.valueCost)}</div>
+                <div className="hub-servicos__metric-sub">Saldo × custo de catálogo</div>
+              </div>
+              <div className="hub-servicos__metric-icon hub-servicos__metric-icon--muted" aria-hidden>
+                <CheckCircle2 size={20} strokeWidth={2} />
+              </div>
+            </div>
+            <div className="hub-servicos__metric-card">
+              <div className="hub-servicos__metric-card__text">
+                <div className="hub-servicos__metric-label">Valor a venda</div>
+                <div className="hub-servicos__metric-value">{formatBrl(summary.valueSale)}</div>
+                <div className="hub-servicos__metric-sub">Saldo × preço de catálogo</div>
+              </div>
+              <div className="hub-servicos__metric-icon hub-servicos__metric-icon--muted" aria-hidden>
+                <Package size={20} strokeWidth={2} />
+              </div>
+            </div>
+          </>
+        ) : null}
       </div>
 
       {statusBars.length > 0 ? (
@@ -307,8 +341,12 @@ export const HubRelatoriosStockPosition: React.FC<HubRelatoriosStockPositionProp
                   <th className="hub-finance-page__th-num">Saldo</th>
                   <th className="hub-finance-page__th-num">Mínimo</th>
                   <th>Situação</th>
-                  <th className="hub-finance-page__th-num">Custo unit.</th>
-                  <th className="hub-finance-page__th-num">Venda unit.</th>
+                  {!clinicalStock ? (
+                    <>
+                      <th className="hub-finance-page__th-num">Custo unit.</th>
+                      <th className="hub-finance-page__th-num">Venda unit.</th>
+                    </>
+                  ) : null}
                 </tr>
               </thead>
               <tbody>
@@ -343,12 +381,16 @@ export const HubRelatoriosStockPosition: React.FC<HubRelatoriosStockPositionProp
                           {STATUS_LABELS[st]}
                         </span>
                       </td>
-                      <td className="hub-finance-page__td-num">
-                        {formatBrl(Number(item.cost_amount ?? 0))}
-                      </td>
-                      <td className="hub-finance-page__td-num">
-                        {formatBrl(Number(item.sale_amount ?? 0))}
-                      </td>
+                      {!clinicalStock ? (
+                        <>
+                          <td className="hub-finance-page__td-num">
+                            {formatBrl(Number(item.cost_amount ?? 0))}
+                          </td>
+                          <td className="hub-finance-page__td-num">
+                            {formatBrl(Number(item.sale_amount ?? 0))}
+                          </td>
+                        </>
+                      ) : null}
                     </tr>
                   );
                 })}

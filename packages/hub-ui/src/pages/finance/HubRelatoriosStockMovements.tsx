@@ -1,14 +1,17 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Layers } from 'lucide-react';
+import { usePermissions } from '@petimi/web-core';
 import { hubInventoryApi, type HubInventoryMovementsReport } from '../../api/hubInventoryApi';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
 import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
+import { isClinicalSalePurpose } from '../../utils/inventorySalePurpose';
 import { HubRelatoriosExportButton } from './HubRelatoriosExportButton';
 import { HubRelatoriosEmpty } from './HubRelatoriosEmpty';
 import { makeReportExporters } from './hubRelatoriosExport';
 import { stockItemDrillHref } from './hubRelatoriosLinks';
+import { usesClinicalStockScope } from './hubRelatoriosConfig';
 import { periodToApiOpts, type HubReportPeriod } from './hubRelatoriosPeriod';
 import { formatBrl, formatDateBr } from './hubRelatoriosUtils';
 
@@ -19,12 +22,40 @@ type HubRelatoriosStockMovementsProps = {
 
 const TYPE_TONES = ['risk', 'ok', 'warn', 'muted', 'critical'] as const;
 
+function rebuildMovementsSummary(
+  items: HubInventoryMovementsReport['items'],
+): HubInventoryMovementsReport['summary'] {
+  const by_type: HubInventoryMovementsReport['summary']['by_type'] = {};
+  let qty_in = 0;
+  let qty_out = 0;
+  for (const row of items) {
+    const cur = by_type[row.movement_type] ?? {
+      count: 0,
+      qty: 0,
+      label: row.movement_label,
+    };
+    cur.count += 1;
+    cur.qty += row.qty;
+    by_type[row.movement_type] = cur;
+    if (row.direction === 'in') qty_in += row.qty;
+    else if (row.direction === 'out') qty_out += row.qty;
+  }
+  return {
+    movements_count: items.length,
+    qty_in,
+    qty_out,
+    by_type,
+  };
+}
+
 export const HubRelatoriosStockMovements: React.FC<HubRelatoriosStockMovementsProps> = ({
   clinicId,
   period,
 }) => {
   const { showError } = useAlert();
-  const resourceKey = `${clinicId}:${period.mode === 'range' ? `${period.from}-${period.to}` : period.days}:stock-movements`;
+  const { hasPermission } = usePermissions();
+  const clinicalStock = usesClinicalStockScope(hasPermission);
+  const resourceKey = `${clinicId}:${period.mode === 'range' ? `${period.from}-${period.to}` : period.days}:stock-movements:${clinicalStock ? 'clinical' : 'all'}`;
   const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(resourceKey);
   const [data, setData] = useState<HubInventoryMovementsReport | null>(null);
   const [direction, setDirection] = useState<'all' | 'in' | 'out'>('all');
@@ -35,15 +66,25 @@ export const HubRelatoriosStockMovements: React.FC<HubRelatoriosStockMovementsPr
       const res = await hubInventoryApi.reports.movements(clinicId, {
         ...periodToApiOpts(period),
         direction,
+        salePurpose: clinicalStock ? 'CLINICAL' : undefined,
       });
-      setData(res);
+      if (clinicalStock) {
+        const items = (res.items ?? []).filter((row) => isClinicalSalePurpose(row.sale_purpose));
+        setData({
+          ...res,
+          items,
+          summary: rebuildMovementsSummary(items),
+        });
+      } else {
+        setData(res);
+      }
       succeed();
     } catch (e) {
       showError((e as Error)?.message || 'Erro ao carregar entradas e saídas');
     } finally {
       finish();
     }
-  }, [clinicId, period, direction, showError, begin, succeed, finish]);
+  }, [clinicId, period, direction, clinicalStock, showError, begin, succeed, finish]);
 
   useEffect(() => {
     void load();
@@ -73,19 +114,23 @@ export const HubRelatoriosStockMovements: React.FC<HubRelatoriosStockMovementsPr
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
-    title: 'Entradas e saídas',
+    title: clinicalStock ? 'Entradas e saídas (uso clínico)' : 'Entradas e saídas',
     subtitle: periodLabel !== '—' ? periodLabel : null,
-    slug: 'estoque-movimentos',
-    headers: ['Data', 'Item', 'Tipo', 'Direção', 'Qtd', 'Custo', 'Obs'],
-    rows: items.map((row) => [
-      row.created_at,
-      row.item_name,
-      row.movement_label,
-      row.direction === 'in' ? 'Entrada' : row.direction === 'out' ? 'Saída' : row.direction,
-      row.qty,
-      row.unit_cost,
-      row.notes,
-    ]),
+    slug: clinicalStock ? 'estoque-movimentos-clinico' : 'estoque-movimentos',
+    headers: clinicalStock
+      ? ['Data', 'Item', 'Tipo', 'Direção', 'Qtd', 'Obs']
+      : ['Data', 'Item', 'Tipo', 'Direção', 'Qtd', 'Custo', 'Obs'],
+    rows: items.map((row) => {
+      const base = [
+        row.created_at,
+        row.item_name,
+        row.movement_label,
+        row.direction === 'in' ? 'Entrada' : row.direction === 'out' ? 'Saída' : row.direction,
+        row.qty,
+      ];
+      if (clinicalStock) return [...base, row.notes];
+      return [...base, row.unit_cost, row.notes];
+    }),
     showError,
   });
 
@@ -98,6 +143,7 @@ export const HubRelatoriosStockMovements: React.FC<HubRelatoriosStockMovementsPr
       <div className="hub-relatorios__overview-toolbar">
         <p className="hub-relatorios__overview-period">
           Período analisado: <strong>{periodLabel}</strong>
+          {clinicalStock ? ' · somente uso clínico' : ''}
         </p>
         <HubRelatoriosExportButton
           onClick={onExport}
@@ -257,7 +303,9 @@ export const HubRelatoriosStockMovements: React.FC<HubRelatoriosStockMovementsPr
                   <th>Item</th>
                   <th>Tipo</th>
                   <th className="hub-finance-page__th-num">Qtd.</th>
-                  <th className="hub-finance-page__th-num">Custo unit.</th>
+                  {!clinicalStock ? (
+                    <th className="hub-finance-page__th-num">Custo unit.</th>
+                  ) : null}
                   <th>Obs.</th>
                 </tr>
               </thead>
@@ -289,9 +337,11 @@ export const HubRelatoriosStockMovements: React.FC<HubRelatoriosStockMovementsPr
                       {row.qty.toLocaleString('pt-BR')}
                       {row.unit_label ? ` ${row.unit_label}` : ''}
                     </td>
-                    <td className="hub-finance-page__td-num">
-                      {row.unit_cost != null ? formatBrl(row.unit_cost) : '—'}
-                    </td>
+                    {!clinicalStock ? (
+                      <td className="hub-finance-page__td-num">
+                        {row.unit_cost != null ? formatBrl(row.unit_cost) : '—'}
+                      </td>
+                    ) : null}
                     <td>{row.notes?.trim() || '—'}</td>
                   </tr>
                 ))}
