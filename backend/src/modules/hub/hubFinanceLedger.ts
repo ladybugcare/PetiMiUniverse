@@ -3,6 +3,7 @@
  * Fonte única: hub_receivables + hub_payments (status posted|reversed).
  * Nunca DELETE de pagamento em estorno/reembolso.
  */
+import { randomUUID } from 'node:crypto';
 import { supabaseAdmin } from '../../config/supabase';
 import { syncHubAppointmentPaidFromReceivable } from './appointmentPaidFromBilling';
 import {
@@ -12,12 +13,17 @@ import {
   restoreHubCustomerCredit,
 } from './hubCustomerCredit';
 import { syncChargeBundleStatusForReceivable } from './hubChargeBundlesService';
+import {
+  recordComandaEvent,
+  comandaItemEventBody,
+} from './comandaEvents';
 import { syncPackageBalancesForReceivable } from './hubPackagesService';
 import {
   restoreProductStockForReceivableLines,
   type StockReturnCondition,
   type StockReturnLineSpec,
 } from './hubInventoryStockUtils';
+import { isProductStockLine } from './hubProductReturnStatus';
 
 export type PaymentReversalMode = 'payment_reversal' | 'refund';
 
@@ -283,6 +289,72 @@ export async function reversePaymentSoft(opts: {
           409,
         );
       }
+    }
+
+    /**
+     * Reembolso + devolução física de itens NÃO deve estornar o pagamento inteiro.
+     * Caso real (Diana): Antipulgas+Shampoo R$150 — devolveu só Antipulgas via “Estornar”
+     * → payment reversed R$150, status refunded, returned_amount 0, Shampoo preso em “Já estornados”.
+     * Correto: devolução por linha (comercial + financeiro só do selecionado).
+     */
+    if (mode === 'refund' && opts.confirmStockReturn) {
+      let lineSpecs = [...(opts.stockReturnLines ?? [])];
+      if (!lineSpecs.length) {
+        const [{ data: lines }, { data: priorReturns }] = await Promise.all([
+          supabaseAdmin
+            .from('hub_receivable_lines')
+            .select('id, line_kind, hub_inventory_item_id, hub_inventory_lot_id, quantity')
+            .eq('receivable_id', receivableIdPre)
+            .eq('clinic_id', clinicId),
+          supabaseAdmin
+            .from('hub_product_return_events')
+            .select('receivable_line_id')
+            .eq('receivable_id', receivableIdPre)
+            .eq('clinic_id', clinicId),
+        ]);
+        const already = new Set(
+          (priorReturns ?? []).map((r) => String(r.receivable_line_id)),
+        );
+        lineSpecs = (lines ?? [])
+          .filter((l) => isProductStockLine(l as Record<string, unknown>) && !already.has(String(l.id)))
+          .map((l) => ({
+            line_id: String(l.id),
+            qty: Number(l.quantity ?? 0) > 0 ? Number(l.quantity) : undefined,
+          }));
+      }
+      if (lineSpecs.length) {
+        if (!opts.stockReturnCondition) {
+          throw new FinanceLedgerError(
+            'Informe stock_return_condition (sellable|unsellable) ao confirmar devolução física.',
+            400,
+          );
+        }
+        const productReturn = await returnReceivableProductLines({
+          clinicId,
+          receivableId: receivableIdPre,
+          userId,
+          reason: reason.trim(),
+          condition: opts.stockReturnCondition,
+          lineSpecs,
+          refundMethod: opts.refundMethod ?? null,
+          refundEffectiveDate: opts.refundEffectiveDate ?? null,
+          idempotencyKey: randomUUID(),
+        });
+        return {
+          ok: true,
+          receivable_status: productReturn.receivable_status,
+          receivable_id: receivableIdPre,
+          adjustment_id: productReturn.adjustment_id ?? '',
+          reversal_mode: 'refund',
+          warning:
+            productReturn.warning ||
+            'Devolução registrada por item (reembolso comercial/financeiro só do selecionado — o pagamento original permanece até o líquido zerar).',
+          stock_restored: productReturn.stock_restored,
+          stock_unsellable: productReturn.stock_unsellable,
+        };
+      }
+      // Itens já devolvidos: segue reembolso financeiro puro (sem nova movimentação de estoque).
+      opts.confirmStockReturn = false;
     }
 
     // Devolução parcial: anular/reembolsar payment integral gera saldo incoerente.
@@ -621,6 +693,64 @@ function mapRpcBusinessError(msg: string): FinanceLedgerError | null {
   return null;
 }
 
+/** Timeline da comanda: registra devolução de mercadoria (usa item_updated — enum existente). */
+async function recordMerchandiseReturnComandaEvent(opts: {
+  clinicId: string;
+  receivableId: string;
+  userId: string | null;
+  reason: string;
+  lineIds: string[];
+  commercialReturned: number;
+  financialRefund: number;
+  condition: StockReturnCondition;
+}): Promise<void> {
+  const { data: rec } = await supabaseAdmin
+    .from('hub_receivables')
+    .select('comanda_id')
+    .eq('id', opts.receivableId)
+    .eq('clinic_id', opts.clinicId)
+    .maybeSingle();
+  const comandaId = (rec?.comanda_id as string | null) ?? null;
+  if (!comandaId) return;
+
+  const { data: lines } = await supabaseAdmin
+    .from('hub_receivable_lines')
+    .select('id, description, quantity, line_total')
+    .eq('receivable_id', opts.receivableId)
+    .in('id', opts.lineIds);
+
+  const names = (lines ?? []).map((l) => String(l.description || 'Produto').trim()).filter(Boolean);
+  const label = names.length <= 2 ? names.join(', ') : `${names[0]} e mais ${names.length - 1}`;
+  const moneyBits = [
+    opts.commercialReturned > 0.009
+      ? `comercial ${opts.commercialReturned.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+      : null,
+    opts.financialRefund > 0.009
+      ? `reembolso ${opts.financialRefund.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}`
+      : null,
+    opts.condition === 'unsellable' ? 'sem revenda' : 'apto à revenda',
+  ].filter(Boolean);
+
+  await recordComandaEvent({
+    clinic_id: opts.clinicId,
+    comanda_id: comandaId,
+    event_type: 'item_updated',
+    title: names.length > 1 ? 'Produtos devolvidos' : 'Produto devolvido',
+    body: comandaItemEventBody(label || 'Mercadoria', {}) + (moneyBits.length ? ` · ${moneyBits.join(' · ')}` : ''),
+    metadata: {
+      source: 'merchandise_return',
+      receivable_id: opts.receivableId,
+      line_ids: opts.lineIds,
+      commercial_returned: opts.commercialReturned,
+      financial_refund: opts.financialRefund,
+      condition: opts.condition,
+      reason: opts.reason,
+    },
+    actor_user_id: opts.userId,
+    edit_context: 'financeiro',
+  });
+}
+
 /**
  * Devolução por item via RPC atômica `hub_return_receivable_product_lines`.
  * Separação: comercial devolvido × reembolso financeiro (matriz pago vs líquido).
@@ -693,6 +823,18 @@ export async function returnReceivableProductLines(opts: {
       });
       void syncChargeBundleStatusForReceivable(opts.receivableId, opts.clinicId);
       await syncPackageBalancesForReceivable(opts.receivableId);
+      if (!body.replayed) {
+        await recordMerchandiseReturnComandaEvent({
+          clinicId: opts.clinicId,
+          receivableId: opts.receivableId,
+          userId: opts.userId,
+          reason,
+          lineIds: lineIds,
+          commercialReturned: Number(body.commercial_returned ?? 0),
+          financialRefund: refundAmount,
+          condition: opts.condition,
+        });
+      }
     } catch (e) {
       const msg = (e as Error)?.message ?? '';
       if (msg.startsWith('PACKAGE_BALANCE_HAS_REDEMPTIONS')) {
@@ -1011,6 +1153,17 @@ async function returnReceivableProductLinesTsFallback(opts: {
     payload_hash: `ts:${opts.idempotencyKey}`,
     response,
     created_by_user_id: opts.userId,
+  });
+
+  await recordMerchandiseReturnComandaEvent({
+    clinicId: opts.clinicId,
+    receivableId: opts.receivableId,
+    userId: opts.userId,
+    reason: opts.reason.trim(),
+    lineIds: [...new Set(opts.lineSpecs.map((s) => s.line_id))],
+    commercialReturned: snap.commercialReturnedNow,
+    financialRefund: snap.financialRefundNow,
+    condition: opts.condition,
   });
 
   return response;

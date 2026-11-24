@@ -359,7 +359,7 @@ export const HubPaymentReversalForm: React.FC<HubPaymentReversalFormProps> = ({
             <strong>Reembolso efetivo</strong>
             <span>
               {hasPhysicalProducts
-                ? 'Devolve o valor ao cliente e permite confirmar a devolução do produto.'
+                ? 'Se marcar itens, registra devolução só desses produtos (parcial) — não anula o pagamento inteiro. Sem itens, reembolsa o lançamento completo.'
                 : 'Devolve o valor ao cliente (Pix, dinheiro, crédito etc.).'}
             </span>
           </button>

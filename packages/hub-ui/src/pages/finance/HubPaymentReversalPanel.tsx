@@ -346,8 +346,9 @@ export const HubPaymentReversalPanel: React.FC<HubPaymentReversalPanelProps> = (
                   </>
                 ) : context === 'caixa' ? (
                   <>
-                    Pagamentos ainda válidos desta unidade — inclusive vendas rápidas de dias anteriores. Depois do
-                    estorno, o item sai daqui e do caixa; veja em “Já estornados”.
+                    Pagamentos ainda válidos desta unidade — inclusive vendas rápidas de dias anteriores. Devolução
+                    parcial de produto mantém o pagamento aqui até o líquido zerar; só o estorno integral do lançamento
+                    vai para “Já estornados”.
                   </>
                 ) : (
                   <>
