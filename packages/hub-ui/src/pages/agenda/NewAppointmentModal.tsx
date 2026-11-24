@@ -4019,15 +4019,17 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               <label className="nam-label" htmlFor="nam-daycare-period">
                 Período da creche
               </label>
-              <select
+              <HubSearchableCombobox
                 id="nam-daycare-period"
-                className="nam-select"
+                options={[
+                  { value: 'full_day', label: 'Integral' },
+                  { value: 'half_day', label: 'Meio período' },
+                ]}
                 value={daycarePeriod}
-                onChange={(e) => setDaycarePeriod(e.target.value as 'full_day' | 'half_day')}
-              >
-                <option value="full_day">Integral</option>
-                <option value="half_day">Meio período</option>
-              </select>
+                onChange={(v) => setDaycarePeriod(v as 'full_day' | 'half_day')}
+                clearable={false}
+                ariaLabel="Período da creche"
+              />
             </div>
           ) : null}
         </div>
@@ -4187,11 +4189,17 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               <div className="nam-row nam-row--cols2">
                 <div className="nam-field">
                   <label className="nam-label">Frequência</label>
-                  <select
-                    className="nam-select"
+                  <HubSearchableCombobox
+                    id="nam-recur-freq"
+                    options={[
+                      { value: 'daily', label: RECURRENCE_LABELS.daily },
+                      { value: 'weekly', label: RECURRENCE_LABELS.weekly },
+                      { value: 'biweekly', label: RECURRENCE_LABELS.biweekly },
+                      { value: 'monthly', label: RECURRENCE_LABELS.monthly },
+                    ]}
                     value={recurrence.kind}
-                    onChange={(e) => {
-                      const kind = e.target.value as RecurrenceKind;
+                    onChange={(v) => {
+                      const kind = v as RecurrenceKind;
                       setRecurrence((r) => ({
                         ...r,
                         kind,
@@ -4201,12 +4209,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                         ),
                       }));
                     }}
-                  >
-                    <option value="daily">{RECURRENCE_LABELS.daily}</option>
-                    <option value="weekly">{RECURRENCE_LABELS.weekly}</option>
-                    <option value="biweekly">{RECURRENCE_LABELS.biweekly}</option>
-                    <option value="monthly">{RECURRENCE_LABELS.monthly}</option>
-                  </select>
+                    clearable={false}
+                    ariaLabel="Frequência da recorrência"
+                  />
                 </div>
                 {recurrence.kind === 'biweekly' ? (
                   <div className="nam-field">
@@ -4257,19 +4262,22 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
               <div className="nam-row nam-row--cols2" style={{ marginTop: 8 }}>
                 <div className="nam-field">
                   <label className="nam-label">Termina</label>
-                  <select
-                    className="nam-select"
+                  <HubSearchableCombobox
+                    id="nam-recur-end"
+                    options={[
+                      { value: 'occurrences', label: 'Após N ocorrências' },
+                      { value: 'until', label: 'Em uma data' },
+                    ]}
                     value={recurrence.end_kind}
-                    onChange={(e) =>
+                    onChange={(v) =>
                       setRecurrence((r) => ({
                         ...r,
-                        end_kind: e.target.value as RecurrenceForm['end_kind'],
+                        end_kind: v as RecurrenceForm['end_kind'],
                       }))
                     }
-                  >
-                    <option value="occurrences">Após N ocorrências</option>
-                    <option value="until">Em uma data</option>
-                  </select>
+                    clearable={false}
+                    ariaLabel="Quando a recorrência termina"
+                  />
                 </div>
                 <div className="nam-field">
                   {recurrence.end_kind === 'occurrences' ? (
@@ -4331,19 +4339,22 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   <div className="nam-row nam-row--cols2">
                     <div className="nam-field">
                       <label className="nam-label">Emitir em</label>
-                      <select
-                        className="nam-select"
+                      <HubSearchableCombobox
+                        id="nam-recur-invoice-issue"
+                        options={[
+                          { value: 'first_business_day', label: '1º dia útil do mês' },
+                          { value: 'fixed_day', label: 'Dia fixo do mês' },
+                        ]}
                         value={recurrence.invoice_issue_rule}
-                        onChange={(e) =>
+                        onChange={(v) =>
                           setRecurrence((r) => ({
                             ...r,
-                            invoice_issue_rule: e.target.value as RecurrenceForm['invoice_issue_rule'],
+                            invoice_issue_rule: v as RecurrenceForm['invoice_issue_rule'],
                           }))
                         }
-                      >
-                        <option value="first_business_day">1º dia útil do mês</option>
-                        <option value="fixed_day">Dia fixo do mês</option>
-                      </select>
+                        clearable={false}
+                        ariaLabel="Regra de emissão da fatura"
+                      />
                     </div>
                     {recurrence.invoice_issue_rule === 'fixed_day' ? (
                       <div className="nam-field">
@@ -4366,20 +4377,23 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   <div className="nam-row nam-row--cols2">
                     <div className="nam-field">
                       <label className="nam-label">Vencimento</label>
-                      <select
-                        className="nam-select"
+                      <HubSearchableCombobox
+                        id="nam-recur-invoice-due"
+                        options={[
+                          { value: 'same_day', label: 'Mesmo dia da emissão' },
+                          { value: 'plus_days', label: 'Emissão + N dias' },
+                          { value: 'fixed_day', label: 'Dia fixo do mês' },
+                        ]}
                         value={recurrence.invoice_due_rule}
-                        onChange={(e) =>
+                        onChange={(v) =>
                           setRecurrence((r) => ({
                             ...r,
-                            invoice_due_rule: e.target.value as RecurrenceForm['invoice_due_rule'],
+                            invoice_due_rule: v as RecurrenceForm['invoice_due_rule'],
                           }))
                         }
-                      >
-                        <option value="same_day">Mesmo dia da emissão</option>
-                        <option value="plus_days">Emissão + N dias</option>
-                        <option value="fixed_day">Dia fixo do mês</option>
-                      </select>
+                        clearable={false}
+                        ariaLabel="Regra de vencimento da fatura"
+                      />
                     </div>
                     {recurrence.invoice_due_rule === 'plus_days' ? (
                       <div className="nam-field">

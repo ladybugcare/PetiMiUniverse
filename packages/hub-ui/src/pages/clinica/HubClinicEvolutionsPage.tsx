@@ -1,7 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
+import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import { hubClinicalApi } from '../../api/hubClinicalApi';
 import { hubPetsApi, type HubPet } from '../../api/hubPetsApi';
+import '../clientes/clientes.css';
 
 const HubClinicEvolutionsPage: React.FC = () => {
   const clinicId = getStoredClinicId();
@@ -21,19 +23,30 @@ const HubClinicEvolutionsPage: React.FC = () => {
     void hubClinicalApi.listEvents(clinicId, petId).then((r) => setEvents(r.events ?? []));
   }, [clinicId, petId]);
 
+  const petOptions = useMemo(
+    () => pets.map((p) => ({ value: p.id, label: p.name })),
+    [pets],
+  );
+
   if (!canRead) return <p style={{ padding: 24 }}>Sem permissão.</p>;
 
   return (
     <>
       <h1 className="hub-clinic-page__title">Evoluções</h1>
-      <select value={petId} onChange={(e) => setPetId(e.target.value)} style={{ marginBottom: 16, padding: 8 }}>
-        <option value="">Selecione o pet</option>
-        {pets.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.name}
-          </option>
-        ))}
-      </select>
+      <div className="hub-clientes__field" style={{ marginBottom: 16, maxWidth: 360 }}>
+        <label className="hub-clientes__label" htmlFor="clinic-evolutions-pet">
+          Pet
+        </label>
+        <HubSearchableCombobox
+          id="clinic-evolutions-pet"
+          className="hub-combobox--clientes"
+          options={petOptions}
+          value={petId}
+          onChange={setPetId}
+          placeholder="Selecionar pet"
+          ariaLabel="Selecionar pet"
+        />
+      </div>
       <div className="hub-clinic-timeline">
         {events.length === 0 ? (
           <p className="hub-clientes__muted">Sem eventos para este pet.</p>

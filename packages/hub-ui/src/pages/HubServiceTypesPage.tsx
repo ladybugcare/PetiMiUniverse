@@ -701,47 +701,49 @@ const HubServiceTypesPage: React.FC<HubServiceTypesPageProps> = ({ catalog = 'se
           <div className="hub-servicos__toolbar-row">
             <div className="hub-servicos__filter-field">
               <span className="hub-clientes__label">Grupo</span>
-              <select
-                className="hub-clientes__select-input"
+              <HubSearchableCombobox
+                id="svc-filter-group"
+                className="hub-combobox--clientes"
+                options={groupComboOptionsExtended}
                 value={filterGroup}
-                onChange={(e) => setFilterGroup(e.target.value)}
-                aria-label="Filtrar por grupo"
-              >
-                <option value="">Todos os grupos</option>
-                {groupComboOptionsExtended.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
+                onChange={setFilterGroup}
+                placeholder="Todos os grupos"
+                ariaLabel="Filtrar por grupo"
+              />
             </div>
             <div className="hub-servicos__filter-field">
               <span className="hub-clientes__label">Estado</span>
-              <select
-                className="hub-clientes__select-input"
+              <HubSearchableCombobox
+                id="svc-filter-status"
+                className="hub-combobox--clientes"
+                options={[
+                  { value: 'all', label: 'Todos' },
+                  { value: 'ativo', label: 'Ativo' },
+                  { value: 'inativo', label: 'Inativo' },
+                  { value: 'arquivado', label: 'Arquivado' },
+                ]}
                 value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value as typeof filterStatus)}
-                aria-label="Filtrar por estado"
-              >
-                <option value="all">Todos</option>
-                <option value="ativo">Ativo</option>
-                <option value="inativo">Inativo</option>
-                <option value="arquivado">Arquivado</option>
-              </select>
+                onChange={(v) => setFilterStatus((v || 'all') as typeof filterStatus)}
+                clearable={false}
+                ariaLabel="Filtrar por estado"
+              />
             </div>
             {!isAddons ? (
               <div className="hub-servicos__filter-field">
                 <span className="hub-clientes__label">Agendamento</span>
-                <select
-                  className="hub-clientes__select-input"
+                <HubSearchableCombobox
+                  id="svc-filter-schedule"
+                  className="hub-combobox--clientes"
+                  options={[
+                    { value: 'all', label: 'Todos' },
+                    { value: 'yes', label: 'Permite' },
+                    { value: 'no', label: 'Não permite' },
+                  ]}
                   value={filterSchedule}
-                  onChange={(e) => setFilterSchedule(e.target.value as typeof filterSchedule)}
-                  aria-label="Filtrar por permite agendamento"
-                >
-                  <option value="all">Todos</option>
-                  <option value="yes">Permite</option>
-                  <option value="no">Não permite</option>
-                </select>
+                  onChange={(v) => setFilterSchedule((v || 'all') as typeof filterSchedule)}
+                  clearable={false}
+                  ariaLabel="Filtrar por permite agendamento"
+                />
               </div>
             ) : null}
             <div className="hub-servicos__filter-field hub-servicos__filter-field--check">

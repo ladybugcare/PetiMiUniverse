@@ -1041,12 +1041,20 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
                       <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-existing`}>
                         Pet já cadastrado
                       </label>
-                      <select
+                      <HubSearchableCombobox
                         id={`hub-quote-pet-${i}-existing`}
-                        className="hub-orcamento-novo__input"
+                        className="hub-orcamento-novo__combobox"
+                        options={clientPets
+                          .filter((pet) => {
+                            if (pet.id === p.hub_pet_id) return true;
+                            return !pets.some((row, idx) => idx !== i && row.hub_pet_id === pet.id);
+                          })
+                          .map((pet) => ({
+                            value: pet.id,
+                            label: pet.species ? `${pet.name} · ${pet.species}` : pet.name,
+                          }))}
                         value={p.hub_pet_id ?? ''}
-                        onChange={(e) => {
-                          const id = e.target.value;
+                        onChange={(id) => {
                           if (!id) {
                             updatePet(i, { hub_pet_id: null });
                             return;
@@ -1067,20 +1075,10 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
                             sex: sexOk ? existing.sex : null,
                           });
                         }}
-                      >
-                        <option value="">Novo pet neste orçamento</option>
-                        {clientPets
-                          .filter((pet) => {
-                            if (pet.id === p.hub_pet_id) return true;
-                            return !pets.some((row, idx) => idx !== i && row.hub_pet_id === pet.id);
-                          })
-                          .map((pet) => (
-                            <option key={pet.id} value={pet.id}>
-                              {pet.name}
-                              {pet.species ? ` · ${pet.species}` : ''}
-                            </option>
-                          ))}
-                      </select>
+                        placeholder="Novo pet neste orçamento"
+                        searchPlaceholder="Buscar pet…"
+                        ariaLabel="Pet já cadastrado"
+                      />
                       {p.hub_pet_id ? (
                         <p className="hub-orcamento-novo__card-subtitle" style={{ marginTop: 6, marginBottom: 0 }}>
                           Este pet já é do cliente e não será cadastrado de novo na conversão.
@@ -1164,20 +1162,22 @@ const HubQuoteWorkspace: React.FC<HubQuoteWorkspaceProps> = ({
                       <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-sex`}>
                         Sexo
                       </label>
-                      <select
+                      <HubSearchableCombobox
                         id={`hub-quote-pet-${i}-sex`}
-                        className="hub-orcamento-novo__input"
+                        className="hub-orcamento-novo__combobox"
+                        options={[
+                          { value: 'M', label: 'Macho' },
+                          { value: 'F', label: 'Fêmea' },
+                          { value: 'U', label: 'Não se aplica' },
+                        ]}
                         value={p.sex ?? ''}
-                        onChange={(e) => {
-                          const v = e.target.value;
+                        onChange={(v) => {
                           updatePet(i, { sex: v === 'M' || v === 'F' || v === 'U' ? v : null });
                         }}
-                      >
-                        <option value="">Não informado</option>
-                        <option value="M">Macho</option>
-                        <option value="F">Fêmea</option>
-                        <option value="U">Não se aplica</option>
-                      </select>
+                        placeholder="Não informado"
+                        searchPlaceholder="Buscar sexo…"
+                        ariaLabel="Sexo"
+                      />
                     </div>
                     <div className="hub-orcamento-novo__field">
                       <label className="hub-orcamento-novo__label" htmlFor={`hub-quote-pet-${i}-coat`}>

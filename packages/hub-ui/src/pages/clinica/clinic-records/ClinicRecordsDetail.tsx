@@ -15,6 +15,7 @@ import {
   Syringe,
 } from 'lucide-react';
 import { HubLoading } from '../../../components/HubLoading';
+import { HubSearchableCombobox } from '../../../components/HubSearchableCombobox';
 import { HubTabs } from '../../../components/HubTabs';
 import { HubPrescriptionHistoryList } from '../../../components/clinical/HubPrescriptionHistoryList';
 import type {
@@ -867,17 +868,18 @@ const ClinicRecordsDetail: React.FC<Props> = ({
               {canWrite ? (
                 <div className="hub-clientes__form-stack hub-clinic-records__flag-form">
                   <label className="hub-clientes__label">Tipo de alerta</label>
-                  <select
-                    className="hub-clientes__input"
+                  <HubSearchableCombobox
+                    id="clinic-records-flag-type"
+                    className="hub-combobox--clientes"
+                    options={PET_CLINICAL_FLAG_OPTIONS.map((o) => ({
+                      value: o.key,
+                      label: o.label,
+                    }))}
                     value={newFlagKey}
-                    onChange={(e) => onNewFlagKeyChange(e.target.value)}
-                  >
-                    {PET_CLINICAL_FLAG_OPTIONS.map((o) => (
-                      <option key={o.key} value={o.key}>
-                        {o.label}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={onNewFlagKeyChange}
+                    clearable={false}
+                    ariaLabel="Tipo de alerta"
+                  />
                   <label className="hub-clientes__label">Descrição</label>
                   <input
                     className="hub-clientes__input"

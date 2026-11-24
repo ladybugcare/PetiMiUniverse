@@ -6,6 +6,7 @@ import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubCancelButton } from '../../components/HubCancelButton';
+import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import {
   hubClinicalApi,
   type HubHospitalBed,
@@ -279,15 +280,19 @@ const HubClinicHospitalizationPage: React.FC = () => {
       >
         <div className="hub-clientes__form-stack">
           <span className="hub-clientes__label">Tipo de encerramento</span>
-          <select
-            className="hub-clientes__input"
+          <HubSearchableCombobox
+            id="hosp-discharge-status"
+            className="hub-combobox--clientes"
+            options={[
+              { value: 'discharged', label: 'Alta' },
+              { value: 'death', label: 'Óbito' },
+              { value: 'transferred', label: 'Transferido' },
+            ]}
             value={dischargeStatus}
-            onChange={(e) => setDischargeStatus(e.target.value as typeof dischargeStatus)}
-          >
-            <option value="discharged">Alta</option>
-            <option value="death">Óbito</option>
-            <option value="transferred">Transferido</option>
-          </select>
+            onChange={(v) => setDischargeStatus(v as typeof dischargeStatus)}
+            clearable={false}
+            ariaLabel="Tipo de encerramento"
+          />
           <span className="hub-clientes__label">Observações</span>
           <textarea
             className="hub-clientes__textarea"

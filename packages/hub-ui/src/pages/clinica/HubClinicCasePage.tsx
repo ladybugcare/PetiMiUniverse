@@ -23,6 +23,7 @@ import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { getSelectedUnitId } from '../../utils/useSelectedUnitId';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
+import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import {
   hubClinicalCasesApi,
   hubClinicalTimelineApi,
@@ -696,17 +697,15 @@ const HubClinicCasePage: React.FC = () => {
           <div className="hub-clinic-case-page__status-area">
             {editingStatus ? (
               <div className="hub-clinic-case-page__status-edit">
-                <select
-                  className="hub-clientes__input"
+                <HubSearchableCombobox
+                  id="clinic-case-status"
+                  className="hub-combobox--clientes"
+                  options={STATUS_OPTIONS}
                   value={newStatus}
-                  onChange={(e) => setNewStatus(e.target.value as HubClinicalCaseStatus)}
-                >
-                  {STATUS_OPTIONS.map((o) => (
-                    <option key={o.value} value={o.value}>
-                      {o.label}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => setNewStatus(v as HubClinicalCaseStatus)}
+                  clearable={false}
+                  ariaLabel="Status do caso"
+                />
                 <button
                   type="button"
                   className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"

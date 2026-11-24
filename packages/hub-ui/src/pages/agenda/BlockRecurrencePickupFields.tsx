@@ -57,24 +57,23 @@ export const BlockRecurrencePickupFields: React.FC<BlockRecurrencePickupFieldsPr
               <div className="nam-row nam-row--cols2">
                 <div className="nam-field">
                   <label className="nam-label">Frequência</label>
-                  <select
-                    className="nam-select"
+                  <HubSearchableCombobox
+                    id={`nam-eb-recur-freq-${blockKey}`}
+                    options={(Object.keys(RECURRENCE_LABELS) as Array<keyof typeof RECURRENCE_LABELS>).map(
+                      (k) => ({ value: k, label: RECURRENCE_LABELS[k] }),
+                    )}
                     value={recurrence.kind}
-                    onChange={(e) => {
-                      const kind = e.target.value as BlockRecurrenceState['kind'];
+                    onChange={(v) => {
+                      const kind = v as BlockRecurrenceState['kind'];
                       onRecurrenceChange({
                         ...recurrence,
                         kind,
                         interval_value: kind === 'biweekly' ? 1 : recurrence.interval_value,
                       });
                     }}
-                  >
-                    {(Object.keys(RECURRENCE_LABELS) as Array<keyof typeof RECURRENCE_LABELS>).map((k) => (
-                      <option key={k} value={k}>
-                        {RECURRENCE_LABELS[k]}
-                      </option>
-                    ))}
-                  </select>
+                    clearable={false}
+                    ariaLabel="Frequência da recorrência"
+                  />
                 </div>
                 <div className="nam-field">
                   <label className="nam-label">Ocorrências</label>

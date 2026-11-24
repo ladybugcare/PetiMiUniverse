@@ -26,6 +26,7 @@ import {
   Send,
   Share2,
 } from 'lucide-react';
+import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 
 function statusClass(s: HubQuoteStatus): string {
   return `hub-orcamentos__status hub-orcamentos__status--${s}`;
@@ -273,20 +274,22 @@ const HubQuotesPage: React.FC = () => {
         <div className="hub-servicos__toolbar-row">
           <div className="hub-servicos__filter-field">
             <span className="hub-clientes__label">Estado do orçamento</span>
-            <select
-              className="hub-clientes__select-input"
+            <HubSearchableCombobox
+              id="quotes-status-filter"
+              className="hub-combobox--clientes"
+              options={[
+                { value: 'draft', label: 'Rascunho' },
+                { value: 'sent', label: 'Enviado' },
+                { value: 'awaiting_return', label: 'Aguardando retorno' },
+                { value: 'accepted', label: 'Aprovado' },
+                { value: 'expired', label: 'Expirado' },
+                { value: 'cancelled', label: 'Cancelado' },
+              ]}
               value={statusFilter}
-              onChange={(e) => setStatusFilter((e.target.value || '') as HubQuoteStatus | '')}
-              aria-label="Filtrar por estado do orçamento"
-            >
-              <option value="">Todos</option>
-              <option value="draft">Rascunho</option>
-              <option value="sent">Enviado</option>
-              <option value="awaiting_return">Aguardando retorno</option>
-              <option value="accepted">Aprovado</option>
-              <option value="expired">Expirado</option>
-              <option value="cancelled">Cancelado</option>
-            </select>
+              onChange={(v) => setStatusFilter((v || '') as HubQuoteStatus | '')}
+              placeholder="Todos"
+              ariaLabel="Filtrar por estado do orçamento"
+            />
           </div>
           <div style={{ flex: 1 }} />
         </div>

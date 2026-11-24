@@ -425,19 +425,22 @@ export const ExtraBlockCard: React.FC<ExtraBlockCardProps> = ({
             {isCrecheBlock ? (
               <div className="nam-field" style={{ marginTop: 8 }}>
                 <label className="nam-label">Período da creche</label>
-                <select
-                  className="nam-select"
+                <HubSearchableCombobox
+                  id={`nam-eb-daycare-period-${block.key}`}
+                  options={[
+                    { value: 'full_day', label: 'Integral' },
+                    { value: 'half_day', label: 'Meio período' },
+                  ]}
                   value={block.daycare_period ?? 'full_day'}
-                  onChange={(e) =>
+                  onChange={(v) =>
                     onChange({
                       ...block,
-                      daycare_period: e.target.value as 'full_day' | 'half_day',
+                      daycare_period: v as 'full_day' | 'half_day',
                     })
                   }
-                >
-                  <option value="full_day">Integral</option>
-                  <option value="half_day">Meio período</option>
-                </select>
+                  clearable={false}
+                  ariaLabel="Período da creche"
+                />
               </div>
             ) : null}
           </div>

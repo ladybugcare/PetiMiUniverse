@@ -1705,6 +1705,15 @@
   opacity: 0.72;
 }
 
+.hub-comanda-row--returned {
+  opacity: 0.78;
+}
+
+.hub-comanda-row--returned .hub-public-quote__svc-title {
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
 .hub-quote-detail__crumb {
   display: flex;
   align-items: center;
