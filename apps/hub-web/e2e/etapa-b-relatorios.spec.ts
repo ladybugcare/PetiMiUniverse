@@ -5,6 +5,7 @@
 import { expect, test } from '@playwright/test';
 import { ensureEtapaAEnv, qaStagingPassword } from './helpers/etapaA/config';
 import { loginQaFinance } from './helpers/etapaA/returnUi';
+import { attachVercelProtectionBypass } from './helpers/etapaA/vercelProtection';
 
 ensureEtapaAEnv();
 
@@ -17,9 +18,10 @@ const REPORTS = [
 ] as const;
 
 test.describe('Etapa B — relatórios (smoke UI)', () => {
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, context }) => {
     const pw = qaStagingPassword();
     test.skip(!pw, 'QA_STAGING_PASSWORD ausente');
+    await attachVercelProtectionBypass(context);
     await loginQaFinance(page, pw);
   });
 
