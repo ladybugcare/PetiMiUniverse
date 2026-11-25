@@ -987,6 +987,7 @@ export const hubClinicalApi = {
     daily_hub_service_type_id?: string | null;
     daily_unit_amount?: number | null;
     daily_includes_medication?: boolean;
+    hub_appointment_id?: string | null;
   }) {
     const unitId = payload.unit_id ?? getSelectedUnitId() ?? null;
     return apiRequest(`${clinicalBase}/hospitalizations`, {

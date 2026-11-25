@@ -32,6 +32,9 @@ export type HubClinicHospitalPageProps = {
   /** Prefill ao abrir a partir do Consultório / links. */
   presetPetId?: string | null;
   presetCaseId?: string | null;
+  presetGuardianId?: string | null;
+  presetAppointmentId?: string | null;
+  presetDailyServiceTypeId?: string | null;
 };
 
 const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
@@ -40,6 +43,9 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
   onAdmitOpenChange,
   presetPetId,
   presetCaseId,
+  presetGuardianId,
+  presetAppointmentId,
+  presetDailyServiceTypeId,
 }) => {
   const clinicId = getStoredClinicId();
   const unitId = useSelectedUnitId();
@@ -106,10 +112,22 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
     setAdmitDraft((prev) => ({
       ...prev,
       petId: presetPetId || prev.petId,
+      guardianId: presetGuardianId || prev.guardianId,
       caseLink: presetCaseId ? { hub_case_id: presetCaseId } : prev.caseLink,
       staffId: prev.staffId || myStaffMember?.id || '',
+      dailyServicePick:
+        presetDailyServiceTypeId && !prev.dailyServicePick.hub_service_type_id
+          ? { hub_service_type_id: presetDailyServiceTypeId, unit_amount: prev.dailyServicePick.unit_amount }
+          : prev.dailyServicePick,
     }));
-  }, [presetPetId, presetCaseId, admitOpen, myStaffMember?.id]);
+  }, [
+    presetPetId,
+    presetCaseId,
+    presetGuardianId,
+    presetDailyServiceTypeId,
+    admitOpen,
+    myStaffMember?.id,
+  ]);
 
   useEffect(() => {
     if (embedded) return;
@@ -173,7 +191,7 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
       : admitDraft.caseLink;
     setSubmitting(true);
     try {
-      await hubClinicalApi.createHospitalization({
+      const { hospitalization } = await hubClinicalApi.createHospitalization({
         clinic_id: clinicId,
         pet_id: admitDraft.petId,
         hub_hospital_bed_id: admitDraft.bedId || null,
@@ -187,14 +205,31 @@ const HubClinicHospitalPage: React.FC<HubClinicHospitalPageProps> = ({
           ? Number(admitDraft.dailyServicePick.unit_amount.replace(',', '.'))
           : null,
         daily_includes_medication: admitDraft.dailyIncludesMedication,
+        hub_appointment_id: presetAppointmentId || null,
         ...caseLink,
       });
       setAdmitOpen(false);
       resetAdmitForm();
       await reload();
       showSuccess('Internação registrada');
+      if (hospitalization?.id) {
+        navigate(`/hub/clinica/internacoes/${hospitalization.id}`);
+      }
     } catch (e: unknown) {
-      showError((e as Error)?.message || 'Erro ao internar');
+      const err = e as Error & {
+        code?: string;
+        body?: { code?: string; hospitalization_id?: string; error?: string };
+      };
+      const body = err.body;
+      const code = err.code || body?.code;
+      const existingId = body?.hospitalization_id;
+      if (code === 'HOSPITALIZATION_PET_ACTIVE' && existingId) {
+        setAdmitOpen(false);
+        navigate(`/hub/clinica/internacoes/${existingId}`);
+        showError('Este pet já possui uma internação ativa — abrindo a ficha.');
+        return;
+      }
+      showError(err?.message || 'Erro ao internar');
     } finally {
       setSubmitting(false);
     }

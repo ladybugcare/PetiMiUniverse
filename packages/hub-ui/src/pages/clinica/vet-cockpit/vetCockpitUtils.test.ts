@@ -1,9 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import {
+  dayBoardPrimaryActionLabel,
   formatCockpitDayLabel,
   formatCockpitShortDate,
+  isDayBoardHospitalization,
   isDayBoardSurgery,
   isFinalOperationalStatus,
+  resolveDayBoardPrimaryAction,
 } from './vetCockpitUtils';
 
 describe('formatCockpitDayLabel', () => {
@@ -59,6 +62,76 @@ describe('isDayBoardSurgery', () => {
         service_type: { id: 't2', name: 'Consulta', service_group: 'clinica' },
       }),
     ).toBe(false);
+  });
+});
+
+describe('isDayBoardHospitalization', () => {
+  it('reconhece slot do grupo internação', () => {
+    expect(
+      isDayBoardHospitalization({
+        kind: 'appointment_slot',
+        service_type: { id: 't1', name: 'Internação — diária', service_group: 'internacao' },
+      }),
+    ).toBe(true);
+  });
+
+  it('não marca consulta ou cirurgia', () => {
+    expect(
+      isDayBoardHospitalization({
+        kind: 'appointment_slot',
+        service_type: { id: 't2', name: 'Consulta', service_group: 'clinica' },
+      }),
+    ).toBe(false);
+    expect(
+      isDayBoardHospitalization({
+        kind: 'appointment_slot',
+        surgery_id: 's1',
+        service_type: { id: 't3', name: 'Castração', service_group: 'cirurgia' },
+      }),
+    ).toBe(false);
+  });
+});
+
+describe('resolveDayBoardPrimaryAction', () => {
+  it('prioriza ficha de cirurgia quando há surgery_id', () => {
+    expect(
+      resolveDayBoardPrimaryAction({
+        kind: 'appointment_slot',
+        appointment_id: 'a1',
+        surgery_id: 's1',
+        service_type: { id: 't1', name: 'Castração', service_group: 'cirurgia' },
+      }),
+    ).toEqual({ kind: 'open_surgery', surgeryId: 's1' });
+  });
+
+  it('abre modal de cirurgia quando só há slot do grupo', () => {
+    expect(
+      resolveDayBoardPrimaryAction({
+        kind: 'appointment_slot',
+        appointment_id: 'a1',
+        service_type: { id: 't1', name: 'Castração', service_group: 'cirurgia' },
+      }),
+    ).toEqual({ kind: 'start_surgery_from_appointment' });
+  });
+
+  it('internação sem encounter pede admissão', () => {
+    const action = resolveDayBoardPrimaryAction({
+      kind: 'appointment_slot',
+      appointment_id: 'a1',
+      service_type: { id: 't1', name: 'Internação — diária', service_group: 'internacao' },
+    });
+    expect(action).toEqual({ kind: 'admit_hospitalization' });
+    expect(dayBoardPrimaryActionLabel(action)).toBe('Internar');
+  });
+
+  it('consulta usa iniciar consulta', () => {
+    const action = resolveDayBoardPrimaryAction({
+      kind: 'appointment_slot',
+      appointment_id: 'a1',
+      service_type: { id: 't1', name: 'Consulta', service_group: 'clinica' },
+    });
+    expect(action).toEqual({ kind: 'start_consultation' });
+    expect(dayBoardPrimaryActionLabel(action)).toBe('Iniciar consulta');
   });
 });
 

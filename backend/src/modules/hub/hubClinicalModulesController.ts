@@ -1409,6 +1409,8 @@ export const createHubHospitalization = async (req: Request, res: Response) => {
       daily_hub_service_type_id: uuidStr.optional().nullable(),
       daily_unit_amount: z.number().min(0).optional().nullable(),
       daily_includes_medication: z.boolean().optional().default(false),
+      /** Slot da agenda (ex.: diária agendada) — reusa em vez de espelhar walk-in. */
+      hub_appointment_id: uuidStr.optional().nullable(),
     })
     .safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
@@ -1431,6 +1433,27 @@ export const createHubHospitalization = async (req: Request, res: Response) => {
   }
   if (!(await assertStaffInClinic(b.clinic_id, b.hub_staff_member_id))) {
     return res.status(400).json({ error: 'Referência inválida' });
+  }
+
+  let reuseAppointmentId: string | null = b.hub_appointment_id ?? null;
+  if (reuseAppointmentId) {
+    const { data: appt, error: apptErr } = await supabaseAdmin
+      .from('hub_appointments')
+      .select('id, pet_id, status, deleted_at')
+      .eq('id', reuseAppointmentId)
+      .eq('clinic_id', b.clinic_id)
+      .maybeSingle();
+    if (apptErr) return res.status(500).json({ error: apptErr.message });
+    if (!appt || (appt as { deleted_at?: string | null }).deleted_at) {
+      return res.status(400).json({ error: 'Agendamento não encontrado para vincular à internação' });
+    }
+    const apptPet = (appt as { pet_id?: string | null }).pet_id ?? null;
+    if (apptPet && apptPet !== b.pet_id) {
+      return res.status(400).json({ error: 'O agendamento não pertence a este pet' });
+    }
+    if ((appt as { status?: string | null }).status === 'cancelled') {
+      return res.status(400).json({ error: 'Não é possível internar a partir de um agendamento cancelado' });
+    }
   }
 
   // Idempotência / concorrência: no máximo uma internação ativa por pet.
@@ -1603,40 +1626,65 @@ export const createHubHospitalization = async (req: Request, res: Response) => {
   const admittedAt =
     (data as { admitted_at?: string | null }).admitted_at ?? new Date().toISOString();
 
-  // Consultório → Agenda: marco de admissão no dia (não modela estadia multi-dia).
-  let appointmentId: string | null = null;
-  try {
-    appointmentId = await insertLinkedClinicalAppointment({
-      clinicId: b.clinic_id,
-      unitId: b.unit_id,
-      petId: b.pet_id,
-      guardianId: b.guardian_id,
-      staffMemberId: b.hub_staff_member_id,
-      serviceTypeId: b.daily_hub_service_type_id,
-      serviceGroup: 'internacao',
-      startsAt: admittedAt,
-      title: b.reason?.trim() || 'Internação',
-      status: 'in_progress',
-      appointmentKind: 'clinical_walk_in',
-      notes: b.admission_notes ?? null,
-      intakeHubCaseId: caseId,
-      required: true,
-    });
-  } catch (mirrorErr: unknown) {
-    await supabaseAdmin
-      .from('hub_hospitalizations')
-      .update({ status: 'cancelled', hub_hospital_bed_id: null })
-      .eq('id', hospitalizationId)
-      .eq('clinic_id', b.clinic_id);
-    await supabaseAdmin
-      .from('hub_encounters')
-      .update({ status: 'cancelled', completed_at: new Date().toISOString() })
-      .eq('id', encounterId)
+  // Agenda: reusa slot agendado (diária) ou espelha marco walk-in de admissão.
+  let appointmentId: string | null = reuseAppointmentId;
+  if (reuseAppointmentId) {
+    const { error: reuseErr } = await supabaseAdmin
+      .from('hub_appointments')
+      .update({ status: 'in_progress' })
+      .eq('id', reuseAppointmentId)
       .eq('clinic_id', b.clinic_id)
-      .in('status', ['in_progress', 'waiting']);
-    return res.status(400).json({
-      error: (mirrorErr as Error)?.message || 'Não foi possível espelhar a internação na agenda.',
-    });
+      .is('deleted_at', null);
+    if (reuseErr) {
+      await supabaseAdmin
+        .from('hub_hospitalizations')
+        .update({ status: 'cancelled', hub_hospital_bed_id: null })
+        .eq('id', hospitalizationId)
+        .eq('clinic_id', b.clinic_id);
+      await supabaseAdmin
+        .from('hub_encounters')
+        .update({ status: 'cancelled', completed_at: new Date().toISOString() })
+        .eq('id', encounterId)
+        .eq('clinic_id', b.clinic_id)
+        .in('status', ['in_progress', 'waiting']);
+      return res.status(400).json({
+        error: reuseErr.message || 'Não foi possível vincular o agendamento à internação.',
+      });
+    }
+  } else {
+    try {
+      appointmentId = await insertLinkedClinicalAppointment({
+        clinicId: b.clinic_id,
+        unitId: b.unit_id,
+        petId: b.pet_id,
+        guardianId: b.guardian_id,
+        staffMemberId: b.hub_staff_member_id,
+        serviceTypeId: b.daily_hub_service_type_id,
+        serviceGroup: 'internacao',
+        startsAt: admittedAt,
+        title: b.reason?.trim() || 'Internação',
+        status: 'in_progress',
+        appointmentKind: 'clinical_walk_in',
+        notes: b.admission_notes ?? null,
+        intakeHubCaseId: caseId,
+        required: true,
+      });
+    } catch (mirrorErr: unknown) {
+      await supabaseAdmin
+        .from('hub_hospitalizations')
+        .update({ status: 'cancelled', hub_hospital_bed_id: null })
+        .eq('id', hospitalizationId)
+        .eq('clinic_id', b.clinic_id);
+      await supabaseAdmin
+        .from('hub_encounters')
+        .update({ status: 'cancelled', completed_at: new Date().toISOString() })
+        .eq('id', encounterId)
+        .eq('clinic_id', b.clinic_id)
+        .in('status', ['in_progress', 'waiting']);
+      return res.status(400).json({
+        error: (mirrorErr as Error)?.message || 'Não foi possível espelhar a internação na agenda.',
+      });
+    }
   }
 
   let hospitalization = data as Record<string, unknown>;

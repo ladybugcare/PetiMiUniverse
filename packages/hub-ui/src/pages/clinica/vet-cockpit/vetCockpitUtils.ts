@@ -101,6 +101,49 @@ export function isDayBoardSurgery(item: DayBoardItem): boolean {
   return item.service_type?.service_group === 'cirurgia';
 }
 
+export function isDayBoardHospitalization(item: DayBoardItem): boolean {
+  return item.service_type?.service_group === 'internacao';
+}
+
+/** Ação primária do painel da fila (Operação do dia). */
+export type DayBoardPrimaryAction =
+  | { kind: 'open_surgery'; surgeryId: string }
+  | { kind: 'start_surgery_from_appointment' }
+  | { kind: 'admit_hospitalization' }
+  | { kind: 'open_encounter'; encounterId: string }
+  | { kind: 'start_consultation' }
+  | { kind: 'none' };
+
+export function resolveDayBoardPrimaryAction(item: DayBoardItem): DayBoardPrimaryAction {
+  if (isDayBoardSurgery(item)) {
+    if (item.surgery_id) return { kind: 'open_surgery', surgeryId: item.surgery_id };
+    if (item.appointment_id) return { kind: 'start_surgery_from_appointment' };
+    return { kind: 'none' };
+  }
+  if (isDayBoardHospitalization(item) && !item.encounter_id) {
+    return { kind: 'admit_hospitalization' };
+  }
+  if (item.encounter_id) return { kind: 'open_encounter', encounterId: item.encounter_id };
+  if (item.appointment_id) return { kind: 'start_consultation' };
+  return { kind: 'none' };
+}
+
+export function dayBoardPrimaryActionLabel(action: DayBoardPrimaryAction): string {
+  switch (action.kind) {
+    case 'open_surgery':
+    case 'start_surgery_from_appointment':
+      return 'Abrir ficha da cirurgia';
+    case 'admit_hospitalization':
+      return 'Internar';
+    case 'open_encounter':
+      return 'Continuar atendimento';
+    case 'start_consultation':
+      return 'Iniciar consulta';
+    default:
+      return '';
+  }
+}
+
 export function itemKey(item: DayBoardItem): string {
   return item.encounter_id || item.appointment_id || item.surgery_id || `${item.pet_id}-${itemStartsAt(item)}`;
 }

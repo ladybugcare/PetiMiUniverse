@@ -40,8 +40,11 @@ import {
   cockpitEncounterPath,
   computeTurnSummary,
   formatCockpitDayLabel,
+  isDayBoardHospitalization,
+  isDayBoardSurgery,
   itemKey,
   readStoredSelection,
+  resolveDayBoardPrimaryAction,
   writeStoredSelection,
 } from './vetCockpitUtils';
 import '../clinica-page.css';
@@ -90,6 +93,9 @@ const HubVetCockpitPage: React.FC = () => {
   const [surgSectionOpen, setSurgSectionOpen] = useState(true);
   const [opsPresetPetId, setOpsPresetPetId] = useState<string | null>(null);
   const [opsPresetCaseId, setOpsPresetCaseId] = useState<string | null>(null);
+  const [opsPresetGuardianId, setOpsPresetGuardianId] = useState<string | null>(null);
+  const [opsPresetAppointmentId, setOpsPresetAppointmentId] = useState<string | null>(null);
+  const [opsPresetDailyServiceTypeId, setOpsPresetDailyServiceTypeId] = useState<string | null>(null);
   const [badgeHints, setBadgeHints] = useState<
     Record<string, { examsAvailable?: boolean; rxDraft?: boolean; hospitalized?: boolean }>
   >({});
@@ -239,9 +245,44 @@ const HubVetCockpitPage: React.FC = () => {
     navigate(cockpitEncounterPath(encounterId, section), { state: { from: 'cockpit' } });
   };
 
+  const clearOpsPresets = () => {
+    setOpsPresetPetId(null);
+    setOpsPresetCaseId(null);
+    setOpsPresetGuardianId(null);
+    setOpsPresetAppointmentId(null);
+    setOpsPresetDailyServiceTypeId(null);
+  };
+
+  const openAdmitFromItem = (item: DayBoardItem | null) => {
+    const activeHospId = patientContext?.active_hospitalization?.id;
+    if (activeHospId && item && isDayBoardHospitalization(item)) {
+      navigate(`/hub/clinica/internacoes/${activeHospId}`);
+      return;
+    }
+    setOpsPresetPetId(item?.pet_id ?? patientContext?.pet?.id ?? null);
+    setOpsPresetCaseId(patientContext?.encounter?.hub_case_id ?? null);
+    setOpsPresetGuardianId(item?.guardian_id ?? patientContext?.guardian?.id ?? null);
+    setOpsPresetAppointmentId(item?.appointment_id ?? null);
+    setOpsPresetDailyServiceTypeId(
+      item?.service_type?.service_group === 'internacao' ? item.service_type.id : null,
+    );
+    setAdmitOpen(true);
+    setHospSectionOpen(true);
+    setCockpitTab('andamento');
+  };
+
   const handleStartConsultation = () => {
     if (!selected) return;
-    if (selected.encounter_id) {
+    const action = resolveDayBoardPrimaryAction(selected);
+    if (action.kind === 'open_surgery') {
+      navigate(`/hub/clinica/cirurgias/${action.surgeryId}`);
+      return;
+    }
+    if (action.kind === 'admit_hospitalization') {
+      openAdmitFromItem(selected);
+      return;
+    }
+    if (selected.encounter_id && !isDayBoardSurgery(selected)) {
       openEncounter(selected.encounter_id);
       return;
     }
@@ -259,21 +300,45 @@ const HubVetCockpitPage: React.FC = () => {
     opts: { hub_case_id?: string | null; create_new_case?: boolean; new_case_title?: string | null },
   ) => {
     if (!clinicId || !item.appointment_id) return;
+    const asSurgery = isDayBoardSurgery(item);
     setStartingEncounter(true);
     try {
       const { encounter } = await hubEncountersApi.openFromAppointment(clinicId, item.appointment_id, opts);
       setStartModalItem(null);
-      await loadQueue();
+      begin();
+      let matched: DayBoardItem | null = null;
+      try {
+        const board = await hubEncountersApi.dayBoard(clinicId, dayRange, { staffId });
+        const nextItems = board.items ?? [];
+        setItems(nextItems);
+        matched =
+          nextItems.find(
+            (row) => row.appointment_id === item.appointment_id || row.encounter_id === encounter.id,
+          ) ?? null;
+        succeed();
+      } catch {
+        await loadQueue();
+      } finally {
+        finish();
+      }
+      const surgeryId = matched?.surgery_id || item.surgery_id || null;
       const updated: DayBoardItem = {
         ...item,
+        ...(matched ?? {}),
         kind: 'encounter',
         encounter_id: encounter.id,
         status: encounter.status,
         operational_phase: encounter.operational_phase,
+        surgery_id: surgeryId,
       };
       setSelected(updated);
+      if (asSurgery && surgeryId) {
+        navigate(`/hub/clinica/cirurgias/${surgeryId}`);
+        showSuccess('Atendimento vinculado à cirurgia');
+        return;
+      }
       openEncounter(encounter.id);
-      showSuccess('Consulta iniciada');
+      showSuccess(asSurgery ? 'Atendimento iniciado' : 'Consulta iniciada');
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao iniciar atendimento');
     } finally {
@@ -463,8 +528,7 @@ const HubVetCockpitPage: React.FC = () => {
               type="button"
               className="hub-clientes__btn hub-clientes__btn--ghost"
               onClick={() => {
-                setOpsPresetPetId(null);
-                setOpsPresetCaseId(null);
+                clearOpsPresets();
                 setAdmitOpen(true);
                 setHospSectionOpen(true);
                 setCockpitTab('andamento');
@@ -476,8 +540,7 @@ const HubVetCockpitPage: React.FC = () => {
               type="button"
               className="hub-clientes__btn hub-clientes__btn--ghost"
               onClick={() => {
-                setOpsPresetPetId(null);
-                setOpsPresetCaseId(null);
+                clearOpsPresets();
                 setSurgeryCreateOpen(true);
                 setSurgSectionOpen(true);
                 setCockpitTab('andamento');
@@ -529,17 +592,14 @@ const HubVetCockpitPage: React.FC = () => {
                   ? () => navigate(`/hub/clinica/cirurgias/${selected.surgery_id}`)
                   : undefined
               }
+              onOpenHospitalization={(hospitalizationId) =>
+                navigate(`/hub/clinica/internacoes/${hospitalizationId}`)
+              }
               onOpenRecord={(section) => {
                 const encId = selected?.encounter_id ?? patientContext?.encounter?.id;
                 if (encId) openEncounter(encId, section);
               }}
-              onAdmit={() => {
-                setOpsPresetPetId(selected?.pet_id ?? patientContext?.pet?.id ?? null);
-                setOpsPresetCaseId(patientContext?.encounter?.hub_case_id ?? null);
-                setAdmitOpen(true);
-                setHospSectionOpen(true);
-                setCockpitTab('andamento');
-              }}
+              onAdmit={() => openAdmitFromItem(selected)}
               onComplete={() => void handleComplete()}
               onSetOperationalPhase={(phase) => void handleSetOperationalPhase(phase)}
             />
@@ -561,6 +621,9 @@ const HubVetCockpitPage: React.FC = () => {
             onAdmitOpenChange={setAdmitOpen}
             presetPetId={opsPresetPetId}
             presetCaseId={opsPresetCaseId}
+            presetGuardianId={opsPresetGuardianId}
+            presetAppointmentId={opsPresetAppointmentId}
+            presetDailyServiceTypeId={opsPresetDailyServiceTypeId}
           />
         </VetCockpitOpsSection>
 

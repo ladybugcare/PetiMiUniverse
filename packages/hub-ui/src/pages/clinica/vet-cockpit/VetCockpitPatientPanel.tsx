@@ -23,11 +23,14 @@ import { formatHubClinicalExamStatus, formatPrescriptionLine } from '../clinical
 import { petAgeDetailedLabel } from '../../pets/petAge';
 import {
   caseStatusLabel,
+  dayBoardPrimaryActionLabel,
   formatCockpitShortDate,
+  isDayBoardHospitalization,
   isDayBoardSurgery,
   isFinalOperationalStatus,
   isItemEmergency,
   itemOperationalStatus,
+  resolveDayBoardPrimaryAction,
   sexLabel,
   VET_QUEUE_STATUS_LABEL,
 } from './vetCockpitUtils';
@@ -51,6 +54,7 @@ type Props = {
   phaseBusy: boolean;
   onStartConsultation: () => void;
   onOpenSurgery?: () => void;
+  onOpenHospitalization?: (hospitalizationId: string) => void;
   onOpenRecord: (section?: VetCockpitDrawerSection) => void;
   onAdmit?: () => void;
   onComplete: () => void;
@@ -108,6 +112,7 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
   phaseBusy,
   onStartConsultation,
   onOpenSurgery,
+  onOpenHospitalization,
   onOpenRecord,
   onAdmit,
   onComplete,
@@ -123,7 +128,30 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
     );
   }
 
-  const isSurgery = item ? isDayBoardSurgery(item) : false;
+  const isSurgery = isDayBoardSurgery(item);
+  const isHospitalization = isDayBoardHospitalization(item);
+  const primaryAction = resolveDayBoardPrimaryAction(item);
+  const primaryLabel = dayBoardPrimaryActionLabel(primaryAction);
+
+  const runPrimaryAction = () => {
+    switch (primaryAction.kind) {
+      case 'open_surgery':
+        onOpenSurgery?.();
+        return;
+      case 'start_surgery_from_appointment':
+      case 'start_consultation':
+        onStartConsultation();
+        return;
+      case 'admit_hospitalization':
+        onAdmit?.();
+        return;
+      case 'open_encounter':
+        onOpenRecord('sec-resumo');
+        return;
+      default:
+        return;
+    }
+  };
 
   if (!context) {
     return (
@@ -131,11 +159,15 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
         {loading ? <HubLoading variant="block" label="Carregando paciente…" /> : (
           <>
             <p className="hub-clientes__muted">Sem contexto clínico para este paciente.</p>
-            {isSurgery && item?.surgery_id && onOpenSurgery ? (
+            {canWrite && primaryAction.kind !== 'none' && primaryLabel ? (
               <div className="vet-cockpit-panel__footer">
-                <button type="button" className="vet-cockpit-action-btn vet-cockpit-action-btn--primary" onClick={onOpenSurgery}>
-                  <Scissors size={18} aria-hidden />
-                  Abrir ficha da cirurgia
+                <button
+                  type="button"
+                  className="vet-cockpit-action-btn vet-cockpit-action-btn--primary"
+                  onClick={runPrimaryAction}
+                >
+                  {isSurgery ? <Scissors size={18} aria-hidden /> : isHospitalization ? <BedDouble size={18} aria-hidden /> : <Play size={18} aria-hidden />}
+                  {primaryLabel}
                 </button>
               </div>
             ) : null}
@@ -148,6 +180,7 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
   const pet = context.pet;
   const st = itemOperationalStatus(item);
   const encounterId = item.encounter_id ?? context.encounter?.id;
+  const activeHospId = context.active_hospitalization?.id ?? null;
   const inProgress = st === 'in_progress' || st === 'awaiting_exams' || st === 'exams_returned';
   const writeActionsLocked = isFinalOperationalStatus(st);
   const writeActionsTitle = writeActionsLocked ? 'Disponível apenas durante o atendimento' : undefined;
@@ -158,6 +191,17 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
   const emergency = isItemEmergency(item);
   const examCounts = context.exams_grouped;
   const previousEncounters = context.recent_encounters.filter((e) => e.id !== encounterId);
+
+  const showPrimaryStart =
+    canWrite &&
+    (primaryAction.kind === 'open_surgery' ||
+      primaryAction.kind === 'start_surgery_from_appointment' ||
+      primaryAction.kind === 'admit_hospitalization' ||
+      primaryAction.kind === 'start_consultation');
+
+  const showOpenActiveHosp =
+    Boolean(activeHospId && onOpenHospitalization) &&
+    (isHospitalization || Boolean(context.active_hospitalization));
 
   return (
     <div className="vet-cockpit-panel vet-cockpit-panel--with-footer">
@@ -493,27 +537,49 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
       ) : null}
 
       <div className="vet-cockpit-panel__footer">
-        {isSurgery && item.surgery_id && onOpenSurgery ? (
-          <button
-            type="button"
-            className="vet-cockpit-action-btn"
-            onClick={onOpenSurgery}
-          >
-            <Scissors size={18} aria-hidden />
-            Abrir ficha da cirurgia
-          </button>
-        ) : null}
-        {!encounterId && canWrite ? (
+        {showPrimaryStart && primaryLabel ? (
           <button
             type="button"
             className="vet-cockpit-action-btn vet-cockpit-action-btn--primary"
-            onClick={onStartConsultation}
+            onClick={
+              primaryAction.kind === 'admit_hospitalization' && activeHospId && onOpenHospitalization
+                ? () => onOpenHospitalization(activeHospId)
+                : runPrimaryAction
+            }
           >
-            <Play size={18} aria-hidden />
-            {isSurgery ? 'Abrir atendimento da cirurgia' : 'Iniciar consulta'}
+            {isSurgery ? (
+              <Scissors size={18} aria-hidden />
+            ) : isHospitalization || (primaryAction.kind === 'admit_hospitalization' && activeHospId) ? (
+              <BedDouble size={18} aria-hidden />
+            ) : (
+              <Play size={18} aria-hidden />
+            )}
+            {primaryAction.kind === 'admit_hospitalization' && activeHospId
+              ? 'Abrir ficha da internação'
+              : primaryLabel}
           </button>
         ) : null}
-        {encounterId ? (
+        {encounterId && !isSurgery && isHospitalization && activeHospId && onOpenHospitalization ? (
+          <button
+            type="button"
+            className="vet-cockpit-action-btn vet-cockpit-action-btn--primary"
+            onClick={() => onOpenHospitalization(activeHospId)}
+          >
+            <BedDouble size={18} aria-hidden />
+            Abrir ficha da internação
+          </button>
+        ) : null}
+        {showOpenActiveHosp && activeHospId && !isHospitalization ? (
+          <button
+            type="button"
+            className="vet-cockpit-action-btn"
+            onClick={() => onOpenHospitalization?.(activeHospId)}
+          >
+            <BedDouble size={18} aria-hidden />
+            Abrir ficha da internação
+          </button>
+        ) : null}
+        {encounterId && !isSurgery && !isHospitalization ? (
           <button
             type="button"
             className="vet-cockpit-action-btn vet-cockpit-action-btn--primary"
@@ -523,7 +589,19 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
             {inProgress ? 'Continuar atendimento' : 'Abrir prontuário'}
           </button>
         ) : null}
-        {encounterId && inProgress && canWrite ? (
+        {encounterId && !isSurgery && isHospitalization ? (
+          <button type="button" className="vet-cockpit-action-btn" onClick={() => onOpenRecord('sec-resumo')}>
+            <Stethoscope size={18} aria-hidden />
+            {inProgress ? 'Abrir atendimento clínico' : 'Abrir prontuário'}
+          </button>
+        ) : null}
+        {encounterId && isSurgery ? (
+          <button type="button" className="vet-cockpit-action-btn" onClick={() => onOpenRecord('sec-resumo')}>
+            <Stethoscope size={18} aria-hidden />
+            {inProgress ? 'Abrir atendimento clínico' : 'Abrir prontuário'}
+          </button>
+        ) : null}
+        {encounterId && inProgress && canWrite && !isSurgery ? (
           <button
             type="button"
             className="vet-cockpit-action-btn vet-cockpit-action-btn--finish"
