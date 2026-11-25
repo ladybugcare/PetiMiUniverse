@@ -54,6 +54,8 @@ export type HubStaffFormState = {
   full_name: string;
   display_name: string;
   photo_url: string;
+  signature_image_url: string;
+  stamp_image_url: string;
   phone: string;
   whatsapp_phone: string;
   email: string;
@@ -83,6 +85,8 @@ export const emptyStaffForm = (): HubStaffFormState => ({
   full_name: '',
   display_name: '',
   photo_url: '',
+  signature_image_url: '',
+  stamp_image_url: '',
   phone: '',
   whatsapp_phone: '',
   email: '',
@@ -141,6 +145,8 @@ export function staffFormFromRow(m: HubStaffMember, activeServiceTypeIds?: Set<s
     full_name: m.full_name,
     display_name: m.display_name ?? '',
     photo_url: m.photo_url ?? '',
+    signature_image_url: m.signature_image_url ?? '',
+    stamp_image_url: m.stamp_image_url ?? '',
     phone: formatBrPhoneFromApi(m.phone),
     whatsapp_phone: formatBrPhoneFromApi(m.whatsapp_phone),
     email: m.email ?? '',
@@ -176,6 +182,8 @@ export function buildStaffPayload(clinicId: string, form: HubStaffFormState, isV
     full_name: form.full_name.trim(),
     display_name: form.display_name.trim() || null,
     photo_url: form.photo_url.trim() || null,
+    signature_image_url: isVetJobTitle ? form.signature_image_url.trim() || null : null,
+    stamp_image_url: isVetJobTitle ? form.stamp_image_url.trim() || null : null,
     phone: form.phone.trim() || null,
     whatsapp_phone: form.whatsapp_phone.trim() || null,
     email: form.email.trim() || null,

@@ -43,6 +43,10 @@ export interface HubStaffMember {
   full_name: string;
   display_name: string | null;
   photo_url: string | null;
+  /** URL da assinatura manuscrita (documentos clínicos). */
+  signature_image_url?: string | null;
+  /** URL do carimbo profissional (documentos clínicos). */
+  stamp_image_url?: string | null;
   phone: string | null;
   whatsapp_phone: string | null;
   email: string | null;
@@ -181,5 +185,83 @@ export const hubStaffApi = {
       method: 'POST',
       body: fd,
     }) as Promise<{ url: string; path?: string }>;
+  },
+
+  /** Upload de assinatura (admin/equipe). Devolve URL para gravar no PATCH. */
+  async uploadSignature(
+    clinicId: string,
+    file: File,
+    staffId?: string | null,
+  ): Promise<{ url: string; path?: string }> {
+    const fd = new FormData();
+    fd.append('photo', file);
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (staffId) q.set('staff_id', staffId);
+    return apiRequest(`${basePath}/signature?${q.toString()}`, {
+      method: 'POST',
+      body: fd,
+    }) as Promise<{ url: string; path?: string }>;
+  },
+
+  /** Upload de carimbo (admin/equipe). Devolve URL para gravar no PATCH. */
+  async uploadStamp(
+    clinicId: string,
+    file: File,
+    staffId?: string | null,
+  ): Promise<{ url: string; path?: string }> {
+    const fd = new FormData();
+    fd.append('photo', file);
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    if (staffId) q.set('staff_id', staffId);
+    return apiRequest(`${basePath}/stamp?${q.toString()}`, {
+      method: 'POST',
+      body: fd,
+    }) as Promise<{ url: string; path?: string }>;
+  },
+
+  /** Staff vinculado ao usuário logado (Meu perfil). */
+  async getMe(clinicId: string): Promise<{ staff: HubStaffMember | null; linked: boolean }> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${basePath}/me?${q.toString()}`) as Promise<{
+      staff: HubStaffMember | null;
+      linked: boolean;
+    }>;
+  },
+
+  async patchMe(
+    clinicId: string,
+    payload: { signature_image_url?: string | null; stamp_image_url?: string | null },
+  ): Promise<{ staff: HubStaffMember }> {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${basePath}/me?${q.toString()}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }) as Promise<{ staff: HubStaffMember }>;
+  },
+
+  async uploadMeSignature(
+    clinicId: string,
+    file: File,
+  ): Promise<{ url: string; path?: string; staff: HubStaffMember }> {
+    const fd = new FormData();
+    fd.append('photo', file);
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${basePath}/me/signature?${q.toString()}`, {
+      method: 'POST',
+      body: fd,
+    }) as Promise<{ url: string; path?: string; staff: HubStaffMember }>;
+  },
+
+  async uploadMeStamp(
+    clinicId: string,
+    file: File,
+  ): Promise<{ url: string; path?: string; staff: HubStaffMember }> {
+    const fd = new FormData();
+    fd.append('photo', file);
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${basePath}/me/stamp?${q.toString()}`, {
+      method: 'POST',
+      body: fd,
+    }) as Promise<{ url: string; path?: string; staff: HubStaffMember }>;
   },
 };

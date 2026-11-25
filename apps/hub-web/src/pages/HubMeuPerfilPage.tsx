@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth, usePermissions } from '@petimi/web-core';
 import { useAlert, formatBrPhoneDisplay } from '@petimi/hub-ui';
 import HubProfilePhotoPicker from '../components/HubProfilePhotoPicker';
+import HubMyVetStampCard from '../components/HubMyVetStampCard';
 import {
   HubAccountProfileActionRow,
   HubAccountProfileCard,
@@ -177,6 +178,8 @@ const HubMeuPerfilPage: React.FC = () => {
           ]}
         />
       </HubAccountProfileCard>
+
+      <HubMyVetStampCard clinicId={clinicId} />
 
       <HubAccountProfileCard
         title="Notificações"

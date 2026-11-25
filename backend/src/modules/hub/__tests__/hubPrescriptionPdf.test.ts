@@ -14,7 +14,7 @@ const snapshot: PrescriptionSnapshot = {
   clinic: { id: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb', name: 'Clínica PDF' },
   pet: { id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', name: 'Mel', species: 'Canino', breed: 'SRD' },
   guardian: { id: '11111111-1111-4111-8111-111111111111', full_name: 'Ana Silva' },
-  veterinarian: { id: 'ffffffff-ffff-4fff-8fff-ffffffffffff', full_name: 'Dr. Pedro', crmv: '12345', crmv_uf: 'SP' },
+  veterinarian: { id: 'ffffffff-ffff-4fff-8fff-ffffffffffff', full_name: 'Dr. Pedro', crmv: '12345', crmv_uf: 'SP', signature_image_url: null, stamp_image_url: null },
   medications: [
     {
       medication_name: 'Dipirona',
@@ -61,6 +61,8 @@ describe('hubPrescriptionPdf — receita validável', () => {
           full_name: snapshot.veterinarian.full_name,
           crmv: snapshot.veterinarian.crmv,
           crmv_uf: snapshot.veterinarian.crmv_uf,
+          signature_image_url: snapshot.veterinarian.signature_image_url,
+          stamp_image_url: snapshot.veterinarian.stamp_image_url,
         },
       },
       {

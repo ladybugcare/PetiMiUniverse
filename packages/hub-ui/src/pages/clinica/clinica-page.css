@@ -4164,6 +4164,28 @@ button.hub-clinic-case-page__generic-hint:focus-visible {
   min-width: 0;
 }
 
+.hub-standalone-rx__issue-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.hub-standalone-rx__btn--issue {
+  width: 100%;
+  justify-content: center;
+  min-height: 44px;
+  font-size: 15px;
+}
+
+.hub-standalone-rx__issue-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--rx-muted);
+  text-align: center;
+}
+
 .hub-standalone-rx__sidebar {
   position: sticky;
   top: 16px;
@@ -5446,6 +5468,64 @@ button.hub-clinic-case-page__generic-hint:focus-visible {
 .hub-public-rx-doc__muted {
   color: #8e6e67;
   font-size: 13px;
+}
+
+.hub-public-rx-doc__state-title {
+  margin: 0 0 8px;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 700;
+  color: #222;
+}
+
+.hub-public-rx-doc__state-text {
+  margin: 0;
+  text-align: center;
+  color: #8e6e67;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.hub-public-rx-doc__items {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.hub-public-rx-doc__item {
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f0ebe7;
+}
+
+.hub-public-rx-doc__item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+.hub-public-rx-doc__item-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 14px;
+  margin-bottom: 4px;
+}
+
+.hub-public-rx-doc__urgent {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: #9a3412;
+  background: #ffedd5;
+  border: 1px solid #fdba74;
 }
 
 @media (max-width: 720px) {

@@ -1,0 +1,264 @@
+.hub-vet-stamp-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin: 4px 0 0;
+}
+
+.hub-vet-stamp-fields__intro {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--hc-muted, #8e6e67);
+}
+
+.hub-vet-stamp-fields__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+@media (max-width: 720px) {
+  .hub-vet-stamp-fields__grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.hub-vet-stamp-field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--hc-border, #e5dcd6);
+  border-radius: 14px;
+  background: linear-gradient(180deg, #fffdfb 0%, #faf7f4 100%);
+}
+
+.hub-vet-stamp-field__label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 22px;
+}
+
+.hub-vet-stamp-field__label {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-vet-stamp-field__badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #2f6b4f;
+  background: rgba(47, 107, 79, 0.1);
+}
+
+.hub-vet-stamp-field__preview {
+  position: relative;
+  width: 100%;
+  border: 1.5px dashed #d9ccc4;
+  background: #fff;
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.hub-vet-stamp-field__preview:hover:not(:disabled) {
+  border-color: var(--hc-brand, #c86a4d);
+  background: rgba(200, 106, 77, 0.04);
+  box-shadow: 0 0 0 3px rgba(200, 106, 77, 0.08);
+}
+
+.hub-vet-stamp-field__preview:focus-visible {
+  outline: none;
+  border-color: var(--hc-brand, #c86a4d);
+  box-shadow: 0 0 0 3px rgba(200, 106, 77, 0.18);
+}
+
+.hub-vet-stamp-field__preview:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+
+.hub-vet-stamp-field--signature .hub-vet-stamp-field__preview {
+  min-height: 104px;
+  aspect-ratio: 2.4 / 1;
+}
+
+.hub-vet-stamp-field--stamp .hub-vet-stamp-field__preview {
+  min-height: 104px;
+  aspect-ratio: 1 / 1;
+  max-width: 140px;
+  margin-inline: auto;
+}
+
+.hub-vet-stamp-field__preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  background:
+    linear-gradient(45deg, #f3eee9 25%, transparent 25%),
+    linear-gradient(-45deg, #f3eee9 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #f3eee9 75%),
+    linear-gradient(-45deg, transparent 75%, #f3eee9 75%);
+  background-size: 16px 16px;
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+  background-color: #fff;
+}
+
+.hub-vet-stamp-field__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 16px 12px;
+  color: var(--hc-muted, #8e6e67);
+}
+
+.hub-vet-stamp-field__empty-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: rgba(200, 106, 77, 0.1);
+  color: var(--hc-brand, #c86a4d);
+}
+
+.hub-vet-stamp-field__placeholder {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 500;
+  text-align: center;
+  line-height: 1.35;
+  max-width: 16ch;
+}
+
+.hub-vet-stamp-field__busy {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 253, 250, 0.82);
+  font-size: 12px;
+  font-weight: 650;
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-vet-stamp-field__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.hub-vet-stamp-field__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.hub-vet-stamp-field__btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.hub-vet-stamp-field__btn--primary {
+  background: var(--hc-brand, #c86a4d);
+  border-color: var(--hc-brand, #c86a4d);
+  color: #fff;
+}
+
+.hub-vet-stamp-field__btn--primary:hover:not(:disabled) {
+  filter: brightness(0.96);
+}
+
+.hub-vet-stamp-field__btn--ghost {
+  background: #fff;
+  border-color: var(--hc-border, #e5dcd6);
+  color: var(--hc-text, #4a3b3a);
+}
+
+.hub-vet-stamp-field__btn--ghost:hover:not(:disabled) {
+  background: #f7f1ec;
+  border-color: #d4c6bf;
+}
+
+.hub-vet-stamp-field__error {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #b91c1c;
+}
+
+.hub-vet-stamp-field__hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--hc-muted, #8e6e67);
+}
+
+.hub-public-rx-doc__sign-images,
+.hub-public-vet-stamp {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 16px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.hub-public-rx-doc__sign-images img,
+.hub-public-vet-stamp img {
+  object-fit: contain;
+  display: block;
+}
+
+.hub-public-rx-doc__sign-images img[data-kind='signature'],
+.hub-public-vet-stamp img[data-kind='signature'] {
+  max-width: 180px;
+  max-height: 64px;
+}
+
+.hub-public-rx-doc__sign-images img[data-kind='stamp'],
+.hub-public-vet-stamp img[data-kind='stamp'] {
+  max-width: 96px;
+  max-height: 96px;
+}

@@ -78,6 +78,11 @@ export type { HubServiceGroupRow } from './api/hubServiceGroupsApi';
 export { hubStaffApi } from './api/hubStaffApi';
 export { hubInvitationsApi } from './api/hubInvitationsApi';
 export type { HubStaffMember, HubProfessionalKind, HubStaffAccessRole } from './api/hubStaffApi';
+export { HubVetStampImageField } from './components/clinical/HubVetStampImageField';
+export {
+  HubMissingStampConfirmModal,
+  resolveMissingStampFlags,
+} from './components/clinical/HubMissingStampConfirmModal';
 export { hubServiceTypesApi } from './api/hubServiceTypesApi';
 export type { HubServiceType, HubServiceGroup } from './api/hubServiceTypesApi';
 export { default as HubGuardiansPage } from './pages/HubGuardiansPage';

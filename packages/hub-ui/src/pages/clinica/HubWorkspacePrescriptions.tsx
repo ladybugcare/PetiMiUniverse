@@ -10,6 +10,10 @@ import { HubPrescriptionIssuePanel } from '../../components/clinical/HubPrescrip
 import { HubPrescriptionRevokeModal } from '../../components/clinical/HubPrescriptionRevokeModal';
 import { HubPrescriptionDocumentBadge } from '../../components/clinical/HubPrescriptionDocumentBadge';
 import {
+  HubMissingStampConfirmModal,
+  resolveMissingStampFlags,
+} from '../../components/clinical/HubMissingStampConfirmModal';
+import {
   hubClinicalApi,
   openBlankPdfPreviewTab,
   openHubPrescriptionPdf,
@@ -18,6 +22,7 @@ import {
   type HubPrescriptionDocumentRow,
   type HubPrescriptionItem,
 } from '../../api/hubClinicalApi';
+import { useMyStaffMember } from '../../hooks/useMyStaffMember';
 import { HubCwsStatusPills } from './HubCwsStatusPills';
 import { isPrescriptionContentEditableToday } from './prescriptionEditWindow';
 
@@ -90,6 +95,9 @@ export function HubWorkspacePrescriptions({
   hideEmptyState?: boolean;
 }) {
   const { showError, showSuccess } = useAlert();
+  const { staffList } = useMyStaffMember();
+  const [stampConfirmOpen, setStampConfirmOpen] = useState(false);
+  const [stampMissing, setStampMissing] = useState({ missingSignature: true, missingStamp: true });
   const [items, setItems] = useState<HubPrescription[]>([]);
   const [documents, setDocuments] = useState<HubPrescriptionDocumentRow[]>([]);
   const [issuing, setIssuing] = useState(false);
@@ -285,6 +293,25 @@ export function HubWorkspacePrescriptions({
   };
 
   const issueValidatable = async () => {
+    if (!canonicalRx) {
+      showError('Adicione ao menos um medicamento antes de gerar a receita.');
+      return;
+    }
+    if (issueBlockReason) {
+      showError(issueBlockReason);
+      return;
+    }
+    const staff = staffList.find((s) => s.id === encounter.hub_staff_member_id) ?? null;
+    const flags = resolveMissingStampFlags(staff);
+    if (flags.missingAny) {
+      setStampMissing(flags);
+      setStampConfirmOpen(true);
+      return;
+    }
+    await runIssueValidatable();
+  };
+
+  const runIssueValidatable = async () => {
     if (!canonicalRx) {
       showError('Adicione ao menos um medicamento antes de gerar a receita.');
       return;
@@ -648,6 +675,17 @@ export function HubWorkspacePrescriptions({
         </div>
       ) : null}
 
+      <HubMissingStampConfirmModal
+        open={stampConfirmOpen}
+        missingSignature={stampMissing.missingSignature}
+        missingStamp={stampMissing.missingStamp}
+        veterinarianName={staffList.find((s) => s.id === encounter.hub_staff_member_id)?.full_name}
+        onCancel={() => setStampConfirmOpen(false)}
+        onConfirm={() => {
+          setStampConfirmOpen(false);
+          void runIssueValidatable();
+        }}
+      />
       <HubPrescriptionIssuePanel
         open={issuePanelOpen}
         onClose={() => {

@@ -776,7 +776,7 @@ export const getHubPrescriptionPdf = async (req: Request, res: Response) => {
       *,
       clinic:clinics(name, phone, email, address, city, state),
       pet:hub_pets(name, species, breed, birth_date),
-      staff:hub_staff_members(full_name, crmv, crmv_uf)
+      staff:hub_staff_members(full_name, crmv, crmv_uf, signature_image_url, stamp_image_url)
     `
     )
     .eq('id', id.data)
@@ -804,7 +804,7 @@ export const getHubPrescriptionPdf = async (req: Request, res: Response) => {
   if (itemsErr) return res.status(500).json({ error: itemsErr.message });
 
   const guardianEmbed = petGuardian?.[0]?.guardian ?? null;
-  streamPrescriptionPdf(res, { ...rx, items: items ?? [], guardian: guardianEmbed });
+  await streamPrescriptionPdf(res, { ...rx, items: items ?? [], guardian: guardianEmbed });
 };
 
 // ── Vaccinations ────────────────────────────────────────────────────────────

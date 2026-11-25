@@ -12,7 +12,7 @@ const snapshot: PrescriptionSnapshot = {
   clinic: { id: '22222222-2222-4222-8222-222222222222', name: 'Clínica Pet' },
   pet: { id: '33333333-3333-4333-8333-333333333333', name: 'Mel', species: 'Canino', breed: 'SRD' },
   guardian: { id: '44444444-4444-4444-8444-444444444444', full_name: 'Ana Silva' },
-  veterinarian: { id: '55555555-5555-4555-8555-555555555555', full_name: 'Dr. Pedro', crmv: '12345', crmv_uf: 'SP' },
+  veterinarian: { id: '55555555-5555-4555-8555-555555555555', full_name: 'Dr. Pedro', crmv: '12345', crmv_uf: 'SP', signature_image_url: null, stamp_image_url: null },
   medications: [
     {
       medication_name: 'Dipirona',

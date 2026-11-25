@@ -66,6 +66,8 @@ export type PrescriptionSnapshot = {
     full_name: string;
     crmv: string | null;
     crmv_uf: string | null;
+    signature_image_url: string | null;
+    stamp_image_url: string | null;
   };
   medications: PrescriptionSnapshotMedication[];
   notes: string | null;
@@ -236,6 +238,8 @@ export function buildPrescriptionSnapshot(input: {
     full_name: string;
     crmv?: string | null;
     crmv_uf?: string | null;
+    signature_image_url?: string | null;
+    stamp_image_url?: string | null;
   };
   items: Record<string, unknown>[];
   customDisclaimer?: string | null;
@@ -282,6 +286,8 @@ export function buildPrescriptionSnapshot(input: {
       full_name: input.veterinarian.full_name,
       crmv: input.veterinarian.crmv ?? null,
       crmv_uf: input.veterinarian.crmv_uf ?? null,
+      signature_image_url: input.veterinarian.signature_image_url ?? null,
+      stamp_image_url: input.veterinarian.stamp_image_url ?? null,
     },
     medications: [...input.items]
       .sort((a, b) => Number(a.order_index ?? 0) - Number(b.order_index ?? 0))
@@ -318,7 +324,13 @@ export function snapshotToPdfView(
   clinic: PrescriptionSnapshotClinic;
   pet: PrescriptionSnapshotPet;
   guardian: PrescriptionSnapshotGuardian;
-  staff: { full_name: string; crmv: string | null; crmv_uf: string | null };
+  staff: {
+    full_name: string;
+    crmv: string | null;
+    crmv_uf: string | null;
+    signature_image_url: string | null;
+    stamp_image_url: string | null;
+  };
 } {
   return {
     id: snapshot.prescription_id,
@@ -347,6 +359,8 @@ export function snapshotToPdfView(
       full_name: snapshot.veterinarian.full_name,
       crmv: snapshot.veterinarian.crmv,
       crmv_uf: snapshot.veterinarian.crmv_uf,
+      signature_image_url: snapshot.veterinarian.signature_image_url,
+      stamp_image_url: snapshot.veterinarian.stamp_image_url,
     },
   };
 }
@@ -377,6 +391,8 @@ export type LoadedPrescriptionIssueContext = {
     full_name: string;
     crmv: string | null;
     crmv_uf: string | null;
+    signature_image_url: string | null;
+    stamp_image_url: string | null;
   };
 };
 
@@ -398,7 +414,14 @@ export function mapLoadedIssueContext(
   const petRow = embedOne(petEmbed as PrescriptionSnapshotPet | null);
   const guardianRow = embedOne(guardianEmbed as PrescriptionSnapshotGuardian | null);
   const staffRow = embedOne(
-    staffEmbed as { id: string; full_name: string; crmv?: string | null; crmv_uf?: string | null } | null,
+    staffEmbed as {
+      id: string;
+      full_name: string;
+      crmv?: string | null;
+      crmv_uf?: string | null;
+      signature_image_url?: string | null;
+      stamp_image_url?: string | null;
+    } | null,
   );
 
   return {
@@ -438,6 +461,8 @@ export function mapLoadedIssueContext(
       full_name: staffRow?.full_name ?? 'Veterinário responsável',
       crmv: staffRow?.crmv ?? null,
       crmv_uf: staffRow?.crmv_uf ?? null,
+      signature_image_url: staffRow?.signature_image_url ?? null,
+      stamp_image_url: staffRow?.stamp_image_url ?? null,
     },
   };
 }

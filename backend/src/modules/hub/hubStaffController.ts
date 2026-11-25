@@ -52,7 +52,7 @@ async function requireStaffRolesAssign(
 }
 
 const STAFF_SELECT =
-  'id, clinic_id, full_name, display_name, photo_url, phone, whatsapp_phone, email, birth_date, job_title, professional_kind, specialties, crmv, crmv_uf, internal_notes, active, affiliation, has_hub_access, hub_access_email, hub_access_role, operational_areas, accepts_appointments, available_days, work_hours, break_minutes, default_unit_id, agenda_color, clinic_user_id, created_at, updated_at, deleted_at';
+  'id, clinic_id, full_name, display_name, photo_url, signature_image_url, stamp_image_url, phone, whatsapp_phone, email, birth_date, job_title, professional_kind, specialties, crmv, crmv_uf, internal_notes, active, affiliation, has_hub_access, hub_access_email, hub_access_role, operational_areas, accepts_appointments, available_days, work_hours, break_minutes, default_unit_id, agenda_color, clinic_user_id, created_at, updated_at, deleted_at';
 
 const professionalKindSchema = z.enum([
   'vet',
@@ -120,6 +120,8 @@ const createStaffSchema = z
     full_name: z.string().trim().min(1, 'Nome completo é obrigatório').max(200),
     display_name: optionalTrim(200).optional(),
     photo_url: optionalTrim(2000).optional(),
+    signature_image_url: optionalTrim(2000).optional(),
+    stamp_image_url: optionalTrim(2000).optional(),
     phone: optionalTrim(64).optional(),
     whatsapp_phone: optionalTrim(64).optional(),
     email: z.union([z.string().email().max(254), z.literal(''), z.null()]).optional().nullable(),
@@ -355,6 +357,8 @@ export const createHubStaff = async (req: Request, res: Response) => {
       full_name: d.full_name,
       display_name: d.display_name ?? null,
       photo_url: d.photo_url ?? null,
+      signature_image_url: d.signature_image_url ?? null,
+      stamp_image_url: d.stamp_image_url ?? null,
       phone: d.phone ?? null,
       whatsapp_phone: d.whatsapp_phone ?? null,
       email: emailNorm,
@@ -461,6 +465,8 @@ export const patchHubStaff = async (req: Request, res: Response) => {
     if (d.full_name !== undefined) patch.full_name = d.full_name;
     if (d.display_name !== undefined) patch.display_name = d.display_name;
     if (d.photo_url !== undefined) patch.photo_url = d.photo_url;
+    if (d.signature_image_url !== undefined) patch.signature_image_url = d.signature_image_url;
+    if (d.stamp_image_url !== undefined) patch.stamp_image_url = d.stamp_image_url;
     if (d.phone !== undefined) patch.phone = d.phone;
     if (d.whatsapp_phone !== undefined) patch.whatsapp_phone = d.whatsapp_phone;
     if (d.email !== undefined) patch.email = d.email === '' ? null : d.email;

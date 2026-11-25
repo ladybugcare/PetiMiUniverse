@@ -49,13 +49,16 @@ async function ensureHubStaffPhotosBucket(): Promise<void> {
   );
 }
 
+export type HubStaffImageKind = 'photo' | 'signature' | 'stamp';
+
 /**
- * Envia imagem de perfil de membro da equipe para Storage (bucket `hub-staff-photos`).
- * Caminho: `{clinicId}/staff-{timestamp}-{rand}.{ext}` — upload apenas pelo backend (service role).
+ * Envia imagem de membro da equipe para Storage (bucket `hub-staff-photos`).
+ * Caminho: `{clinicId}/staff-{staffId?}/{kind}-{timestamp}-{rand}.{ext}` — upload apenas pelo backend (service role).
  */
 export async function uploadHubStaffPhotoToStorage(
   file: HubStaffPhotoFile,
-  clinicId: string
+  clinicId: string,
+  opts?: { kind?: HubStaffImageKind; staffId?: string | null },
 ): Promise<{ url: string; path: string }> {
   validateFile(file.buffer, file.mimetype, file.originalname, {
     allowedTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
@@ -63,10 +66,12 @@ export async function uploadHubStaffPhotoToStorage(
     requireSignature: true,
   });
 
+  const kind: HubStaffImageKind = opts?.kind ?? 'photo';
   const sanitized = sanitizeFilename(file.originalname);
   const extRaw = sanitized.split('.').pop()?.toLowerCase() || 'jpg';
   const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(extRaw) ? extRaw : 'jpg';
-  const fileName = `${clinicId}/staff-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${safeExt}`;
+  const staffSeg = opts?.staffId?.trim() ? `staff-${opts.staffId.trim()}` : 'staff';
+  const fileName = `${clinicId}/${staffSeg}/${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${safeExt}`;
 
   const doUpload = () =>
     supabaseAdmin.storage.from(HUB_STAFF_PHOTOS_BUCKET).upload(fileName, file.buffer, {
@@ -96,7 +101,7 @@ export async function uploadHubStaffPhotoToStorage(
     data: { publicUrl },
   } = supabaseAdmin.storage.from(HUB_STAFF_PHOTOS_BUCKET).getPublicUrl(fileName);
 
-  logger.info('[hub_staff_photo] uploaded', { clinicId, fileName, bytes: file.buffer.length });
+  logger.info('[hub_staff_photo] uploaded', { clinicId, kind, fileName, bytes: file.buffer.length });
 
   return { url: publicUrl, path: fileName };
 }

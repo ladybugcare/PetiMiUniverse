@@ -104,7 +104,7 @@ export async function loadPrescriptionIssueContext(
         id, full_name, phone, tax_id, id_doc_number,
         street, street_number, district, city, state, postal_code
       ),
-      staff:hub_staff_members(id, full_name, crmv, crmv_uf),
+      staff:hub_staff_members(id, full_name, crmv, crmv_uf, signature_image_url, stamp_image_url),
       encounter:hub_encounters(id, guardian_id, pet_id, hub_staff_member_id)
     `,
     )

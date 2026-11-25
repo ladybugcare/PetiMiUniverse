@@ -23,10 +23,35 @@ export type HubPublicSpecialistReferralPayload = {
   content_hash_short: string;
   document_version: number;
   scope: 'single' | 'encounter_bundle';
-  clinic: { name: string };
-  pet: { id: string; name: string; species: string | null; breed: string | null };
-  guardian: { id: string | null; full_name: string };
-  veterinarian: { id: string | null; full_name: string; crmv: string | null; crmv_uf: string | null };
+  clinic: {
+    name: string;
+    phone?: string | null;
+    email?: string | null;
+    address_line?: string | null;
+  };
+  pet: {
+    id?: string;
+    name: string;
+    species: string | null;
+    breed: string | null;
+    age_label?: string;
+  };
+  guardian: {
+    id?: string | null;
+    full_name: string;
+    phone?: string | null;
+    tax_id_display?: string;
+    id_doc_number?: string | null;
+    address_line?: string;
+  };
+  veterinarian: {
+    id?: string | null;
+    full_name: string;
+    crmv: string | null;
+    crmv_uf: string | null;
+    signature_image_url?: string | null;
+    stamp_image_url?: string | null;
+  };
   referrals: HubPublicSpecialistReferralItem[];
   disclaimers: string[];
 };

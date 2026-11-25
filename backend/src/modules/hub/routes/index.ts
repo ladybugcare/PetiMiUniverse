@@ -137,6 +137,12 @@ import {
 } from '../hubReportEmailSchedulesController';
 import { listHubStaff, getHubStaff, createHubStaff, patchHubStaff, inviteHubStaff, linkHubStaffAccount, getHubStaffPendingInvite } from '../hubStaffController';
 import { postHubStaffPhoto } from '../hubStaffPhotoController';
+import {
+  getHubStaffMe,
+  patchHubStaffMe,
+  postHubStaffMeStampImage,
+  postHubStaffStampImage,
+} from '../hubStaffSignatureController';
 import { postHubClinicProfilePhoto, postHubUserProfilePhoto } from '../hubProfilePhotoController.js';
 import { patchHubClinicProfile, patchHubUnitProfile, postHubUnit } from '../hubClinicProfileController.js';
 import {
@@ -1072,12 +1078,30 @@ router.post(
 
 /* --- Equipe / Staff --- */
 router.get('/staff', authenticateUser, requirePermission('hub.staff.read'), listHubStaff);
+router.get('/staff/me', authenticateUser, getHubStaffMe);
+router.patch('/staff/me', authenticateUser, patchHubStaffMe);
+router.post('/staff/me/signature', authenticateUser, postHubStaffMeStampImage('signature'));
+router.post('/staff/me/stamp', authenticateUser, postHubStaffMeStampImage('stamp'));
 router.post(
   '/staff/photo',
   authenticateUser,
   requirePermission('hub.staff.write'),
   requireCoreOpsWrite,
   postHubStaffPhoto
+);
+router.post(
+  '/staff/signature',
+  authenticateUser,
+  requirePermission('hub.staff.write'),
+  requireCoreOpsWrite,
+  postHubStaffStampImage('signature')
+);
+router.post(
+  '/staff/stamp',
+  authenticateUser,
+  requirePermission('hub.staff.write'),
+  requireCoreOpsWrite,
+  postHubStaffStampImage('stamp')
 );
 router.post(
   '/staff',

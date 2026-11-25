@@ -1,17 +1,7 @@
 import React, { useMemo } from 'react';
-import { Copy, Download } from 'lucide-react';
 import type { HubPublicSpecialistReferralPayload } from '../../api/hubSpecialistReferralPublicApi';
 import { publicSpecialistReferralPdfUrl } from '../../api/hubSpecialistReferralPublicApi';
-import { HubPrescriptionDocumentBadge } from '../../components/clinical/HubPrescriptionDocumentBadge';
-
-async function copyText(value: string, onDone?: () => void, onErr?: (msg: string) => void) {
-  try {
-    await navigator.clipboard.writeText(value);
-    onDone?.();
-  } catch {
-    onErr?.('Não foi possível copiar');
-  }
-}
+import { HubClinicalPublicDocShell } from '../../components/clinical/HubClinicalPublicDocShell';
 
 export type HubSpecialistReferralPublicViewProps = {
   referral: HubPublicSpecialistReferralPayload;
@@ -27,93 +17,73 @@ export const HubSpecialistReferralPublicView: React.FC<HubSpecialistReferralPubl
   onCopyError,
 }) => {
   const statusBanner = useMemo(() => {
-    if (referral.status === 'revoked') return 'Este encaminhamento foi revogado pela clínica emitente.';
-    if (referral.status === 'expired') return 'A validade deste encaminhamento expirou. Consulte a clínica.';
+    if (referral.status === 'revoked') {
+      return 'Este encaminhamento foi revogado pela clínica emitente e não deve ser utilizado.';
+    }
+    if (referral.status === 'expired') {
+      return 'A validade deste encaminhamento expirou. Consulte a clínica para confirmar se ainda é aplicável.';
+    }
     return null;
   }, [referral.status]);
 
   const pdfHref = publicToken?.trim() ? publicSpecialistReferralPdfUrl(publicToken.trim()) : null;
-  const vetCrmv = [referral.veterinarian.crmv, referral.veterinarian.crmv_uf].filter(Boolean).join('/');
 
   return (
-    <div className="hub-public-quote">
-      <div className="hub-public-quote__shell">
-        <header className="hub-public-quote__header">
-          <div className="hub-public-quote__header-main">
-            <p className="hub-public-quote__eyebrow">Encaminhamento a especialista</p>
-            <h1 className="hub-public-quote__clinic">{referral.clinic.name}</h1>
-            <p className="hub-public-quote__tagline">Documento validável emitido pelo PetMi Hub.</p>
-          </div>
-          <aside className="hub-public-quote__meta-card">
-            <p className="hub-public-quote__meta-label">Código</p>
-            <p className="hub-public-quote__meta-value hub-public-quote__meta-value--accent">{referral.validation_code}</p>
-            <p className="hub-public-quote__meta-label">Situação</p>
-            <p className="hub-public-quote__meta-value">
-              <HubPrescriptionDocumentBadge status={referral.status} />
-            </p>
-          </aside>
-        </header>
-
-        {statusBanner ? (
-          <div className="hub-public-quote__banner hub-public-quote__banner--warn" role="alert">
-            <p className="hub-public-quote__banner-text">{statusBanner}</p>
-          </div>
-        ) : null}
-
-        <section className="hub-public-quote__section">
-          <h2>Pet e tutor</h2>
-          <p>
-            <strong>{referral.pet.name}</strong>
-            {referral.pet.species ? ` · ${referral.pet.species}` : ''}
-          </p>
-          <p>Tutor: {referral.guardian.full_name}</p>
-          <p>
-            Veterinário: {referral.veterinarian.full_name}
-            {vetCrmv ? ` · CRMV ${vetCrmv}` : ''}
-          </p>
-        </section>
-
-        <section className="hub-public-quote__section">
-          <h2>Encaminhamentos</h2>
-          <ul className="hub-public-quote__items">
-            {referral.referrals.map((ref) => (
-              <li key={ref.referral_id}>
+    <HubClinicalPublicDocShell
+      documentTitle="Encaminhamento a especialista"
+      parties={{
+        clinic: referral.clinic,
+        pet: referral.pet,
+        guardian: referral.guardian,
+        veterinarian: referral.veterinarian,
+      }}
+      status={referral.status}
+      statusBanner={statusBanner}
+      issuedAt={referral.issued_at}
+      expiresAt={referral.expires_at}
+      validationCode={referral.validation_code}
+      contentHashShort={referral.content_hash_short}
+      disclaimers={referral.disclaimers}
+      pdfHref={pdfHref}
+      pdfFilenamePrefix="encaminhamento"
+      onCopySuccess={onCopySuccess}
+      onCopyError={onCopyError}
+    >
+      <h2 className="hub-public-rx-doc__section">Encaminhamento</h2>
+      {referral.referrals.length === 0 ? (
+        <p className="hub-public-rx-doc__muted">Nenhum encaminhamento registrado.</p>
+      ) : (
+        <ul className="hub-public-rx-doc__items">
+          {referral.referrals.map((ref) => (
+            <li key={ref.referral_id} className="hub-public-rx-doc__item">
+              <div className="hub-public-rx-doc__item-title">
                 <strong>{ref.specialty}</strong>
-                {ref.specialist_name ? <p>Destino: {ref.specialist_name}</p> : null}
-                {ref.specialist_contact ? <p className="hub-clientes__muted">{ref.specialist_contact}</p> : null}
-                <p>Motivo: {ref.referral_reason}</p>
-                {ref.clinical_summary ? <p>Resumo: {ref.clinical_summary}</p> : null}
-                {ref.priority === 'urgent' ? <p className="hub-public-quote__meta-value--warn">Prioridade urgente</p> : null}
-              </li>
-            ))}
-          </ul>
-        </section>
-
-        {pdfHref ? (
-          <div className="hub-public-quote__actions">
-            <a href={pdfHref} className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm" target="_blank" rel="noreferrer">
-              <Download size={14} /> Baixar PDF
-            </a>
-            <button
-              type="button"
-              className="hub-clientes__btn hub-clientes__btn--sm"
-              onClick={() => void copyText(referral.validation_code, () => onCopySuccess?.('Código copiado'), onCopyError)}
-            >
-              <Copy size={14} /> Copiar código
-            </button>
-          </div>
-        ) : null}
-
-        <footer className="hub-public-quote__legal">
-          <strong>Avisos legais</strong>
-          <ul>
-            {referral.disclaimers.map((line) => (
-              <li key={line}>{line}</li>
-            ))}
-          </ul>
-        </footer>
-      </div>
-    </div>
+                {ref.priority === 'urgent' ? (
+                  <span className="hub-public-rx-doc__urgent">Urgente</span>
+                ) : null}
+              </div>
+              {ref.specialist_name ? (
+                <p className="hub-public-rx-doc__posology">Destino: {ref.specialist_name}</p>
+              ) : null}
+              {ref.specialist_contact ? (
+                <p className="hub-public-rx-doc__posology">{ref.specialist_contact}</p>
+              ) : null}
+              <p className="hub-public-rx-doc__posology">
+                <strong>Motivo:</strong> {ref.referral_reason}
+              </p>
+              {ref.clinical_summary ? (
+                <p className="hub-public-rx-doc__posology">
+                  <strong>Resumo clínico:</strong> {ref.clinical_summary}
+                </p>
+              ) : null}
+              {ref.notes?.trim() ? (
+                <p className="hub-public-rx-doc__posology">Observações: {ref.notes.trim()}</p>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      )}
+    </HubClinicalPublicDocShell>
   );
 };
 

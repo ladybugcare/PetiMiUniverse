@@ -26,7 +26,7 @@ describe('examOrderValidation', () => {
         clinic: { id: 'c1', name: 'Clínica' },
         pet: { id: 'p1', name: 'Rex', species: 'Cão', breed: null },
         guardian: { id: 'g1', full_name: 'Maria' },
-        veterinarian: { id: 'v1', full_name: 'Dr. João', crmv: '123', crmv_uf: 'SP' },
+        veterinarian: { id: 'v1', full_name: 'Dr. João', crmv: '123', crmv_uf: 'SP', signature_image_url: null, stamp_image_url: null },
       },
       exams: [
         {
@@ -73,7 +73,7 @@ describe('specialistReferralValidation', () => {
         clinic: { id: 'c1', name: 'Clínica' },
         pet: { id: 'p1', name: 'Rex', species: 'Cão', breed: null },
         guardian: { id: 'g1', full_name: 'Maria' },
-        veterinarian: { id: 'v1', full_name: 'Dr. João', crmv: '123', crmv_uf: 'SP' },
+        veterinarian: { id: 'v1', full_name: 'Dr. João', crmv: '123', crmv_uf: 'SP', signature_image_url: null, stamp_image_url: null },
       },
       referrals: [
         {

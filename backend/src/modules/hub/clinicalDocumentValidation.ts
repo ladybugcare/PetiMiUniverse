@@ -7,16 +7,49 @@ export type ClinicalDocumentStatus = 'valid' | 'revoked' | 'expired';
 export type ClinicalDocumentScope = 'single' | 'encounter_bundle';
 
 export type ClinicalPartySnapshot = {
-  clinic: { id: string; name: string };
-  pet: { id: string; name: string; species: string | null; breed: string | null };
-  guardian: { id: string | null; full_name: string };
+  clinic: {
+    id: string;
+    name: string;
+    phone?: string | null;
+    email?: string | null;
+    address?: string | null;
+    city?: string | null;
+    state?: string | null;
+  };
+  pet: {
+    id: string;
+    name: string;
+    species: string | null;
+    breed: string | null;
+    birth_date?: string | null;
+  };
+  guardian: {
+    id: string | null;
+    full_name: string;
+    phone?: string | null;
+    tax_id?: string | null;
+    id_doc_number?: string | null;
+    street?: string | null;
+    street_number?: string | null;
+    district?: string | null;
+    city?: string | null;
+    state?: string | null;
+    postal_code?: string | null;
+  };
   veterinarian: {
     id: string | null;
     full_name: string;
     crmv: string | null;
     crmv_uf: string | null;
+    signature_image_url: string | null;
+    stamp_image_url: string | null;
   };
 };
+
+const GUARDIAN_SELECT =
+  'id, full_name, phone, tax_id, id_doc_number, street, street_number, district, city, state, postal_code';
+
+type GuardianRow = ClinicalPartySnapshot['guardian'] & { id: string };
 
 export function embedOne<T>(x: T | T[] | null | undefined): T | null {
   if (x == null) return null;
@@ -183,10 +216,10 @@ export async function loadEncounterIssueParties(
     .select(
       `
       id, clinic_id, pet_id, hub_case_id, guardian_id, hub_staff_member_id,
-      clinic:clinics(id, name),
-      pet:hub_pets(id, name, species, breed),
-      guardian:hub_guardians(id, full_name),
-      staff:hub_staff_members(id, full_name, crmv, crmv_uf)
+      clinic:clinics(id, name, phone, email, address, city, state),
+      pet:hub_pets(id, name, species, breed, birth_date),
+      guardian:hub_guardians(${GUARDIAN_SELECT}),
+      staff:hub_staff_members(id, full_name, crmv, crmv_uf, signature_image_url, stamp_image_url)
     `,
     )
     .eq('id', encounterId)
@@ -206,7 +239,7 @@ export async function loadEncounterIssueParties(
   if (!guardianEmbed && row.guardian_id) {
     const { data: gRow } = await supabaseAdmin
       .from('hub_guardians')
-      .select('id, full_name')
+      .select(GUARDIAN_SELECT)
       .eq('id', row.guardian_id as string)
       .maybeSingle();
     guardianEmbed = gRow;
@@ -216,23 +249,28 @@ export async function loadEncounterIssueParties(
     if (gid) {
       const { data: gRow } = await supabaseAdmin
         .from('hub_guardians')
-        .select('id, full_name')
+        .select(GUARDIAN_SELECT)
         .eq('id', gid)
         .maybeSingle();
       guardianEmbed = gRow;
     }
   }
 
-  const clinic = embedOne(row.clinic as { id: string; name: string } | null) ?? {
+  const clinic = embedOne(row.clinic as ClinicalPartySnapshot['clinic'] | null) ?? {
     id: clinicId,
     name: 'Clínica veterinária',
   };
-  const petRow = embedOne(
-    row.pet as { id: string; name: string; species?: string | null; breed?: string | null } | null,
-  );
-  const guardianRow = embedOne(guardianEmbed as { id: string; full_name: string } | null);
+  const petRow = embedOne(row.pet as ClinicalPartySnapshot['pet'] | null);
+  const guardianRow = embedOne(guardianEmbed as GuardianRow | null);
   const staffRow = embedOne(
-    row.staff as { id: string; full_name: string; crmv?: string | null; crmv_uf?: string | null } | null,
+    row.staff as {
+      id: string;
+      full_name: string;
+      crmv?: string | null;
+      crmv_uf?: string | null;
+      signature_image_url?: string | null;
+      stamp_image_url?: string | null;
+    } | null,
   );
 
   return {
@@ -241,22 +279,42 @@ export async function loadEncounterIssueParties(
       encounter_id: String(row.id),
       pet_id: String(row.pet_id),
       hub_case_id: (row.hub_case_id as string | null) ?? null,
-      clinic: { id: clinic.id, name: clinic.name },
+      clinic: {
+        id: clinic.id,
+        name: clinic.name,
+        phone: clinic.phone ?? null,
+        email: clinic.email ?? null,
+        address: clinic.address ?? null,
+        city: clinic.city ?? null,
+        state: clinic.state ?? null,
+      },
       pet: {
         id: petRow?.id ?? String(row.pet_id),
         name: petRow?.name ?? '—',
         species: petRow?.species ?? null,
         breed: petRow?.breed ?? null,
+        birth_date: petRow?.birth_date ?? null,
       },
       guardian: {
         id: (guardianRow?.id ?? (row.guardian_id as string | null) ?? null) as string | null,
         full_name: guardianRow?.full_name ?? 'Tutor não informado',
+        phone: guardianRow?.phone ?? null,
+        tax_id: guardianRow?.tax_id ?? null,
+        id_doc_number: guardianRow?.id_doc_number ?? null,
+        street: guardianRow?.street ?? null,
+        street_number: guardianRow?.street_number ?? null,
+        district: guardianRow?.district ?? null,
+        city: guardianRow?.city ?? null,
+        state: guardianRow?.state ?? null,
+        postal_code: guardianRow?.postal_code ?? null,
       },
       veterinarian: {
         id: (staffRow?.id ?? (row.hub_staff_member_id as string | null) ?? null) as string | null,
         full_name: staffRow?.full_name ?? 'Veterinário responsável',
         crmv: staffRow?.crmv ?? null,
         crmv_uf: staffRow?.crmv_uf ?? null,
+        signature_image_url: staffRow?.signature_image_url ?? null,
+        stamp_image_url: staffRow?.stamp_image_url ?? null,
       },
     },
   };

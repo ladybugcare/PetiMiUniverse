@@ -14,6 +14,7 @@ import { recordClinicalDocumentEvent } from './clinicalDocumentValidation';
 import { streamValidatableExamOrderPdf } from './hubExamOrderPdf';
 import { recordTimelineEvent } from './hubClinicalTimelineController';
 import type { ExamOrderSnapshot } from './examOrderValidation';
+import { mapClinicalPartiesForPublic } from './publicClinicalPartiesResponse';
 
 const uuidStr = z.string().uuid();
 const scopeSchema = z.enum(['single', 'encounter_bundle']);
@@ -260,6 +261,7 @@ export function buildPublicExamOrderPayload(doc: Record<string, unknown>) {
     revoked_at: doc.revoked_at as string | null,
     expires_at: doc.expires_at as string | null,
   });
+  const parties = mapClinicalPartiesForPublic(snapshot);
 
   return {
     status,
@@ -271,10 +273,7 @@ export function buildPublicExamOrderPayload(doc: Record<string, unknown>) {
     content_hash_short: contentHash ? truncateContentHash(contentHash) : '—',
     document_version: Number(doc.version_no ?? snapshot.document_version ?? 1),
     scope: snapshot.scope,
-    clinic: { name: snapshot.clinic.name },
-    pet: snapshot.pet,
-    guardian: snapshot.guardian,
-    veterinarian: snapshot.veterinarian,
+    ...parties,
     exams: snapshot.exams,
     disclaimers: snapshot.disclaimers ?? [],
   };

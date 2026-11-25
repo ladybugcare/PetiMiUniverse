@@ -12,6 +12,10 @@ import {
   type PrescriptionItemDraft,
 } from '../../components/clinical/HubPrescriptionItemForm';
 import { HubPrescriptionIssuePanel } from '../../components/clinical/HubPrescriptionIssuePanel';
+import {
+  HubMissingStampConfirmModal,
+  resolveMissingStampFlags,
+} from '../../components/clinical/HubMissingStampConfirmModal';
 import ClinicalCaseLinkFields, {
   isCaseLinkResolved,
   type ClinicalCaseLinkValue,
@@ -103,6 +107,8 @@ const HubStandalonePrescriptionPage: React.FC = () => {
   const [prescription, setPrescription] = useState<HubPrescription | null>(null);
   const [saving, setSaving] = useState(false);
   const [issuing, setIssuing] = useState(false);
+  const [stampConfirmOpen, setStampConfirmOpen] = useState(false);
+  const [stampMissing, setStampMissing] = useState({ missingSignature: true, missingStamp: true });
   const [issuePanelOpen, setIssuePanelOpen] = useState(false);
   const [issuePanelLoading, setIssuePanelLoading] = useState(false);
   const [issuePanelError, setIssuePanelError] = useState<string | null>(null);
@@ -324,6 +330,21 @@ const HubStandalonePrescriptionPage: React.FC = () => {
   };
 
   const issueValidatable = async () => {
+    if (!clinicId || !staffId) {
+      showError('Selecione o veterinário responsável antes de emitir.');
+      return;
+    }
+    const staff = staffList.find((s) => s.id === staffId) ?? null;
+    const flags = resolveMissingStampFlags(staff);
+    if (flags.missingAny) {
+      setStampMissing(flags);
+      setStampConfirmOpen(true);
+      return;
+    }
+    await runIssueValidatable();
+  };
+
+  const runIssueValidatable = async () => {
     if (!clinicId || !staffId) {
       showError('Selecione o veterinário responsável antes de emitir.');
       return;
@@ -554,21 +575,6 @@ const HubStandalonePrescriptionPage: React.FC = () => {
           </p>
         </div>
         <div className="hub-standalone-rx__topbar-actions">
-          {canWrite && (!issued || sameDayEditable) ? (
-            <button
-              type="button"
-              className="hub-standalone-rx__btn hub-standalone-rx__btn--primary"
-              disabled={issuing || !staffId || items.length === 0}
-              onClick={() => void issueValidatable()}
-            >
-              <Send size={16} aria-hidden />
-              {issuing
-                ? 'Emitindo…'
-                : issued
-                  ? 'Gerar novo PDF e link validável'
-                  : 'Emitir receita validável'}
-            </button>
-          ) : null}
           {issued ? <span className="hub-rx-badge hub-rx-badge--issued">Emitida</span> : null}
         </div>
       </header>
@@ -712,6 +718,33 @@ const HubStandalonePrescriptionPage: React.FC = () => {
                 placeholder="Ex.: retornar em 7 dias se não houver melhora…"
               />
             </section>
+
+            {canWrite && (!issued || sameDayEditable) ? (
+              <div className="hub-standalone-rx__issue-footer">
+                <button
+                  type="button"
+                  className="hub-standalone-rx__btn hub-standalone-rx__btn--primary hub-standalone-rx__btn--issue"
+                  disabled={issuing || !staffId || items.length === 0}
+                  onClick={() => void issueValidatable()}
+                >
+                  <Send size={16} aria-hidden />
+                  {issuing
+                    ? 'Emitindo…'
+                    : issued
+                      ? 'Gerar novo PDF e link validável'
+                      : 'Emitir receita validável'}
+                </button>
+                {items.length === 0 ? (
+                  <p className="hub-standalone-rx__issue-hint">
+                    Inclua ao menos um medicamento para emitir.
+                  </p>
+                ) : !staffId ? (
+                  <p className="hub-standalone-rx__issue-hint">
+                    Selecione o veterinário responsável acima.
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <aside className="hub-standalone-rx__sidebar" aria-labelledby="standalone-rx-after">
@@ -729,7 +762,8 @@ const HubStandalonePrescriptionPage: React.FC = () => {
 
               {!(postIssueStep || issued) ? (
                 <p className="hub-standalone-rx__aside-empty">
-                  Emita a receita com o botão no topo. Aqui liberam o vínculo ao caso, a cobrança e o link.
+                  Emita a receita com o botão no final do formulário. Aqui liberam o vínculo ao caso, a cobrança e o
+                  link.
                 </p>
               ) : (
                 <>
@@ -833,6 +867,17 @@ const HubStandalonePrescriptionPage: React.FC = () => {
         </div>
       )}
 
+      <HubMissingStampConfirmModal
+        open={stampConfirmOpen}
+        missingSignature={stampMissing.missingSignature}
+        missingStamp={stampMissing.missingStamp}
+        veterinarianName={staffList.find((s) => s.id === staffId)?.full_name}
+        onCancel={() => setStampConfirmOpen(false)}
+        onConfirm={() => {
+          setStampConfirmOpen(false);
+          void runIssueValidatable();
+        }}
+      />
       <HubPrescriptionIssuePanel
         open={issuePanelOpen}
         onClose={() => setIssuePanelOpen(false)}

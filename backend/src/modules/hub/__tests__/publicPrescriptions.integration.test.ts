@@ -19,7 +19,7 @@ const snapshot: PrescriptionSnapshot = {
   clinic: { id: CLINIC_ID, name: 'Clínica Teste' },
   pet: { id: 'dddddddd-dddd-4ddd-8ddd-dddddddddddd', name: 'Thor', species: 'Canino', breed: 'Labrador' },
   guardian: { id: 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee', full_name: 'João Souza' },
-  veterinarian: { id: 'ffffffff-ffff-4fff-8fff-ffffffffffff', full_name: 'Dra. Ana', crmv: '99999', crmv_uf: 'RJ' },
+  veterinarian: { id: 'ffffffff-ffff-4fff-8fff-ffffffffffff', full_name: 'Dra. Ana', crmv: '99999', crmv_uf: 'RJ', signature_image_url: null, stamp_image_url: null },
   medications: [
     {
       medication_name: 'Amoxicilina',

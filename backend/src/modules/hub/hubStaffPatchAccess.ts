@@ -10,6 +10,8 @@ export const STAFF_PATCH_OPS_FIELDS = new Set([
   'full_name',
   'display_name',
   'photo_url',
+  'signature_image_url',
+  'stamp_image_url',
   'phone',
   'whatsapp_phone',
   'email',

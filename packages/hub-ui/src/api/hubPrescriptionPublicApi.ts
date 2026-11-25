@@ -47,6 +47,8 @@ export type HubPublicPrescriptionPayload = {
     full_name: string;
     crmv: string | null;
     crmv_uf: string | null;
+    signature_image_url?: string | null;
+    stamp_image_url?: string | null;
   };
   medications: HubPublicPrescriptionMedication[];
   notes: string | null;

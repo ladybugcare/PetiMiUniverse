@@ -43,9 +43,10 @@ const PublicExamOrderPage: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="hub-public-quote">
-        <div className="hub-public-quote__state" role="status">
-          <p className="hub-public-quote__state-title">Carregando…</p>
+      <div className="hub-public-rx-doc">
+        <div className="hub-public-rx-doc__sheet" role="status">
+          <p className="hub-public-rx-doc__state-title">Carregando…</p>
+          <p className="hub-public-rx-doc__state-text">Um momento enquanto validamos a solicitação de exames.</p>
         </div>
       </div>
     );
@@ -53,10 +54,10 @@ const PublicExamOrderPage: React.FC = () => {
 
   if (err || !examOrder) {
     return (
-      <div className="hub-public-quote">
-        <div className="hub-public-quote__state" role="alert">
-          <p className="hub-public-quote__state-title">Não foi possível mostrar a solicitação</p>
-          <p className="hub-public-quote__state-text">{err || 'Link inválido.'}</p>
+      <div className="hub-public-rx-doc">
+        <div className="hub-public-rx-doc__sheet" role="alert">
+          <p className="hub-public-rx-doc__state-title">Não foi possível mostrar a solicitação</p>
+          <p className="hub-public-rx-doc__state-text">{err || 'Link inválido.'}</p>
         </div>
       </div>
     );

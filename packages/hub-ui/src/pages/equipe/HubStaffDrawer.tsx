@@ -48,6 +48,7 @@ import {
   type HubStaffFormState,
 } from './hubStaffFormTypes';
 import HubStaffInviteSharePanel, { type StaffInviteShareResult } from './HubStaffInviteSharePanel';
+import { HubVetStampImageField } from '../../components/clinical/HubVetStampImageField';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
 import '../pets/pets-page.css';
@@ -117,6 +118,7 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
 
   const [staffPhotoLocalPreview, setStaffPhotoLocalPreview] = useState<string | null>(null);
   const [staffPhotoUploading, setStaffPhotoUploading] = useState(false);
+  const [stampUploading, setStampUploading] = useState<'signature' | 'stamp' | null>(null);
   const staffPhotoInputRef = useRef<HTMLInputElement>(null);
   const staffPhotoBlobRef = useRef<string | null>(null);
 
@@ -864,35 +866,81 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
 
                 <div className="hub-equipe__section-panel hub-equipe__pro-panel">
                   {crmvFieldsVisible ? (
-                    <div className="hub-equipe-drawer__row hub-equipe-drawer__row--crmv">
-                      <div className="hub-clientes__field">
-                        <label className="hub-clientes__label" htmlFor="st-crmv">
-                          CRMV / registro
-                        </label>
-                        <input
-                          id="st-crmv"
-                          className="hub-clientes__input"
-                          placeholder="Número"
-                          value={form.crmv}
-                          onChange={(e) => setForm((f) => ({ ...f, crmv: e.target.value }))}
-                          disabled={!canWrite}
-                        />
+                    <>
+                      <div className="hub-equipe-drawer__row hub-equipe-drawer__row--crmv">
+                        <div className="hub-clientes__field">
+                          <label className="hub-clientes__label" htmlFor="st-crmv">
+                            CRMV / registro
+                          </label>
+                          <input
+                            id="st-crmv"
+                            className="hub-clientes__input"
+                            placeholder="Número"
+                            value={form.crmv}
+                            onChange={(e) => setForm((f) => ({ ...f, crmv: e.target.value }))}
+                            disabled={!canWrite}
+                          />
+                        </div>
+                        <div className="hub-clientes__field">
+                          <label className="hub-clientes__label" htmlFor="st-uf">
+                            UF
+                          </label>
+                          <input
+                            id="st-uf"
+                            className="hub-clientes__input"
+                            maxLength={2}
+                            placeholder="SP"
+                            value={form.crmv_uf}
+                            onChange={(e) => setForm((f) => ({ ...f, crmv_uf: e.target.value.toUpperCase() }))}
+                            disabled={!canWrite}
+                          />
+                        </div>
                       </div>
-                      <div className="hub-clientes__field">
-                        <label className="hub-clientes__label" htmlFor="st-uf">
-                          UF
-                        </label>
-                        <input
-                          id="st-uf"
-                          className="hub-clientes__input"
-                          maxLength={2}
-                          placeholder="SP"
-                          value={form.crmv_uf}
-                          onChange={(e) => setForm((f) => ({ ...f, crmv_uf: e.target.value.toUpperCase() }))}
-                          disabled={!canWrite}
-                        />
+                      <div className="hub-vet-stamp-fields">
+                        <p className="hub-vet-stamp-fields__intro">
+                          Assinatura e carimbo entram automaticamente em receitas, exames e encaminhamentos.
+                          Prefira PNG com fundo transparente ou foto nítida em fundo claro.
+                        </p>
+                        <div className="hub-vet-stamp-fields__grid">
+                          <HubVetStampImageField
+                            label="Assinatura"
+                            variant="signature"
+                            imageUrl={form.signature_image_url}
+                            disabled={!canWrite}
+                            uploading={stampUploading === 'signature'}
+                            onUpload={async (file) => {
+                              if (!clinicId) return;
+                              setStampUploading('signature');
+                              try {
+                                const { url } = await hubStaffApi.uploadSignature(clinicId, file, editingId);
+                                setForm((f) => ({ ...f, signature_image_url: url }));
+                              } finally {
+                                setStampUploading(null);
+                              }
+                            }}
+                            onClear={() => setForm((f) => ({ ...f, signature_image_url: '' }))}
+                          />
+                          <HubVetStampImageField
+                            label="Carimbo"
+                            variant="stamp"
+                            imageUrl={form.stamp_image_url}
+                            disabled={!canWrite}
+                            uploading={stampUploading === 'stamp'}
+                            onUpload={async (file) => {
+                              if (!clinicId) return;
+                              setStampUploading('stamp');
+                              try {
+                                const { url } = await hubStaffApi.uploadStamp(clinicId, file, editingId);
+                                setForm((f) => ({ ...f, stamp_image_url: url }));
+                              } finally {
+                                setStampUploading(null);
+                              }
+                            }}
+                            onClear={() => setForm((f) => ({ ...f, stamp_image_url: '' }))}
+                          />
+                        </div>
                       </div>
-                    </div>
+                    </>
                   ) : null}
                   <div className="hub-clientes__field">
                     <label className="hub-clientes__label" htmlFor="st-spec">

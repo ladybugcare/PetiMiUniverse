@@ -13,6 +13,7 @@ import {
   type PrescriptionSnapshotMedication,
   type PrescriptionSnapshotPet,
 } from './prescriptionValidation';
+import { drawVetStampBlock, loadVetStampBuffers } from './hubVetStampPdf';
 
 type PdfDoc = InstanceType<typeof PDFDocument>;
 
@@ -33,8 +34,20 @@ type PrescriptionFull = {
   pet?: PrescriptionSnapshotPet | PrescriptionSnapshotPet[] | null;
   guardian?: PrescriptionSnapshotGuardian | PrescriptionSnapshotGuardian[] | null;
   staff?:
-    | { full_name?: string | null; crmv?: string | null; crmv_uf?: string | null }
-    | { full_name?: string | null; crmv?: string | null; crmv_uf?: string | null }[]
+    | {
+        full_name?: string | null;
+        crmv?: string | null;
+        crmv_uf?: string | null;
+        signature_image_url?: string | null;
+        stamp_image_url?: string | null;
+      }
+    | {
+        full_name?: string | null;
+        crmv?: string | null;
+        crmv_uf?: string | null;
+        signature_image_url?: string | null;
+        stamp_image_url?: string | null;
+      }[]
     | null;
 };
 
@@ -119,7 +132,13 @@ function groupItemsByRoute(items: PrescriptionItem[]): Array<{ route: string | n
   }));
 }
 
-function drawPrescriptionBody(doc: PdfDoc, prescription: PrescriptionFull, margin: number, pageW: number): number {
+function drawPrescriptionBodyInner(
+  doc: PdfDoc,
+  prescription: PrescriptionFull,
+  margin: number,
+  pageW: number,
+  stampBuffers?: { signature: Buffer | null; stamp: Buffer | null } | null,
+): number {
   const clinic = embedOne(prescription.clinic);
   const pet = embedOne(prescription.pet);
   const guardian = embedOne(prescription.guardian);
@@ -259,29 +278,47 @@ function drawPrescriptionBody(doc: PdfDoc, prescription: PrescriptionFull, margi
     y = doc.y + 12;
   }
 
-  const signY = Math.max(y + 40, doc.page.height - 140);
-  doc.moveTo(margin + 140, signY).lineTo(doc.page.width - margin - 140, signY).strokeColor(BORDER).lineWidth(0.8).stroke();
-  doc
-    .font('Helvetica-Bold')
-    .fontSize(10)
-    .fillColor(TEXT_DARK)
-    .text(staff?.full_name || 'Veterinário responsável', margin, signY + 8, { width: pageW, align: 'center' });
-  const crmv = [staff?.crmv ? `CRMV ${staff.crmv}` : null, staff?.crmv_uf || null].filter(Boolean).join(' / ');
-  doc
-    .font('Helvetica')
-    .fontSize(9)
-    .fillColor(TEXT_MUTED)
-    .text(crmv || 'CRMV não informado', margin, doc.y + 2, { width: pageW, align: 'center' });
-
-  return doc.y;
+  y = Math.max(y + 24, Math.min(y + 40, doc.page.height - 160));
+  return drawVetStampBlock(doc, staff, {
+    margin,
+    pageW,
+    y,
+    signatureBuf: stampBuffers?.signature ?? null,
+    stampBuf: stampBuffers?.stamp ?? null,
+    showLineWhenEmpty: true,
+    textDark: TEXT_DARK,
+    textMuted: TEXT_MUTED,
+    border: BORDER,
+  });
 }
 
-export function streamPrescriptionPdf(res: Response, prescription: PrescriptionFull): void {
+function drawPrescriptionBody(
+  doc: PdfDoc,
+  prescription: PrescriptionFull,
+  margin: number,
+  pageW: number,
+  stampBuffers?: { signature: Buffer | null; stamp: Buffer | null } | null,
+): number {
+  return drawPrescriptionBodyInner(doc, prescription, margin, pageW, stampBuffers);
+}
+
+async function drawPrescriptionBodyAsync(
+  doc: PdfDoc,
+  prescription: PrescriptionFull,
+  margin: number,
+  pageW: number,
+): Promise<number> {
+  const staff = embedOne(prescription.staff);
+  const stampBuffers = await loadVetStampBuffers(staff);
+  return drawPrescriptionBodyInner(doc, prescription, margin, pageW, stampBuffers);
+}
+
+export async function streamPrescriptionPdf(res: Response, prescription: PrescriptionFull): Promise<void> {
   const doc = new PDFDocument({ size: 'A4', margin: 48, bufferPages: true });
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="receita-${prescription.id.slice(0, 8)}.pdf"`);
   doc.pipe(res);
-  drawPrescriptionBody(doc, prescription, 48, doc.page.width - 96);
+  await drawPrescriptionBodyAsync(doc, prescription, 48, doc.page.width - 96);
   doc.end();
 }
 
@@ -302,7 +339,7 @@ export async function streamValidatablePrescriptionPdf(
 
   const margin = 48;
   const pageW = doc.page.width - margin * 2;
-  let y = drawPrescriptionBody(doc, prescription, margin, pageW);
+  let y = await drawPrescriptionBodyAsync(doc, prescription, margin, pageW);
 
   if (y > doc.page.height - 200) {
     doc.addPage();

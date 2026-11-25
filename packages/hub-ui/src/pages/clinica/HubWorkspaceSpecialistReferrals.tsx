@@ -1,6 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useAlert } from '../../components/AlertProvider';
 import { HubClinicalDocumentIssuePanel } from '../../components/clinical/HubClinicalDocumentIssuePanel';
+import {
+  HubMissingStampConfirmModal,
+  resolveMissingStampFlags,
+} from '../../components/clinical/HubMissingStampConfirmModal';
 import { HubPrescriptionRevokeModal } from '../../components/clinical/HubPrescriptionRevokeModal';
 import { HubPrescriptionDocumentBadge } from '../../components/clinical/HubPrescriptionDocumentBadge';
 import {
@@ -12,6 +16,7 @@ import {
   type HubPrescriptionDocumentRow,
   type HubSpecialistReferral,
 } from '../../api/hubClinicalApi';
+import { useMyStaffMember } from '../../hooks/useMyStaffMember';
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
 import { logMessageAttempt } from '../../api/hubMessageLogsApi';
 import {
@@ -86,6 +91,21 @@ export function HubWorkspaceSpecialistReferrals({
   hideEmptyState?: boolean;
 }) {
   const { showError, showSuccess } = useAlert();
+  const { staffList } = useMyStaffMember();
+  const [stampConfirmOpen, setStampConfirmOpen] = useState(false);
+  const [stampMissing, setStampMissing] = useState({ missingSignature: true, missingStamp: true });
+  const pendingStampActionRef = React.useRef<null | (() => void)>(null);
+  const confirmStampThen = (action: () => void) => {
+    const staff = staffList.find((s) => s.id === encounter.hub_staff_member_id) ?? null;
+    const flags = resolveMissingStampFlags(staff);
+    if (flags.missingAny) {
+      setStampMissing(flags);
+      pendingStampActionRef.current = action;
+      setStampConfirmOpen(true);
+      return;
+    }
+    action();
+  };
   const [referrals, setReferrals] = useState<HubSpecialistReferral[]>([]);
   const [documents, setDocuments] = useState<ClinicalDocRow[]>([]);
   const [draft, setDraft] = useState(emptyDraft);
@@ -468,7 +488,7 @@ export function HubWorkspaceSpecialistReferrals({
                 className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
                 disabled={issuing || Boolean(issueBlockReason)}
                 title={issueBlockReason ?? undefined}
-                onClick={() => void issueBundle()}
+                onClick={() => confirmStampThen(() => void issueBundle())}
               >
                 {issuing && !issuingReferralId
                   ? 'Gerando…'
@@ -523,7 +543,7 @@ export function HubWorkspaceSpecialistReferrals({
                               type="button"
                               className="hub-clientes__btn hub-clientes__btn--sm"
                               disabled={issuing || Boolean(issueBlockReason)}
-                              onClick={() => void issueSingle(ref)}
+                              onClick={() => confirmStampThen(() => void issueSingle(ref))}
                             >
                               {issuingReferralId === ref.id ? 'Emitindo…' : 'Emitir só este item'}
                             </button>
@@ -609,6 +629,22 @@ export function HubWorkspaceSpecialistReferrals({
         </div>
       ) : null}
 
+      <HubMissingStampConfirmModal
+        open={stampConfirmOpen}
+        missingSignature={stampMissing.missingSignature}
+        missingStamp={stampMissing.missingStamp}
+        veterinarianName={staffList.find((s) => s.id === encounter.hub_staff_member_id)?.full_name}
+        onCancel={() => {
+          setStampConfirmOpen(false);
+          pendingStampActionRef.current = null;
+        }}
+        onConfirm={() => {
+          const action = pendingStampActionRef.current;
+          setStampConfirmOpen(false);
+          pendingStampActionRef.current = null;
+          action?.();
+        }}
+      />
       <HubClinicalDocumentIssuePanel
         open={issuePanelOpen}
         onClose={() => {
