@@ -172,8 +172,14 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
       ? `/hub/financeiro/comanda/${comandaId}/pronto-para-envio`
       : `/hub/caixa/comanda/${comandaId}/pronto-para-envio`;
 
+  const showStickyActions = Boolean(onCheckout || (canEdit && onSave));
+
   return (
-    <div className="hub-quote-detail">
+    <div
+      className={`hub-quote-detail hub-quote-detail--comanda${
+        showStickyActions ? ' hub-quote-detail--comanda-has-sticky' : ''
+      }`}
+    >
       <div className="hub-quote-detail__inner">
         <nav className="hub-quote-detail__crumb" aria-label="Navegação">
           <Link to={crumbBase.to}>{crumbBase.label}</Link>
@@ -211,7 +217,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
             {onCheckout ? (
               <button
                 type="button"
-                className="hub-quote-detail__btn hub-quote-detail__btn--primary"
+                className="hub-quote-detail__btn hub-quote-detail__btn--primary hub-comanda-hero__checkout"
                 disabled={saving}
                 onClick={onCheckout}
               >
@@ -222,7 +228,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
             {canEdit && onSave ? (
               <button
                 type="button"
-                className="hub-quote-detail__btn hub-quote-detail__btn--outline"
+                className="hub-quote-detail__btn hub-quote-detail__btn--outline hub-comanda-hero__save"
                 disabled={saving}
                 onClick={onSave}
               >
@@ -231,7 +237,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
             ) : null}
             <button
               type="button"
-              className="hub-quote-detail__btn hub-quote-detail__btn--outline"
+              className="hub-quote-detail__btn hub-quote-detail__btn--outline hub-comanda-hero__secondary"
               disabled={saving}
               onClick={onOpenPdf}
               title="PDF"
@@ -242,7 +248,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
             {onOpenCupom ? (
               <button
                 type="button"
-                className="hub-quote-detail__btn hub-quote-detail__btn--outline"
+                className="hub-quote-detail__btn hub-quote-detail__btn--outline hub-comanda-hero__secondary"
                 disabled={saving}
                 onClick={onOpenCupom}
                 title="Imprimir cupom térmico"
@@ -251,13 +257,14 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
                 <span className="hub-quote-detail__btn-text">Cupom</span>
               </button>
             ) : null}
-            <details className="hub-quote-detail__more hub-quote-detail__share-wrap">
+            <details className="hub-quote-detail__more hub-quote-detail__share-wrap hub-comanda-hero__more">
               <summary
                 className="hub-quote-detail__btn hub-quote-detail__btn--outline hub-quote-detail__more-summary"
-                aria-label="Compartilhar comanda"
+                aria-label="Mais ações da comanda"
               >
                 <Share2 size={18} strokeWidth={2} aria-hidden />
-                <span className="hub-quote-detail__btn-text">Compartilhar</span>
+                <span className="hub-quote-detail__btn-text hub-comanda-hero__more-label-full">Compartilhar</span>
+                <span className="hub-quote-detail__btn-text hub-comanda-hero__more-label-short">Mais</span>
               </summary>
               <div className="hub-quote-detail__more-panel">
                 <Link
@@ -526,6 +533,32 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
             ) : null}
           </aside>
         </div>
+
+        {showStickyActions ? (
+          <div className="hub-comanda-sticky-actions" role="region" aria-label="Ações rápidas">
+            {canEdit && onSave ? (
+              <button
+                type="button"
+                className="hub-quote-detail__btn hub-quote-detail__btn--outline"
+                disabled={saving}
+                onClick={onSave}
+              >
+                Salvar
+              </button>
+            ) : null}
+            {onCheckout ? (
+              <button
+                type="button"
+                className="hub-quote-detail__btn hub-quote-detail__btn--primary"
+                disabled={saving}
+                onClick={onCheckout}
+              >
+                <Coins size={18} strokeWidth={2} aria-hidden />
+                {checkoutLabel}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
     </div>
   );

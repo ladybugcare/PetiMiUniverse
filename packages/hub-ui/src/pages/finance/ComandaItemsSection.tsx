@@ -1,5 +1,5 @@
-import React, { useMemo } from 'react';
-import { Search, Trash2 } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { ChevronDown, Search, Trash2 } from 'lucide-react';
 import { HubSearchableCombobox, type HubComboboxOption } from '../../components/HubSearchableCombobox';
 import type { HubInventoryItem, HubInventoryLotRow } from '../../api/hubInventoryApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
@@ -14,9 +14,17 @@ function isProductItem(it: ComandaItemDraft): boolean {
   return it.item_kind === 'product';
 }
 
+type PackageBalance = {
+  id: string;
+  sessions_remaining: number;
+  hub_packages?: { name?: string } | { name?: string }[] | null;
+};
+
 type Props = {
   items: ComandaItemDraft[];
   canEdit: boolean;
+  /** Exibe coluna/campo Pet nas linhas de serviço (comanda multipet). */
+  showPetColumn?: boolean;
   catalogSearch: string;
   onCatalogSearchChange: (value: string) => void;
   serviceTypes: HubServiceType[];
@@ -29,7 +37,7 @@ type Props = {
   onRemoveItem: (idx: number) => void;
   onApplyService: (idx: number, serviceTypeId: string) => void;
   onApplyProduct: (idx: number, inventoryItemId: string) => void;
-  packageBalancesByItemId?: Record<string, Array<{ id: string; sessions_remaining: number; hub_packages?: { name?: string } | { name?: string }[] | null }>>;
+  packageBalancesByItemId?: Record<string, PackageBalance[]>;
   onTogglePackage?: (itemId: string, balanceId: string | null) => void;
   pendingPriceApprovals?: HubComandaPendingPriceApproval[];
   canApprovePrices?: boolean;
@@ -40,9 +48,14 @@ type Props = {
   productSearchHint?: string;
 };
 
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return <span className="hub-comanda-items__field-label">{children}</span>;
+}
+
 export const ComandaItemsSection: React.FC<Props> = ({
   items,
   canEdit,
+  showPetColumn: showPetColumnProp,
   catalogSearch,
   onCatalogSearchChange,
   serviceTypes,
@@ -73,6 +86,18 @@ export const ComandaItemsSection: React.FC<Props> = ({
     () => items.map((it, idx) => ({ it, idx })).filter(({ it }) => isProductItem(it)),
     [items],
   );
+
+  /** Fallback: se o pai não informou, infere multipet pelos nomes distintos nas linhas. */
+  const showPetColumn = useMemo(() => {
+    if (typeof showPetColumnProp === 'boolean') return showPetColumnProp;
+    const names = new Set(
+      items.map((it) => (it.pet_name ?? '').trim()).filter((n) => n.length > 0),
+    );
+    return names.size > 1;
+  }, [items, showPetColumnProp]);
+
+  /** Cards cujo estado aberto/fechado foi invertido pelo usuário (itens novos começam abertos). */
+  const [toggledCards, setToggledCards] = useState<Set<string>>(() => new Set());
 
   const q = catalogSearch.trim().toLowerCase();
 
@@ -131,168 +156,472 @@ export const ComandaItemsSection: React.FC<Props> = ({
     ];
   };
 
-  const renderServiceRow = ({ it, idx }: { it: ComandaItemDraft; idx: number }) => {
-    const editable = canEdit && !it.invoiced;
-    const isManual = it.origin_type === 'manual' || it.origin_type === 'manual_line';
-    const eligibleBalances = it.id ? packageBalancesByItemId[it.id] ?? [] : [];
-    const coveredByPackage = Boolean(it.package_balance_id);
-    return (
-      <tr key={it.id ?? `svc-${idx}`} className={it.invoiced ? 'hub-comanda-row--invoiced' : ''}>
-        <td style={{ minWidth: 220 }}>
-          {editable && it.isNew ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-              <HubSearchableCombobox
-                id={`comanda-svc-${idx}`}
-                className="hub-orcamento-novo__combobox hub-orcamento-novo__service-combobox"
-                options={serviceComboOptions}
-                value={it.hub_service_type_id ?? ''}
-                onChange={(v) => void onApplyService(idx, v)}
-                placeholder="— Selecionar serviço —"
-                searchPlaceholder="Buscar na lista…"
-                ariaLabel="Serviço"
-              />
-              {!it.hub_service_type_id ? (
-                <input
-                  className="hub-orcamento-novo__input"
-                  placeholder="Descrição livre (sem serviço do catálogo)"
-                  value={it.description}
-                  onChange={(e) => onUpdateItem(idx, { description: e.target.value })}
-                />
-              ) : null}
-            </div>
-          ) : editable && isManual ? (
+  const renderServiceDescription = (
+    it: ComandaItemDraft,
+    idx: number,
+    editable: boolean,
+    isManual: boolean,
+    idPrefix: string,
+  ) => {
+    if (editable && it.isNew) {
+      return (
+        <div className="hub-comanda-items__stack">
+          <HubSearchableCombobox
+            id={`${idPrefix}-svc-${idx}`}
+            className="hub-orcamento-novo__combobox hub-orcamento-novo__service-combobox"
+            options={serviceComboOptions}
+            value={it.hub_service_type_id ?? ''}
+            onChange={(v) => void onApplyService(idx, v)}
+            placeholder="— Selecionar serviço —"
+            searchPlaceholder="Buscar na lista…"
+            ariaLabel="Serviço"
+          />
+          {!it.hub_service_type_id ? (
             <input
               className="hub-orcamento-novo__input"
+              placeholder="Descrição livre (sem serviço do catálogo)"
               value={it.description}
               onChange={(e) => onUpdateItem(idx, { description: e.target.value })}
             />
-          ) : (
-            <span className="hub-public-quote__svc-title" title={it.origin_type ?? undefined}>
-              {it.description}
+          ) : null}
+        </div>
+      );
+    }
+    if (editable && isManual) {
+      return (
+        <input
+          className="hub-orcamento-novo__input"
+          value={it.description}
+          onChange={(e) => onUpdateItem(idx, { description: e.target.value })}
+        />
+      );
+    }
+    return (
+      <span className="hub-public-quote__svc-title" title={it.origin_type ?? undefined}>
+        {it.description}
+      </span>
+    );
+  };
+
+  const renderPackageBlock = (
+    it: ComandaItemDraft,
+    editable: boolean,
+    idPrefix: string,
+  ) => {
+    const eligibleBalances = it.id ? packageBalancesByItemId[it.id] ?? [] : [];
+    const coveredByPackage = Boolean(it.package_balance_id);
+    if (coveredByPackage) {
+      return <span className="hub-clientes__pill hub-dayboard__pill--open">Pacote</span>;
+    }
+    if (eligibleBalances.length > 0 && onTogglePackage && it.id && editable) {
+      return (
+        <div className="hub-comanda-items__stack">
+          <HubSearchableCombobox
+            id={`${idPrefix}-pkg-${it.id}`}
+            className="hub-combobox--clientes"
+            options={eligibleBalances.map((b) => {
+              const pkg = Array.isArray(b.hub_packages) ? b.hub_packages[0] : b.hub_packages;
+              return {
+                value: b.id,
+                label: `${pkg?.name ?? 'Pacote'} (${b.sessions_remaining})`,
+              };
+            })}
+            value={it.package_balance_id ?? ''}
+            onChange={(v) => onTogglePackage(it.id!, v || null)}
+            placeholder="Avulso"
+            ariaLabel="Usar pacote"
+          />
+          <button
+            type="button"
+            className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+            onClick={() => {
+              const preferred = eligibleBalances[0]?.id;
+              if (!preferred) return;
+              if (
+                !window.confirm(
+                  'Aplicar pacote nesta linha? O valor será zerado e o consumo confirma no checkout.',
+                )
+              ) {
+                return;
+              }
+              onTogglePackage(it.id!, preferred);
+            }}
+          >
+            Aplicar pacote
+          </button>
+        </div>
+      );
+    }
+    return <span className="hub-comanda-items__muted-inline">Avulso</span>;
+  };
+
+  const renderQtyInput = (it: ComandaItemDraft, idx: number, editable: boolean) =>
+    editable ? (
+      <input
+        className="hub-orcamento-novo__input"
+        inputMode="decimal"
+        value={it.quantity}
+        onChange={(e) => onUpdateItem(idx, { quantity: e.target.value })}
+        aria-label="Quantidade"
+      />
+    ) : (
+      <span>{it.quantity}</span>
+    );
+
+  const renderServiceUnitInput = (it: ComandaItemDraft, idx: number, editable: boolean) => {
+    if (!editable) return <span>{fmtBrl(Number(it.unit_amount))}</span>;
+    const svc = it.hub_service_type_id
+      ? serviceTypes.find((s) => s.id === it.hub_service_type_id)
+      : null;
+    const locked = svc?.price_mode === 'fixed' && Boolean(it.hub_service_type_id);
+    return (
+      <input
+        className="hub-orcamento-novo__input"
+        inputMode="decimal"
+        value={it.unit_amount}
+        readOnly={locked}
+        title={
+          locked
+            ? 'Este serviço tem preço fixo no catálogo. Só o financeiro pode ajustar via desconto.'
+            : undefined
+        }
+        onChange={(e) => {
+          if (locked) return;
+          onUpdateItem(idx, { unit_amount: e.target.value });
+        }}
+        aria-label="Valor unitário"
+      />
+    );
+  };
+
+  const renderServiceDiscountInput = (it: ComandaItemDraft, idx: number, editable: boolean) =>
+    editable ? (
+      <input
+        className="hub-orcamento-novo__input"
+        inputMode="decimal"
+        value={it.discount_amount}
+        onChange={(e) => onUpdateItem(idx, { discount_amount: e.target.value })}
+        aria-label="Desconto"
+      />
+    ) : (
+      <span>{fmtBrl(Number(it.discount_amount))}</span>
+    );
+
+  const renderRemoveButton = (idx: number, label: string) => (
+    <button
+      type="button"
+      className="hub-orcamento-novo__btn hub-orcamento-novo__btn--ghost hub-orcamento-novo__btn--icon"
+      aria-label={label}
+      onClick={() => void onRemoveItem(idx)}
+    >
+      <Trash2 size={15} />
+    </button>
+  );
+
+  const renderServiceRow = ({ it, idx }: { it: ComandaItemDraft; idx: number }) => {
+    const editable = canEdit && !it.invoiced;
+    const isManual = it.origin_type === 'manual' || it.origin_type === 'manual_line';
+    return (
+      <tr key={it.id ?? `svc-${idx}`} className={it.invoiced ? 'hub-comanda-row--invoiced' : ''}>
+        <td className="hub-comanda-items__cell-service">
+          {renderServiceDescription(it, idx, editable, isManual, 'comanda')}
+        </td>
+        {showPetColumn ? (
+          <td className="hub-comanda-items__cell-pet">
+            <span className="hub-comanda-items__pet-name" title={it.pet_name ?? undefined}>
+              {it.pet_name?.trim() || '—'}
             </span>
-          )}
+          </td>
+        ) : null}
+        <td className="hub-comanda-items__cell-package">{renderPackageBlock(it, editable, 'comanda')}</td>
+        <td className="right hub-comanda-items__cell-qty">{renderQtyInput(it, idx, editable)}</td>
+        <td className="right hub-comanda-items__cell-money">
+          {renderServiceUnitInput(it, idx, editable)}
         </td>
-        <td className="hub-orcamento-novo__services-table-cell--muted">{it.pet_name ?? '—'}</td>
-        <td style={{ minWidth: 120 }}>
-          {coveredByPackage ? (
-            <span className="hub-clientes__pill hub-dayboard__pill--open">Pacote</span>
-          ) : eligibleBalances.length > 0 && onTogglePackage && it.id && editable ? (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 140 }}>
-              <HubSearchableCombobox
-                id={`comanda-item-pkg-${it.id}`}
-                className="hub-combobox--clientes"
-                options={eligibleBalances.map((b) => {
-                  const pkg = Array.isArray(b.hub_packages) ? b.hub_packages[0] : b.hub_packages;
-                  return {
-                    value: b.id,
-                    label: `${pkg?.name ?? 'Pacote'} (${b.sessions_remaining})`,
-                  };
-                })}
-                value={it.package_balance_id ?? ''}
-                onChange={(v) => onTogglePackage(it.id!, v || null)}
-                placeholder="Avulso"
-                ariaLabel="Usar pacote"
-              />
-              <button
-                type="button"
-                className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-                onClick={() => {
-                  const preferred = eligibleBalances[0]?.id;
-                  if (!preferred) return;
-                  if (
-                    !window.confirm(
-                      'Aplicar pacote nesta linha? O valor será zerado e o consumo confirma no checkout.',
-                    )
-                  ) {
-                    return;
-                  }
-                  onTogglePackage(it.id!, preferred);
-                }}
-              >
-                Aplicar pacote
-              </button>
-            </div>
-          ) : (
-            <span className="hub-clientes__muted" style={{ fontSize: 12 }}>
-              Avulso
-            </span>
-          )}
+        <td className="right hub-comanda-items__cell-money">
+          {renderServiceDiscountInput(it, idx, editable)}
         </td>
-        <td className="right" style={{ minWidth: 64 }}>
-          {editable ? (
-            <input
-              className="hub-orcamento-novo__input"
-              style={{ textAlign: 'right', maxWidth: 64 }}
-              value={it.quantity}
-              onChange={(e) => onUpdateItem(idx, { quantity: e.target.value })}
-            />
-          ) : (
-            it.quantity
-          )}
-        </td>
-        <td className="right" style={{ minWidth: 96 }}>
-          {editable ? (
-            (() => {
-              const svc = it.hub_service_type_id
-                ? serviceTypes.find((s) => s.id === it.hub_service_type_id)
-                : null;
-              const locked = svc?.price_mode === 'fixed' && Boolean(it.hub_service_type_id);
-              return (
-                <input
-                  className="hub-orcamento-novo__input"
-                  style={{ textAlign: 'right', maxWidth: 96 }}
-                  value={it.unit_amount}
-                  readOnly={locked}
-                  title={
-                    locked
-                      ? 'Este serviço tem preço fixo no catálogo. Só o financeiro pode ajustar via desconto.'
-                      : undefined
-                  }
-                  onChange={(e) => {
-                    if (locked) return;
-                    onUpdateItem(idx, { unit_amount: e.target.value });
-                  }}
-                />
-              );
-            })()
-          ) : (
-            fmtBrl(Number(it.unit_amount))
-          )}
-        </td>
-        <td className="right" style={{ minWidth: 96 }}>
-          {editable ? (
-            <input
-              className="hub-orcamento-novo__input"
-              style={{ textAlign: 'right', maxWidth: 96 }}
-              value={it.discount_amount}
-              onChange={(e) => onUpdateItem(idx, { discount_amount: e.target.value })}
-            />
-          ) : (
-            fmtBrl(Number(it.discount_amount))
-          )}
-        </td>
-        <td className="right" style={{ fontWeight: 600 }}>
-          {fmtBrl(computeLineTotal(it))}
-        </td>
+        <td className="right hub-comanda-items__cell-total">{fmtBrl(computeLineTotal(it))}</td>
         {canEdit ? (
-          <td>
+          <td className="hub-comanda-items__cell-action">
             {it.invoiced ? (
               <span className="hub-orcamento-novo__services-table-cell--muted" style={{ fontSize: 11 }}>
                 Faturado
               </span>
             ) : (
-              <button
-                type="button"
-                className="hub-orcamento-novo__btn hub-orcamento-novo__btn--ghost hub-orcamento-novo__btn--icon"
-                aria-label="Remover serviço"
-                onClick={() => void onRemoveItem(idx)}
-              >
-                <Trash2 size={15} />
-              </button>
+              renderRemoveButton(idx, 'Remover serviço')
             )}
           </td>
         ) : null}
       </tr>
+    );
+  };
+
+  const cardKey = (prefix: string, it: ComandaItemDraft, idx: number) => `${prefix}-${it.id ?? `new-${idx}`}`;
+
+  const isCardOpen = (key: string, it: ComandaItemDraft) => Boolean(it.isNew) !== toggledCards.has(key);
+
+  const toggleCard = (key: string) => {
+    setToggledCards((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  const renderCardShell = ({
+    key,
+    it,
+    title,
+    emptyTitle,
+    metaParts,
+    badges,
+    rowClassName,
+    children,
+  }: {
+    key: string;
+    it: ComandaItemDraft;
+    title: string;
+    emptyTitle: string;
+    metaParts: string[];
+    badges: React.ReactNode;
+    rowClassName: string;
+    children: React.ReactNode;
+  }) => {
+    const open = isCardOpen(key, it);
+    const bodyId = `${key}-body`;
+    return (
+      <article
+        key={key}
+        className={`hub-comanda-items__card${open ? ' hub-comanda-items__card--open' : ''}${rowClassName}`}
+      >
+        <button
+          type="button"
+          className="hub-comanda-items__card-summary"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={() => toggleCard(key)}
+        >
+          <span className="hub-comanda-items__card-summary-main">
+            <span
+              className={`hub-comanda-items__card-summary-title${
+                title.trim() ? '' : ' hub-comanda-items__card-summary-title--empty'
+              }`}
+            >
+              {title.trim() || emptyTitle}
+            </span>
+            <span className="hub-comanda-items__card-summary-meta">
+              {metaParts.filter(Boolean).join(' · ')}
+              {badges}
+            </span>
+          </span>
+          <span className="hub-comanda-items__card-summary-total">{fmtBrl(computeLineTotal(it))}</span>
+          <ChevronDown size={18} className="hub-comanda-items__card-chevron" aria-hidden />
+        </button>
+        {open ? (
+          <div id={bodyId} className="hub-comanda-items__card-body">
+            {children}
+          </div>
+        ) : null}
+      </article>
+    );
+  };
+
+  const renderCardFooter = (it: ComandaItemDraft, idx: number, removeLabel: string) => {
+    if (!canEdit || it.invoiced) return null;
+    return (
+      <div className="hub-comanda-items__card-actions">
+        <button
+          type="button"
+          className="hub-comanda-items__card-remove"
+          onClick={() => void onRemoveItem(idx)}
+        >
+          <Trash2 size={15} aria-hidden />
+          {removeLabel}
+        </button>
+      </div>
+    );
+  };
+
+  const renderServiceCard = ({ it, idx }: { it: ComandaItemDraft; idx: number }) => {
+    const editable = canEdit && !it.invoiced;
+    const isManual = it.origin_type === 'manual' || it.origin_type === 'manual_line';
+    const showDescriptionEditor = editable && (Boolean(it.isNew) || isManual);
+    const key = cardKey('svc-m', it, idx);
+    return renderCardShell({
+      key,
+      it,
+      title: it.description,
+      emptyTitle: 'Novo serviço',
+      metaParts: [
+        `${it.quantity} × ${fmtBrl(Number(it.unit_amount))}`,
+        showPetColumn ? it.pet_name?.trim() ?? '' : '',
+      ],
+      badges: (
+        <>
+          {it.package_balance_id ? <span className="hub-comanda-items__chip">Pacote</span> : null}
+          {it.invoiced ? <span className="hub-comanda-items__chip hub-comanda-items__chip--muted">Faturado</span> : null}
+        </>
+      ),
+      rowClassName: it.invoiced ? ' hub-comanda-row--invoiced' : '',
+      children: (
+        <>
+          {showDescriptionEditor ? (
+            <div className="hub-comanda-items__card-field">
+              <FieldLabel>Serviço</FieldLabel>
+              {renderServiceDescription(it, idx, editable, isManual, 'comanda-m')}
+            </div>
+          ) : null}
+
+          <div className="hub-comanda-items__card-field">
+            <FieldLabel>Pacote</FieldLabel>
+            {renderPackageBlock(it, editable, 'comanda-m')}
+          </div>
+
+          <div className="hub-comanda-items__card-grid">
+            <label className="hub-comanda-items__card-field">
+              <FieldLabel>Qtd</FieldLabel>
+              {renderQtyInput(it, idx, editable)}
+            </label>
+            <label className="hub-comanda-items__card-field">
+              <FieldLabel>Valor unit.</FieldLabel>
+              {renderServiceUnitInput(it, idx, editable)}
+            </label>
+            <label className="hub-comanda-items__card-field">
+              <FieldLabel>Desconto</FieldLabel>
+              {renderServiceDiscountInput(it, idx, editable)}
+            </label>
+          </div>
+
+          {renderCardFooter(it, idx, 'Remover serviço')}
+        </>
+      ),
+    });
+  };
+
+  const renderProductDescription = (
+    it: ComandaItemDraft,
+    idx: number,
+    editable: boolean,
+    idPrefix: string,
+  ) => {
+    if (editable && it.isNew) {
+      return (
+        <HubSearchableCombobox
+          id={`${idPrefix}-prd-${idx}`}
+          className="hub-orcamento-novo__combobox hub-orcamento-novo__service-combobox"
+          options={productComboOptions}
+          value={it.hub_inventory_item_id ?? ''}
+          onChange={(v) => void onApplyProduct(idx, v)}
+          placeholder="— Selecionar produto —"
+          searchPlaceholder={productSearchHint}
+          ariaLabel="Produto"
+        />
+      );
+    }
+    return (
+      <span className="hub-public-quote__svc-title">
+        {it.description}
+        {it.returned ? (
+          <span className="hub-payables__chip hub-payables__chip--partial" style={{ marginLeft: 8 }}>
+            Devolvido
+          </span>
+        ) : null}
+      </span>
+    );
+  };
+
+  const renderLotBlock = (
+    it: ComandaItemDraft,
+    idx: number,
+    editable: boolean,
+    isManual: boolean,
+    idPrefix: string,
+  ) => {
+    if (editable && (it.isNew || isManual)) {
+      return (
+        <HubSearchableCombobox
+          id={`${idPrefix}-lot-${idx}`}
+          className="hub-orcamento-novo__combobox"
+          options={lotOptionsForItem(it.hub_inventory_item_id)}
+          value={it.hub_inventory_lot_id ?? ''}
+          onChange={(v) => onUpdateItem(idx, { hub_inventory_lot_id: v || null })}
+          placeholder="— Lote —"
+          searchPlaceholder="Buscar lote…"
+          ariaLabel="Lote"
+          disabled={!it.hub_inventory_item_id}
+        />
+      );
+    }
+    return (
+      <span className="hub-orcamento-novo__services-table-cell--muted">
+        {it.hub_inventory_lot_id
+          ? inventoryLots.find((l) => l.id === it.hub_inventory_lot_id)?.lot_code || 'Lote'
+          : '—'}
+      </span>
+    );
+  };
+
+  const renderProductUnitInput = (
+    it: ComandaItemDraft,
+    idx: number,
+    editable: boolean,
+    priceLocked: boolean,
+  ) => {
+    if (!editable) return <span>{fmtBrl(Number(it.unit_amount))}</span>;
+    return (
+      <input
+        className="hub-orcamento-novo__input"
+        inputMode="decimal"
+        value={it.unit_amount}
+        readOnly={priceLocked}
+        title={
+          priceLocked
+            ? 'Preço fixo no catálogo (override desabilitado neste produto).'
+            : undefined
+        }
+        onChange={(e) => {
+          if (priceLocked) return;
+          onUpdateItem(idx, { unit_amount: e.target.value });
+        }}
+        aria-label="Valor unitário"
+      />
+    );
+  };
+
+  const renderProductDiscountInput = (
+    it: ComandaItemDraft,
+    idx: number,
+    editable: boolean,
+    inv: HubInventoryItem | null | undefined,
+    maxDiscountPct: number,
+    maxDiscountAmount: number,
+  ) => {
+    if (!editable) return <span>{fmtBrl(Number(it.discount_amount))}</span>;
+    return (
+      <input
+        className="hub-orcamento-novo__input"
+        inputMode="decimal"
+        value={it.discount_amount}
+        title={
+          inv
+            ? maxDiscountPct > 0
+              ? `Desconto máximo: ${maxDiscountPct}% (${fmtBrl(maxDiscountAmount)})`
+              : 'Este produto não permite desconto'
+            : undefined
+        }
+        onChange={(e) => {
+          const raw = e.target.value;
+          const next = Number(String(raw).replace(',', '.'));
+          if (Number.isFinite(next) && next > maxDiscountAmount + 0.009) {
+            onUpdateItem(idx, { discount_amount: String(maxDiscountAmount) });
+            return;
+          }
+          onUpdateItem(idx, { discount_amount: raw });
+        }}
+        aria-label="Desconto"
+      />
     );
   };
 
@@ -314,133 +643,99 @@ export const ComandaItemsSection: React.FC<Props> = ({
           it.returned ? ' hub-comanda-row--returned' : ''
         }`.trim()}
       >
-        <td style={{ minWidth: 220 }}>
-          {editable && it.isNew ? (
-            <HubSearchableCombobox
-              id={`comanda-prd-${idx}`}
-              className="hub-orcamento-novo__combobox hub-orcamento-novo__service-combobox"
-              options={productComboOptions}
-              value={it.hub_inventory_item_id ?? ''}
-              onChange={(v) => void onApplyProduct(idx, v)}
-              placeholder="— Selecionar produto —"
-              searchPlaceholder={productSearchHint}
-              ariaLabel="Produto"
-            />
-          ) : (
-            <span className="hub-public-quote__svc-title">
-              {it.description}
-              {it.returned ? (
-                <span className="hub-payables__chip hub-payables__chip--partial" style={{ marginLeft: 8 }}>
-                  Devolvido
-                </span>
-              ) : null}
-            </span>
-          )}
+        <td className="hub-comanda-items__cell-service">
+          {renderProductDescription(it, idx, editable, 'comanda')}
         </td>
-        <td style={{ minWidth: 160 }}>
-          {editable && (it.isNew || isManual) ? (
-            <HubSearchableCombobox
-              id={`comanda-lot-${idx}`}
-              className="hub-orcamento-novo__combobox"
-              options={lotOptionsForItem(it.hub_inventory_item_id)}
-              value={it.hub_inventory_lot_id ?? ''}
-              onChange={(v) => onUpdateItem(idx, { hub_inventory_lot_id: v || null })}
-              placeholder="— Lote —"
-              searchPlaceholder="Buscar lote…"
-              ariaLabel="Lote"
-              disabled={!it.hub_inventory_item_id}
-            />
-          ) : (
-            <span className="hub-orcamento-novo__services-table-cell--muted">
-              {it.hub_inventory_lot_id
-                ? inventoryLots.find((l) => l.id === it.hub_inventory_lot_id)?.lot_code || 'Lote'
-                : '—'}
-            </span>
-          )}
+        <td className="hub-comanda-items__cell-lot">
+          {renderLotBlock(it, idx, editable, isManual, 'comanda')}
         </td>
-        <td className="right" style={{ minWidth: 64 }}>
-          {editable ? (
-            <input
-              className="hub-orcamento-novo__input"
-              style={{ textAlign: 'right', maxWidth: 64 }}
-              value={it.quantity}
-              onChange={(e) => onUpdateItem(idx, { quantity: e.target.value })}
-            />
-          ) : (
-            it.quantity
-          )}
+        <td className="right hub-comanda-items__cell-qty">{renderQtyInput(it, idx, editable)}</td>
+        <td className="right hub-comanda-items__cell-money">
+          {renderProductUnitInput(it, idx, editable, priceLocked)}
         </td>
-        <td className="right" style={{ minWidth: 96 }}>
-          {editable ? (
-            <input
-              className="hub-orcamento-novo__input"
-              style={{ textAlign: 'right', maxWidth: 96 }}
-              value={it.unit_amount}
-              readOnly={priceLocked}
-              title={
-                priceLocked
-                  ? 'Preço fixo no catálogo (override desabilitado neste produto).'
-                  : undefined
-              }
-              onChange={(e) => {
-                if (priceLocked) return;
-                onUpdateItem(idx, { unit_amount: e.target.value });
-              }}
-            />
-          ) : (
-            fmtBrl(Number(it.unit_amount))
-          )}
+        <td className="right hub-comanda-items__cell-money">
+          {renderProductDiscountInput(it, idx, editable, inv, maxDiscountPct, maxDiscountAmount)}
         </td>
-        <td className="right" style={{ minWidth: 96 }}>
-          {editable ? (
-            <input
-              className="hub-orcamento-novo__input"
-              style={{ textAlign: 'right', maxWidth: 96 }}
-              value={it.discount_amount}
-              title={
-                inv
-                  ? maxDiscountPct > 0
-                    ? `Desconto máximo: ${maxDiscountPct}% (${fmtBrl(maxDiscountAmount)})`
-                    : 'Este produto não permite desconto'
-                  : undefined
-              }
-              onChange={(e) => {
-                const raw = e.target.value;
-                const next = Number(String(raw).replace(',', '.'));
-                if (Number.isFinite(next) && next > maxDiscountAmount + 0.009) {
-                  onUpdateItem(idx, { discount_amount: String(maxDiscountAmount) });
-                  return;
-                }
-                onUpdateItem(idx, { discount_amount: raw });
-              }}
-            />
-          ) : (
-            fmtBrl(Number(it.discount_amount))
-          )}
-        </td>
-        <td className="right" style={{ fontWeight: 600 }}>
-          {fmtBrl(computeLineTotal(it))}
-        </td>
+        <td className="right hub-comanda-items__cell-total">{fmtBrl(computeLineTotal(it))}</td>
         {canEdit ? (
-          <td>
+          <td className="hub-comanda-items__cell-action">
             {it.invoiced ? (
               <span className="hub-orcamento-novo__services-table-cell--muted" style={{ fontSize: 11 }}>
                 Faturado
               </span>
             ) : (
-              <button
-                type="button"
-                className="hub-orcamento-novo__btn hub-orcamento-novo__btn--ghost hub-orcamento-novo__btn--icon"
-                aria-label="Remover produto"
-                onClick={() => void onRemoveItem(idx)}
-              >
-                <Trash2 size={15} />
-              </button>
+              renderRemoveButton(idx, 'Remover produto')
             )}
           </td>
         ) : null}
       </tr>
     );
+  };
+
+  const renderProductCard = ({ it, idx }: { it: ComandaItemDraft; idx: number }) => {
+    const editable = canEdit && !it.invoiced && !it.returned;
+    const isManual = it.origin_type === 'manual' || it.origin_type === 'manual_line';
+    const inv = it.hub_inventory_item_id
+      ? inventoryItems.find((p) => p.id === it.hub_inventory_item_id)
+      : null;
+    const priceLocked = Boolean(inv && !inv.allow_price_override_on_sale);
+    const maxDiscountPct = Math.max(0, Math.min(100, Number(inv?.max_sale_discount_pct ?? 0)));
+    const qtyNum = Number(String(it.quantity).replace(',', '.')) || 0;
+    const unitNum = Number(String(it.unit_amount).replace(',', '.')) || 0;
+    const maxDiscountAmount = Math.round(((qtyNum * unitNum * maxDiscountPct) / 100) * 100) / 100;
+    const key = cardKey('prd-m', it, idx);
+    const lotCode = it.hub_inventory_lot_id
+      ? inventoryLots.find((l) => l.id === it.hub_inventory_lot_id)?.lot_code
+      : null;
+    return renderCardShell({
+      key,
+      it,
+      title: it.description,
+      emptyTitle: 'Novo produto',
+      metaParts: [
+        `${it.quantity} × ${fmtBrl(Number(it.unit_amount))}`,
+        lotCode ? `Lote ${lotCode}` : '',
+      ],
+      badges: (
+        <>
+          {it.returned ? <span className="hub-comanda-items__chip hub-comanda-items__chip--warn">Devolvido</span> : null}
+          {it.invoiced ? <span className="hub-comanda-items__chip hub-comanda-items__chip--muted">Faturado</span> : null}
+        </>
+      ),
+      rowClassName: `${it.invoiced ? ' hub-comanda-row--invoiced' : ''}${it.returned ? ' hub-comanda-row--returned' : ''}`,
+      children: (
+        <>
+          {editable && it.isNew ? (
+            <div className="hub-comanda-items__card-field">
+              <FieldLabel>Produto</FieldLabel>
+              {renderProductDescription(it, idx, editable, 'comanda-m')}
+            </div>
+          ) : null}
+
+          <div className="hub-comanda-items__card-field">
+            <FieldLabel>Lote</FieldLabel>
+            {renderLotBlock(it, idx, editable, isManual, 'comanda-m')}
+          </div>
+
+          <div className="hub-comanda-items__card-grid">
+            <label className="hub-comanda-items__card-field">
+              <FieldLabel>Qtd</FieldLabel>
+              {renderQtyInput(it, idx, editable)}
+            </label>
+            <label className="hub-comanda-items__card-field">
+              <FieldLabel>Valor unit.</FieldLabel>
+              {renderProductUnitInput(it, idx, editable, priceLocked)}
+            </label>
+            <label className="hub-comanda-items__card-field">
+              <FieldLabel>Desconto</FieldLabel>
+              {renderProductDiscountInput(it, idx, editable, inv, maxDiscountPct, maxDiscountAmount)}
+            </label>
+          </div>
+
+          {renderCardFooter(it, idx, 'Remover produto')}
+        </>
+      ),
+    });
   };
 
   return (
@@ -513,23 +808,30 @@ export const ComandaItemsSection: React.FC<Props> = ({
         {serviceRows.length === 0 ? (
           <p className="hub-comanda-items__empty">{emptyServicesLabel}</p>
         ) : (
-          <div className="hub-comanda-items__table-wrap">
-            <table className="hub-orcamento-novo__services-table hub-quote-detail__svc-table">
-              <thead>
-                <tr>
-                  <th>Serviço</th>
-                  <th>Pet</th>
-                  <th>Pacote</th>
-                  <th className="right">Qtd</th>
-                  <th className="right">Valor unit.</th>
-                  <th className="right">Desconto</th>
-                  <th className="right">Total linha</th>
-                  {canEdit ? <th className="hub-orcamento-novo__services-table-col--action" aria-label="Ações" /> : null}
-                </tr>
-              </thead>
-              <tbody>{serviceRows.map(renderServiceRow)}</tbody>
-            </table>
-          </div>
+          <>
+            <div className="hub-comanda-items__table-wrap hub-comanda-items__desktop">
+              <table className="hub-orcamento-novo__services-table hub-quote-detail__svc-table">
+                <thead>
+                  <tr>
+                    <th>Serviço</th>
+                    {showPetColumn ? <th className="hub-comanda-items__col-pet">Pet</th> : null}
+                    <th>Pacote</th>
+                    <th className="right hub-comanda-items__col-qty">Qtd</th>
+                    <th className="right hub-comanda-items__col-money">Valor unit.</th>
+                    <th className="right hub-comanda-items__col-money">Desconto</th>
+                    <th className="right hub-comanda-items__col-money">Total linha</th>
+                    {canEdit ? (
+                      <th className="hub-orcamento-novo__services-table-col--action" aria-label="Ações" />
+                    ) : null}
+                  </tr>
+                </thead>
+                <tbody>{serviceRows.map(renderServiceRow)}</tbody>
+              </table>
+            </div>
+            <div className="hub-comanda-items__cards hub-comanda-items__mobile" aria-label="Serviços">
+              {serviceRows.map(renderServiceCard)}
+            </div>
+          </>
         )}
       </section>
 
@@ -549,22 +851,29 @@ export const ComandaItemsSection: React.FC<Props> = ({
         {productRows.length === 0 ? (
           <p className="hub-comanda-items__empty">{emptyProductsLabel}</p>
         ) : (
-          <div className="hub-comanda-items__table-wrap">
-            <table className="hub-orcamento-novo__services-table hub-quote-detail__svc-table">
-              <thead>
-                <tr>
-                  <th>Produto</th>
-                  <th>Lote</th>
-                  <th className="right">Qtd</th>
-                  <th className="right">Valor unit.</th>
-                  <th className="right">Desconto</th>
-                  <th className="right">Total linha</th>
-                  {canEdit ? <th className="hub-orcamento-novo__services-table-col--action" aria-label="Ações" /> : null}
-                </tr>
-              </thead>
-              <tbody>{productRows.map(renderProductRow)}</tbody>
-            </table>
-          </div>
+          <>
+            <div className="hub-comanda-items__table-wrap hub-comanda-items__desktop">
+              <table className="hub-orcamento-novo__services-table hub-quote-detail__svc-table">
+                <thead>
+                  <tr>
+                    <th>Produto</th>
+                    <th>Lote</th>
+                    <th className="right hub-comanda-items__col-qty">Qtd</th>
+                    <th className="right hub-comanda-items__col-money">Valor unit.</th>
+                    <th className="right hub-comanda-items__col-money">Desconto</th>
+                    <th className="right hub-comanda-items__col-money">Total linha</th>
+                    {canEdit ? (
+                      <th className="hub-orcamento-novo__services-table-col--action" aria-label="Ações" />
+                    ) : null}
+                  </tr>
+                </thead>
+                <tbody>{productRows.map(renderProductRow)}</tbody>
+              </table>
+            </div>
+            <div className="hub-comanda-items__cards hub-comanda-items__mobile" aria-label="Produtos">
+              {productRows.map(renderProductCard)}
+            </div>
+          </>
         )}
       </section>
     </div>

@@ -325,6 +325,8 @@
 .hub-orcamento-novo__select,
 .hub-orcamento-novo__textarea {
   width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 8px 10px;
   border: 1px solid var(--hub-border);
   border-radius: 8px;
@@ -1676,14 +1678,21 @@
   --hub-border: var(--qd-border);
   --hub-card-bg: var(--qd-card);
   min-height: 100%;
-  margin: 0 -4px;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  margin: 0;
   padding: 0 0 32px;
+  overflow-x: clip;
 }
 
 .hub-quote-detail__inner {
   max-width: 1180px;
+  width: 100%;
   margin: 0 auto;
   padding: 16px 8px 0;
+  box-sizing: border-box;
+  min-width: 0;
 }
 
 .hub-quote-detail__banner {
@@ -1740,16 +1749,37 @@
 
 .hub-quote-detail__hero {
   display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-  align-items: flex-start;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 12px;
+  align-items: stretch;
   margin-bottom: 16px;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .hub-quote-detail__hero-main {
   min-width: 0;
-  flex: 1;
+  max-width: 100%;
+}
+
+@media (min-width: 1100px) {
+  .hub-quote-detail__hero {
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .hub-quote-detail__hero-main {
+    flex: 1 1 280px;
+  }
+
+  .hub-quote-detail__hero-actions {
+    flex: 0 1 auto;
+    max-width: 100%;
+    justify-content: flex-end;
+  }
 }
 
 .hub-quote-detail__title-row {
@@ -1780,7 +1810,9 @@
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .hub-quote-detail__btn {
@@ -1937,14 +1969,22 @@ a.hub-quote-detail__more-item {
 
 .hub-quote-detail__grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
   gap: 20px;
   align-items: start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.hub-quote-detail__main,
+.hub-quote-detail__aside {
+  min-width: 0;
+  max-width: 100%;
 }
 
 @media (max-width: 1020px) {
   .hub-quote-detail__grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 
@@ -1955,6 +1995,10 @@ a.hub-quote-detail__more-item {
   padding: 18px 20px;
   margin-bottom: 16px;
   box-shadow: 0 1px 3px rgba(74, 59, 58, 0.06);
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: break-word;
 }
 
 .hub-quote-detail__card--flush {
@@ -1990,6 +2034,15 @@ a.hub-quote-detail__more-item {
 
 .hub-quote-detail__card .hub-orcamento-novo__discount-fields {
   margin-top: 0;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  min-width: 0;
+}
+
+.hub-quote-detail__card .hub-orcamento-novo__field,
+.hub-quote-detail__card .hub-orcamento-novo__combobox,
+.hub-quote-detail__card .hub-combobox {
+  min-width: 0;
+  max-width: 100%;
 }
 
 .hub-quote-detail__card-head--spread {
@@ -2039,6 +2092,8 @@ a.hub-quote-detail__more-item {
   font-weight: 700;
   line-height: 1.25;
   color: var(--qd-text);
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .hub-doc-party__contact-meta {
@@ -2149,6 +2204,7 @@ a.hub-doc-party__phone-link:hover {
 
 .hub-doc-party__pet-col:first-child {
   padding-left: 0;
+  flex: 1.8 1 8rem;
 }
 
 .hub-doc-party__pet-col--divider {
@@ -2161,7 +2217,8 @@ a.hub-doc-party__phone-link:hover {
   font-size: 14px;
   font-weight: 600;
   color: var(--qd-text);
-  word-break: break-word;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .hub-doc-party__pet-col--accent .hub-doc-party__col-value,
@@ -2448,14 +2505,29 @@ a.hub-doc-party__phone-link:hover {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-width: 0;
 }
 
 .hub-quote-detail__money-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: baseline;
+  gap: 12px;
   font-size: 14px;
   color: var(--qd-text);
+  min-width: 0;
+}
+
+.hub-quote-detail__money-row > span:first-child {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.hub-quote-detail__money-row > span:last-child {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .hub-quote-detail__money-row--discount {
@@ -2671,25 +2743,26 @@ a.hub-doc-party__phone-link:hover {
   gap: 8px;
 }
 
-/* Vista detalhe — mobile (desktop inalterado acima de 900px) */
+/* Vista detalhe — mobile / tablet estreito */
 @media (max-width: 900px) {
   .hub-quote-detail {
-    margin: 0 -12px;
+    margin: 0;
     padding: 0 0 24px;
   }
 
   .hub-quote-detail__inner {
-    padding: 8px 4px 0;
+    padding: 4px 0 0;
   }
 
   .hub-quote-detail__hero {
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
     margin-bottom: 12px;
   }
 
   .hub-quote-detail__title {
-    font-size: 1.35rem;
+    font-size: 1.25rem;
+    overflow-wrap: anywhere;
   }
 
   .hub-quote-detail__meta-line {
@@ -2711,25 +2784,28 @@ a.hub-doc-party__phone-link:hover {
 
   .hub-quote-detail__hero-actions .hub-quote-detail__btn {
     min-height: 42px;
-    white-space: normal;
+    width: 100%;
+    box-sizing: border-box;
+    white-space: nowrap;
     padding: 10px 12px;
   }
 
   .hub-quote-detail__hero-actions .hub-quote-detail__more {
-    justify-self: end;
+    min-width: 0;
   }
 
   .hub-quote-detail__more-panel {
     right: 0;
     left: auto;
     min-width: min(280px, calc(100vw - 32px));
-    max-width: calc(100vw - 32px);
+    max-width: min(320px, calc(100vw - 24px));
   }
 
   .hub-quote-detail__grid {
     display: flex;
     flex-direction: column;
     gap: 12px;
+    min-width: 0;
   }
 
   .hub-quote-detail__aside {
@@ -2737,7 +2813,7 @@ a.hub-doc-party__phone-link:hover {
   }
 
   .hub-quote-detail__card {
-    padding: 14px 16px;
+    padding: 14px 14px;
     margin-bottom: 12px;
   }
 
@@ -2746,14 +2822,22 @@ a.hub-doc-party__phone-link:hover {
   }
 
   .hub-quote-detail__card--flush .hub-quote-detail__card-head {
-    padding-left: 16px;
-    padding-right: 16px;
+    padding-left: 14px;
+    padding-right: 14px;
     margin-bottom: 12px;
   }
 
   .hub-quote-detail__card-head--spread {
     flex-wrap: wrap;
     gap: 8px;
+  }
+
+  .hub-quote-detail__money-row--total {
+    font-size: 18px;
+  }
+
+  .hub-quote-detail__money-row--total > span:last-child {
+    white-space: nowrap;
   }
 
   .hub-quote-detail__table-scroll--desktop {
@@ -2861,7 +2945,7 @@ a.hub-doc-party__phone-link:hover {
 
 @media (max-width: 520px) {
   .hub-quote-detail__hero-actions {
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .hub-quote-detail__hero-actions .hub-quote-detail__more {

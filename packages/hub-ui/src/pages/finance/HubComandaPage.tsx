@@ -663,6 +663,7 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
     <ComandaItemsSection
       items={items}
       canEdit={canEdit}
+      showPetColumn={pets.length > 1}
       catalogSearch={catalogSearch}
       onCatalogSearchChange={setCatalogSearch}
       serviceTypes={serviceTypes}
