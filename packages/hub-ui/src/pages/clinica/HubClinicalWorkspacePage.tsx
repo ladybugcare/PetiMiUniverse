@@ -1091,9 +1091,14 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
 
         <footer className="hub-cws-footer">
           <div className="hub-cws-footer__left">
-            <div className="hub-cws-footer__hint">
+            <div
+              id="hub-cws-complete-hint"
+              className={`hub-cws-footer__hint${completeBlockReason ? ' hub-cws-footer__hint--warn' : ''}`}
+            >
               {refreshing ? (
                 <HubLoading variant="inline" size="sm" label="Atualizando…" />
+              ) : completeBlockReason ? (
+                completeBlockReason
               ) : (
                 saveHint
               )}
@@ -1138,6 +1143,7 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
                 type="button"
                 className="hub-clientes__btn hub-clientes__btn--primary hub-cws-footer__btn hub-cws-footer__btn--primary"
                 disabled={completing || Boolean(completeBlockReason)}
+                aria-describedby={completeBlockReason ? 'hub-cws-complete-hint' : undefined}
                 title={
                   needsIdentificationForCheckout
                     ? 'Associe um tutor ao atendimento antes de finalizar.'

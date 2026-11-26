@@ -3602,6 +3602,12 @@ button.hub-clinic-case-page__generic-hint:focus-visible {
   color: #15803d;
 }
 
+.hub-cws-footer__hint--warn {
+  color: #9a3412;
+  max-width: 42rem;
+  line-height: 1.35;
+}
+
 .hub-cws-footer__started {
   font-size: 12px;
 }

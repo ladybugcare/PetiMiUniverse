@@ -4698,6 +4698,60 @@ async function applySyncComandaFromOrigin(
   );
   const openIds = [...openIdsSet].filter((id) => !manualOpenIds.has(id));
   const removedItems = allItems.filter((it) => openIds.includes(it.id as string));
+
+  const originLineFingerprint = (row: {
+    origin_type?: string | null;
+    origin_id?: string | null;
+    description?: string | null;
+    hub_service_type_id?: string | null;
+    quantity?: number | null;
+    unit_amount?: number | null;
+    line_total?: number | null;
+  }) =>
+    [
+      String(row.origin_type ?? ''),
+      String(row.origin_id ?? ''),
+      String(row.hub_service_type_id ?? ''),
+      String(row.description ?? ''),
+      round2(Number(row.quantity ?? 0)),
+      round2(Number(row.unit_amount ?? 0)),
+      round2(Number(row.line_total ?? 0)),
+    ].join('|');
+
+  const currentFp = removedItems
+    .map((it) =>
+      originLineFingerprint({
+        origin_type: (it.origin_type as string | null) ?? null,
+        origin_id: (it.origin_id as string | null) ?? null,
+        description: (it.description as string | null) ?? null,
+        hub_service_type_id: (it.hub_service_type_id as string | null) ?? null,
+        quantity: Number(it.quantity ?? 0),
+        unit_amount: Number(it.unit_amount ?? 0),
+        line_total: Number(it.line_total ?? 0),
+      }),
+    )
+    .sort()
+    .join('\n');
+  const desiredFp = desiredFiltered
+    .map((it) =>
+      originLineFingerprint({
+        origin_type: it.origin_type,
+        origin_id: it.origin_id,
+        description: it.description,
+        hub_service_type_id: it.hub_service_type_id,
+        quantity: it.quantity,
+        unit_amount: it.unit_amount,
+        line_total: it.line_total,
+      }),
+    )
+    .sort()
+    .join('\n');
+
+  // Mid-AT / complete podem sync várias vezes com o mesmo snapshot — evita churn no DB e no histórico.
+  if (currentFp === desiredFp) {
+    return detail;
+  }
+
   if (openIds.length) {
     const { error: delErr } = await supabaseAdmin.from('hub_comanda_items').delete().in('id', openIds);
     if (delErr) throw new Error(delErr.message);
@@ -4725,46 +4779,21 @@ async function applySyncComandaFromOrigin(
     if (insErr) throw new Error(insErr.message);
   }
 
-  for (const it of removedItems) {
-    const snap = itemSnapshotFromRow(it);
-    void recordComandaItemRemovedEvent({
-      clinic_id: clinicId,
-      comanda_id: comandaId,
-      item: snap,
-      actor_user_id: opts?.actor_user_id ?? null,
-      edit_context: opts?.edit_context ?? null,
-      source: 'sync_origin',
-    });
-  }
-  for (const row of insertRows) {
-    void recordComandaItemAddedEvent({
-      clinic_id: clinicId,
-      comanda_id: comandaId,
-      item: {
-        description: String(row.description),
-        item_kind: String(row.item_kind),
-        quantity: Number(row.quantity),
-        unit_amount: Number(row.unit_amount),
-        line_total: Number(row.line_total),
-      },
-      actor_user_id: opts?.actor_user_id ?? null,
-      edit_context: opts?.edit_context ?? null,
-      source: 'sync_origin',
-    });
-  }
+  // Sync rebuilda linhas de origem: um único evento de resumo (sem N× removido/adicionado).
   if (removedItems.length > 0 || insertRows.length > 0) {
     void recordComandaEvent({
       clinic_id: clinicId,
       comanda_id: comandaId,
       event_type: 'items_synced',
-      title: 'Itens sincronizados com a origem',
-      body:
-        removedItems.length || insertRows.length
-          ? `${removedItems.length} removido(s), ${insertRows.length} adicionado(s)`
-          : null,
+      title: 'Comanda atualizada a partir do atendimento',
+      body: `${insertRows.length} item(ns) na comanda aberta`,
       actor_user_id: opts?.actor_user_id ?? null,
       edit_context: opts?.edit_context ?? null,
-      metadata: { removed_count: removedItems.length, added_count: insertRows.length },
+      metadata: {
+        removed_count: removedItems.length,
+        added_count: insertRows.length,
+        source: 'sync_origin',
+      },
     });
   }
 

@@ -84,8 +84,8 @@ export function HubWorkspaceInClinicMedications({
       await reload();
       showSuccess(
         draft.hub_inventory_item_id
-          ? 'Medicação registrada. Serviço entra na comanda; estoque baixado (sem cobrança do produto).'
-          : 'Medicação registrada. O serviço de aplicação entra na comanda ao cobrar.',
+          ? 'Medicação registrada. Serviço já na comanda; estoque baixado (sem cobrança do produto).'
+          : 'Medicação registrada. Serviço de aplicação já entrou na comanda.',
       );
       onClinicalRefresh?.();
     } catch (e: unknown) {
