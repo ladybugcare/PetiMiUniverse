@@ -18,7 +18,12 @@ import {
   loadAgendaPersistedFilters,
   saveAgendaPersistedUnit,
 } from '../agenda/agendaFilters';
-import { getItemBoardStage, groomingOpenSessionStage, type GroomingQuickAction } from './groomingStages';
+import {
+  getItemBoardStage,
+  groomingOpenSessionStage,
+  itemBoardKey,
+  type GroomingQuickAction,
+} from './groomingStages';
 import { isGroomingFloorStaff } from './groomingAccess';
 import GroomingDayList from './GroomingDayList';
 import GroomingAppointmentDrawer from './GroomingAppointmentDrawer';
@@ -90,6 +95,7 @@ const HubGroomingQueuePage: React.FC = () => {
   const [items, setItems] = useState<GroomingDayBoardItem[]>([]);
   const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [actionBusy, setActionBusy] = useState(false);
+  const [busyItemKey, setBusyItemKey] = useState<string | null>(null);
   const [staff, setStaff] = useState<HubStaffMember[]>([]);
   const [staffFilter, setStaffFilter] = useState('');
   const [unitFilter, setUnitFilter] = useState(() => loadAgendaPersistedFilters().unit ?? 'all');
@@ -213,8 +219,9 @@ const HubGroomingQueuePage: React.FC = () => {
   };
 
   const handleQuickAction = async (item: GroomingDayBoardItem, action: GroomingQuickAction) => {
-    if (!clinicId || !canWrite) return;
+    if (!clinicId || !canWrite || actionBusy) return;
     setActionBusy(true);
+    setBusyItemKey(itemBoardKey(item));
     try {
       if (action.type === 'confirm_appointment' && item.appointment_id) {
         await hubAgendaApi.patch(item.appointment_id, { clinic_id: clinicId, status: 'confirmed' });
@@ -238,12 +245,14 @@ const HubGroomingQueuePage: React.FC = () => {
       showError((e as Error)?.message || 'Erro ao atualizar atendimento');
     } finally {
       setActionBusy(false);
+      setBusyItemKey(null);
     }
   };
 
   const handlePauseToggle = async (item: GroomingDayBoardItem) => {
-    if (!clinicId || !item.session_id || !canPauseQueue) return;
+    if (!clinicId || !item.session_id || !canPauseQueue || actionBusy) return;
     setActionBusy(true);
+    setBusyItemKey(itemBoardKey(item));
     try {
       const nextPaused = !item.paused_at;
       await hubGroomingApi.patchSession(item.session_id, { clinic_id: clinicId, paused: nextPaused });
@@ -252,12 +261,14 @@ const HubGroomingQueuePage: React.FC = () => {
       showError((e as Error)?.message || 'Erro ao pausar ou retomar atendimento');
     } finally {
       setActionBusy(false);
+      setBusyItemKey(null);
     }
   };
 
   const handleTogglePriority = async (item: GroomingDayBoardItem) => {
-    if (!clinicId || !canWrite || !item.session_id) return;
+    if (!clinicId || !canWrite || !item.session_id || actionBusy) return;
     setActionBusy(true);
+    setBusyItemKey(itemBoardKey(item));
     try {
       const next = (item.priority ?? 0) > 0 ? 0 : 1;
       await hubGroomingApi.patchSession(item.session_id, { clinic_id: clinicId, priority: next });
@@ -266,6 +277,7 @@ const HubGroomingQueuePage: React.FC = () => {
       showError((e as Error)?.message || 'Erro ao alterar prioridade');
     } finally {
       setActionBusy(false);
+      setBusyItemKey(null);
     }
   };
 
@@ -536,7 +548,10 @@ const HubGroomingQueuePage: React.FC = () => {
         </div>
       ) : null}
 
-      <HubRefreshingBanner show={refreshing} label="Atualizando fila…" />
+      <HubRefreshingBanner
+        show={refreshing || actionBusy}
+        label={actionBusy ? 'Atualizando estágio…' : 'Atualizando fila…'}
+      />
 
       {loading ? (
         <HubLoading variant="block" label="Carregando fila…" className="hub-clinic-page__pad" />
@@ -574,6 +589,8 @@ const HubGroomingQueuePage: React.FC = () => {
           items={itemsFiltered}
           canWrite={canWrite}
           searchQ={searchQ}
+          busy={actionBusy}
+          busyItemKey={busyItemKey}
           onSelect={setSelected}
           onQuickAction={(item, action) => void handleQuickAction(item, action)}
           onClearSearch={() => setSearchQ('')}

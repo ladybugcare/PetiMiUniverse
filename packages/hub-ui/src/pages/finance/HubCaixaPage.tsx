@@ -997,7 +997,7 @@ const HubCaixaPage: React.FC = () => {
       </div>
 
       <CaixaMetricsRow
-        loading={loading}
+        loading={loading || refreshing}
         pending={pending}
         cashOpen={!!cashOpen}
         cashOpenedAt={cashOpen?.opened_at}
@@ -1012,7 +1012,7 @@ const HubCaixaPage: React.FC = () => {
         <div className="hub-caixa-page__col">
           <CaixaSessionMovementsCard
             cashOpen={!!cashOpen}
-            loadingMethods={loading && acceptedPaymentMethods.length === 0}
+            loadingMethods={(loading || refreshing) && acceptedPaymentMethods.length === 0}
             methodsEntries={methodsEntries}
             methodsTotal={methodsTotal}
             depositsTotal={cashSummary?.summary.deposits_total ?? 0}
@@ -1109,10 +1109,13 @@ const HubCaixaPage: React.FC = () => {
           <button
             type="button"
             className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm hub-dayboard__refresh-btn"
-            disabled={dayBoardBusy}
-            onClick={() => void loadDayBoard()}
+            disabled={dayBoardBusy || refreshing || loading}
+            onClick={() => {
+              // Recarrega KPIs (summary/sessão) + painel do dia — não só o day-board.
+              void load();
+            }}
           >
-            {dayBoardBusy ? 'Atualizando…' : 'Atualizar'}
+            {dayBoardBusy || refreshing || loading ? 'Atualizando…' : 'Atualizar'}
           </button>
         </div>
 
@@ -1587,8 +1590,8 @@ const HubCaixaPage: React.FC = () => {
             setReceivableDrawer((prev) => (prev ? { ...prev, selectedReceivableId: id } : null))
           }
           onRefreshComanda={() => {
+            // Pós-pagamento: recarrega KPIs + painel (load já inclui day-board).
             void load();
-            void loadDayBoard();
           }}
           highlightPayment={receivableDrawer.highlightPayment === true}
         />

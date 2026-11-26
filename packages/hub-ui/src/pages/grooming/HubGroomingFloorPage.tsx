@@ -43,6 +43,7 @@ const HubGroomingFloorPage: React.FC = () => {
   const [items, setItems] = useState<GroomingDayBoardItem[]>([]);
   const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [actionBusy, setActionBusy] = useState(false);
+  const [busyItemKey, setBusyItemKey] = useState<string | null>(null);
   const [selected, setSelected] = useState<GroomingDayBoardItem | null>(null);
   const [featuredOverride, setFeaturedOverride] = useState<GroomingDayBoardItem | null>(null);
   const [filterMineOnly, setFilterMineOnly] = useState(false);
@@ -111,8 +112,9 @@ const HubGroomingFloorPage: React.FC = () => {
   }, [items, filterMineOnly, myStaffMember?.id]);
 
   const handleQuickAction = async (item: GroomingDayBoardItem, action: GroomingQuickAction) => {
-    if (!clinicId || !canWrite) return;
+    if (!clinicId || !canWrite || actionBusy) return;
     setActionBusy(true);
+    setBusyItemKey(itemBoardKey(item));
     try {
       if (action.type === 'confirm_appointment' && item.appointment_id) {
         await hubAgendaApi.patch(item.appointment_id, { clinic_id: clinicId, status: 'confirmed' });
@@ -136,12 +138,14 @@ const HubGroomingFloorPage: React.FC = () => {
       showError((e as Error)?.message || 'Erro ao atualizar atendimento');
     } finally {
       setActionBusy(false);
+      setBusyItemKey(null);
     }
   };
 
   const handlePauseToggle = async (item: GroomingDayBoardItem) => {
-    if (!clinicId || !item.session_id || !canPauseQueue) return;
+    if (!clinicId || !item.session_id || !canPauseQueue || actionBusy) return;
     setActionBusy(true);
+    setBusyItemKey(itemBoardKey(item));
     try {
       const nextPaused = !item.paused_at;
       await hubGroomingApi.patchSession(item.session_id, { clinic_id: clinicId, paused: nextPaused });
@@ -150,6 +154,7 @@ const HubGroomingFloorPage: React.FC = () => {
       showError((e as Error)?.message || 'Erro ao pausar ou retomar atendimento');
     } finally {
       setActionBusy(false);
+      setBusyItemKey(null);
     }
   };
 
@@ -177,12 +182,16 @@ const HubGroomingFloorPage: React.FC = () => {
 
   return (
     <div className="hub-grooming-page--floor">
-      <HubRefreshingBanner show={refreshing} label="Atualizando fila…" />
+      <HubRefreshingBanner
+        show={refreshing || actionBusy}
+        label={actionBusy ? 'Atualizando estágio…' : 'Atualizando fila…'}
+      />
       <GroomingFloorView
         items={itemsFiltered}
         dateLabel={dateLabel}
         loading={loading}
         busy={actionBusy}
+        busyItemKey={busyItemKey}
         canWrite={canWrite}
         canPauseQueue={canPauseQueue}
         filterMineOnly={filterMineOnly}

@@ -125,6 +125,7 @@ export type GroomingFloorViewProps = {
   dateLabel: string;
   loading?: boolean;
   busy?: boolean;
+  busyItemKey?: string | null;
   canWrite: boolean;
   canPauseQueue?: boolean;
   filterMineOnly: boolean;
@@ -145,6 +146,7 @@ const GroomingFloorView: React.FC<GroomingFloorViewProps> = ({
   dateLabel,
   loading,
   busy,
+  busyItemKey = null,
   canWrite,
   canPauseQueue = false,
   filterMineOnly,
@@ -329,10 +331,15 @@ const GroomingFloorView: React.FC<GroomingFloorViewProps> = ({
                 type="button"
                 className="hub-grooming-floor__action-btn hub-grooming-floor__action-btn--advance"
                 disabled={busy}
+                aria-busy={busy && (!busyItemKey || busyItemKey === itemBoardKey(featured))}
                 onClick={() => void onQuickAction(featured, featuredQuick)}
               >
-                {busy ? <Loader size={16} className="spin" aria-hidden /> : null}
-                {quickActionLabel(featuredQuick, featured)}
+                {busy && (!busyItemKey || busyItemKey === itemBoardKey(featured)) ? (
+                  <Loader size={16} className="spin" aria-hidden />
+                ) : null}
+                {busy && (!busyItemKey || busyItemKey === itemBoardKey(featured))
+                  ? 'Atualizando…'
+                  : quickActionLabel(featuredQuick, featured)}
               </button>
             ) : null}
           </div>
@@ -388,9 +395,15 @@ const GroomingFloorView: React.FC<GroomingFloorViewProps> = ({
                     type="button"
                     className="hub-grooming-floor__queue-action"
                     disabled={busy}
+                    aria-busy={busy && busyItemKey === itemBoardKey(item)}
                     onClick={() => void onQuickAction(item, quick)}
                   >
-                    {quickActionLabel(quick, item)}
+                    {busy && busyItemKey === itemBoardKey(item) ? (
+                      <Loader size={14} className="spin" aria-hidden />
+                    ) : null}
+                    {busy && busyItemKey === itemBoardKey(item)
+                      ? 'Atualizando…'
+                      : quickActionLabel(quick, item)}
                   </button>
                 ) : null}
               </div>
