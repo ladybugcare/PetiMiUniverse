@@ -1,5 +1,20 @@
 import { getSupabase } from './supabase';
 import { handleInvalidToken } from './tokenInvalid';
+import {
+  createAuthLogoutAbortError,
+  endAuthLogout,
+  isAuthLogoutAbortError,
+  isAuthLogoutInProgress,
+} from './authLogoutGate';
+
+function isPublicAuthEndpoint(endpoint: string): boolean {
+  return (
+    endpoint.includes('/auth/login') ||
+    endpoint.includes('/auth/forgot') ||
+    endpoint.includes('/auth/reset') ||
+    endpoint.includes('/auth/signup')
+  );
+}
 
 /** Static `import.meta.env.*` keys so Vite can inject (see supabase.ts). */
 export const getApiBaseUrl = (): string => {
@@ -59,6 +74,12 @@ async function executeApiRequest(
   options: ApiRequestOptions = {},
   generationAtStart = cacheGeneration,
 ): Promise<unknown> {
+  // Logout já iniciou: não dispara fetch autenticado (evita 401 de polls ainda vivos).
+  // Endpoints públicos de auth precisam passar (ex.: login na mesma SPA sem reload).
+  if (isAuthLogoutInProgress() && !isPublicAuthEndpoint(endpoint)) {
+    throw createAuthLogoutAbortError();
+  }
+
   const API_BASE_URL = getApiBaseUrl();
   const url = `${API_BASE_URL}${endpoint}`;
   const supabase = getSupabase();
@@ -260,6 +281,9 @@ async function executeApiRequest(
     return result;
   } catch (error: unknown) {
     clearTimeout(timeoutId);
+    if (isAuthLogoutAbortError(error)) {
+      throw error;
+    }
     const err = error as Error;
     if (err.name === 'AbortError') {
       throw new Error('A requisição demorou muito para responder. Verifique sua conexão ou tente novamente.');
@@ -281,6 +305,10 @@ export const apiRequest = async (
   endpoint: string,
   options: ApiRequestOptions = {},
 ): Promise<unknown> => {
+  if (isAuthLogoutInProgress() && !isPublicAuthEndpoint(endpoint)) {
+    throw createAuthLogoutAbortError();
+  }
+
   const isGet = options.method === 'GET' || !options.method;
   // timeoutMs não faz parte da chave de cache (só afeta o cliente).
   const { timeoutMs: _timeoutMs, ...cacheable } = options;
@@ -313,6 +341,7 @@ export const apiRequest = async (
 };
 
 export const login = async (data: LoginData): Promise<unknown> => {
+  endAuthLogout();
   return apiRequest('/auth/login', {
     method: 'POST',
     body: JSON.stringify(data),

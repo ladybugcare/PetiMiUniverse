@@ -12,7 +12,12 @@ import {
   hubFinancialApi,
   type HubCashSession,
 } from '@petimi/hub-ui';
-import { usePermissions } from '@petimi/web-core';
+import {
+  AUTH_LOGOUT_STARTED_EVENT,
+  isAuthLogoutInProgress,
+  useAuth,
+  usePermissions,
+} from '@petimi/web-core';
 import { useHubUnit } from './HubUnitContext';
 
 export type HubCashSessionStatusSnapshot = {
@@ -47,6 +52,8 @@ function ymdToday(): string {
 }
 
 export const HubCashSessionProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
+  const { session, isLoggingOut } = useAuth();
+  const authLive = Boolean(session) && !isLoggingOut && !isAuthLogoutInProgress();
   const { clinicId, selectedUnit } = useHubUnit();
   const unitId = selectedUnit?.id ?? null;
   const { hasPermission, loading: permLoading } = usePermissions();
@@ -63,7 +70,7 @@ export const HubCashSessionProvider: React.FC<{ children: ReactNode }> = ({ chil
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const refresh = useCallback(async (): Promise<HubCashSessionStatusSnapshot | null> => {
-    if (!clinicId || !unitId || !canReadCash) {
+    if (!authLive || !clinicId || !unitId || !canReadCash) {
       setCashSession(null);
       setPendingBillingCount(0);
       setLastRefreshedAt(Date.now());
@@ -72,12 +79,12 @@ export const HubCashSessionProvider: React.FC<{ children: ReactNode }> = ({ chil
     setLoading(true);
     try {
       const statusRes = await hubFinancialApi.getCashSessionStatus(clinicId, unitId);
-      const session = statusRes.cash_session ?? null;
-      setCashSession(session);
+      const sessionRow = statusRes.cash_session ?? null;
+      setCashSession(sessionRow);
       setPendingBillingCount(statusRes.pending_billing_count);
       setLastRefreshedAt(Date.now());
       return {
-        isOpen: session?.status === 'open',
+        isOpen: sessionRow?.status === 'open',
         pendingBillingCount: statusRes.pending_billing_count,
       };
     } catch {
@@ -86,7 +93,7 @@ export const HubCashSessionProvider: React.FC<{ children: ReactNode }> = ({ chil
     } finally {
       setLoading(false);
     }
-  }, [clinicId, unitId, canReadCash]);
+  }, [authLive, clinicId, unitId, canReadCash]);
 
   const isStatusFresh = useCallback(
     (maxAgeMs: number = CASH_SESSION_FRESH_MS) => {
@@ -97,22 +104,44 @@ export const HubCashSessionProvider: React.FC<{ children: ReactNode }> = ({ chil
   );
 
   useEffect(() => {
+    if (!authLive) {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      setCashSession(null);
+      setPendingBillingCount(0);
+      return;
+    }
+
     void refresh();
     intervalRef.current = setInterval(() => {
       void refresh();
     }, POLL_INTERVAL_MS);
+
+    const onLogout = () => {
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+    };
+    window.addEventListener(AUTH_LOGOUT_STARTED_EVENT, onLogout);
+
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
+      intervalRef.current = null;
+      window.removeEventListener(AUTH_LOGOUT_STARTED_EVENT, onLogout);
     };
-  }, [refresh]);
+  }, [refresh, authLive]);
 
   useEffect(() => {
+    if (!authLive) return;
     const onCashSessionUpdated = () => {
       void refresh();
     };
     window.addEventListener(HUB_CASH_SESSION_UPDATED_EVENT, onCashSessionUpdated);
     return () => window.removeEventListener(HUB_CASH_SESSION_UPDATED_EVENT, onCashSessionUpdated);
-  }, [refresh]);
+  }, [refresh, authLive]);
 
   const isOpen = cashSession?.status === 'open';
   const openedAt = cashSession?.opened_at ?? null;

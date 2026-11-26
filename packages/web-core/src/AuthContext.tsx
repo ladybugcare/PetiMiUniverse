@@ -9,6 +9,8 @@ import { getSupabase } from './supabase';
 import { getUserRole } from './authHelpers';
 import type { AppRole } from './types';
 import { CLINIC_STORAGE_UPDATED_EVENT } from './constants/appEvents';
+import { beginAuthLogout, endAuthLogout } from './authLogoutGate';
+import { invalidateApiRequestCache } from './api';
 
 export type AuthContextType = {
   user: unknown | null;
@@ -30,6 +32,16 @@ const AuthContext = createContext<AuthContextType>({
   isLoggingOut: false,
 });
 
+function clearAuthLocalStorage(): void {
+  if (typeof localStorage === 'undefined') return;
+  localStorage.removeItem('user');
+  localStorage.removeItem('session');
+  localStorage.removeItem('clinicOnboarding');
+  localStorage.removeItem('clinic_user');
+  localStorage.removeItem('isFirstAccess');
+  localStorage.removeItem('pendingEmail');
+}
+
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const supabase = getSupabase();
   const [user, setUser] = useState<unknown | null>(null);
@@ -45,6 +57,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     const applySession = (nextSession: { user?: unknown } | null) => {
       if (!mounted) return;
       if (nextSession) {
+        endAuthLogout();
         setSession(nextSession);
         setUser(nextSession.user ?? null);
         setRole(getUserRole(nextSession.user));
@@ -95,6 +108,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const setAuthFromLogin = async (result: unknown) => {
     try {
+      endAuthLogout();
       const r = result as Record<string, unknown>;
       const nextUser = (r?.user as unknown) || null;
       const nextSession = (r?.session as unknown) || null;
@@ -158,25 +172,24 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     if (isLoggingOut) return;
     setIsLoggingOut(true);
 
+    // 1) Pausar polls/queries imediatamente (antes do signOut de rede).
+    beginAuthLogout();
+    invalidateApiRequestCache();
+    setUser(null);
+    setSession(null);
+    setRole('UNKNOWN');
+    clearAuthLocalStorage();
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event(CLINIC_STORAGE_UPDATED_EVENT));
+    }
+
     try {
-      const { error: signOutError } = await supabase.auth.signOut({ scope: 'global' });
+      // `local` evita 403 comum em scope global quando a sessão já caiu.
+      const { error: signOutError } = await supabase.auth.signOut({ scope: 'local' });
 
       if (signOutError) {
-        console.error('[web-core Logout] Erro ao fazer signOut do Supabase:', signOutError);
+        console.warn('[web-core Logout] signOut local:', signOutError.message);
       }
-
-      localStorage.removeItem('user');
-      localStorage.removeItem('session');
-      localStorage.removeItem('clinicOnboarding');
-      localStorage.removeItem('clinic_user');
-      localStorage.removeItem('isFirstAccess');
-      localStorage.removeItem('pendingEmail');
-
-      window.dispatchEvent(new Event(CLINIC_STORAGE_UPDATED_EVENT));
-
-      setUser(null);
-      setSession(null);
-      setRole('UNKNOWN');
 
       try {
         const {
@@ -184,7 +197,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         } = await supabase.auth.getSession();
         if (remainingSession) {
           console.warn('[web-core Logout] Ainda há sessão após signOut, tentando limpar novamente...');
-          await supabase.auth.signOut({ scope: 'global' });
+          await supabase.auth.signOut({ scope: 'local' });
         }
       } catch (checkError) {
         console.warn('[web-core Logout] Erro ao verificar sessão restante:', checkError);
@@ -193,9 +206,6 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       redirectToLogin();
     } catch (err) {
       console.error('[web-core Logout] Erro ao encerrar sessão:', err);
-      setUser(null);
-      setSession(null);
-      setRole('UNKNOWN');
       redirectToLogin();
     } finally {
       setTimeout(() => setIsLoggingOut(false), 800);
