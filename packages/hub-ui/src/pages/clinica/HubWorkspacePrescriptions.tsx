@@ -24,6 +24,10 @@ import {
 } from '../../api/hubClinicalApi';
 import { useMyStaffMember } from '../../hooks/useMyStaffMember';
 import { HubCwsStatusPills } from './HubCwsStatusPills';
+import {
+  EMPTY_PRESCRIPTION_ISSUE_HINT,
+  resolvePrescriptionIssueBlockReason,
+} from './clinicalIssueBlockReason';
 import { isPrescriptionContentEditableToday } from './prescriptionEditWindow';
 
 function prescriptionItemToPayload(it: HubPrescriptionItem) {
@@ -62,22 +66,6 @@ function draftToCreateItem(draft: PrescriptionItemDraft) {
 
 function isActivePrescriptionStatus(status: string | undefined): boolean {
   return status === undefined || status === 'active' || status === 'draft' || status === 'issued';
-}
-
-function resolveIssueBlockReason(opts: {
-  readOnly: boolean;
-  canonicalRx: HubPrescription | null;
-  encounter: HubEncounter;
-}): string | null {
-  const { readOnly, canonicalRx, encounter } = opts;
-  if (readOnly) return 'Atendimento somente leitura — não é possível emitir receita.';
-  if (!canonicalRx) return 'Adicione ao menos um medicamento antes de gerar a receita.';
-  if (!(canonicalRx.items?.length ?? 0)) return 'Adicione ao menos um medicamento antes de gerar a receita.';
-  if (!encounter.pet_id) return 'Vincule um pet ao atendimento antes de emitir.';
-  if (!encounter.hub_staff_member_id) {
-    return 'Defina o veterinário responsável no atendimento antes de emitir.';
-  }
-  return null;
 }
 
 export function HubWorkspacePrescriptions({
@@ -146,9 +134,15 @@ export function HubWorkspacePrescriptions({
     status: canonicalRx?.status,
   });
   const editLocked = readOnly || (Boolean(canonicalRx) && !sameDayEditable);
+  const hasPrescriptionItems = Boolean(canonicalRx?.items?.length);
   const issueBlockReason = useMemo(
-    () => resolveIssueBlockReason({ readOnly, canonicalRx, encounter }),
-    [readOnly, canonicalRx, encounter],
+    () =>
+      resolvePrescriptionIssueBlockReason({
+        readOnly,
+        hasItems: hasPrescriptionItems,
+        encounter,
+      }),
+    [readOnly, hasPrescriptionItems, encounter],
   );
 
   const issueWarnings = useMemo(() => {
@@ -293,10 +287,8 @@ export function HubWorkspacePrescriptions({
   };
 
   const issueValidatable = async () => {
-    if (!canonicalRx) {
-      showError('Adicione ao menos um medicamento antes de gerar a receita.');
-      return;
-    }
+    // Sem itens: no-op silencioso — evita modal vermelho falso (ex.: clique espúrio ao finalizar).
+    if (!canonicalRx || !hasPrescriptionItems) return;
     if (issueBlockReason) {
       showError(issueBlockReason);
       return;
@@ -312,10 +304,7 @@ export function HubWorkspacePrescriptions({
   };
 
   const runIssueValidatable = async () => {
-    if (!canonicalRx) {
-      showError('Adicione ao menos um medicamento antes de gerar a receita.');
-      return;
-    }
+    if (!canonicalRx || !hasPrescriptionItems) return;
     if (issueBlockReason) {
       showError(issueBlockReason);
       return;
@@ -376,7 +365,6 @@ export function HubWorkspacePrescriptions({
     }
   };
 
-  const hasPrescriptionItems = Boolean(canonicalRx?.items?.length);
   const latestDocumentId = documents[0]?.id;
   const rxItems = canonicalRx?.items ?? [];
   const rxIssued = canonicalRx?.status === 'issued';
@@ -467,8 +455,12 @@ export function HubWorkspacePrescriptions({
                 <button
                   type="button"
                   className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-                  disabled={issuing}
-                  title={issueBlockReason ?? undefined}
+                  disabled={issuing || !hasPrescriptionItems || Boolean(issueBlockReason)}
+                  title={
+                    !hasPrescriptionItems
+                      ? EMPTY_PRESCRIPTION_ISSUE_HINT
+                      : (issueBlockReason ?? undefined)
+                  }
                   onClick={() => void issueValidatable()}
                 >
                   {issuing

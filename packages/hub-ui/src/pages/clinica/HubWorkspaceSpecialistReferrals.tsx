@@ -5,6 +5,7 @@ import {
   HubMissingStampConfirmModal,
   resolveMissingStampFlags,
 } from '../../components/clinical/HubMissingStampConfirmModal';
+import { resolveReferralIssueBlockReason } from './clinicalIssueBlockReason';
 import { HubPrescriptionRevokeModal } from '../../components/clinical/HubPrescriptionRevokeModal';
 import { HubPrescriptionDocumentBadge } from '../../components/clinical/HubPrescriptionDocumentBadge';
 import {
@@ -43,15 +44,6 @@ function specialistReferralPdfPath(referralId: string, documentId: string, clini
 
 function isReferralEditLocked(readOnly: boolean, referral: HubSpecialistReferral): boolean {
   return readOnly || referral.status === 'issued';
-}
-
-function resolveIssueBlockReason(encounter: HubEncounter, referrals: HubSpecialistReferral[]): string | null {
-  if (!referrals.length) return 'Adicione ao menos um encaminhamento antes de gerar o documento.';
-  if (!encounter.pet_id) return 'Vincule um pet ao atendimento antes de emitir.';
-  if (!encounter.hub_staff_member_id) {
-    return 'Defina o veterinário responsável no atendimento antes de emitir.';
-  }
-  return null;
 }
 
 function resolveRevokeReferralId(doc: ClinicalDocRow, referrals: HubSpecialistReferral[]): string {
@@ -149,7 +141,10 @@ export function HubWorkspaceSpecialistReferrals({
       .catch(() => setGuardianPhone(null));
   }, [encounter.guardian_id, clinicId]);
 
-  const issueBlockReason = useMemo(() => resolveIssueBlockReason(encounter, referrals), [encounter, referrals]);
+  const issueBlockReason = useMemo(
+    () => resolveReferralIssueBlockReason(encounter, referrals.length),
+    [encounter, referrals.length],
+  );
 
   const referralStats = useMemo(() => {
     let pendentes = 0;
@@ -250,6 +245,8 @@ export function HubWorkspaceSpecialistReferrals({
   };
 
   const issueBundle = async () => {
+    // Sem encaminhamentos: no-op silencioso — evita modal vermelho falso ao finalizar sem pedir emitir.
+    if (!referrals.length) return;
     if (issueBlockReason) {
       showError(issueBlockReason);
       return;
@@ -281,6 +278,7 @@ export function HubWorkspaceSpecialistReferrals({
   };
 
   const issueSingle = async (referral: HubSpecialistReferral) => {
+    if (!referrals.length) return;
     if (issueBlockReason) {
       showError(issueBlockReason);
       return;
