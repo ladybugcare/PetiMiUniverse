@@ -1771,7 +1771,7 @@ export const finalizeManualConversionHubQuote = async (req: Request, res: Respon
       const hubPetId = linkByQuotePet.get(qpid)!;
       const { data: petRow, error: petErr } = await supabaseAdmin
         .from('hub_pets')
-        .select('id, clinic_id, deleted_at')
+        .select('id, clinic_id, deleted_at, deceased_at, death_invalidated_at')
         .eq('id', hubPetId)
         .maybeSingle();
       if (petErr || !petRow || (petRow as { clinic_id: string }).clinic_id !== clinic_id) {
@@ -1779,6 +1779,10 @@ export const finalizeManualConversionHubQuote = async (req: Request, res: Respon
       }
       if ((petRow as { deleted_at: string | null }).deleted_at) {
         return res.status(400).json({ error: 'Um dos pets indicados está inativo.' });
+      }
+      const { hasValidPetDeath } = await import('./petDeathService');
+      if (hasValidPetDeath(petRow as { deceased_at?: string | null; death_invalidated_at?: string | null })) {
+        return res.status(400).json({ error: 'Um dos pets indicados está falecido e não pode ser associado.' });
       }
       const { data: bond, error: bondErr } = await supabaseAdmin
         .from('hub_pet_guardians')

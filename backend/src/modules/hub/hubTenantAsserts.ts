@@ -3,15 +3,47 @@
  * service_role bypassa RLS — toda FK de create/update deve passar por aqui.
  */
 import { supabaseAdmin } from '../../config/supabase';
+import { isPetEligibleForNewOp } from './petDeathService';
 
+/**
+ * Pet existe na clínica e está elegível para **novas** operações de rotina
+ * (não arquivado e sem óbito válido).
+ */
 export async function assertPetInClinic(clinicId: string, petId: string | null | undefined): Promise<boolean> {
+  return assertPetEligibleForNewOp(clinicId, petId);
+}
+
+/** Alias explícito — mesmas regras de assertPetInClinic. */
+export async function assertPetEligibleForNewOp(
+  clinicId: string,
+  petId: string | null | undefined,
+): Promise<boolean> {
+  if (!petId) return true;
+  const { data, error } = await supabaseAdmin
+    .from('hub_pets')
+    .select('id, deleted_at, deceased_at, death_invalidated_at')
+    .eq('id', petId)
+    .eq('clinic_id', clinicId)
+    .maybeSingle();
+  if (error || !data) return false;
+  return isPetEligibleForNewOp(data as {
+    deleted_at?: string | null;
+    deceased_at?: string | null;
+    death_invalidated_at?: string | null;
+  });
+}
+
+/** Pet existe na clínica (permite falecido/arquivado para leitura e conclusão histórica). */
+export async function assertPetExistsInClinic(
+  clinicId: string,
+  petId: string | null | undefined,
+): Promise<boolean> {
   if (!petId) return true;
   const { data, error } = await supabaseAdmin
     .from('hub_pets')
     .select('id')
     .eq('id', petId)
     .eq('clinic_id', clinicId)
-    .is('deleted_at', null)
     .maybeSingle();
   return !error && !!data;
 }

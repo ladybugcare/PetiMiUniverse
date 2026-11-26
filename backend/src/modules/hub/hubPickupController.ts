@@ -939,6 +939,25 @@ export const addHubPickupStops = async (req: Request, res: Response) => {
       return res.status(422).json({ error: `Agendamentos inválidos ou não são do tipo pickup_route: ${invalid.join(', ')}` });
     }
 
+    const pickupPetIds = [
+      ...new Set(
+        ((appts ?? []) as Array<{ pet_id: string | null }>)
+          .map((a) => a.pet_id)
+          .filter((pid): pid is string => Boolean(pid)),
+      ),
+    ];
+    if (pickupPetIds.length) {
+      const { assertPetEligibleForNewOp } = await import('./hubTenantAsserts');
+      for (const pid of pickupPetIds) {
+        if (!(await assertPetEligibleForNewOp(clinic_id, pid))) {
+          return res.status(400).json({
+            error: 'Não é possível incluir pet arquivado ou falecido em nova rota de leva e traz.',
+            pet_id: pid,
+          });
+        }
+      }
+    }
+
     // Stops já em rota: conflita se for OUTRA rota; se for ESTA, atualiza (idempotente na edição).
     const { data: existing } = await supabaseAdmin
       .from('hub_pickup_stops')

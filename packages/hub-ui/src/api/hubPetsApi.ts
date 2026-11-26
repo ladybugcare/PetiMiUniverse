@@ -1,6 +1,7 @@
 import { apiRequest } from '@petimi/web-core';
 
 import type { CoatTypeValue, PetBodyPorteValue } from '../utils/hubServiceTypesPricingMatrix';
+import type { PetDeathSource, PetDeathType, PetSituationFilter } from '../pages/pets/petDeath';
 
 const basePath = '/api/hub/pets';
 
@@ -30,6 +31,11 @@ export interface HubPetGuardianRef {
   guardian_name: string | null;
 }
 
+export type HubPetDeathPending = {
+  future_appointments: number;
+  active_boarding_reservations: number;
+};
+
 export interface HubPet {
   id: string;
   petmi_pet_id: string;
@@ -50,19 +56,48 @@ export interface HubPet {
   created_at: string;
   updated_at: string;
   deleted_at?: string | null;
+  deceased_at?: string | null;
+  death_type?: PetDeathType | string | null;
+  death_cause?: string | null;
+  death_notes?: string | null;
+  death_source?: PetDeathSource | string | null;
+  death_ref_id?: string | null;
+  death_recorded_at?: string | null;
+  death_recorded_by?: string | null;
+  death_invalidated_at?: string | null;
+  death_invalidated_by?: string | null;
+  death_invalidation_reason?: string | null;
   primary_guardian: HubPetGuardianRef | null;
   secondary_guardian: HubPetGuardianRef | null;
 }
 
-function listUrl(clinicId: string, bustCache: boolean): string {
-  const q = new URLSearchParams({ clinic_id: clinicId });
+export type HubPetDeathPayload = {
+  clinic_id: string;
+  deceased_at?: string;
+  death_type: PetDeathType;
+  death_cause?: string | null;
+  death_notes?: string | null;
+  death_source?: PetDeathSource;
+  death_ref_id?: string | null;
+  archive?: boolean;
+  hub_case_id?: string | null;
+  hub_encounter_id?: string | null;
+  created_by_staff_id?: string | null;
+};
+
+function listUrl(clinicId: string, bustCache: boolean, situation: PetSituationFilter = 'active'): string {
+  const q = new URLSearchParams({ clinic_id: clinicId, situation });
   if (bustCache) q.set('_', String(Date.now()));
   return `${basePath}?${q.toString()}`;
 }
 
 export const hubPetsApi = {
-  async list(clinicId: string, bustCache = false): Promise<{ pets: HubPet[] }> {
-    return apiRequest(listUrl(clinicId, bustCache)) as Promise<{ pets: HubPet[] }>;
+  async list(
+    clinicId: string,
+    bustCache = false,
+    situation: PetSituationFilter = 'active',
+  ): Promise<{ pets: HubPet[] }> {
+    return apiRequest(listUrl(clinicId, bustCache, situation)) as Promise<{ pets: HubPet[] }>;
   },
 
   async create(payload: {
@@ -109,6 +144,47 @@ export const hubPetsApi = {
   ): Promise<{ pet: HubPet }> {
     return apiRequest(`${basePath}/${id}`, {
       method: 'PATCH',
+      body: JSON.stringify(payload),
+    }) as Promise<{ pet: HubPet }>;
+  },
+
+  async registerDeath(
+    id: string,
+    payload: HubPetDeathPayload,
+  ): Promise<{ pet: HubPet; pending?: HubPetDeathPending; archived?: boolean }> {
+    return apiRequest(`${basePath}/${id}/death`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<{ pet: HubPet; pending?: HubPetDeathPending; archived?: boolean }>;
+  },
+
+  async correctDeath(
+    id: string,
+    payload: {
+      clinic_id: string;
+      reason: string;
+      deceased_at?: string;
+      death_type?: PetDeathType;
+      death_cause?: string | null;
+      death_notes?: string | null;
+    },
+  ): Promise<{ pet: HubPet }> {
+    return apiRequest(`${basePath}/${id}/death`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }) as Promise<{ pet: HubPet }>;
+  },
+
+  async invalidateDeath(
+    id: string,
+    payload: {
+      clinic_id: string;
+      reason: string;
+      amendment_status?: 'discharged' | 'transferred' | null;
+    },
+  ): Promise<{ pet: HubPet }> {
+    return apiRequest(`${basePath}/${id}/death/invalidate`, {
+      method: 'POST',
       body: JSON.stringify(payload),
     }) as Promise<{ pet: HubPet }>;
   },

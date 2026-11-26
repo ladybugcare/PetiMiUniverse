@@ -128,6 +128,8 @@ async function fetchPetsByGuardianIds(
     birth_date: string | null;
     clinic_id: string;
     deleted_at: string | null;
+    deceased_at: string | null;
+    death_invalidated_at: string | null;
   };
   type LinkRow = {
     guardian_id: string;
@@ -140,7 +142,7 @@ async function fetchPetsByGuardianIds(
     const { data: chunk, error } = await supabaseAdmin
       .from('hub_pet_guardians')
       .select(
-        'guardian_id, role, hub_pets(id, name, species, breed, sex, size_tier, coat_type, coat_color, birth_date, clinic_id, deleted_at)'
+        'guardian_id, role, hub_pets(id, name, species, breed, sex, size_tier, coat_type, coat_color, birth_date, clinic_id, deleted_at, deceased_at, death_invalidated_at)'
       )
       .in('guardian_id', part);
 
@@ -151,10 +153,11 @@ async function fetchPetsByGuardianIds(
     data.push(...((chunk ?? []) as unknown as LinkRow[]));
   }
 
+  const { isPetEligibleForNewOp } = await import('./petDeathService');
   for (const row of data) {
     const rawPet = row.hub_pets;
     const pet = Array.isArray(rawPet) ? rawPet[0] : rawPet;
-    if (!pet || pet.clinic_id !== clinicId || pet.deleted_at != null) continue;
+    if (!pet || pet.clinic_id !== clinicId || !isPetEligibleForNewOp(pet)) continue;
     if (row.role !== 'primary' && row.role !== 'secondary') continue;
     const list = map.get(row.guardian_id) ?? [];
     list.push({

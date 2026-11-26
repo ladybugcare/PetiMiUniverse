@@ -229,6 +229,16 @@ const patchEncounterSchema = z
     operational_phase: operationalPhaseSchema.optional(),
     ...careLocationBodyFields,
     unit_id: uuidStr.optional().nullable(),
+    clinical_outcome: z.enum(['death']).optional().nullable(),
+    pet_death: z
+      .object({
+        deceased_at: z.string().datetime({ offset: true }).optional(),
+        death_type: z.enum(['euthanasia', 'natural', 'accidental', 'other', 'unknown']),
+        death_cause: z.string().trim().max(2000).optional().nullable(),
+        death_notes: z.string().trim().max(4000).optional().nullable(),
+        archive: z.boolean().optional().default(false),
+      })
+      .optional(),
   })
   .strict();
 
@@ -249,7 +259,7 @@ const amendEncounterSchema = z
 const ENCOUNTER_SELECT = `
   id, clinic_id, unit_id, pet_id, guardian_id, hub_appointment_id, hub_staff_member_id,
   hub_case_id, encounter_type, care_location_kind, hub_partner_clinic_id,
-  status, operational_phase, chief_complaint, summary_notes, anamnesis, physical_exam, diagnosis,
+  status, operational_phase, clinical_outcome, chief_complaint, summary_notes, anamnesis, physical_exam, diagnosis,
   started_at, completed_at, created_at, updated_at
 `;
 
@@ -592,14 +602,8 @@ async function enrichEncounters(rows: Record<string, unknown>[]) {
 }
 
 async function assertPetInClinic(clinicId: string, petId: string): Promise<boolean> {
-  const { data } = await supabaseAdmin
-    .from('hub_pets')
-    .select('id')
-    .eq('id', petId)
-    .eq('clinic_id', clinicId)
-    .is('deleted_at', null)
-    .maybeSingle();
-  return !!data;
+  const { assertPetEligibleForNewOp } = await import('./hubTenantAsserts');
+  return assertPetEligibleForNewOp(clinicId, petId);
 }
 
 /**
@@ -1531,6 +1535,39 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
       }
     }
 
+    let petDeathPending: { future_appointments: number; active_boarding_reservations: number } | undefined;
+    if (b.clinical_outcome === 'death') {
+      const petIdForDeath = b.pet_id ?? existing.pet_id;
+      if (!petIdForDeath) {
+        return res.status(400).json({ error: 'Pet obrigatório para registrar óbito no atendimento' });
+      }
+      if (!b.pet_death?.death_type) {
+        return res.status(400).json({
+          error: 'Informe pet_death.death_type para registrar óbito no atendimento',
+          code: 'pet_death_required',
+        });
+      }
+      const { registerPetDeath } = await import('./petDeathService');
+      const deathResult = await registerPetDeath({
+        clinic_id: b.clinic_id,
+        pet_id: petIdForDeath,
+        deceased_at: b.pet_death.deceased_at ?? new Date().toISOString(),
+        death_type: b.pet_death.death_type,
+        death_cause: b.pet_death.death_cause ?? null,
+        death_notes: b.pet_death.death_notes ?? null,
+        death_source: 'encounter',
+        death_ref_id: id.data,
+        archive: b.pet_death.archive ?? false,
+        hub_case_id: b.hub_case_id ?? existing.hub_case_id,
+        hub_encounter_id: id.data,
+        actor_user_id: req.user?.id ?? null,
+      });
+      if (!deathResult.ok) {
+        return res.status(deathResult.status).json({ error: deathResult.error, code: deathResult.code });
+      }
+      petDeathPending = deathResult.pending;
+    }
+
     // Validação de guardian_id: não remover, mas permitir primeira atribuição a partir de null.
     if (b.guardian_id !== undefined) {
       const gid = b.guardian_id;
@@ -1655,15 +1692,29 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
       patch.unit_id = careResolved.value.unit_id;
     }
 
-    const { data, error } = await supabaseAdmin
-      .from('hub_encounters')
-      .update(patch)
-      .eq('id', id.data)
-      .eq('clinic_id', b.clinic_id)
-      .is('deleted_at', null)
-      .select(ENCOUNTER_SELECT)
-      .maybeSingle();
-    if (error) return res.status(500).json({ error: error.message });
+    let data: Record<string, unknown> | null = null;
+    if (Object.keys(patch).length > 0) {
+      const updated = await supabaseAdmin
+        .from('hub_encounters')
+        .update(patch)
+        .eq('id', id.data)
+        .eq('clinic_id', b.clinic_id)
+        .is('deleted_at', null)
+        .select(ENCOUNTER_SELECT)
+        .maybeSingle();
+      if (updated.error) return res.status(500).json({ error: updated.error.message });
+      data = updated.data as Record<string, unknown> | null;
+    } else {
+      const reloaded = await supabaseAdmin
+        .from('hub_encounters')
+        .select(ENCOUNTER_SELECT)
+        .eq('id', id.data)
+        .eq('clinic_id', b.clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (reloaded.error) return res.status(500).json({ error: reloaded.error.message });
+      data = reloaded.data as Record<string, unknown> | null;
+    }
     if (!data) return res.status(404).json({ error: 'Atendimento não encontrado' });
     if (patch.status === 'cancelled') {
       void maybeFlagComandaCancellationPending(b.clinic_id, 'encounter', id.data);
@@ -1683,7 +1734,10 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
       });
     }
     const encounter = await enrichEncounter(data as Record<string, unknown>);
-    return res.json({ encounter });
+    return res.json({
+      encounter,
+      ...(petDeathPending ? { pet_death_pending: petDeathPending } : {}),
+    });
   } catch (e: unknown) {
     console.error('patchHubEncounter', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro ao atualizar atendimento' });

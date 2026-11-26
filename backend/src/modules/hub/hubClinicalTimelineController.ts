@@ -19,9 +19,14 @@ const timelineEventTypeSchema = z.enum([
   'vaccination_applied',
   'hospitalization_started',
   'hospitalization_discharged',
+  'hospitalization_death',
+  'hospitalization_transferred',
   'surgery_performed',
   'return_scheduled',
   'note',
+  'pet_death_recorded',
+  'pet_death_corrected',
+  'pet_death_invalidated',
 ]);
 
 const TIMELINE_SELECT = `

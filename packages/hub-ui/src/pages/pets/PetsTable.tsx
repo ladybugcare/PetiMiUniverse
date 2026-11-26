@@ -3,6 +3,7 @@ import { Star } from 'lucide-react';
 import type { HubPet } from '../../api/hubPetsApi';
 import { PetTableActions } from './PetTableActions';
 import { petAgeLabel } from './petAge';
+import { petSituationLabel } from './petDeath';
 
 interface PetsTableProps {
   rows: HubPet[];
@@ -10,6 +11,7 @@ interface PetsTableProps {
   onSelect: (p: HubPet) => void;
   onEdit: (p: HubPet) => void;
   onArchive: (p: HubPet) => void;
+  onRegisterDeath?: (p: HubPet) => void;
   canWrite: boolean;
 }
 
@@ -26,6 +28,7 @@ export const PetsTable: React.FC<PetsTableProps> = ({
   onSelect,
   onEdit,
   onArchive,
+  onRegisterDeath,
   canWrite,
 }) => {
   return (
@@ -52,7 +55,7 @@ export const PetsTable: React.FC<PetsTableProps> = ({
               </tr>
             ) : (
               rows.map((p) => {
-                const active = !p.deleted_at;
+                const active = !p.deleted_at && !(p.deceased_at && !p.death_invalidated_at);
                 return (
                   <tr
                     key={p.id}
@@ -103,13 +106,17 @@ export const PetsTable: React.FC<PetsTableProps> = ({
                       <span
                         className={`hub-clientes__pill ${active ? 'hub-clientes__pill--active' : 'hub-clientes__pill--inactive'}`}
                       >
-                        {active ? 'Ativo' : 'Inativo'}
+                        {petSituationLabel(p)}
                       </span>
                     </td>
                     <td className="hub-clientes__td-actions" onClick={(e) => e.stopPropagation()}>
                       {canWrite ? (
                         <div className="hub-clientes__td-actions-inner">
-                          <PetTableActions onEdit={() => onEdit(p)} onArchive={() => onArchive(p)} />
+                          <PetTableActions
+                            onEdit={() => onEdit(p)}
+                            onArchive={() => onArchive(p)}
+                            onRegisterDeath={onRegisterDeath ? () => onRegisterDeath(p) : undefined}
+                          />
                         </div>
                       ) : (
                         <span className="hub-clientes__muted">—</span>
@@ -130,7 +137,7 @@ export const PetsTable: React.FC<PetsTableProps> = ({
           </p>
         ) : (
           rows.map((p) => {
-            const active = !p.deleted_at;
+            const active = !p.deleted_at && !(p.deceased_at && !p.death_invalidated_at);
             const speciesBreed = [p.species, p.breed].filter(Boolean).join(' · ');
             return (
               <button
@@ -153,7 +160,7 @@ export const PetsTable: React.FC<PetsTableProps> = ({
                   <span
                     className={`hub-clientes__pill ${active ? 'hub-clientes__pill--active' : 'hub-clientes__pill--inactive'}`}
                   >
-                    {active ? 'Ativo' : 'Inativo'}
+                    {petSituationLabel(p)}
                   </span>
                 </div>
                 <div className="hub-clientes__mobile-card-foot">
@@ -170,7 +177,11 @@ export const PetsTable: React.FC<PetsTableProps> = ({
                       onKeyDown={(e) => e.stopPropagation()}
                       role="presentation"
                     >
-                      <PetTableActions onEdit={() => onEdit(p)} onArchive={() => onArchive(p)} />
+                      <PetTableActions
+                        onEdit={() => onEdit(p)}
+                        onArchive={() => onArchive(p)}
+                        onRegisterDeath={onRegisterDeath ? () => onRegisterDeath(p) : undefined}
+                      />
                     </span>
                   ) : null}
                 </div>

@@ -11,7 +11,7 @@
   --hub-time-icon-focus: #c86a4d;
   --hub-time-bg: #ffffff;
   --hub-time-bg-disabled: #faf8f6;
-  --hub-time-selected: #2563eb;
+  --hub-time-selected: #c86a4d;
 
   width: 100%;
   font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -178,7 +178,7 @@
 .hub-time-picker {
   /* O painel vai para o body (portal) e não herda os tokens de .hub-time-field. */
   --hub-time-text: #4a3b3a;
-  --hub-time-selected: #2563eb;
+  --hub-time-selected: #c86a4d;
 
   display: flex;
   gap: 0;
@@ -227,17 +227,17 @@
 }
 
 .hub-time-picker__option:hover {
-  background: rgba(37, 99, 235, 0.08);
+  background: rgba(200, 106, 77, 0.1);
 }
 
 .hub-time-picker__option--selected {
-  background: var(--hub-time-selected, #2563eb);
+  background: var(--hub-time-selected, #c86a4d);
   color: #fff;
   font-weight: 600;
-  border-color: #1e3a8a;
+  border-color: #a85a40;
 }
 
 .hub-time-picker__option--selected:hover {
-  background: #1d4ed8;
+  background: #a85a40;
   color: #fff;
 }

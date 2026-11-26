@@ -68,6 +68,7 @@ import {
 import { PetBehaviorTagsDisplay } from './PetBehaviorTagsDisplay';
 import { PetProfileHistoryList } from './PetProfileHistoryList';
 import { neuteredLabel } from './petClinicalFlags';
+import { hasValidPetDeath, petSituationLabel } from './petDeath';
 import { ComandaCheckoutDrawer } from '../finance/ComandaCheckoutDrawer';
 import { HubComandaReceivableDrawer } from '../finance/HubComandaReceivableDrawer';
 import {
@@ -109,6 +110,7 @@ interface PetDetailPanelProps {
   onStartEdit: () => void;
   onOpenInNewPage?: () => void;
   onArchive?: () => void;
+  onRegisterDeath?: () => void;
   hideNewPageButton?: boolean;
   hideHeader?: boolean;
   hideFooter?: boolean;
@@ -248,6 +250,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
   onStartEdit,
   onOpenInNewPage,
   onArchive,
+  onRegisterDeath,
   hideNewPageButton = false,
   hideHeader = false,
   hideFooter = false,
@@ -649,7 +652,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
     return () => document.removeEventListener('mousedown', close);
   }, [moreOpen]);
 
-  const active = !pet.deleted_at;
+  const active = !pet.deleted_at && !(pet.deceased_at && !pet.death_invalidated_at);
   const ageLabel = petAgeDetailedLabel(pet.birth_date);
   const identityMeta = [pet.species, pet.breed?.trim() || null, sexLabel(pet.sex), ageLabel]
     .filter((x) => x && x !== '—')
@@ -802,7 +805,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
           <span className="hub-pets-detail__quick-label">Editar</span>
         </button>
       )}
-      {onArchive && canWrite ? (
+      {(onArchive || onRegisterDeath) && canWrite ? (
         <div className="hub-pets-detail__quick-item hub-pets-detail__dropdown-wrap" ref={moreRef}>
           <button
             type="button"
@@ -819,17 +822,32 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
           </button>
           {moreOpen ? (
             <div className="hub-clientes__dropdown-menu" role="menu">
-              <button
-                type="button"
-                className="hub-clientes__dropdown-item hub-clientes__dropdown-item--danger"
-                role="menuitem"
-                onClick={() => {
-                  setMoreOpen(false);
-                  onArchive();
-                }}
-              >
-                Arquivar
-              </button>
+              {onRegisterDeath && !hasValidPetDeath(pet) ? (
+                <button
+                  type="button"
+                  className="hub-clientes__dropdown-item"
+                  role="menuitem"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    onRegisterDeath();
+                  }}
+                >
+                  Registrar óbito
+                </button>
+              ) : null}
+              {onArchive ? (
+                <button
+                  type="button"
+                  className="hub-clientes__dropdown-item hub-clientes__dropdown-item--danger"
+                  role="menuitem"
+                  onClick={() => {
+                    setMoreOpen(false);
+                    onArchive();
+                  }}
+                >
+                  Arquivar
+                </button>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -847,7 +865,7 @@ export const PetDetailPanel: React.FC<PetDetailPanelProps> = ({
           <div className="hub-pets-detail__identity-title-row">
             <h2 className="hub-pets-detail__identity-name">{pet.name}</h2>
             <span className={`hub-clientes__pill ${active ? 'hub-clientes__pill--active' : 'hub-clientes__pill--inactive'}`}>
-              {active ? 'Ativo' : 'Inativo'}
+              {petSituationLabel(pet)}
             </span>
           </div>
           {identityMeta ? <p className="hub-pets-detail__identity-meta">{identityMeta}</p> : null}

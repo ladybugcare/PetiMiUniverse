@@ -902,7 +902,7 @@ export const getHubVaccinesDueReport = async (req: Request, res: Response) => {
     const { data: rows, error } = await supabaseAdmin
       .from('hub_vaccination_records')
       .select(
-        'id, pet_id, vaccine_name, administered_at, next_dose_at, batch_number, source, hub_pets(id, name, species)'
+        'id, pet_id, vaccine_name, administered_at, next_dose_at, batch_number, source, hub_pets(id, name, species, deleted_at, deceased_at, death_invalidated_at)'
       )
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
@@ -912,7 +912,27 @@ export const getHubVaccinesDueReport = async (req: Request, res: Response) => {
       .limit(1000);
     if (error) return res.status(500).json({ error: error.message });
 
-    const petIds = [...new Set((rows ?? []).map((r) => r.pet_id as string))];
+    const { hasValidPetDeath } = await import('./petDeathService');
+    const activeRows = (rows ?? []).filter((r) => {
+      const petEmb = r.hub_pets as
+        | {
+            deleted_at?: string | null;
+            deceased_at?: string | null;
+            death_invalidated_at?: string | null;
+          }
+        | {
+            deleted_at?: string | null;
+            deceased_at?: string | null;
+            death_invalidated_at?: string | null;
+          }[]
+        | null;
+      const pet = Array.isArray(petEmb) ? petEmb[0] : petEmb;
+      if (!pet) return true;
+      if (pet.deleted_at) return false;
+      return !hasValidPetDeath(pet);
+    });
+
+    const petIds = [...new Set(activeRows.map((r) => r.pet_id as string))];
     const petGuardian = new Map<string, { guardian_id: string; guardian_name: string; phone: string | null }>();
     if (petIds.length > 0) {
       const { data: links, error: lErr } = await supabaseAdmin
@@ -937,7 +957,7 @@ export const getHubVaccinesDueReport = async (req: Request, res: Response) => {
       }
     }
 
-    const items = (rows ?? []).map((r) => {
+    const items = activeRows.map((r) => {
       const petEmb = r.hub_pets as
         | { id?: string; name?: string; species?: string }
         | { id?: string; name?: string; species?: string }[]

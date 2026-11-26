@@ -35,6 +35,7 @@ export type PetDrawerProps = {
   onStartEdit: () => void;
   onOpenInNewPage: () => void;
   onArchive?: () => void;
+  onRegisterDeath?: () => void;
   onCancelEdit: () => void;
   clinicId: string | null;
   unitId: string | null;
@@ -58,6 +59,7 @@ export const PetDrawer: React.FC<PetDrawerProps> = ({
   onStartEdit,
   onOpenInNewPage,
   onArchive,
+  onRegisterDeath,
   onCancelEdit,
   clinicId,
   unitId,
@@ -141,6 +143,7 @@ export const PetDrawer: React.FC<PetDrawerProps> = ({
             onStartEdit={onStartEdit}
             onOpenInNewPage={onOpenInNewPage}
             onArchive={onArchive}
+            onRegisterDeath={onRegisterDeath}
             hideNewPageButton
             hideHeader
             hideFooter

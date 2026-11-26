@@ -1,6 +1,6 @@
 # PetMi Hub — Regras de negócio do módulo Clínica
 
-**Versão:** 1.0  
+**Versão:** 1.1  
 **Status:** fonte oficial de verdade para produto, arquitetura e implementação futura  
 **Escopo:** módulo Clínica (prontuário, casos, atendimentos, internação, cirurgia, exames, prescrições, vacinas, timeline, integração com agenda e financeiro)  
 **Público:** PM, veterinário responsável técnico, gestão de clínica, arquitetura de produto, engenharia  
@@ -193,6 +193,7 @@ Suportar internação com rastreio clínico, **sempre** contextualizada no epis�
 2. Toda internação nasce **obrigatoriamente** de um **atendimento**; se não existir atendimento de admissão, o sistema **cria automaticamente** um atendimento de admissão (tipo adequado, ex.: emergência ou internação conforme enum alinhado).
 3. **Alta**, **óbito** e **transferência** encerram a **internação** (status operacionais da internação).
 4. Encerrar a internação **não** encerra automaticamente o **caso** clínico (o episódio pode continuar com retornos, receitas, etc.).
+4.1. **Óbito na internação** grava o **óbito centralizado do pet** (metadados em `hub_pets`) de forma atômica com o desfecho da internação. Arquivar o cadastro (`deleted_at`) é **opcional** e independente. Timeline: `hospitalization_death` + `pet_death_recorded`.
 5. **Espelho na agenda:** ao admitir pelo Consultório, o sistema cria um slot de **marco de admissão** no dia (`appointment_kind: clinical_walk_in`, `status: in_progress`), vinculado via `hub_appointment_id`. O slot **não** modela a estadia multi-dia (censo/hotel); internações ativas continuam listadas no Consultório. Alta/óbito/transferência marcam o slot como `done`; cancelar a internação cancela o slot. Cancelar o slot na agenda **não** encerra a internação (só desvincula).
 6. A agenda **não** cria ficha de internação: internar continua sendo admissão no Consultório, não “agendar diária”.
 
@@ -263,6 +264,7 @@ Registrar procedimentos cirúrgicos com rastreio pré-operatório, anestésico, 
 2. Toda cirurgia nasce de um **atendimento**; se não existir atendimento de referência, o sistema **cria automaticamente** um atendimento de admissão cirúrgica (tipo `procedure`, título "Cirurgia: {título}"). **Exceção:** cirurgia agendada pela recepção só ganha atendimento na chegada do pet (ver regra 7).
 3. **Status:** `scheduled` → `in_progress` → `completed` | `cancelled`. Iniciar uma cirurgia marcada para **outro dia** exige confirmação: o slot da agenda é antecipado para agora (mantém a duração), o status do agendamento passa a `in_progress` e o pet entra na **fila do consultório** daquele profissional. Cirurgias do dia e as já `in_progress` aparecem na fila com o selo "Cirurgia", não só como consulta.
 4. Concluir a cirurgia (`completed`) **não** encerra automaticamente o **caso** clínico (o pet pode necessitar de internação pós-op, retornos, etc.).
+4.1. **Óbito** na cirurgia usa `clinical_outcome = death` (sem novo status operacional). O registro centralizado do pet é obrigatório no mesmo request; **não** se infere `death_type` a partir da origem cirúrgica. Concluir o procedimento continua ação explícita separada.
 5. **Pós-operatório internado:** o sistema oferece CTA "Internar pós-operatório" na cirurgia em andamento ou concluída; o mesmo `hub_case_id` da cirurgia é pré-preenchido na admissão — **sem** coluna FK direta entre cirurgia e internação.
 6. Risco anestésico (ASA I–VI + E) é informado no pré-op; recomendado antes de confirmar o procedimento.
 7. **Agendada pela recepção:** um agendamento com serviço do grupo `cirurgia` **gera automaticamente** a ficha cirúrgica em `scheduled`, com `hub_appointment_id` e `scheduled_at` espelhando o slot. Ela nasce **sem** atendimento e **sem** caso (herda apenas `intake_hub_case_id`, quando a agenda já perguntou), aparece no Consultório com o selo "Sem caso", e ganha atendimento e caso quando o pet chega e o atendimento é aberto pelo slot. Enquanto ninguém iniciou a cirurgia, o slot manda: mudar horário **reagenda** a ficha, cancelar ou excluir o agendamento **cancela** a ficha, remover o serviço de cirurgia do slot **cancela** a ficha. A partir de `in_progress` (ou com atendimento) a ficha é do vet e a agenda não a altera mais.
@@ -596,6 +598,39 @@ Aprovação → dados mestres + caso + atendimento → agendamento/execução �
 - Eventos de timeline com enum **fechado** e extensível por versão de API.  
 - Comanda: estados que impeçam edição após fechamento; vínculos opcionais `hub_case_id` / `hub_encounter_id` para rastreio.  
 - Estoque: vínculo movimento ↔ linha de comanda **ou** ↔ administração clínica, **nunca ambos** para o mesmo consumo.
+
+---
+
+## 16.5. Óbito do animal (cadastro)
+
+### Conceitos
+
+- **Óbito** é condição **clínica** (`deceased_at` e metadados em `hub_pets`).
+- **Arquivamento** é condição **administrativa** (`deleted_at`).
+- Os eixos são **independentes**: registrar óbito não arquiva automaticamente; desarquivar **nunca** limpa metadados de óbito.
+- Situação derivada: ativo / falecido / arquivado (podem coexistir falecido + arquivado).
+
+### Regras
+
+1. Fontes: `manual` | `encounter` | `surgery` | `hospitalization`.
+2. Classificação (`death_type`): `euthanasia` | `natural` | `accidental` | `other` | `unknown`. Causa clínica livre opcional (`death_cause`) — **não** inferir a partir do módulo de origem.
+3. Consulta e cirurgia usam `clinical_outcome = death` (sem alterar a máquina de status operacional).
+4. Registro, correção e invalidação passam por serviço de domínio + RPCs atômicas (`hub_register_pet_death`, `hub_correct_pet_death`, `hub_invalidate_pet_death`) com auditoria (`hub_pet_death_audit`) e timeline.
+5. Invalidação exige permissão `hub.pets.death.invalidate`, justificativa e, se a internação de origem ainda estiver em `death`, emenda para `discharged` ou `transferred` na mesma RPC. Em encounter/surgery, limpa `clinical_outcome`.
+6. Pets com óbito **válido** não entram em **novas** operações de rotina (agenda, vacina, grooming, boarding, L&T, comanda manual, orçamento). Conclusão de serviços abertos, prontuário, financeiro e documentação permanecem permitidos.
+7. Não cancelar em massa agendamentos/reservas futuros; o registro devolve contagem de pendências para revisão humana.
+8. Internações históricas `status = death` **não** recebem backfill automático do óbito do pet.
+
+### Inventário (sem backfill)
+
+```sql
+SELECT h.clinic_id, count(*) AS hospitalizations_death_without_pet_death
+FROM hub_hospitalizations h
+JOIN hub_pets p ON p.id = h.pet_id
+WHERE h.status = 'death'
+  AND (p.deceased_at IS NULL OR p.death_invalidated_at IS NOT NULL)
+GROUP BY h.clinic_id;
+```
 
 ---
 

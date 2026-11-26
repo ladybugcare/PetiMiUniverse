@@ -19,6 +19,8 @@ import { emptyPetForm, type PetFormValues } from './pets/PetFormValues';
 import { getSelectedUnitId } from '../utils/useSelectedUnitId';
 import { resolvePetBodyPorteForApi } from '../data/breedDefaultSizeTier';
 import type { CoatTypeValue, PetBodyPorteValue } from '../utils/hubServiceTypesPricingMatrix';
+import { RegisterPetDeathModal } from './pets/RegisterPetDeathModal';
+import { hasValidPetDeath, type PetSituationFilter } from './pets/petDeath';
 
 type PanelMode = 'create' | 'detail' | 'edit';
 
@@ -71,7 +73,8 @@ const HubPetsPage: React.FC = () => {
   const debouncedQ = useDebounced(searchQ, 350);
   const [speciesFilter, setSpeciesFilter] = useState('');
   const [tutorFilter, setTutorFilter] = useState('');
-  const [situationFilter, setSituationFilter] = useState<'all' | 'ativo'>('all');
+  const [situationFilter, setSituationFilter] = useState<PetSituationFilter>('active');
+  const [deathPet, setDeathPet] = useState<HubPet | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -94,7 +97,7 @@ const HubPetsPage: React.FC = () => {
     if (!clinicId) return;
     begin();
     try {
-      const res = await hubPetsApi.list(clinicId, true);
+      const res = await hubPetsApi.list(clinicId, true, situationFilter);
       setPets(res.pets || []);
       succeed();
     } catch (e: unknown) {
@@ -102,7 +105,7 @@ const HubPetsPage: React.FC = () => {
     } finally {
       finish();
     }
-  }, [clinicId, showError, begin, succeed, finish]);
+  }, [clinicId, situationFilter, showError, begin, succeed, finish]);
 
   useEffect(() => {
     if (permLoading) return;
@@ -173,11 +176,8 @@ const HubPetsPage: React.FC = () => {
           p.secondary_guardian?.guardian_id === tutorFilter
       );
     }
-    if (situationFilter === 'ativo') {
-      list = list.filter((p) => !p.deleted_at);
-    }
     return list;
-  }, [pets, debouncedQ, speciesFilter, tutorFilter, situationFilter]);
+  }, [pets, debouncedQ, speciesFilter, tutorFilter]);
 
   useEffect(() => {
     setPage(1);
@@ -349,6 +349,15 @@ const HubPetsPage: React.FC = () => {
     }, 'Arquivar');
   };
 
+  const handleRegisterDeath = (p: HubPet) => {
+    if (!clinicId || !canWrite) return;
+    if (hasValidPetDeath(p)) {
+      showError('Este pet já possui óbito registrado.');
+      return;
+    }
+    setDeathPet(p);
+  };
+
   if (!user) {
     return <Navigate to="/login" replace />;
   }
@@ -403,6 +412,7 @@ const HubPetsPage: React.FC = () => {
               onSelect={selectPet}
               onEdit={startEditFromTable}
               onArchive={handleArchive}
+              onRegisterDeath={handleRegisterDeath}
               canWrite={canWrite}
             />
             <PetsPagination
@@ -434,10 +444,27 @@ const HubPetsPage: React.FC = () => {
         onStartEdit={startEditFromDetail}
         onOpenInNewPage={() => selectedPet && navigate(`/hub/pets/${selectedPet.id}`)}
         onArchive={canWrite && selectedPet ? () => handleArchive(selectedPet) : undefined}
+        onRegisterDeath={
+          canWrite && selectedPet && !hasValidPetDeath(selectedPet)
+            ? () => handleRegisterDeath(selectedPet)
+            : undefined
+        }
         onCancelEdit={cancelEdit}
         clinicId={clinicId}
         unitId={unitId}
         canCreateReceivable={hasPermission('hub.receivables.create')}
+      />
+
+      <RegisterPetDeathModal
+        open={Boolean(deathPet)}
+        onClose={() => setDeathPet(null)}
+        clinicId={clinicId || ''}
+        pet={deathPet}
+        onRegistered={async () => {
+          if (deathPet && selectedId === deathPet.id) closePanel();
+          setDeathPet(null);
+          await loadPets();
+        }}
       />
     </div>
   );

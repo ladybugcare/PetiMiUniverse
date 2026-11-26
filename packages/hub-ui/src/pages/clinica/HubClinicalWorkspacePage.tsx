@@ -12,10 +12,13 @@ import {
   Paperclip,
   Phone,
   Plus,
+  HeartCrack,
   Save,
   Stethoscope,
   Syringe,
 } from 'lucide-react';
+import { RegisterPetDeathModal } from '../pets/RegisterPetDeathModal';
+import type { PetDeathType } from '../pets/petDeath';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
@@ -141,6 +144,7 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [completing, setCompleting] = useState(false);
+  const [deathModalOpen, setDeathModalOpen] = useState(false);
   const [casePrompt, setCasePrompt] = useState<CaseAfterCompletePrompt | null>(null);
   const [casePromptSaving, setCasePromptSaving] = useState(false);
   const loadedEncounterIdRef = useRef<string | null>(null);
@@ -1083,6 +1087,18 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
                 <Save size={16} /> Salvar rascunho
               </button>
             ) : null}
+            {canWrite &&
+            encounter.clinical_outcome !== 'death' &&
+            encounter.pet_id &&
+            encounter.status !== 'cancelled' ? (
+              <button
+                type="button"
+                className="hub-clientes__btn hub-clientes__btn--ghost hub-cws-footer__btn"
+                onClick={() => setDeathModalOpen(true)}
+              >
+                <HeartCrack size={16} /> Registrar óbito
+              </button>
+            ) : null}
             {canWrite && encounter.status !== 'completed' ? (
               <button
                 type="button"
@@ -1100,6 +1116,44 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
             ) : null}
           </div>
         </footer>
+
+        <RegisterPetDeathModal
+          open={deathModalOpen}
+          onClose={() => setDeathModalOpen(false)}
+          clinicId={clinicId || ''}
+          pet={
+            encounter.pet_id
+              ? {
+                  id: encounter.pet_id,
+                  name: encounter.pet?.name || 'Pet',
+                  species: encounter.pet?.species || '',
+                }
+              : null
+          }
+          deathSource="encounter"
+          deathRefId={encounter.id}
+          hubCaseId={encounter.hub_case_id}
+          hubEncounterId={encounter.id}
+          onClinicalSubmit={async (payload) => {
+            if (!clinicId) return;
+            const res = await hubEncountersApi.patch(encounter.id, {
+              clinic_id: clinicId,
+              clinical_outcome: 'death',
+              pet_death: {
+                deceased_at: payload.deceased_at,
+                death_type: payload.death_type as PetDeathType,
+                death_cause: payload.death_cause,
+                death_notes: payload.death_notes,
+                archive: payload.archive,
+              },
+            });
+            if (res.encounter) {
+              // reload via existing state path if available
+            }
+            setDeathModalOpen(false);
+            window.location.reload();
+          }}
+        />
 
         {evolutionDrawerOpen ? (
           <div

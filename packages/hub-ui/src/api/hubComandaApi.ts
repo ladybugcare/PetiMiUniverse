@@ -369,6 +369,7 @@ export const hubComandaApi = {
       quantity?: number;
       unit_amount?: number;
       discount_amount?: number;
+      hub_inventory_lot_id?: string | null;
     }
   ): Promise<HubComandaDetailResponse> {
     return apiRequest(`${base}/${encodeURIComponent(comandaId)}/items/${encodeURIComponent(itemId)}`, {

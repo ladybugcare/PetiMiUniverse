@@ -5,12 +5,13 @@ import { MoreVertical } from 'lucide-react';
 type Props = {
   onEdit: () => void;
   onArchive: () => void;
+  onRegisterDeath?: () => void;
 };
 
 /**
- * Menu ⋮ com Editar + Arquivar; portal + fixed para não ser cortado pelo overflow da tabela.
+ * Menu ⋮ com Editar + Registrar óbito + Arquivar; portal + fixed para não ser cortado pelo overflow da tabela.
  */
-export const PetTableActions: React.FC<Props> = ({ onEdit, onArchive }) => {
+export const PetTableActions: React.FC<Props> = ({ onEdit, onArchive, onRegisterDeath }) => {
   const [open, setOpen] = useState(false);
   const anchorRef = useRef<HTMLDivElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
@@ -95,6 +96,19 @@ export const PetTableActions: React.FC<Props> = ({ onEdit, onArchive }) => {
             >
               Editar
             </button>
+            {onRegisterDeath ? (
+              <button
+                type="button"
+                className="hub-clientes__dropdown-item"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onRegisterDeath();
+                }}
+              >
+                Registrar óbito
+              </button>
+            ) : null}
             <button
               type="button"
               className="hub-clientes__dropdown-item hub-clientes__dropdown-item--danger"

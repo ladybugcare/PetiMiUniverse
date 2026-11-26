@@ -24,7 +24,7 @@ export async function fetchHubPetsMapByIds(
 
   const { data, error } = await supabaseAdmin
     .from('hub_pets')
-    .select(HUB_DAY_BOARD_PET_SELECT)
+    .select(`${HUB_DAY_BOARD_PET_SELECT}, deleted_at, deceased_at, death_invalidated_at`)
     .in('id', uniq)
     .is('deleted_at', null);
 
@@ -33,7 +33,15 @@ export async function fetchHubPetsMapByIds(
     return new Map();
   }
 
-  return new Map((data ?? []).map((p) => [p.id as string, p as HubDayBoardPetRow]));
+  const { isPetEligibleForNewOp } = await import('./petDeathService');
+  const eligible = (data ?? []).filter((p) =>
+    isPetEligibleForNewOp(p as {
+      deleted_at?: string | null;
+      deceased_at?: string | null;
+      death_invalidated_at?: string | null;
+    }),
+  );
+  return new Map(eligible.map((p) => [p.id as string, p as HubDayBoardPetRow]));
 }
 
 /**
@@ -50,7 +58,9 @@ export async function resolvePrimaryPetIdsByGuardians(
 
   const { data, error } = await supabaseAdmin
     .from('hub_pet_guardians')
-    .select('guardian_id, pet_id, role, hub_pets!inner(id, clinic_id, deleted_at)')
+    .select(
+      'guardian_id, pet_id, role, hub_pets!inner(id, clinic_id, deleted_at, deceased_at, death_invalidated_at)',
+    )
     .in('guardian_id', uniq);
 
   if (error || !data) {
@@ -58,7 +68,13 @@ export async function resolvePrimaryPetIdsByGuardians(
     return result;
   }
 
-  type PetEmbed = { id: string; clinic_id: string; deleted_at: string | null };
+  type PetEmbed = {
+    id: string;
+    clinic_id: string;
+    deleted_at: string | null;
+    deceased_at: string | null;
+    death_invalidated_at: string | null;
+  };
   type LinkRow = {
     guardian_id: string;
     pet_id: string;
@@ -68,11 +84,12 @@ export async function resolvePrimaryPetIdsByGuardians(
 
   const byGuardian = new Map<string, string[]>();
   const primaryByGuardian = new Map<string, string>();
+  const { isPetEligibleForNewOp } = await import('./petDeathService');
 
   for (const row of data as LinkRow[]) {
     const rawPet = row.hub_pets;
     const pet = Array.isArray(rawPet) ? rawPet[0] : rawPet;
-    if (!pet || pet.clinic_id !== clinicId || pet.deleted_at != null) continue;
+    if (!pet || pet.clinic_id !== clinicId || !isPetEligibleForNewOp(pet)) continue;
 
     const list = byGuardian.get(row.guardian_id) ?? [];
     list.push(row.pet_id);

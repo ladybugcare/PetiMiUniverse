@@ -43,6 +43,21 @@ function stockFixture(movements: Record<string, unknown>[] = []) {
 }
 
 describe('hubInventoryStockUtils', () => {
+  it('validateLotStockForOut rejeita lote de outro item', async () => {
+    const OTHER_ITEM = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0002';
+    stockFixture([
+      {
+        clinic_id: CLINIC_ID,
+        item_id: ITEM_ID,
+        lot_id: LOT_ID,
+        movement_type: 'purchase_in',
+        qty: 5,
+      },
+    ]);
+    const err = await validateLotStockForOut(CLINIC_ID, OTHER_ITEM, LOT_ID, 1);
+    expect(err).toMatch(/não pertence/i);
+  });
+
   it('validateLotStockForOut detecta saldo insuficiente', async () => {
     stockFixture([
       {

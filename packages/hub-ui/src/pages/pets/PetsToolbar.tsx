@@ -14,8 +14,8 @@ interface PetsToolbarProps {
   onSpeciesFilterChange: (v: string) => void;
   tutorFilter: string;
   onTutorFilterChange: (v: string) => void;
-  situationFilter: 'all' | 'ativo';
-  onSituationFilterChange: (v: 'all' | 'ativo') => void;
+  situationFilter: 'active' | 'deceased' | 'archived' | 'all';
+  onSituationFilterChange: (v: 'active' | 'deceased' | 'archived' | 'all') => void;
   pets: HubPet[];
   guardians: HubGuardian[];
   onNewPet: () => void;
@@ -38,8 +38,10 @@ export const PetsToolbar: React.FC<PetsToolbarProps> = ({
 }) => {
   const situationFilterOptions = useMemo(
     (): HubComboboxOption[] => [
-      { value: 'all', label: 'Situação (todas)' },
-      { value: 'ativo', label: 'Ativo' },
+      { value: 'active', label: 'Ativos' },
+      { value: 'deceased', label: 'Falecidos' },
+      { value: 'archived', label: 'Arquivados' },
+      { value: 'all', label: 'Todas as situações' },
     ],
     [],
   );
@@ -117,7 +119,9 @@ export const PetsToolbar: React.FC<PetsToolbarProps> = ({
             className="hub-combobox--clientes"
             options={situationFilterOptions}
             value={situationFilter}
-            onChange={(v) => onSituationFilterChange(v as 'all' | 'ativo')}
+            onChange={(v) =>
+              onSituationFilterChange((v || 'active') as 'active' | 'deceased' | 'archived' | 'all')
+            }
             placeholder="Situação"
             searchPlaceholder="Buscar…"
             allowCreate={false}

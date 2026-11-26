@@ -48,6 +48,7 @@ import {
 } from './hubPayablesService';
 import { roundMoney2 } from './hubVariablePrice';
 import { resolveHospitalizationEventsId } from './hospitalizationRequestIds';
+import { clinicalDeathPayloadSchema, registerPetDeath } from './petDeathService';
 import {
   assertCaseInClinic,
   assertEncounterInClinic,
@@ -1757,14 +1758,24 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
       daily_hub_service_type_id: uuidStr.optional().nullable(),
       daily_unit_amount: z.number().min(0).optional().nullable(),
       daily_includes_medication: z.boolean().optional(),
+      /** Payload de óbito do pet — obrigatório quando status=death. */
+      pet_death: clinicalDeathPayloadSchema,
     })
     .safeParse(req.body);
   if (!id.success || !parsed.success) return res.status(400).json({ error: 'Dados inválidos' });
-  const { clinic_id, create_new_case, new_case_title, hub_case_id, hub_hospital_bed_id, ...patch } = parsed.data;
+  const {
+    clinic_id,
+    create_new_case,
+    new_case_title,
+    hub_case_id,
+    hub_hospital_bed_id,
+    pet_death,
+    ...patch
+  } = parsed.data;
   const { data: existing, error: getErr } = await supabaseAdmin
     .from('hub_hospitalizations')
     .select(
-      'id, hub_hospital_bed_id, status, pet_id, guardian_id, hub_encounter_id, unit_id, admission_notes, reason, hub_appointment_id, discharged_at',
+      'id, hub_hospital_bed_id, status, pet_id, guardian_id, hub_encounter_id, hub_case_id, unit_id, admission_notes, reason, hub_appointment_id, discharged_at',
     )
     .eq('id', id.data)
     .eq('clinic_id', clinic_id)
@@ -1825,7 +1836,38 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
   const closingHospitalization =
     patch.status === 'discharged' || patch.status === 'death' || patch.status === 'transferred';
   const cancellingHospitalization = patch.status === 'cancelled';
-  if (closingHospitalization) {
+
+  // Óbito: registro centralizado do pet + status da internação na mesma RPC (atômico).
+  let petDeathPending: { future_appointments: number; active_boarding_reservations: number } | undefined;
+  if (patch.status === 'death') {
+    if (!pet_death?.death_type) {
+      return res.status(400).json({
+        error: 'Informe pet_death.death_type para registrar óbito na internação',
+        code: 'pet_death_required',
+      });
+    }
+    const deathResult = await registerPetDeath({
+      clinic_id,
+      pet_id: (existing as { pet_id: string }).pet_id,
+      deceased_at: pet_death.deceased_at ?? new Date().toISOString(),
+      death_type: pet_death.death_type,
+      death_cause: pet_death.death_cause ?? null,
+      death_notes: pet_death.death_notes ?? patch.discharge_notes ?? null,
+      death_source: 'hospitalization',
+      death_ref_id: id.data,
+      archive: pet_death.archive ?? false,
+      hub_case_id: (existing as { hub_case_id?: string | null }).hub_case_id ?? hub_case_id ?? null,
+      hub_encounter_id: (existing as { hub_encounter_id?: string | null }).hub_encounter_id ?? null,
+      actor_user_id: req.user?.id ?? null,
+    });
+    if (!deathResult.ok) {
+      return res.status(deathResult.status).json({ error: deathResult.error, code: deathResult.code });
+    }
+    petDeathPending = deathResult.pending;
+    // Status/discharge já aplicados pela RPC — não reaplicar no update local.
+    delete update.status;
+    delete update.discharge_notes;
+  } else if (closingHospitalization) {
     // death/transferred também precisam de discharged_at para diárias e fila do Caixa.
     update.discharged_at =
       (existing as { discharged_at?: string | null }).discharged_at ?? new Date().toISOString();
@@ -1833,7 +1875,7 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
 
   const { data, error } = await supabaseAdmin
     .from('hub_hospitalizations')
-    .update(update)
+    .update(Object.keys(update).length ? update : { updated_at: new Date().toISOString() })
     .eq('id', id.data)
     .eq('clinic_id', clinic_id)
     .select('*, hub_hospital_beds(code, label), hub_pets(name, species), hub_guardians(full_name)')
@@ -1962,17 +2004,16 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
   const hospData = data as Record<string, unknown> | null;
   if (hospData) {
     const closeStatus = patch.status;
-    if (closeStatus === 'discharged' || closeStatus === 'death' || closeStatus === 'transferred') {
+    // Óbito: timeline já gravada na RPC (pet_death_recorded + hospitalization_death).
+    if (closeStatus === 'discharged' || closeStatus === 'transferred') {
       const timelineTitle =
-        closeStatus === 'discharged' ? 'Alta da internação' :
-        closeStatus === 'death' ? 'Óbito — internação encerrada' :
-        'Transferência — internação encerrada';
+        closeStatus === 'discharged' ? 'Alta da internação' : 'Transferência — internação encerrada';
       void recordTimelineEvent({
         clinic_id,
         pet_id: hospData.pet_id as string,
         hub_case_id: hospData.hub_case_id as string | null,
         hub_encounter_id: hospData.hub_encounter_id as string | null,
-        event_type: closeStatus === 'discharged' ? 'hospitalization_discharged' : 'note',
+        event_type: closeStatus === 'discharged' ? 'hospitalization_discharged' : 'hospitalization_transferred',
         ref_type: 'hospitalization',
         ref_id: id.data,
         title: timelineTitle,
@@ -1985,7 +2026,10 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
     }
   }
 
-  return res.json({ hospitalization: data });
+  return res.json({
+    hospitalization: data,
+    ...(petDeathPending ? { pet_death_pending: petDeathPending } : {}),
+  });
 };
 
 export const addHubHospitalizationDailyNote = async (req: Request, res: Response) => {
@@ -2350,10 +2394,21 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
       create_new_case: z.boolean().optional(),
       new_case_title: z.string().trim().max(500).optional().nullable(),
       reopen_reason: z.string().trim().min(8).max(1000).optional().nullable(),
+      clinical_outcome: z.enum(['death']).optional().nullable(),
+      pet_death: clinicalDeathPayloadSchema,
     })
     .safeParse(req.body);
   if (!id.success || !parsed.success) return res.status(400).json({ error: 'Dados inválidos' });
-  const { clinic_id, create_new_case, new_case_title, hub_case_id, reopen_reason, ...patch } = parsed.data;
+  const {
+    clinic_id,
+    create_new_case,
+    new_case_title,
+    hub_case_id,
+    reopen_reason,
+    pet_death,
+    clinical_outcome,
+    ...patch
+  } = parsed.data;
 
   const { data: existing } = await supabaseAdmin
     .from('hub_surgeries')
@@ -2374,6 +2429,35 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
   const existingStatus = (existing as { status?: string }).status;
   const linkedAppointmentId = (existing as { hub_appointment_id?: string | null }).hub_appointment_id;
   const existingDischargeAt = (existing as { discharge_at?: string | null }).discharge_at ?? null;
+
+  let petDeathPending: { future_appointments: number; active_boarding_reservations: number } | undefined;
+  if (clinical_outcome === 'death') {
+    if (!pet_death?.death_type) {
+      return res.status(400).json({
+        error: 'Informe pet_death.death_type para registrar óbito na cirurgia',
+        code: 'pet_death_required',
+      });
+    }
+    const deathResult = await registerPetDeath({
+      clinic_id,
+      pet_id: (existing as { pet_id: string }).pet_id,
+      deceased_at: pet_death.deceased_at ?? new Date().toISOString(),
+      death_type: pet_death.death_type,
+      death_cause: pet_death.death_cause ?? null,
+      death_notes: pet_death.death_notes ?? null,
+      death_source: 'surgery',
+      death_ref_id: id.data,
+      archive: pet_death.archive ?? false,
+      hub_case_id: (existing as { hub_case_id?: string | null }).hub_case_id ?? hub_case_id ?? null,
+      hub_encounter_id: (existing as { hub_encounter_id?: string | null }).hub_encounter_id ?? null,
+      actor_user_id: req.user?.id ?? null,
+    });
+    if (!deathResult.ok) {
+      return res.status(deathResult.status).json({ error: deathResult.error, code: deathResult.code });
+    }
+    petDeathPending = deathResult.pending;
+    // clinical_outcome já setado pela RPC
+  }
 
   // Alta ambulatorial só após o procedimento concluído — não confunde com "completed".
   if (patch.discharge_at) {
@@ -2648,7 +2732,11 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
     payables = listed.payables;
   }
 
-  return res.json({ surgery: responseRow, payables });
+  return res.json({
+    surgery: responseRow,
+    payables,
+    ...(petDeathPending ? { pet_death_pending: petDeathPending } : {}),
+  });
 };
 
 /** Alertas simples: vacinas com próxima dose nos próximos 30 dias. */
@@ -2662,15 +2750,26 @@ export const getHubClinicalAlerts = async (req: Request, res: Response) => {
   const in30Str = in30.toISOString().slice(0, 10);
   const { data: vaccines, error } = await supabaseAdmin
     .from('hub_vaccination_records')
-    .select('id, pet_id, vaccine_name, next_dose_at, hub_pets(name)')
+    .select('id, pet_id, vaccine_name, next_dose_at, hub_pets(name, deleted_at, deceased_at, death_invalidated_at)')
     .eq('clinic_id', clinic_id.data)
     .is('deleted_at', null)
     .not('next_dose_at', 'is', null)
     .gte('next_dose_at', todayStr)
     .lte('next_dose_at', in30Str);
   if (error) return res.status(500).json({ error: error.message });
+  const { hasValidPetDeath } = await import('./petDeathService');
+  const alerts = (vaccines ?? []).filter((v: Record<string, unknown>) => {
+    const pet = v.hub_pets as {
+      deleted_at?: string | null;
+      deceased_at?: string | null;
+      death_invalidated_at?: string | null;
+    } | null;
+    if (!pet) return true;
+    if (pet.deleted_at) return false;
+    return !hasValidPetDeath(pet);
+  });
   return res.json({
-    alerts: (vaccines ?? []).map((v: Record<string, unknown>) => ({
+    alerts: alerts.map((v: Record<string, unknown>) => ({
       type: 'vaccine_due',
       message: `Vacina ${v.vaccine_name} — próxima dose ${v.next_dose_at}`,
       pet_id: v.pet_id,

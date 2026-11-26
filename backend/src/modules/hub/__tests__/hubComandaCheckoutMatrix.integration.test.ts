@@ -1171,7 +1171,7 @@ describe('Matriz Caixa — open → checkout por origem', () => {
       expect(pay.body.error).toMatch(/sem tutor/i);
     });
 
-    it('checkout com estoque insuficiente retorna 400 sem recebível', async () => {
+    it('addItems com estoque insuficiente retorna 400 (falha cedo)', async () => {
       configureSupabaseMock({ tables: productStockTables(1) });
 
       const open = await openComanda({
@@ -1199,18 +1199,221 @@ describe('Matriz Caixa — open → checkout por origem', () => {
             },
           ],
         });
-      expect(add.status).toBe(201);
+      expect(add.status).toBe(400);
+      expect(add.body.error).toMatch(/insuficiente/i);
 
-      const pay = await checkoutReceiveNow(comandaId, 135);
-      expect(pay.status).toBe(400);
-      expect(pay.body.error).toMatch(/insuficiente/i);
-
-      const receivables = getMockSupabaseClient()._state.tables.hub_receivables ?? [];
-      expect(receivables).toHaveLength(0);
+      const items = getMockSupabaseClient()._state.tables.hub_comanda_items ?? [];
+      expect(items.filter((it) => it.comanda_id === comandaId)).toHaveLength(0);
       const saleOuts = (getMockSupabaseClient()._state.tables.hub_stock_movements ?? []).filter(
         (m) => m.movement_type === 'sale_out',
       );
       expect(saleOuts).toHaveLength(0);
+    });
+
+    it('addItems rejeita lote que não pertence ao item', async () => {
+      const OTHER_ITEM_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0199';
+      const OTHER_LOT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0199';
+      configureSupabaseMock({
+        tables: baseFinanceTables({
+          hub_inventory_items: [
+            {
+              id: INV_ITEM_ID,
+              clinic_id: TEST_CLINIC_ID,
+              name: 'Coleira',
+              sale_amount: 45,
+              cost_amount: 20,
+              deleted_at: null,
+              active: true,
+            },
+            {
+              id: OTHER_ITEM_ID,
+              clinic_id: TEST_CLINIC_ID,
+              name: 'Shampoo',
+              sale_amount: 50,
+              cost_amount: 10,
+              deleted_at: null,
+              active: true,
+            },
+          ],
+          hub_inventory_lots: [
+            {
+              id: INV_LOT_ID,
+              clinic_id: TEST_CLINIC_ID,
+              item_id: INV_ITEM_ID,
+              lot_code: 'L-BALCAO',
+              expiry_date: null,
+            },
+            {
+              id: OTHER_LOT_ID,
+              clinic_id: TEST_CLINIC_ID,
+              item_id: OTHER_ITEM_ID,
+              lot_code: 'L-OUTRO',
+              expiry_date: null,
+            },
+          ],
+          hub_stock_movements: [
+            {
+              clinic_id: TEST_CLINIC_ID,
+              item_id: INV_ITEM_ID,
+              lot_id: INV_LOT_ID,
+              movement_type: 'purchase_in',
+              qty: 5,
+            },
+            {
+              clinic_id: TEST_CLINIC_ID,
+              item_id: OTHER_ITEM_ID,
+              lot_id: OTHER_LOT_ID,
+              movement_type: 'purchase_in',
+              qty: 5,
+            },
+          ],
+        }),
+      });
+
+      const open = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'manual',
+        guardian_id: TEST_GUARDIAN_ID,
+        unit_id: TEST_UNIT_ID,
+        manual_lines: [],
+      });
+      expect(open.status).toBe(201);
+      const comandaId = open.body.comanda.id as string;
+
+      const add = await request(app)
+        .post(`/api/hub/comandas/${comandaId}/items`)
+        .send({
+          clinic_id: TEST_CLINIC_ID,
+          items: [
+            {
+              description: 'Coleira',
+              quantity: 1,
+              unit_amount: 45,
+              item_kind: 'product',
+              hub_inventory_item_id: INV_ITEM_ID,
+              hub_inventory_lot_id: OTHER_LOT_ID,
+            },
+          ],
+        });
+      expect(add.status).toBe(400);
+      expect(add.body.error).toMatch(/não pertence/i);
+    });
+
+    it('patchItem corrige lote inconsistente e permite checkout', async () => {
+      const OTHER_ITEM_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0299';
+      const OTHER_LOT_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0299';
+      configureSupabaseMock({
+        tables: baseFinanceTables({
+          hub_inventory_items: [
+            {
+              id: INV_ITEM_ID,
+              clinic_id: TEST_CLINIC_ID,
+              name: 'Coleira',
+              sale_amount: 45,
+              cost_amount: 20,
+              deleted_at: null,
+              active: true,
+            },
+            {
+              id: OTHER_ITEM_ID,
+              clinic_id: TEST_CLINIC_ID,
+              name: 'Shampoo',
+              sale_amount: 50,
+              cost_amount: 10,
+              deleted_at: null,
+              active: true,
+            },
+          ],
+          hub_inventory_lots: [
+            {
+              id: INV_LOT_ID,
+              clinic_id: TEST_CLINIC_ID,
+              item_id: INV_ITEM_ID,
+              lot_code: 'L-BALCAO',
+              expiry_date: null,
+            },
+            {
+              id: OTHER_LOT_ID,
+              clinic_id: TEST_CLINIC_ID,
+              item_id: OTHER_ITEM_ID,
+              lot_code: 'L-ERRADO',
+              expiry_date: null,
+            },
+          ],
+          hub_stock_movements: [
+            {
+              clinic_id: TEST_CLINIC_ID,
+              item_id: INV_ITEM_ID,
+              lot_id: INV_LOT_ID,
+              movement_type: 'purchase_in',
+              qty: 5,
+            },
+          ],
+        }),
+      });
+
+      const open = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'manual',
+        guardian_id: TEST_GUARDIAN_ID,
+        unit_id: TEST_UNIT_ID,
+        manual_lines: [],
+      });
+      expect(open.status).toBe(201);
+      const comandaId = open.body.comanda.id as string;
+
+      const add = await request(app)
+        .post(`/api/hub/comandas/${comandaId}/items`)
+        .send({
+          clinic_id: TEST_CLINIC_ID,
+          items: [
+            {
+              description: 'Coleira',
+              quantity: 1,
+              unit_amount: 45,
+              item_kind: 'product',
+              hub_inventory_item_id: INV_ITEM_ID,
+              hub_inventory_lot_id: INV_LOT_ID,
+            },
+          ],
+        });
+      expect(add.status).toBe(201);
+
+      const inserted = (getMockSupabaseClient()._state.tables.hub_comanda_items ?? []).find(
+        (it) => it.comanda_id === comandaId,
+      );
+      expect(inserted?.id).toBeTruthy();
+      // Simula dado inconsistente legado (ex.: QA / bug antigo de persistência).
+      inserted!.hub_inventory_lot_id = OTHER_LOT_ID;
+
+      const badPatch = await request(app)
+        .patch(`/api/hub/comandas/${comandaId}/items/${inserted!.id}`)
+        .send({
+          clinic_id: TEST_CLINIC_ID,
+          quantity: 1,
+          unit_amount: 45,
+          discount_amount: 0,
+        });
+      expect(badPatch.status).toBe(400);
+      expect(badPatch.body.error).toMatch(/não pertence/i);
+
+      const fix = await request(app)
+        .patch(`/api/hub/comandas/${comandaId}/items/${inserted!.id}`)
+        .send({
+          clinic_id: TEST_CLINIC_ID,
+          quantity: 1,
+          unit_amount: 45,
+          discount_amount: 0,
+          hub_inventory_lot_id: INV_LOT_ID,
+        });
+      expect(fix.status).toBe(200);
+      const fixed = (getMockSupabaseClient()._state.tables.hub_comanda_items ?? []).find(
+        (it) => it.id === inserted!.id,
+      );
+      expect(fixed?.hub_inventory_lot_id).toBe(INV_LOT_ID);
+
+      const pay = await checkoutReceiveNow(comandaId, 45);
+      expect(pay.status).toBe(201);
     });
   });
 });

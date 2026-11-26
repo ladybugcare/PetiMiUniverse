@@ -61,6 +61,8 @@ export type HubEncounter = {
   hub_service_type_id?: string | null;
   status: HubEncounterStatus;
   operational_phase?: HubEncounterOperationalPhase | null;
+  /** Desfecho clínico estruturado (ex.: óbito) — independente do status operacional. */
+  clinical_outcome?: 'death' | null;
   chief_complaint: string | null;
   summary_notes: string | null;
   anamnesis: Record<string, unknown>;
@@ -342,6 +344,8 @@ export type HubSurgery = {
   clinic_id: string;
   title: string;
   status: HubSurgeryStatus;
+  /** Desfecho clínico estruturado (ex.: óbito) — independente do status operacional. */
+  clinical_outcome?: 'death' | null;
   scheduled_at?: string | null;
   started_at?: string | null;
   completed_at?: string | null;
@@ -563,10 +567,19 @@ export const hubEncountersApi = {
       pet_id?: string | null;
       /** Identificação posterior: vincular caso clínico (copia pet/tutor quando ausentes). */
       hub_case_id?: string | null;
+      clinical_outcome?: 'death' | null;
+      pet_death?: {
+        deceased_at?: string;
+        death_type: string;
+        death_cause?: string | null;
+        death_notes?: string | null;
+        archive?: boolean;
+      };
     },
   ) {
     return apiRequest(`${encBase}/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }) as Promise<{
       encounter: HubEncounter;
+      pet_death_pending?: { future_appointments: number; active_boarding_reservations: number };
     }>;
   },
   complete(id: string, clinicId: string, changedBy?: string | null) {
@@ -1006,11 +1019,21 @@ export const hubClinicalApi = {
     daily_hub_service_type_id?: string | null;
     daily_unit_amount?: number | null;
     daily_includes_medication?: boolean;
+    pet_death?: {
+      deceased_at?: string;
+      death_type: string;
+      death_cause?: string | null;
+      death_notes?: string | null;
+      archive?: boolean;
+    };
   }) {
     return apiRequest(`${clinicalBase}/hospitalizations/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
-    }) as Promise<{ hospitalization: HubHospitalization }>;
+    }) as Promise<{
+      hospitalization: HubHospitalization;
+      pet_death_pending?: { future_appointments: number; active_boarding_reservations: number };
+    }>;
   },
   listHospitalizationCharges(hospitalizationId: string, clinicId: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });

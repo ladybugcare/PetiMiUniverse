@@ -74,7 +74,15 @@ import {
   getHubGuardianStats,
   getHubGuardianById,
 } from '../guardiansController';
-import { listHubPets, createHubPet, updateHubPet, listHubPetProfileChanges } from '../hubPetsController';
+import {
+  listHubPets,
+  createHubPet,
+  updateHubPet,
+  listHubPetProfileChanges,
+  registerHubPetDeath,
+  correctHubPetDeath,
+  invalidateHubPetDeath,
+} from '../hubPetsController';
 import {
   listHubServiceTypes,
   createHubServiceType,
@@ -754,6 +762,30 @@ router.patch(
   authenticateUser,
   requirePermission(['hub.pets.write', 'hub.clinic.write']), requireCoreOpsWrite,
   updateHubPet,
+);
+
+router.post(
+  '/pets/:id/death',
+  authenticateUser,
+  requirePermission(['hub.pets.write', 'hub.clinic.write']),
+  requireCoreOpsWrite,
+  registerHubPetDeath,
+);
+
+router.patch(
+  '/pets/:id/death',
+  authenticateUser,
+  requirePermission(['hub.pets.write', 'hub.clinic.write']),
+  requireCoreOpsWrite,
+  correctHubPetDeath,
+);
+
+router.post(
+  '/pets/:id/death/invalidate',
+  authenticateUser,
+  requirePermission('hub.pets.death.invalidate'),
+  requireCoreOpsWrite,
+  invalidateHubPetDeath,
 );
 
 router.get(

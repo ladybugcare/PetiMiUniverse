@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { ArrowLeft, BedDouble, Check, DoorOpen, Link2, Play } from 'lucide-react';
+import { ArrowLeft, BedDouble, Check, DoorOpen, HeartCrack, Link2, Play } from 'lucide-react';
+import { RegisterPetDeathModal } from '../pets/RegisterPetDeathModal';
+import type { PetDeathType } from '../pets/petDeath';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
@@ -97,6 +99,7 @@ const HubClinicSurgeryPage: React.FC = () => {
   const [linkCaseHasActive, setLinkCaseHasActive] = useState(false);
   const [linkCaseSubmitting, setLinkCaseSubmitting] = useState(false);
   const [showDaySections, setShowDaySections] = useState(false);
+  const [deathModalOpen, setDeathModalOpen] = useState(false);
   const examsBlockRef = useRef<HTMLDivElement | null>(null);
   const scrolledToExamsRef = useRef(false);
 
@@ -448,6 +451,18 @@ const HubClinicSurgeryPage: React.FC = () => {
             </button>
           ) : null}
 
+          {canWrite &&
+          surgery.clinical_outcome !== 'death' &&
+          (surgery.status === 'in_progress' || surgery.status === 'completed') ? (
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+              onClick={() => setDeathModalOpen(true)}
+            >
+              <HeartCrack size={14} strokeWidth={2} /> Registrar óbito
+            </button>
+          ) : null}
+
           {canWrite && phase === 'active' ? (
             <Link
               to={`/hub/clinica?admit=1&pet_id=${encodeURIComponent(surgery.pet_id)}${surgery.hub_case_id ? `&hub_case_id=${encodeURIComponent(surgery.hub_case_id)}` : ''}`}
@@ -777,6 +792,37 @@ const HubClinicSurgeryPage: React.FC = () => {
           ) : null}
         </div>
       </HubSidePanel>
+
+      <RegisterPetDeathModal
+        open={deathModalOpen}
+        onClose={() => setDeathModalOpen(false)}
+        clinicId={clinicId || ''}
+        pet={{
+          id: surgery.pet_id,
+          name: surgery.hub_pets?.name || 'Pet',
+          species: surgery.hub_pets?.species || '',
+        }}
+        deathSource="surgery"
+        deathRefId={surgery.id}
+        hubCaseId={surgery.hub_case_id}
+        hubEncounterId={surgery.hub_encounter_id}
+        onClinicalSubmit={async (payload) => {
+          if (!clinicId) return;
+          await hubClinicalApi.patchSurgery(surgery.id, {
+            clinic_id: clinicId,
+            clinical_outcome: 'death',
+            pet_death: {
+              deceased_at: payload.deceased_at,
+              death_type: payload.death_type as PetDeathType,
+              death_cause: payload.death_cause,
+              death_notes: payload.death_notes,
+              archive: payload.archive,
+            },
+          });
+          setDeathModalOpen(false);
+          await reload();
+        }}
+      />
     </div>
   );
 };

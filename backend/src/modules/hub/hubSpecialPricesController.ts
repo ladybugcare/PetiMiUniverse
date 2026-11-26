@@ -32,12 +32,15 @@ async function fetchCatalogSale(
 }
 
 async function assertPetInClinic(clinicId: string, petId: string): Promise<{ ok: true; guardian_id: string | null } | { ok: false; error: string }> {
+  const { assertPetEligibleForNewOp } = await import('./hubTenantAsserts');
+  if (!(await assertPetEligibleForNewOp(clinicId, petId))) {
+    return { ok: false, error: 'Pet inválido, arquivado ou falecido nesta clínica' };
+  }
   const { data: pet } = await supabaseAdmin
     .from('hub_pets')
     .select('id, clinic_id')
     .eq('id', petId)
     .eq('clinic_id', clinicId)
-    .is('deleted_at', null)
     .maybeSingle();
   if (!pet) return { ok: false, error: 'Pet não encontrado nesta clínica' };
 

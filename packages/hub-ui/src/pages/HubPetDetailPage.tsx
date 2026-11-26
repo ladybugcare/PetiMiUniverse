@@ -15,6 +15,8 @@ import './clientes/clientes.css';
 import './pets/pets-page.css';
 import '../components/hub-profile.css';
 import { PetDetailPanel } from './pets/PetDetailPanel';
+import { RegisterPetDeathModal } from './pets/RegisterPetDeathModal';
+import { hasValidPetDeath } from './pets/petDeath';
 
 const HubPetDetailPage: React.FC = () => {
   const { petId } = useParams<{ petId: string }>();
@@ -24,10 +26,11 @@ const HubPetDetailPage: React.FC = () => {
   const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const unitId = getSelectedUnitId();
-  const canWrite = hasPermission('hub.pets.write');
+  const canWrite = hasPermission('hub.pets.write') || hasPermission('hub.clinic.write');
 
   const [loading, setLoading] = useState(true);
   const [pet, setPet] = useState<HubPet | null>(null);
+  const [deathOpen, setDeathOpen] = useState(false);
 
   const accessAllowed = hasPermission('hub.pets.read');
 
@@ -35,7 +38,7 @@ const HubPetDetailPage: React.FC = () => {
     if (!clinicId || !petId || !accessAllowed) return;
     setLoading(true);
     try {
-      const { pets } = await hubPetsApi.list(clinicId, true);
+      const { pets } = await hubPetsApi.list(clinicId, true, 'all');
       setPet(pets.find((p) => p.id === petId) ?? null);
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao carregar pet');
@@ -63,13 +66,13 @@ const HubPetDetailPage: React.FC = () => {
         try {
           await hubPetsApi.update(petId, { clinic_id: clinicId, archived: true });
           showSuccess('Pet arquivado');
-          navigate('/hub/pets');
+          await load();
         } catch (e: unknown) {
           showError((e as Error)?.message || 'Erro ao arquivar');
         }
       })();
     }, 'Arquivar');
-  }, [clinicId, petId, pet, canWrite, showConfirm, showSuccess, showError, navigate]);
+  }, [clinicId, petId, pet, canWrite, showConfirm, showSuccess, showError, load]);
 
   if (!user) {
     return <Navigate to="/login" replace />;
@@ -118,10 +121,24 @@ const HubPetDetailPage: React.FC = () => {
         onOpenInNewPage={() => {}}
         hideNewPageButton
         onArchive={canWrite ? handleArchivePet : undefined}
+        onRegisterDeath={
+          canWrite && !hasValidPetDeath(pet) ? () => setDeathOpen(true) : undefined
+        }
         canWrite={canWrite}
         clinicId={clinicId}
         unitId={unitId}
         canCreateReceivable={hasPermission('hub.receivables.create')}
+      />
+
+      <RegisterPetDeathModal
+        open={deathOpen}
+        onClose={() => setDeathOpen(false)}
+        clinicId={clinicId || ''}
+        pet={pet}
+        onRegistered={async () => {
+          setDeathOpen(false);
+          await load();
+        }}
       />
     </div>
   );

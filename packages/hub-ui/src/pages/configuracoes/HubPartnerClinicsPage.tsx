@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import { Building2, Edit2, Plus, Trash2 } from 'lucide-react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { Building2, Edit2, MoreVertical, Plus } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import {
   formatPartnerClinicAddress,
@@ -7,14 +8,122 @@ import {
   type HubPartnerClinic,
 } from '../../api/hubPartnerClinicsApi';
 import { useAlert } from '../../components/AlertProvider';
+import { HubCheckbox } from '../../components/HubCheckbox';
 import { HubRefreshingBanner } from '../../components/HubLoading';
 import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubBrPhoneInput } from '../../components/HubBrPhoneInput';
-import { formatBrPhoneFromApi } from '../../utils/formatBrPhone';
+import { formatBrPhoneDisplay, formatBrPhoneFromApi } from '../../utils/formatBrPhone';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
 import './hub-partner-clinics.css';
+
+type PartnerRowActionsProps = {
+  onEdit: () => void;
+  onRemove: () => void;
+};
+
+const PartnerRowActions: React.FC<PartnerRowActionsProps> = ({ onEdit, onRemove }) => {
+  const [open, setOpen] = useState(false);
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [menuFixedStyle, setMenuFixedStyle] = useState<React.CSSProperties | null>(null);
+
+  const updateMenuPosition = useCallback(() => {
+    const el = anchorRef.current;
+    if (!el || typeof window === 'undefined') return;
+    const r = el.getBoundingClientRect();
+    setMenuFixedStyle({
+      position: 'fixed',
+      top: r.bottom + 4,
+      right: window.innerWidth - r.right,
+      left: 'auto',
+      zIndex: 10_000,
+    });
+  }, []);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setMenuFixedStyle(null);
+      return;
+    }
+    updateMenuPosition();
+  }, [open, updateMenuPosition]);
+
+  useEffect(() => {
+    if (!open) return;
+    const onScrollOrResize = () => updateMenuPosition();
+    window.addEventListener('scroll', onScrollOrResize, true);
+    window.addEventListener('resize', onScrollOrResize);
+    return () => {
+      window.removeEventListener('scroll', onScrollOrResize, true);
+      window.removeEventListener('resize', onScrollOrResize);
+    };
+  }, [open, updateMenuPosition]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (anchorRef.current?.contains(t)) return;
+      if (menuRef.current?.contains(t)) return;
+      setOpen(false);
+    };
+    document.addEventListener('mousedown', close);
+    return () => document.removeEventListener('mousedown', close);
+  }, [open]);
+
+  return (
+    <div className="hub-pc__row-actions" onClick={(e) => e.stopPropagation()}>
+      <button
+        type="button"
+        className="hub-clientes__icon-btn"
+        title="Editar"
+        aria-label="Editar"
+        onClick={onEdit}
+      >
+        <Edit2 size={16} strokeWidth={2} />
+      </button>
+      <div className="hub-clientes__dropdown-wrap" ref={anchorRef}>
+        <button
+          type="button"
+          className="hub-clientes__btn hub-clientes__btn--ghost"
+          style={{ padding: 6, minWidth: 0 }}
+          aria-expanded={open}
+          aria-haspopup="menu"
+          aria-label="Mais opções"
+          onClick={() => setOpen((o) => !o)}
+        >
+          <MoreVertical size={18} />
+        </button>
+        {open &&
+          menuFixedStyle &&
+          typeof document !== 'undefined' &&
+          createPortal(
+            <div
+              ref={menuRef}
+              className="hub-clientes__dropdown-menu hub-clientes__dropdown-menu--portal"
+              style={menuFixedStyle}
+              role="menu"
+            >
+              <button
+                type="button"
+                className="hub-clientes__dropdown-item hub-clientes__dropdown-item--danger"
+                role="menuitem"
+                onClick={() => {
+                  setOpen(false);
+                  onRemove();
+                }}
+              >
+                Remover
+              </button>
+            </div>,
+            document.body,
+          )}
+      </div>
+    </div>
+  );
+};
 
 type FormState = {
   name: string;
@@ -216,14 +325,9 @@ const HubPartnerClinicsPage: React.FC = () => {
       </div>
 
       <div className="hub-pc__toolbar">
-        <label className="hub-pc__inactive-toggle">
-          <input
-            type="checkbox"
-            checked={includeInactive}
-            onChange={(e) => setIncludeInactive(e.target.checked)}
-          />
+        <HubCheckbox checked={includeInactive} onChange={setIncludeInactive}>
           Mostrar inativas
-        </label>
+        </HubCheckbox>
         {canWrite ? (
           <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" onClick={openCreate}>
             <Plus size={16} strokeWidth={2} />
@@ -241,37 +345,90 @@ const HubPartnerClinicsPage: React.FC = () => {
           <p>Nenhuma clínica parceira cadastrada.</p>
         </div>
       ) : (
-        <ul className="hub-pc__list">
-          {rows.map((row) => {
-            const address = formatPartnerClinicAddress(row);
-            return (
-              <li key={row.id} className={`hub-pc__card${!row.is_active ? ' hub-pc__card--inactive' : ''}`}>
-                <div className="hub-pc__card-main">
-                  <strong>{row.name}</strong>
-                  {!row.is_active ? <span className="hub-pc__badge">Inativa</span> : null}
-                  <p className="hub-pc__meta">
-                    {[row.city && row.state ? `${row.city} / ${row.state}` : row.city || row.state, row.phone]
-                      .filter(Boolean)
-                      .join(' · ') || 'Sem cidade/telefone'}
-                  </p>
-                  {address ? <p className="hub-pc__meta">{address}</p> : null}
-                </div>
-                {canWrite ? (
-                  <div className="hub-pc__card-actions">
-                    <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => openEdit(row)}>
-                      <Edit2 size={15} />
-                      Editar
-                    </button>
-                    <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={() => void removeRow(row)}>
-                      <Trash2 size={15} />
-                      Remover
-                    </button>
-                  </div>
-                ) : null}
-              </li>
-            );
-          })}
-        </ul>
+        <div className="hub-clientes__table-wrap hub-clientes__table-wrap--desktop">
+          <table className="hub-clientes__table">
+            <thead>
+              <tr>
+                <th>Clínica</th>
+                <th>Contato</th>
+                <th>Local</th>
+                <th className="hub-clientes__th-status">Status</th>
+                <th className="hub-clientes__th-actions">Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => {
+                const address = formatPartnerClinicAddress(row);
+                const cityState =
+                  row.city && row.state ? `${row.city} / ${row.state}` : row.city || row.state || '';
+                return (
+                  <tr
+                    key={row.id}
+                    className={!row.is_active ? 'hub-pc__row--inactive' : undefined}
+                    onClick={() => {
+                      if (canWrite) openEdit(row);
+                    }}
+                  >
+                    <td>
+                      <div className="hub-clientes__tutor-cell">
+                        <span className="hub-clientes__avatar" aria-hidden>
+                          <Building2 size={16} strokeWidth={2} />
+                        </span>
+                        <div>
+                          <button
+                            type="button"
+                            className="hub-clientes__tutor-name"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (canWrite) openEdit(row);
+                            }}
+                          >
+                            {row.name}
+                          </button>
+                          {row.notes ? <span className="hub-pc__notes">{row.notes}</span> : null}
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <div style={{ fontSize: 13 }}>{formatBrPhoneDisplay(row.phone)}</div>
+                    </td>
+                    <td>
+                      {cityState ? <div style={{ fontSize: 13 }}>{cityState}</div> : null}
+                      {address ? (
+                        <div className="hub-clientes__muted" style={{ fontSize: 12, marginTop: 2 }}>
+                          {address}
+                        </div>
+                      ) : !cityState ? (
+                        <span className="hub-clientes__muted">—</span>
+                      ) : null}
+                    </td>
+                    <td className="hub-clientes__td-status">
+                      <span
+                        className={`hub-clientes__pill ${
+                          row.is_active ? 'hub-clientes__pill--active' : 'hub-clientes__pill--inactive'
+                        }`}
+                      >
+                        {row.is_active ? 'Ativa' : 'Inativa'}
+                      </span>
+                    </td>
+                    <td className="hub-clientes__td-actions">
+                      {canWrite ? (
+                        <div className="hub-clientes__td-actions-inner">
+                          <PartnerRowActions
+                            onEdit={() => openEdit(row)}
+                            onRemove={() => void removeRow(row)}
+                          />
+                        </div>
+                      ) : (
+                        <span className="hub-clientes__muted">—</span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
 
       <HubSidePanel
@@ -419,14 +576,14 @@ const HubPartnerClinicsPage: React.FC = () => {
           />
 
           {editing ? (
-            <label className="hub-pc__inactive-toggle">
-              <input
-                type="checkbox"
+            <div className="hub-pc__inactive-toggle">
+              <HubCheckbox
                 checked={form.is_active}
-                onChange={(e) => setForm((f) => ({ ...f, is_active: e.target.checked }))}
-              />
-              Ativa
-            </label>
+                onChange={(checked) => setForm((f) => ({ ...f, is_active: checked }))}
+              >
+                Clínica ativa
+              </HubCheckbox>
+            </div>
           ) : null}
         </form>
       </HubSidePanel>

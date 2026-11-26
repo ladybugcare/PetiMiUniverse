@@ -10,6 +10,13 @@ import {
   resolveTagsMode,
   syncClinicalFlags,
 } from './hubPetHealthProfile';
+import {
+  correctPetDeath,
+  deathTypeSchema,
+  invalidatePetDeath,
+  registerPetDeath,
+  hasValidPetDeath,
+} from './petDeathService';
 
 const uuidStr = z.string().uuid();
 
@@ -84,7 +91,9 @@ const updateHubPetBodySchema = z.object({
 });
 
 const HUB_PET_SELECT_COLUMNS =
-  'id, petmi_pet_id, clinic_id, name, species, breed, sex, birth_date, notes, behavior_tags, neutered, size_tier, coat_color, coat_type, external_microchip, created_at, updated_at';
+  'id, petmi_pet_id, clinic_id, name, species, breed, sex, birth_date, notes, behavior_tags, neutered, size_tier, coat_color, coat_type, external_microchip, created_at, updated_at, deleted_at, deceased_at, death_type, death_cause, death_notes, death_source, death_ref_id, death_recorded_at, death_recorded_by, death_invalidated_at, death_invalidated_by, death_invalidation_reason';
+
+const petSituationSchema = z.enum(['active', 'deceased', 'archived', 'all']).default('active');
 
 /** Evita HeadersOverflow no PostgREST (~16KB) em `.in('id', [muitos UUIDs])`. */
 function chunkIds(ids: string[], size = 80): string[][] {
@@ -118,13 +127,26 @@ export const listHubPets = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'clinic_id é obrigatório e deve ser UUID' });
     }
     const clinic_id = parsed.data;
+    const situation = petSituationSchema.safeParse(req.query.situation ?? 'active');
+    if (!situation.success) {
+      return res.status(400).json({ error: 'situation inválida (active|deceased|archived|all)' });
+    }
 
-    const { data: pets, error: petsErr } = await supabaseAdmin
+    let q = supabaseAdmin
       .from('hub_pets')
       .select(HUB_PET_SELECT_COLUMNS)
       .eq('clinic_id', clinic_id)
-      .is('deleted_at', null)
       .order('name', { ascending: true });
+
+    if (situation.data === 'active') {
+      q = q.is('deleted_at', null).or('deceased_at.is.null,death_invalidated_at.not.is.null');
+    } else if (situation.data === 'deceased') {
+      q = q.not('deceased_at', 'is', null).is('death_invalidated_at', null);
+    } else if (situation.data === 'archived') {
+      q = q.not('deleted_at', 'is', null);
+    }
+
+    const { data: pets, error: petsErr } = await q;
 
     if (petsErr) {
       console.error('[hub_pets] list', petsErr);
@@ -541,7 +563,7 @@ export const updateHubPet = async (req: Request, res: Response) => {
 
     const { data: pet, error: finalErr } = await supabaseAdmin
       .from('hub_pets')
-      .select(`${HUB_PET_SELECT_COLUMNS}, deleted_at`)
+      .select(HUB_PET_SELECT_COLUMNS)
       .eq('id', id)
       .single();
 
@@ -603,7 +625,6 @@ export const listHubPetProfileChanges = async (req: Request, res: Response) => {
       .select('id')
       .eq('id', petId)
       .eq('clinic_id', clinic_id)
-      .is('deleted_at', null)
       .maybeSingle();
     if (petErr || !pet) return res.status(404).json({ error: 'Pet não encontrado' });
 
@@ -621,6 +642,165 @@ export const listHubPetProfileChanges = async (req: Request, res: Response) => {
     return res.json({ changes: data ?? [] });
   } catch (e) {
     console.error('[hub_pets] profile-changes', e);
+    return res.status(500).json({ error: 'Erro interno' });
+  }
+};
+
+/** POST /pets/:id/death — registra óbito (manual ou via payload clínico). */
+export const registerHubPetDeath = async (req: Request, res: Response) => {
+  try {
+    const idParsed = uuidStr.safeParse(req.params.id);
+    if (!idParsed.success) return res.status(400).json({ error: 'id inválido' });
+
+    const body = z
+      .object({
+        clinic_id: uuidStr,
+        deceased_at: z.string().datetime({ offset: true }).optional(),
+        death_type: deathTypeSchema,
+        death_cause: z.string().trim().max(2000).optional().nullable(),
+        death_notes: z.string().trim().max(4000).optional().nullable(),
+        death_source: z.enum(['manual', 'encounter', 'surgery', 'hospitalization']).default('manual'),
+        death_ref_id: uuidStr.optional().nullable(),
+        archive: z.boolean().optional().default(false),
+        hub_case_id: uuidStr.optional().nullable(),
+        hub_encounter_id: uuidStr.optional().nullable(),
+        created_by_staff_id: uuidStr.optional().nullable(),
+      })
+      .safeParse(req.body);
+
+    if (!body.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
+    }
+
+    const b = body.data;
+    const result = await registerPetDeath({
+      clinic_id: b.clinic_id,
+      pet_id: idParsed.data,
+      deceased_at: b.deceased_at ?? new Date().toISOString(),
+      death_type: b.death_type,
+      death_cause: b.death_cause,
+      death_notes: b.death_notes,
+      death_source: b.death_source,
+      death_ref_id: b.death_ref_id,
+      archive: b.archive,
+      hub_case_id: b.hub_case_id,
+      hub_encounter_id: b.hub_encounter_id,
+      created_by_staff_id: b.created_by_staff_id,
+      actor_user_id: actorUserId(req),
+    });
+
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error, code: result.code });
+    }
+    return res.status(201).json({ pet: result.pet, pending: result.pending, archived: result.archived });
+  } catch (e) {
+    console.error('[hub_pets] register death', e);
+    return res.status(500).json({ error: 'Erro interno' });
+  }
+};
+
+/** PATCH /pets/:id/death — corrige metadados de óbito válido. */
+export const correctHubPetDeath = async (req: Request, res: Response) => {
+  try {
+    const idParsed = uuidStr.safeParse(req.params.id);
+    if (!idParsed.success) return res.status(400).json({ error: 'id inválido' });
+
+    const body = z
+      .object({
+        clinic_id: uuidStr,
+        reason: z.string().trim().min(3).max(2000),
+        deceased_at: z.string().datetime({ offset: true }).optional(),
+        death_type: deathTypeSchema.optional(),
+        death_cause: z.string().trim().max(2000).optional().nullable(),
+        death_notes: z.string().trim().max(4000).optional().nullable(),
+        hub_case_id: uuidStr.optional().nullable(),
+        hub_encounter_id: uuidStr.optional().nullable(),
+        created_by_staff_id: uuidStr.optional().nullable(),
+      })
+      .safeParse(req.body);
+
+    if (!body.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
+    }
+
+    const b = body.data;
+    const result = await correctPetDeath({
+      clinic_id: b.clinic_id,
+      pet_id: idParsed.data,
+      reason: b.reason,
+      deceased_at: b.deceased_at,
+      death_type: b.death_type,
+      death_cause: b.death_cause,
+      death_notes: b.death_notes,
+      hub_case_id: b.hub_case_id,
+      hub_encounter_id: b.hub_encounter_id,
+      created_by_staff_id: b.created_by_staff_id,
+      actor_user_id: actorUserId(req),
+    });
+
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error, code: result.code });
+    }
+    return res.json({ pet: result.pet });
+  } catch (e) {
+    console.error('[hub_pets] correct death', e);
+    return res.status(500).json({ error: 'Erro interno' });
+  }
+};
+
+/** POST /pets/:id/death/invalidate — invalida óbito com justificativa. */
+export const invalidateHubPetDeath = async (req: Request, res: Response) => {
+  try {
+    const idParsed = uuidStr.safeParse(req.params.id);
+    if (!idParsed.success) return res.status(400).json({ error: 'id inválido' });
+
+    const body = z
+      .object({
+        clinic_id: uuidStr,
+        reason: z.string().trim().min(3).max(2000),
+        amendment_status: z.enum(['discharged', 'transferred']).optional().nullable(),
+        hub_case_id: uuidStr.optional().nullable(),
+        hub_encounter_id: uuidStr.optional().nullable(),
+        created_by_staff_id: uuidStr.optional().nullable(),
+      })
+      .safeParse(req.body);
+
+    if (!body.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
+    }
+
+    const b = body.data;
+
+    // Se origem clínica, exige também hub.clinic.write no middleware da rota;
+    // aqui reforçamos amendment quando a internação ainda está em death.
+    const { data: existing } = await supabaseAdmin
+      .from('hub_pets')
+      .select('death_source, death_ref_id, deceased_at, death_invalidated_at')
+      .eq('id', idParsed.data)
+      .eq('clinic_id', b.clinic_id)
+      .maybeSingle();
+
+    if (!existing || !hasValidPetDeath(existing)) {
+      return res.status(409).json({ error: 'Pet não possui óbito válido para invalidar', code: 'no_valid_death' });
+    }
+
+    const result = await invalidatePetDeath({
+      clinic_id: b.clinic_id,
+      pet_id: idParsed.data,
+      reason: b.reason,
+      amendment_status: b.amendment_status,
+      hub_case_id: b.hub_case_id,
+      hub_encounter_id: b.hub_encounter_id,
+      created_by_staff_id: b.created_by_staff_id,
+      actor_user_id: actorUserId(req),
+    });
+
+    if (!result.ok) {
+      return res.status(result.status).json({ error: result.error, code: result.code });
+    }
+    return res.json({ pet: result.pet });
+  } catch (e) {
+    console.error('[hub_pets] invalidate death', e);
     return res.status(500).json({ error: 'Erro interno' });
   }
 };

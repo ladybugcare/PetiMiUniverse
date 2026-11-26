@@ -57,7 +57,7 @@ import {
   autoApplyEligiblePackagesToItems,
   pricingVariantsEqual,
 } from './hubPackagesService';
-import { createSaleStockOut } from './hubInventoryStockUtils';
+import { createSaleStockOut, validateLotStockForOut } from './hubInventoryStockUtils';
 import { validateProductSalePricing } from './productSalePriceRules';
 import {
   markHubAppointmentPaidFromReceivable,
@@ -5599,6 +5599,17 @@ export const postHubComandaAddItems = async (req: Request, res: Response) => {
           discount_amount: it.discount_amount,
         });
         if (!priced.ok) return res.status(400).json({ error: priced.error });
+        const stockErr = await validateLotStockForOut(
+          clinic_id,
+          it.hub_inventory_item_id,
+          it.hub_inventory_lot_id,
+          it.quantity,
+        );
+        if (stockErr) {
+          return res.status(400).json({
+            error: `${stockErr} (produto: ${it.description})`,
+          });
+        }
       }
     }
 
@@ -5675,6 +5686,7 @@ const patchComandaItemBodySchema = z
     quantity: z.number().positive().optional(),
     unit_amount: z.number().min(0).optional(),
     discount_amount: z.number().min(0).optional(),
+    hub_inventory_lot_id: uuidStr.optional().nullable(),
   })
   .strict();
 
@@ -5701,7 +5713,7 @@ export const patchHubComandaItem = async (req: Request, res: Response) => {
     const { data: item, error: iErr } = await supabaseAdmin
       .from('hub_comanda_items')
       .select(
-        'id, comanda_id, origin_type, description, item_kind, quantity, unit_amount, discount_amount, line_total, hub_inventory_item_id',
+        'id, comanda_id, origin_type, description, item_kind, quantity, unit_amount, discount_amount, line_total, hub_inventory_item_id, hub_inventory_lot_id',
       )
       .eq('id', itemId)
       .eq('comanda_id', comandaId)
@@ -5713,6 +5725,17 @@ export const patchHubComandaItem = async (req: Request, res: Response) => {
     // 'description' só pode ser alterada em itens manuais.
     if ((item.origin_type as string) !== 'manual' && updates.description !== undefined) {
       return res.status(409).json({ error: 'Descrição só pode ser editada em itens adicionados manualmente' });
+    }
+    if (updates.hub_inventory_lot_id !== undefined) {
+      if ((item.origin_type as string) !== 'manual') {
+        return res.status(409).json({ error: 'Lote só pode ser alterado em itens adicionados manualmente' });
+      }
+      if (String(item.item_kind) !== 'product' || !item.hub_inventory_item_id) {
+        return res.status(400).json({ error: 'Lote só se aplica a produtos de estoque' });
+      }
+      if (!updates.hub_inventory_lot_id) {
+        return res.status(400).json({ error: 'Produto exige lote' });
+      }
     }
 
     const { data: invoicedLine } = await supabaseAdmin
@@ -5726,6 +5749,10 @@ export const patchHubComandaItem = async (req: Request, res: Response) => {
     const qty = updates.quantity ?? Number(item.quantity ?? 1);
     const unit = updates.unit_amount ?? Number(item.unit_amount ?? 0);
     const disc = updates.discount_amount ?? Number(item.discount_amount ?? 0);
+    const nextLotId =
+      updates.hub_inventory_lot_id !== undefined
+        ? updates.hub_inventory_lot_id
+        : ((item.hub_inventory_lot_id as string | null) ?? null);
 
     if (String(item.item_kind) === 'product' && item.hub_inventory_item_id) {
       const { data: inv, error: invErr } = await supabaseAdmin
@@ -5750,6 +5777,16 @@ export const patchHubComandaItem = async (req: Request, res: Response) => {
         discount_amount: disc,
       });
       if (!priced.ok) return res.status(400).json({ error: priced.error });
+      if (!nextLotId) {
+        return res.status(400).json({ error: 'Produto exige lote' });
+      }
+      const stockErr = await validateLotStockForOut(
+        clinic_id,
+        item.hub_inventory_item_id as string,
+        nextLotId,
+        qty,
+      );
+      if (stockErr) return res.status(400).json({ error: stockErr });
     }
 
     const line_total = round2(qty * unit - disc);
@@ -5776,6 +5813,12 @@ export const patchHubComandaItem = async (req: Request, res: Response) => {
       const before = Number(item.discount_amount ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
       const after = updates.discount_amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
       changes.push(`desconto ${before} → ${after}`);
+    }
+    if (
+      updates.hub_inventory_lot_id !== undefined &&
+      updates.hub_inventory_lot_id !== ((item.hub_inventory_lot_id as string | null) ?? null)
+    ) {
+      changes.push('lote alterado');
     }
     if (changes.length > 0) {
       void recordComandaEvent({
