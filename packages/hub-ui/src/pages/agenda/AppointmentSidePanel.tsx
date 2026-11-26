@@ -34,6 +34,7 @@ import {
   formatHm,
   isPartnerCareLocation,
   serviceGroupLabel,
+  startOfDay,
   type AgendaAppointment,
   type AgendaStatus,
 } from './agendaModel';
@@ -128,6 +129,20 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
   const statusMeta = STATUS_META[appt.status];
   const accentColor = resolveServiceAccentColor(appt.agendaColor, appt.group);
   const durationMin = Math.round((appt.end.getTime() - appt.start.getTime()) / 60_000);
+  const isStayKind =
+    appt.appointment_kind === 'hotel_stay' || appt.appointment_kind === 'daycare_block';
+  const stayNights = isStayKind
+    ? Math.max(1, Math.round((startOfDay(appt.end).getTime() - startOfDay(appt.start).getTime()) / 86_400_000))
+    : 0;
+  const durationLabel = isStayKind
+    ? appt.appointment_kind === 'hotel_stay'
+      ? stayNights <= 1
+        ? '1 diária'
+        : `${stayNights} diárias`
+      : stayNights <= 0
+        ? 'Creche'
+        : `${stayNights + 1} dia(s)`
+    : `${durationMin} min`;
   const serviceLines = appt.services?.filter((s) => s.name || s.saleAmount != null || s.isAddon) ?? [];
 
   const petMetaChips = useMemo(() => {
@@ -471,7 +486,7 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
             ) : null}
             <div className="nam-aside__section">
               <p className="nam-aside__section-title">Duração</p>
-              <p className="nam-aside__item">{durationMin} min</p>
+              <p className="nam-aside__item">{durationLabel}</p>
             </div>
           </div>
         }
@@ -498,7 +513,7 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
             </span>
             <span className="hub-agenda-appt-panel__strip-time">
               <Clock size={14} aria-hidden />
-              {formatHm(appt.start)}–{formatHm(appt.end)} ({durationMin} min)
+              {formatHm(appt.start)}–{formatHm(appt.end)} ({durationLabel})
             </span>
           </div>
 

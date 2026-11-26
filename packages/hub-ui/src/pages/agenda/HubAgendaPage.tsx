@@ -515,8 +515,11 @@ const HubAgendaPage: React.FC = () => {
       }
 
       let message = 'Deseja criar outro agendamento, ir ao Caixa ou voltar à agenda com este agendamento em foco?';
-      if (created_count > 1) {
+      const isSeriesResult = Boolean(appointment.series_id) || (conflicts && conflicts.length > 0);
+      if (created_count > 1 && isSeriesResult) {
         message = `${created_count} ocorrências foram criadas na série. ${message}`;
+      } else if (created_count > 1) {
+        message = `${created_count} agendamentos foram criados nesta visita. ${message}`;
       }
       if (conflicts && conflicts.length > 0) {
         message = `${conflicts.length} data(s) da série entraram em conflito e não foram criadas. ${message}`;

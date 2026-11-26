@@ -1702,8 +1702,11 @@ export const createHubAppointment = async (req: Request, res: Response) => {
     }
     // Kind preliminar (walk-in etc.); pode virar pickup_route após carregar o serviço principal.
     let resolvedAppointmentKind: AppointmentKind = b.appointment_kind ?? 'standard';
+    /** Série: nunca ignora conflito por data — cria só livres (C11/C12). Overlap explícito vale só no pontual. */
+    const isSeriesCreate = Boolean(b.recurrence);
     const skipScheduleConflictCheck =
-      isWalkInAppointmentKind(resolvedAppointmentKind) || b.allow_schedule_overlap === true;
+      isWalkInAppointmentKind(resolvedAppointmentKind) ||
+      (b.allow_schedule_overlap === true && !isSeriesCreate);
 
     // validations
     if (!(await assertServiceTypeInClinic(b.clinic_id, b.hub_service_type_id))) {
@@ -2111,7 +2114,7 @@ export const createHubAppointment = async (req: Request, res: Response) => {
         const mutual = findMutualOccurrenceWindowConflict(windows);
         if (mutual) {
           preConflicts.push({ date: occDate, reason: mutual.reason });
-          break;
+          continue;
         }
         for (const w of windows) {
           const chk = await assertNoScheduleConflict(
@@ -2134,13 +2137,16 @@ export const createHubAppointment = async (req: Request, res: Response) => {
           }
         }
       }
-      if (preConflicts.length > 0) {
+      const allDatesConflict =
+        preConflicts.length > 0 && preConflicts.length >= occurrenceDates.length;
+      // Pontual: 409. Série: 409 só se todas as datas conflitam; parcial segue e cria as livres.
+      if (preConflicts.length > 0 && (!isSeriesCreate || allDatesConflict)) {
         const firstReason = preConflicts[0]?.reason.replace(/^[^:]+:\s*/, '') ?? preConflicts[0]?.reason;
         return res.status(409).json(
           scheduleConflictJson(
-            preConflicts.length === 1 && occurrenceDates.length === 1
-              ? firstReason || 'Horário em conflito com outro atendimento.'
-              : 'Alguns horários da série entram em conflito com outro atendimento.',
+            allDatesConflict && occurrenceDates.length > 1
+              ? 'Todos os horários solicitados entram em conflito.'
+              : firstReason || 'Horário em conflito com outro atendimento.',
             { conflicts: preConflicts },
           ),
         );

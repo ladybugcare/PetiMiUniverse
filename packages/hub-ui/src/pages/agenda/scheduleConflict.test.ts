@@ -140,4 +140,10 @@ describe('buildScheduleOverlapConfirmMessage', () => {
       'Deseja agendar mesmo assim',
     );
   });
+
+  it('série: propõe criar só as datas livres', () => {
+    expect(
+      buildScheduleOverlapConfirmMessage({ detail: 'Banho · Rex', isSeries: true }),
+    ).toContain('apenas as datas sem conflito');
+  });
 });

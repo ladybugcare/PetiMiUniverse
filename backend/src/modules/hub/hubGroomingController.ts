@@ -761,7 +761,9 @@ export const openHubGroomingSessionFromAppointment = async (req: Request, res: R
 
     const { data: appt, error: apptErr } = await supabaseAdmin
       .from('hub_appointments')
-      .select('id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes, appointment_kind, status')
+      .select(
+        'id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes, appointment_kind, status, starts_at, ends_at',
+      )
       .eq('id', hub_appointment_id)
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
@@ -783,7 +785,29 @@ export const openHubGroomingSessionFromAppointment = async (req: Request, res: R
       tutorSnapshot = (petRow as { notes?: string } | null)?.notes ?? null;
     }
 
-    const now = new Date().toISOString();
+    const now = new Date();
+    const nowIso = now.toISOString();
+    // Agendamento futuro: antecipa o slot para agora (mantém duração) para não virar «Avulso» na fila de hoje.
+    const startsAt = appt.starts_at as string | undefined;
+    const endsAt = appt.ends_at as string | undefined;
+    if (startsAt && endsAt) {
+      const startMs = new Date(startsAt).getTime();
+      const endMs = new Date(endsAt).getTime();
+      const startDay = startsAt.slice(0, 10);
+      const todayYmd = nowIso.slice(0, 10);
+      if (Number.isFinite(startMs) && Number.isFinite(endMs) && startDay > todayYmd) {
+        const durationMs = Math.max(endMs - startMs, 30 * 60_000);
+        await supabaseAdmin
+          .from('hub_appointments')
+          .update({
+            starts_at: nowIso,
+            ends_at: new Date(now.getTime() + durationMs).toISOString(),
+          })
+          .eq('id', hub_appointment_id)
+          .eq('clinic_id', clinic_id);
+      }
+    }
+
     const { data, error } = await supabaseAdmin
       .from('hub_grooming_sessions')
       .insert({
@@ -794,7 +818,7 @@ export const openHubGroomingSessionFromAppointment = async (req: Request, res: R
         hub_appointment_id,
         hub_staff_member_id: appt.hub_staff_member_id,
         grooming_stage: targetStage,
-        checked_in_at: now,
+        checked_in_at: nowIso,
         tutor_notes_snapshot: tutorSnapshot,
       })
       .select(SESSION_SELECT)

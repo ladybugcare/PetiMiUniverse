@@ -119,6 +119,7 @@ import { resolveWalkInAppointmentKind } from './walkInUtils';
 import {
   SCHEDULE_OVERLAP_CANCEL_TEXT,
   SCHEDULE_OVERLAP_CONFIRM_TEXT,
+  SCHEDULE_OVERLAP_SERIES_CONFIRM_TEXT,
   SCHEDULE_OVERLAP_CONFIRM_TITLE,
   agendaAppointmentToConflictSlot,
   buildScheduleOverlapConfirmMessage,
@@ -2020,19 +2021,22 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   const askOverlapConfirm = (detail: string | undefined, reason: string | undefined, onConfirm: () => void) => {
     setSaving(false);
+    const isSeriesConfirm =
+      Boolean(withRecurrence && !isEditMode) || Boolean(isEditMode && seriesId);
     showAlert({
       type: 'warning',
       title: SCHEDULE_OVERLAP_CONFIRM_TITLE,
       message: buildScheduleOverlapConfirmMessage({
         detail,
         reason,
-        isSeries: Boolean(withRecurrence && !isEditMode) || Boolean(isEditMode && seriesId),
+        isSeries: isSeriesConfirm,
       }),
       showCancel: true,
-      confirmText: SCHEDULE_OVERLAP_CONFIRM_TEXT,
+      confirmText: isSeriesConfirm ? SCHEDULE_OVERLAP_SERIES_CONFIRM_TEXT : SCHEDULE_OVERLAP_CONFIRM_TEXT,
       cancelText: SCHEDULE_OVERLAP_CANCEL_TEXT,
       onConfirm: () => {
-        confirmedOverlapRef.current = true;
+        // Série: não força overlap nas datas ruins — a API cria só as livres.
+        confirmedOverlapRef.current = !isSeriesConfirm;
         onConfirm();
       },
     });
@@ -3823,6 +3827,17 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                 Mesmo profissional para todos
               </HubCheckbox>
             </div>
+            {syncSameStaffForAll ? (
+              <p className="nam-muted" style={{ margin: '0 0 10px', fontSize: 12 }}>
+                Pets em sequência com o profissional do topo. Blocos extras começam com a mesma pessoa — troque no
+                card do bloco se a Consulta for de outra profissional (a coluna da grade segue o que foi salvo).
+              </p>
+            ) : (
+              <p className="nam-muted" style={{ margin: '0 0 10px', fontSize: 12 }}>
+                Cada pet tem profissional e horário próprios (paralelo). Confira no card do bloco e na coluna da
+                grade após salvar.
+              </p>
+            )}
             {petVisitConfigs.map((cfg, idx) => {
               const pet = guardianPets.find((p) => p.id === cfg.petId);
               const timing = petVisitTimings.get(cfg.petId);

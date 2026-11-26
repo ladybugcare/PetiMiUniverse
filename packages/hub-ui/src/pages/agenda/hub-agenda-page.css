@@ -950,15 +950,22 @@
 
 .hub-agenda-card__row--head {
   justify-content: flex-start;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .hub-agenda-card__row--head .hub-agenda-card__time {
-  flex: 1;
+  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .hub-agenda-card__row--head .hub-agenda-card__badges {
   margin-left: auto;
+  flex: 0 1 auto;
+  max-width: 48%;
+  overflow: hidden;
 }
 
 .hub-agenda-card__row--compact {

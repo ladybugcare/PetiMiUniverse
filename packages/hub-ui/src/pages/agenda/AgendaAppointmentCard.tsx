@@ -86,7 +86,9 @@ function CardBadges({
         className="hub-agenda-card__badge"
         title={appt.visitGroupLabel ? `Visita multi-pet: ${appt.visitGroupLabel}` : 'Visita multi-pet'}
       >
-        <span className="nam-visit-group-badge">{appt.visitGroupSize} pets</span>
+        <span className={`nam-visit-group-badge${compact ? ' nam-visit-group-badge--compact' : ''}`}>
+          {compact ? appt.visitGroupSize : `${appt.visitGroupSize} pets`}
+        </span>
       </span>,
     );
   }

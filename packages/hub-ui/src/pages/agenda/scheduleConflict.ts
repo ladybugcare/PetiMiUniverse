@@ -2,6 +2,7 @@ import type { AgendaAppointment } from './agendaModel';
 
 export const SCHEDULE_OVERLAP_CONFIRM_TITLE = 'Horário em conflito';
 export const SCHEDULE_OVERLAP_CONFIRM_TEXT = 'Agendar mesmo assim';
+export const SCHEDULE_OVERLAP_SERIES_CONFIRM_TEXT = 'Criar só as livres';
 export const SCHEDULE_OVERLAP_CANCEL_TEXT = 'Voltar e ajustar';
 
 export type LocalScheduleWindow = {
@@ -162,7 +163,7 @@ export function buildScheduleOverlapConfirmMessage(opts?: {
       ? reason.replace(/\s+$/, '')
       : 'Este horário entra em conflito com outro atendimento do mesmo profissional ou recurso.';
   const ask = opts?.isSeries
-    ? ' Deseja criar todos os horários mesmo assim?'
+    ? ' Deseja criar apenas as datas sem conflito?'
     : ' Deseja agendar mesmo assim?';
   if (/deseja /i.test(head)) return head;
   return `${head}${head.endsWith('.') ? '' : '.'}${ask}`;
