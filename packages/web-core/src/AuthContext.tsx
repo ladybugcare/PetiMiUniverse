@@ -11,6 +11,7 @@ import type { AppRole } from './types';
 import { CLINIC_STORAGE_UPDATED_EVENT } from './constants/appEvents';
 import { beginAuthLogout, endAuthLogout } from './authLogoutGate';
 import { invalidateApiRequestCache } from './api';
+import { buildLoginHref } from './loginReturnUrl';
 
 export type AuthContextType = {
   user: unknown | null;
@@ -164,7 +165,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const redirectToLogin = () => {
     if (typeof window !== 'undefined') {
-      window.location.replace('/login');
+      // Preserva deep link (ex.: comanda) para o login voltar ao destino.
+      window.location.replace(buildLoginHref());
     }
   };
 

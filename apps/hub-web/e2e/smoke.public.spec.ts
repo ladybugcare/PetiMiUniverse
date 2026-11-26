@@ -42,7 +42,15 @@ test.describe('páginas públicas', () => {
 
   test('rota protegida sem sessão redireciona para login', async ({ page }) => {
     await page.goto('/hub/dashboard');
-    await expect(page).toHaveURL(/\/login(?:\?|$)/);
+    await expect(page).toHaveURL(/\/login\?redirect=/);
+    await expect(page).toHaveURL(/redirect=%2Fhub%2Fdashboard/);
+    await expect(page.getByRole('heading', { name: /bem-vindo de volta/i })).toBeVisible();
+  });
+
+  test('deep link de comanda sem sessão guarda redirect no login (F4)', async ({ page }) => {
+    await page.goto('/hub/caixa/comanda/e2e-f4-comanda');
+    await expect(page).toHaveURL(/\/login\?redirect=/);
+    await expect(page).toHaveURL(/redirect=%2Fhub%2Fcaixa%2Fcomanda%2Fe2e-f4-comanda/);
     await expect(page.getByRole('heading', { name: /bem-vindo de volta/i })).toBeVisible();
   });
 
