@@ -522,7 +522,13 @@ const HubAgendaPage: React.FC = () => {
         message = `${created_count} agendamentos foram criados nesta visita. ${message}`;
       }
       if (conflicts && conflicts.length > 0) {
-        message = `${conflicts.length} data(s) da série entraram em conflito e não foram criadas. ${message}`;
+        const dates = conflicts
+          .map((c) => c.date)
+          .filter(Boolean)
+          .join(', ');
+        message = dates
+          ? `${conflicts.length} data(s) da série entraram em conflito e não foram criadas (${dates}). ${message}`
+          : `${conflicts.length} data(s) da série entraram em conflito e não foram criadas. ${message}`;
       }
 
       const appointmentDate = appointment.starts_at?.slice(0, 10) ?? '';

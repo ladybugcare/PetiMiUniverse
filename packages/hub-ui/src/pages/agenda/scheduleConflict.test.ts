@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildScheduleOverlapConfirmMessage,
+  collectRelatedScheduleExcludeIds,
   findLocalScheduleConflict,
   findLocalWindowsMutualConflict,
   isScheduleConflictMessage,
+  isSeriesAllDatesConflictMessage,
   type LocalExistingSlot,
 } from './scheduleConflict';
 
@@ -31,6 +33,31 @@ describe('isScheduleConflictMessage', () => {
   it('ignora outros erros', () => {
     expect(isScheduleConflictMessage('Agendamento não pode ser editado após iniciado.')).toBe(false);
     expect(isScheduleConflictMessage('Selecione o tutor.')).toBe(false);
+  });
+});
+
+describe('isSeriesAllDatesConflictMessage', () => {
+  it('reconhece série sem datas livres', () => {
+    expect(isSeriesAllDatesConflictMessage('Todos os horários solicitados entram em conflito.')).toBe(
+      true,
+    );
+    expect(
+      isSeriesAllDatesConflictMessage('Nenhum agendamento criado (conflitos em todas as datas).'),
+    ).toBe(true);
+    expect(isSeriesAllDatesConflictMessage('Horário em conflito com outro atendimento.')).toBe(false);
+  });
+});
+
+describe('collectRelatedScheduleExcludeIds', () => {
+  it('exclui pai, filhos e irmãos da mesma visita', () => {
+    const rows = [
+      { id: 'parent', parent_appointment_id: null, visit_group_id: 'vg1' },
+      { id: 'child', parent_appointment_id: 'parent', visit_group_id: 'vg1' },
+      { id: 'other', parent_appointment_id: null, visit_group_id: 'vg2' },
+    ];
+    const ids = collectRelatedScheduleExcludeIds('child', rows);
+    expect(ids).toEqual(expect.arrayContaining(['child', 'parent']));
+    expect(ids).not.toContain('other');
   });
 });
 

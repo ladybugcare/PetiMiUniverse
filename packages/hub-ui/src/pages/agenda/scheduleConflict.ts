@@ -48,6 +48,36 @@ export function isScheduleConflictMessage(message: string | null | undefined): b
   return /conflito/i.test(message);
 }
 
+/** Série: todas as datas conflitam — não oferecer «Criar só as livres». */
+export function isSeriesAllDatesConflictMessage(message: string | null | undefined): boolean {
+  if (!message) return false;
+  return (
+    /todos os horários solicitados entram em conflito/i.test(message) ||
+    /nenhum agendamento criado/i.test(message)
+  );
+}
+
+/** Exclui o próprio bloco, pai, filhos e irmãos da mesma visita (espelha o backend). */
+export function collectRelatedScheduleExcludeIds(
+  appointmentId: string | null | undefined,
+  existing: Array<Pick<AgendaAppointment, 'id' | 'parent_appointment_id' | 'visit_group_id'>>,
+): string[] {
+  if (!appointmentId) return [];
+  const ids = new Set<string>([appointmentId]);
+  const self = existing.find((a) => a.id === appointmentId);
+  const parentId = self?.parent_appointment_id ?? null;
+  if (parentId) ids.add(parentId);
+  const visitGroupId = self?.visit_group_id ?? null;
+
+  for (const a of existing) {
+    if (a.parent_appointment_id === appointmentId) ids.add(a.id);
+    if (parentId && a.parent_appointment_id === parentId) ids.add(a.id);
+    if (parentId && a.id === parentId) ids.add(a.id);
+    if (visitGroupId && a.visit_group_id === visitGroupId) ids.add(a.id);
+  }
+  return [...ids];
+}
+
 export function agendaAppointmentToConflictSlot(a: AgendaAppointment): LocalExistingSlot {
   const resource = normalizeResource(a.resourceLabel);
   const parts = [

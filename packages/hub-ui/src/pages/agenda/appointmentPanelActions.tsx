@@ -98,9 +98,12 @@ export function buildPanelActions(
         utilities: utilities(),
       };
     case 'confirmed':
+      // B&T: «Abrir na fila» já faz check-in operacional (+ antecipa futuro). Evita exigir check-in prévio.
       return {
         primary: canWrite
-          ? { key: 'checkin', label: 'Check-in', variant: 'primary', onClick: handlers.onCheckIn }
+          ? operationalModule === 'grooming' && operationalPrimary
+            ? operationalPrimary
+            : { key: 'checkin', label: 'Check-in', variant: 'primary', onClick: handlers.onCheckIn }
           : null,
         comanda: comandaAction,
         utilities: utilities(),

@@ -1299,6 +1299,38 @@ function isScheduleRelevantAppointmentPatch(body: z.infer<typeof patchAppointmen
   );
 }
 
+/** Patch que reenvia horário/staff/recurso iguais ao atual — não reabre soft conflict (ex.: só nota). */
+function scheduleSlotUnchanged(
+  existing: Record<string, unknown>,
+  next: {
+    staff: string | null;
+    resourceLabel: string | null;
+    resourceId: string | null;
+    unitId: string | null;
+    starts: string;
+    ends: string;
+  },
+): boolean {
+  const sameMs = (a: unknown, b: string) => {
+    const ta = new Date(String(a ?? '')).getTime();
+    const tb = new Date(b).getTime();
+    return Number.isFinite(ta) && Number.isFinite(tb) && ta === tb;
+  };
+  const norm = (v: unknown) => {
+    if (v == null) return null;
+    const t = String(v).trim();
+    return t && t !== '—' ? t : null;
+  };
+  return (
+    sameMs(existing.starts_at, next.starts) &&
+    sameMs(existing.ends_at, next.ends) &&
+    ((existing.hub_staff_member_id as string | null) ?? null) === (next.staff ?? null) &&
+    ((existing.hub_resource_id as string | null) ?? null) === (next.resourceId ?? null) &&
+    norm(existing.resource_label) === norm(next.resourceLabel) &&
+    ((existing.unit_id as string | null) ?? null) === (next.unitId ?? null)
+  );
+}
+
 async function loadRelatedScheduleExcludeIds(
   clinicId: string,
   appointmentId: string,
@@ -3088,23 +3120,33 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
     }
 
     if (b.allow_schedule_overlap !== true && isScheduleRelevantAppointmentPatch(b)) {
-      const excludeIds = await loadRelatedScheduleExcludeIds(
-        b.clinic_id,
-        id,
-        existing as Record<string, unknown>,
-      );
-      const check = await assertNoScheduleConflict(
-        b.clinic_id,
-        excludeIds,
-        nextStaff,
-        nextResource,
-        careResolved.value.unit_id,
+      const slotSame = scheduleSlotUnchanged(existing as Record<string, unknown>, {
+        staff: nextStaff,
+        resourceLabel: nextResource,
+        resourceId: nextResourceId,
+        unitId: careResolved.value.unit_id,
         starts,
         ends,
-        nextResourceId,
-      );
-      if (check.conflict) {
-        return res.status(409).json(scheduleConflictJson(check.reason, { conflictingId: check.conflictingId }));
+      });
+      if (!slotSame) {
+        const excludeIds = await loadRelatedScheduleExcludeIds(
+          b.clinic_id,
+          id,
+          existing as Record<string, unknown>,
+        );
+        const check = await assertNoScheduleConflict(
+          b.clinic_id,
+          excludeIds,
+          nextStaff,
+          nextResource,
+          careResolved.value.unit_id,
+          starts,
+          ends,
+          nextResourceId,
+        );
+        if (check.conflict) {
+          return res.status(409).json(scheduleConflictJson(check.reason, { conflictingId: check.conflictingId }));
+        }
       }
     }
 
@@ -3564,6 +3606,7 @@ export const createHubAppointmentBatch = async (req: Request, res: Response) => 
 
     const visitGroupId = inputVisitGroupId ?? randomUUID();
     const createdIds: string[] = [];
+    let createdCount = 0;
 
     const rollbackCreated = async () => {
       if (createdIds.length === 0) return;
@@ -3621,6 +3664,8 @@ export const createHubAppointmentBatch = async (req: Request, res: Response) => 
 
         const appt = responseBody.appointment as { id?: string } | undefined;
         if (appt?.id) createdIds.push(appt.id);
+        const n = responseBody.created_count;
+        createdCount += typeof n === 'number' && n > 0 ? n : appt?.id ? 1 : 0;
       }
     } catch (e) {
       await rollbackCreated();
@@ -3640,7 +3685,7 @@ export const createHubAppointmentBatch = async (req: Request, res: Response) => 
     return res.status(201).json({
       visit_group_id: visitGroupId,
       appointments,
-      created_count: appointments.length,
+      created_count: createdCount > 0 ? createdCount : appointments.length,
     });
   } catch (e: unknown) {
     console.error('createHubAppointmentBatch', e);

@@ -329,7 +329,7 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
     const appointments = apptRowsRaw.filter((a) =>
       appointmentMatchesGroomingTypes(a, groomingTypeSet, lineTypeIdsByAppt),
     );
-    const groomingApptIds = appointments.map((a) => a.id as string);
+    const groomingApptIds = appointments.map((a) => a.id as string); // mutado abaixo se sessão puxar appointment fora do range
 
     const parentIdsWithPickup = new Set<string>();
     if (groomingApptIds.length > 0) {
@@ -368,7 +368,70 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
       return res.status(500).json({ error: sessErr.message });
     }
 
-    const sessionsForDay = ((sessionsRaw ?? []) as Record<string, unknown>[]).filter((s) => {
+    let sessionsForDay = ((sessionsRaw ?? []) as Record<string, unknown>[]).filter((s) => {
+      const aid = s.hub_appointment_id as string | null;
+      if (aid && groomingApptIds.includes(aid)) return true;
+      const checkedIn = s.checked_in_at as string | null;
+      if (checkedIn && checkedIn >= from && checkedIn <= to) return true;
+      const created = s.created_at as string;
+      return !aid && created >= from && created <= to;
+    });
+
+    // Sessão de hoje ligada a agendamento fora do range do board (ex.: antecipação falhou):
+    // puxa o appointment para não renderizar como «Avulso» sem serviço.
+    const missingLinkedApptIds = [
+      ...new Set(
+        sessionsForDay
+          .map((s) => s.hub_appointment_id as string | null)
+          .filter((aid): aid is string => Boolean(aid) && !groomingApptIds.includes(aid)),
+      ),
+    ];
+    if (missingLinkedApptIds.length > 0) {
+      const { data: linkedAppts, error: linkedErr } = await supabaseAdmin
+        .from('hub_appointments')
+        .select(
+          'id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, starts_at, ends_at, status, title, hub_service_type_id, appointment_kind, notes, description, hub_resource_id, resource_label',
+        )
+        .eq('clinic_id', clinic_id)
+        .in('id', missingLinkedApptIds)
+        .is('deleted_at', null)
+        .neq('status', 'cancelled');
+      if (linkedErr) return res.status(500).json({ error: linkedErr.message });
+      const linkedRows = (linkedAppts ?? []) as Record<string, unknown>[];
+      if (linkedRows.length > 0) {
+        const linkedIds = linkedRows.map((a) => a.id as string);
+        const { data: linkedLines, error: linkedLineErr } = await supabaseAdmin
+          .from('hub_appointment_services')
+          .select('id, appointment_id, hub_service_type_id, order_index, executed_at')
+          .in('appointment_id', linkedIds)
+          .order('order_index', { ascending: true });
+        if (linkedLineErr) return res.status(500).json({ error: linkedLineErr.message });
+        for (const row of linkedLines ?? []) {
+          const aid = (row as { appointment_id: string }).appointment_id;
+          const stid = (row as { hub_service_type_id: string }).hub_service_type_id;
+          const list = lineTypeIdsByAppt.get(aid) ?? [];
+          list.push(stid);
+          lineTypeIdsByAppt.set(aid, list);
+          const lines = lineRowsByAppt.get(aid) ?? [];
+          lines.push({
+            id: (row as { id: string }).id,
+            hub_service_type_id: stid,
+            order_index: (row as { order_index: number }).order_index,
+            executed_at: (row as { executed_at?: string | null }).executed_at ?? null,
+          });
+          lineRowsByAppt.set(aid, lines);
+        }
+        const linkedGrooming = linkedRows.filter((a) =>
+          appointmentMatchesGroomingTypes(a, groomingTypeSet, lineTypeIdsByAppt),
+        );
+        for (const a of linkedGrooming) {
+          appointments.push(a);
+          groomingApptIds.push(a.id as string);
+        }
+      }
+    }
+
+    sessionsForDay = ((sessionsRaw ?? []) as Record<string, unknown>[]).filter((s) => {
       const aid = s.hub_appointment_id as string | null;
       if (aid && groomingApptIds.includes(aid)) return true;
       const checkedIn = s.checked_in_at as string | null;
@@ -788,16 +851,18 @@ export const openHubGroomingSessionFromAppointment = async (req: Request, res: R
     const now = new Date();
     const nowIso = now.toISOString();
     // Agendamento futuro: antecipa o slot para agora (mantém duração) para não virar «Avulso» na fila de hoje.
+    const ymdSp = (iso: string) =>
+      new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
     const startsAt = appt.starts_at as string | undefined;
     const endsAt = appt.ends_at as string | undefined;
     if (startsAt && endsAt) {
       const startMs = new Date(startsAt).getTime();
       const endMs = new Date(endsAt).getTime();
-      const startDay = startsAt.slice(0, 10);
-      const todayYmd = nowIso.slice(0, 10);
+      const startDay = ymdSp(startsAt);
+      const todayYmd = ymdSp(nowIso);
       if (Number.isFinite(startMs) && Number.isFinite(endMs) && startDay > todayYmd) {
         const durationMs = Math.max(endMs - startMs, 30 * 60_000);
-        await supabaseAdmin
+        const { error: anticipErr } = await supabaseAdmin
           .from('hub_appointments')
           .update({
             starts_at: nowIso,
@@ -805,6 +870,15 @@ export const openHubGroomingSessionFromAppointment = async (req: Request, res: R
           })
           .eq('id', hub_appointment_id)
           .eq('clinic_id', clinic_id);
+        if (anticipErr) {
+          console.error('openFromAppointment anticipate slot', anticipErr.message);
+          return res.status(500).json({
+            error: 'Não foi possível antecipar o agendamento para a fila de hoje.',
+          });
+        }
+        // Reflete no objeto local para sync/status a seguir.
+        (appt as { starts_at: string }).starts_at = nowIso;
+        (appt as { ends_at: string }).ends_at = new Date(now.getTime() + durationMs).toISOString();
       }
     }
 

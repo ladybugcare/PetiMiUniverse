@@ -392,6 +392,9 @@ export function AgendaAppointmentCard({
           />
           <CardBadges appt={a} compact criticalOnly={narrow} />
         </div>
+        {resourceLabel && !narrow ? (
+          <div className="hub-agenda-card__resource">{resourceLabel}</div>
+        ) : null}
       </AgendaCardShell>
     );
   }
@@ -417,7 +420,7 @@ export function AgendaAppointmentCard({
             <span className="hub-agenda-card__guardian"> · {guardianFirstName(a.guardianName)}</span>
           ) : null}
         </div>
-        {resourceLabel && !narrow ? <div className="hub-agenda-card__resource">{resourceLabel}</div> : null}
+        {resourceLabel ? <div className="hub-agenda-card__resource">{resourceLabel}</div> : null}
       </AgendaCardShell>
     );
   }

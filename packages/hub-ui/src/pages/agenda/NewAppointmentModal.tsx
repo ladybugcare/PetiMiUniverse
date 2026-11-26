@@ -123,8 +123,10 @@ import {
   SCHEDULE_OVERLAP_CONFIRM_TITLE,
   agendaAppointmentToConflictSlot,
   buildScheduleOverlapConfirmMessage,
+  collectRelatedScheduleExcludeIds,
   findLocalScheduleConflict,
   isScheduleConflictMessage,
+  isSeriesAllDatesConflictMessage,
   type LocalScheduleWindow,
 } from './scheduleConflict';
 import {
@@ -612,6 +614,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [seriesScopePickerOpen, setSeriesScopePickerOpen] = useState(false);
   const pendingPatchPayloadRef = useRef<Parameters<typeof hubAgendaApi.patch>[1] | null>(null);
   const confirmedOverlapRef = useRef(false);
+  /** Série: usuário pediu «Criar só as livres» — pula pré-check local e não força overlap. */
+  const seriesPartialConfirmedRef = useRef(false);
   const handleSaveRef = useRef<() => Promise<void>>(async () => undefined);
 
   // ── Derived ───────────────────────────────────────────────────────────────
@@ -2021,22 +2025,42 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   const askOverlapConfirm = (detail: string | undefined, reason: string | undefined, onConfirm: () => void) => {
     setSaving(false);
-    const isSeriesConfirm =
-      Boolean(withRecurrence && !isEditMode) || Boolean(isEditMode && seriesId);
+    const isSeriesCreateConfirm = Boolean(withRecurrence && !isEditMode);
+    if (isSeriesAllDatesConflictMessage(reason)) {
+      showAlert({
+        type: 'warning',
+        title: SCHEDULE_OVERLAP_CONFIRM_TITLE,
+        message:
+          reason?.trim() ||
+          'Nenhuma data da série está livre neste horário. Ajuste data, profissional ou recurso.',
+        showCancel: false,
+        confirmText: SCHEDULE_OVERLAP_CANCEL_TEXT,
+        onConfirm: () => {
+          seriesPartialConfirmedRef.current = false;
+          confirmedOverlapRef.current = false;
+        },
+      });
+      return;
+    }
     showAlert({
       type: 'warning',
       title: SCHEDULE_OVERLAP_CONFIRM_TITLE,
       message: buildScheduleOverlapConfirmMessage({
         detail,
         reason,
-        isSeries: isSeriesConfirm,
+        isSeries: isSeriesCreateConfirm,
       }),
       showCancel: true,
-      confirmText: isSeriesConfirm ? SCHEDULE_OVERLAP_SERIES_CONFIRM_TEXT : SCHEDULE_OVERLAP_CONFIRM_TEXT,
+      confirmText: isSeriesCreateConfirm ? SCHEDULE_OVERLAP_SERIES_CONFIRM_TEXT : SCHEDULE_OVERLAP_CONFIRM_TEXT,
       cancelText: SCHEDULE_OVERLAP_CANCEL_TEXT,
       onConfirm: () => {
-        // Série: não força overlap nas datas ruins — a API cria só as livres.
-        confirmedOverlapRef.current = !isSeriesConfirm;
+        if (isSeriesCreateConfirm) {
+          // Não força overlap — a API cria só as livres; o ref evita reabrir o diálogo no pré-check.
+          seriesPartialConfirmedRef.current = true;
+          confirmedOverlapRef.current = false;
+        } else {
+          confirmedOverlapRef.current = true;
+        }
         onConfirm();
       },
     });
@@ -2325,7 +2349,43 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       }
     }
 
-    if (!isWalkIn && !confirmedOverlapRef.current && existingAppointments.length > 0) {
+    const editScheduleUnchanged =
+      isEditMode &&
+      Boolean(initial?.starts_at) &&
+      Boolean(initial?.ends_at) &&
+      (() => {
+        const nextStarts = toIsoTs(dateYmd, startsHm);
+        let nextEnds = resolveServiceEndsAt({
+          dateYmd,
+          startsHm,
+          endsHm,
+          durationMin: totalDurationMin > 0 ? totalDurationMin : 60,
+          allowOvernight: mainIsHotelGroup || endsHmManualRef.current,
+        });
+        if (mainIsHotelGroup && hotelCheckoutDateYmd && hotelCheckoutHm) {
+          nextEnds = toIsoTs(hotelCheckoutDateYmd, hotelCheckoutHm);
+        }
+        const sameMs = (a: string, b: string) => new Date(a).getTime() === new Date(b).getTime();
+        const initStaff = initial?.hub_staff_member_id ?? null;
+        const initResourceId = initial?.hub_resource_id ?? null;
+        const initResource = (initial?.resource_label ?? '').trim() || null;
+        const nextResource = resourceLabel.trim() || null;
+        return (
+          sameMs(initial!.starts_at!, nextStarts) &&
+          sameMs(initial!.ends_at!, nextEnds) &&
+          (initStaff || null) === (staffId || null) &&
+          (initResourceId || null) === (hubResourceId || null) &&
+          initResource === nextResource
+        );
+      })();
+
+    if (
+      !isWalkIn &&
+      !confirmedOverlapRef.current &&
+      !seriesPartialConfirmedRef.current &&
+      !editScheduleUnchanged &&
+      existingAppointments.length > 0
+    ) {
       const windows: LocalScheduleWindow[] = [];
       if (isMultiPetSelection) {
         for (const cfg of petVisitConfigs) {
@@ -2395,11 +2455,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           );
         }
       }
-      const exclude = new Set<string>();
-      if (appointmentId) exclude.add(appointmentId);
-      for (const a of existingAppointments) {
-        if (appointmentId && a.parent_appointment_id === appointmentId) exclude.add(a.id);
-      }
+      const exclude = new Set(
+        collectRelatedScheduleExcludeIds(appointmentId, existingAppointments),
+      );
       for (const block of extraBlocks) {
         if (block.appointment_id) exclude.add(block.appointment_id);
       }
@@ -2684,6 +2742,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           pets,
         });
         confirmedOverlapRef.current = false;
+        seriesPartialConfirmedRef.current = false;
         resetForm();
         onClose();
         onCreated({
@@ -2701,15 +2760,26 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       }
 
       confirmedOverlapRef.current = false;
+      seriesPartialConfirmedRef.current = false;
       resetForm();
       onClose();
       onCreated(result);
     } catch (e: unknown) {
       const msg = (e as { message?: string })?.message ?? 'Erro ao criar agendamento';
-      if (!confirmedOverlapRef.current && isScheduleConflictMessage(msg)) {
+      if (
+        !confirmedOverlapRef.current &&
+        !seriesPartialConfirmedRef.current &&
+        isScheduleConflictMessage(msg)
+      ) {
         askOverlapConfirm(undefined, msg, () => void handleSaveRef.current());
         return;
       }
+      if (seriesPartialConfirmedRef.current && isSeriesAllDatesConflictMessage(msg)) {
+        seriesPartialConfirmedRef.current = false;
+        askOverlapConfirm(undefined, msg, () => undefined);
+        return;
+      }
+      seriesPartialConfirmedRef.current = false;
       setSaveError(msg);
     } finally {
       setSaving(false);
@@ -2719,6 +2789,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   const resetForm = () => {
     confirmedOverlapRef.current = false;
+    seriesPartialConfirmedRef.current = false;
     endsHmManualRef.current = false;
     setMobileStep('form');
     setServices([]);
