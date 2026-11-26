@@ -70,6 +70,15 @@ export type HubComandaEvent = {
   edit_context?: 'caixa' | 'financeiro' | null;
 };
 
+/** Pagamento individual para a timeline da comanda (não agregar métodos). */
+export type HubComandaTimelinePayment = {
+  id: string;
+  amount: number;
+  payment_method: string;
+  status: string;
+  payment_date: string;
+};
+
 export type HubComandaPendingPriceApproval = {
   kind: 'surgery_service' | 'hospitalization_charge';
   id: string;
@@ -106,6 +115,8 @@ export type HubComandaDetailResponse = {
   pets?: HubPublicComandaPet[];
   package_balances_by_item_id?: Record<string, Array<Record<string, unknown>>>;
   events?: HubComandaEvent[];
+  /** Lançamentos de pagamento (posted/reversed) para a timeline — um por método/valor. */
+  payments?: HubComandaTimelinePayment[];
   pending_price_approvals?: HubComandaPendingPriceApproval[];
 };
 

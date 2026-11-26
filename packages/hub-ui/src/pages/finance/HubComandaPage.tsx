@@ -12,10 +12,13 @@ import {
   type HubComandaGuardianEmbed,
   type HubComandaPendingPriceApproval,
   type HubComandaPetEmbed,
+  type HubComandaTimelinePayment,
 } from '../../api/hubComandaApi';
 import { hubClinicalApi } from '../../api/hubClinicalApi';
+import { hubFinancialApi, type HubFinancePayment } from '../../api/hubFinancialApi';
 import { hubInventoryApi, type HubInventoryItem, type HubInventoryLotRow } from '../../api/hubInventoryApi';
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
+import { resolveComandaTimelinePayments } from './hubComandaTimelinePayments';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
 import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
@@ -104,6 +107,7 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
   const [showReceivableDrawer, setShowReceivableDrawer] = useState(false);
   const [catalogSearch, setCatalogSearch] = useState('');
   const [approvingPriceId, setApprovingPriceId] = useState<string | null>(null);
+  const [timelinePayments, setTimelinePayments] = useState<HubComandaTimelinePayment[]>([]);
 
   const newItemCounterRef = useRef(0);
 
@@ -180,6 +184,39 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
       onSelectReceivable(ids[0]!);
     }
   }, [mode, payload, searchParams, onSelectReceivable]);
+
+  useEffect(() => {
+    if (!payload || !clinicId) {
+      setTimelinePayments([]);
+      return;
+    }
+    if (payload.payments && payload.payments.length > 0) {
+      setTimelinePayments(payload.payments);
+      return;
+    }
+    const ids = payload.active_receivable_ids ?? [];
+    if (!ids.length) {
+      setTimelinePayments([]);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const details = await Promise.all(
+        ids.map((id) =>
+          hubFinancialApi.getReceivableDetail(id, clinicId).catch(() => null),
+        ),
+      );
+      if (cancelled) return;
+      const fromReceivables: HubFinancePayment[] = [];
+      for (const d of details) {
+        if (d?.payments?.length) fromReceivables.push(...d.payments);
+      }
+      setTimelinePayments(resolveComandaTimelinePayments(payload, fromReceivables));
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [payload, clinicId]);
 
   const summary = useMemo(() => {
     const subtotal = items.reduce((s, it) => s + computeLineTotal(it), 0);
@@ -757,6 +794,7 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
         cardNetTotal={payload.card_net_total}
         cardWithoutFeeGrossTotal={payload.card_without_fee_gross_total}
         events={payload.events ?? []}
+        payments={timelinePayments}
         canWrite={canWrite}
         canEdit={canEdit}
         saving={saving}

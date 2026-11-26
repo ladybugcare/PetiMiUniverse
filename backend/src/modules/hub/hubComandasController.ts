@@ -628,11 +628,10 @@ async function isOperationalCompleteForComanda(comanda: Record<string, unknown>)
   return true;
 }
 
-async function listPostedPaymentsForComandaReceivables(
+async function listReceivableIdsForComandaPayments(
   comandaId: string,
   clinicId: string,
-  selectCols: string,
-): Promise<Record<string, unknown>[]> {
+): Promise<string[]> {
   const { data: recs, error: rErr } = await supabaseAdmin
     .from('hub_receivables')
     .select('id')
@@ -640,7 +639,15 @@ async function listPostedPaymentsForComandaReceivables(
     .eq('clinic_id', clinicId)
     .neq('status', 'cancelled');
   if (rErr) throw new Error(rErr.message);
-  const ids = (recs ?? []).map((r) => r.id as string);
+  return (recs ?? []).map((r) => r.id as string);
+}
+
+async function listPostedPaymentsForComandaReceivables(
+  comandaId: string,
+  clinicId: string,
+  selectCols: string,
+): Promise<Record<string, unknown>[]> {
+  const ids = await listReceivableIdsForComandaPayments(comandaId, clinicId);
   if (ids.length === 0) return [];
   const { data: pays, error: pErr } = await supabaseAdmin
     .from('hub_payments')
@@ -649,6 +656,43 @@ async function listPostedPaymentsForComandaReceivables(
     .eq('status', 'posted');
   if (pErr) throw new Error(pErr.message);
   return (pays ?? []) as unknown as Record<string, unknown>[];
+}
+
+/** Pagamentos da timeline da comanda (um evento por lançamento; posted + reversed). */
+async function listTimelinePaymentsForComanda(
+  comandaId: string,
+  clinicId: string,
+): Promise<
+  Array<{
+    id: string;
+    amount: number;
+    payment_method: string;
+    status: string;
+    payment_date: string;
+  }>
+> {
+  const ids = await listReceivableIdsForComandaPayments(comandaId, clinicId);
+  if (ids.length === 0) return [];
+  const { data: pays, error: pErr } = await supabaseAdmin
+    .from('hub_payments')
+    .select('id, amount, payment_method, status, payment_date, effective_payment_date, created_at')
+    .in('receivable_id', ids)
+    .in('status', ['posted', 'reversed'])
+    .order('created_at', { ascending: true });
+  if (pErr) throw new Error(pErr.message);
+  return (pays ?? []).map((row) => {
+    const at =
+      String(row.effective_payment_date ?? '') ||
+      String(row.payment_date ?? '') ||
+      String(row.created_at ?? '');
+    return {
+      id: String(row.id),
+      amount: round2(Number(row.amount ?? 0)),
+      payment_method: String(row.payment_method ?? ''),
+      status: String(row.status ?? ''),
+      payment_date: at,
+    };
+  });
 }
 
 async function sumPaymentsForComandaReceivables(comandaId: string, clinicId: string): Promise<number> {
@@ -2858,7 +2902,13 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
     }
   }
 
-  const events = await listComandaEvents(comandaId, clinicId);
+  const [events, timelinePayments] = await Promise.all([
+    listComandaEvents(comandaId, clinicId),
+    listTimelinePaymentsForComanda(comandaId, clinicId).catch((e) => {
+      console.warn('[hub_comandas] timeline payments skipped', e);
+      return [] as Awaited<ReturnType<typeof listTimelinePaymentsForComanda>>;
+    }),
+  ]);
 
   // Itens da comanda já devolvidos fisicamente (preserva histórico; só marca UI).
   const returnedComandaItemIds = new Set<string>();
@@ -2916,6 +2966,8 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
     allowed_guardians: allowedGuardians,
     package_balances_by_item_id: packageBalancesByItemId,
     events,
+    /** Um lançamento por pagamento (não agregar métodos na timeline). */
+    payments: timelinePayments,
     pending_price_approvals,
   };
 }

@@ -1,4 +1,5 @@
-import type { HubComandaEvent } from '../../api/hubComandaApi';
+import type { HubComandaEvent, HubComandaTimelinePayment } from '../../api/hubComandaApi';
+import { paymentMethodLabel } from '../../utils/hubPaymentMethods';
 
 export type ComandaTimelineVariant = 'done' | 'active' | 'todo';
 
@@ -14,6 +15,15 @@ function fmtBrl(n: number): string {
   return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
 
+function paymentTimelineTitle(status: string): string {
+  return status === 'reversed' ? 'Pagamento estornado' : 'Pagamento registrado';
+}
+
+function paymentTimelineSub(payment: HubComandaTimelinePayment): string {
+  const method = paymentMethodLabel(payment.payment_method);
+  return `${method} · ${fmtBrl(payment.amount)}`;
+}
+
 export function buildComandaTimelineSteps(input: {
   openedAt?: string | null;
   closedAt?: string | null;
@@ -21,8 +31,18 @@ export function buildComandaTimelineSteps(input: {
   paidTotal?: number;
   balanceDue?: number;
   events?: HubComandaEvent[];
+  /** Quando presente, cada pagamento vira um passo (não somar métodos num único marco). */
+  payments?: HubComandaTimelinePayment[];
 }): ComandaTimelineStep[] {
-  const { openedAt, closedAt, status, paidTotal = 0, balanceDue = 0, events = [] } = input;
+  const {
+    openedAt,
+    closedAt,
+    status,
+    paidTotal = 0,
+    balanceDue = 0,
+    events = [],
+    payments = [],
+  } = input;
 
   const timed: ComandaTimelineStep[] = [];
 
@@ -46,7 +66,18 @@ export function buildComandaTimelineSteps(input: {
     });
   }
 
-  if (paidTotal > 0) {
+  if (payments.length > 0) {
+    for (const pay of payments) {
+      timed.push({
+        id: `payment-${pay.id}`,
+        at: pay.payment_date || null,
+        title: paymentTimelineTitle(pay.status),
+        sub: paymentTimelineSub(pay),
+        variant: 'done',
+      });
+    }
+  } else if (paidTotal > 0) {
+    // Fallback legado quando a API ainda não envia `payments`.
     timed.push({
       id: 'milestone-paid',
       at: closedAt ?? openedAt ?? null,

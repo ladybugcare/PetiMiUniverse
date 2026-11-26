@@ -1,6 +1,12 @@
 import React, { useMemo } from 'react';
 import { Link } from 'react-router-dom';
-import type { HubComandaAllowedGuardian, HubComandaEvent, HubComandaGuardianEmbed, HubComandaPetEmbed } from '../../api/hubComandaApi';
+import type {
+  HubComandaAllowedGuardian,
+  HubComandaEvent,
+  HubComandaGuardianEmbed,
+  HubComandaPetEmbed,
+  HubComandaTimelinePayment,
+} from '../../api/hubComandaApi';
 import { buildComandaTimelineSteps } from './hubComandaTimeline';
 import { sexLabelPt, sizeTierLabelPt } from '../orcamentos/hubQuoteViewUtils';
 import { DocumentContactStrip, DocumentPetStrip, DocumentPetStripList } from '../orcamentos/hubDocumentPartyCards';
@@ -60,6 +66,7 @@ export interface HubComandaDetailLayoutProps {
   cardNetTotal?: number;
   cardWithoutFeeGrossTotal?: number;
   events?: HubComandaEvent[];
+  payments?: HubComandaTimelinePayment[];
   canWrite: boolean;
   canEdit?: boolean;
   saving: boolean;
@@ -101,6 +108,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
   cardNetTotal = 0,
   cardWithoutFeeGrossTotal = 0,
   events = [],
+  payments = [],
   canWrite,
   canEdit: canEditProp,
   saving,
@@ -141,8 +149,9 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
         paidTotal,
         balanceDue,
         events,
+        payments,
       }),
-    [openedAt, closedAt, status, paidTotal, balanceDue, events],
+    [openedAt, closedAt, status, paidTotal, balanceDue, events, payments],
   );
 
   const metaParts: string[] = [];
