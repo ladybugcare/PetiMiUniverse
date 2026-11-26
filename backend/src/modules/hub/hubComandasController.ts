@@ -70,6 +70,8 @@ import {
   restoreHubCustomerCredit,
 } from './hubCustomerCredit';
 import type { HubQuotePricingVariantInput } from './hubPricingResolve';
+import { buildCommissionInsertFieldsForItems, snapshotToInsertFields } from './hubCommissionAccrual';
+import { resolveStaffIdForUser } from './hubStaffResolve';
 
 const uuidStr = z.string().uuid();
 
@@ -3665,12 +3667,22 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
       nonEmptyGroupIndices.push(gi);
 
       const costByItem = await loadInventoryCostByItemId(clinic_id, groupItems as Record<string, unknown>[]);
+      const commissionByItem = await buildCommissionInsertFieldsForItems({
+        clinicId: clinic_id,
+        items: groupItems as Record<string, unknown>[],
+        originalAmount: subtotal,
+        netAmountAtSale: finalAmount,
+        actingUserId: userId,
+        // Checkout: só usa sold_by já gravado; não promove o caixa a vendedor.
+        allowActingUserAsSaleAuthor: false,
+      });
       let sort = 0;
       for (const it of groupItems) {
         const lineKind =
           String(it.item_kind ?? '') === 'product'
             ? 'product'
             : mapItemToReceivableLineKind((it.origin_type as string | null) ?? null);
+        const snap = commissionByItem.get(String(it.id));
         const { error: lnErr } = await supabaseAdmin.from('hub_receivable_lines').insert({
           clinic_id,
           receivable_id: receivableId,
@@ -3688,6 +3700,7 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
           unit_cost_amount: productUnitCostSnapshot(costByItem, it as Record<string, unknown>),
           line_total: Number(it.line_total ?? 0),
           sort_order: sort++,
+          ...snapshotToInsertFields(snap),
         });
         if (lnErr) {
           await rollbackReceivables();
@@ -4151,12 +4164,22 @@ export async function leavePendingHandoffComanda(
     receivableIds.push(receivableId);
 
     const handoffCostByItem = await loadInventoryCostByItemId(clinicId, items as Record<string, unknown>[]);
+    const commissionByItem = await buildCommissionInsertFieldsForItems({
+      clinicId,
+      items: items as Record<string, unknown>[],
+      originalAmount: subtotal,
+      netAmountAtSale: finalAmount,
+      actingUserId: userId,
+      // leave_pending / auto-close: nunca inventar vendedor pelo ator do handoff.
+      allowActingUserAsSaleAuthor: false,
+    });
     let sort = 0;
     for (const it of items) {
       const lineKind =
         String(it.item_kind ?? '') === 'product'
           ? 'product'
           : mapItemToReceivableLineKind((it.origin_type as string | null) ?? null);
+      const snap = commissionByItem.get(String(it.id));
       const { error: lnErr } = await supabaseAdmin.from('hub_receivable_lines').insert({
         clinic_id: clinicId,
         receivable_id: receivableId,
@@ -4174,6 +4197,7 @@ export async function leavePendingHandoffComanda(
         unit_cost_amount: productUnitCostSnapshot(handoffCostByItem, it as Record<string, unknown>),
         line_total: Number(it.line_total ?? 0),
         sort_order: sort++,
+        ...snapshotToInsertFields(snap),
       });
       if (lnErr) {
         await rollback();
@@ -5578,6 +5602,11 @@ export const postHubComandaAddItems = async (req: Request, res: Response) => {
       }
     }
 
+    const sellerStaffId =
+      items.some((it) => it.item_kind === 'product') && userId
+        ? await resolveStaffIdForUser(clinic_id, userId)
+        : null;
+
     const insertRows = items.map((it) => ({
       clinic_id,
       comanda_id: comandaId,
@@ -5594,6 +5623,7 @@ export const postHubComandaAddItems = async (req: Request, res: Response) => {
       origin_type: 'manual',
       origin_id: null,
       sort_order: sortBase++,
+      ...(it.item_kind === 'product' && sellerStaffId ? { sold_by_staff_id: sellerStaffId } : {}),
     }));
 
     const { error: insErr } = await supabaseAdmin.from('hub_comanda_items').insert(insertRows);
@@ -6225,12 +6255,21 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
         const receivableId = rec.id as string;
 
         const batchCostByItem = await loadInventoryCostByItemId(clinic_id, items as Record<string, unknown>[]);
+        const commissionByItem = await buildCommissionInsertFieldsForItems({
+          clinicId: clinic_id,
+          items: items as Record<string, unknown>[],
+          originalAmount: subtotal,
+          netAmountAtSale: subtotal,
+          actingUserId: userId,
+          allowActingUserAsSaleAuthor: false,
+        });
         const { error: linesErr } = await supabaseAdmin.from('hub_receivable_lines').insert(
           items.map((it, sort) => {
             const lineKind =
               String(it.item_kind ?? '') === 'product'
                 ? 'product'
                 : mapItemToReceivableLineKind((it.origin_type as string | null) ?? null);
+            const snap = commissionByItem.get(String(it.id));
             return {
               clinic_id,
               receivable_id: receivableId,
@@ -6248,6 +6287,7 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
               unit_cost_amount: productUnitCostSnapshot(batchCostByItem, it as Record<string, unknown>),
               line_total: Number(it.line_total ?? 0),
               sort_order: sort,
+              ...snapshotToInsertFields(snap),
             };
           }),
         );

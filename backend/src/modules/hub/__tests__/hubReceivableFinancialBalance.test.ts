@@ -1,6 +1,8 @@
 import {
   computeReceivableFinancialAfterReturn,
   commercialReturnForLines,
+  allocateLiquidLineAmounts,
+  commissionAdjustmentForReturn,
   eligibleFinancialRefundCap,
   netPaidEffective,
   balanceDue,
@@ -128,5 +130,60 @@ describe('hubReceivableFinancialBalance — matriz comercial × financeiro', () 
         netAmountAtSale: 150,
       }),
     ).toBe(75);
+  });
+
+  it('allocateLiquidLineAmounts soma exatamente o líquido (maior resto)', () => {
+    const liquids = allocateLiquidLineAmounts({
+      lineTotals: [100, 100, 100],
+      originalAmount: 300,
+      netAmountAtSale: 100,
+    });
+    expect(liquids).toEqual([33.34, 33.33, 33.33]);
+    expect(liquids.reduce((s, n) => s + n, 0)).toBeCloseTo(100, 2);
+  });
+
+  it('allocateLiquidLineAmounts inclui linhas não comissionáveis no rateio', () => {
+    const liquids = allocateLiquidLineAmounts({
+      lineTotals: [80, 20],
+      originalAmount: 100,
+      netAmountAtSale: 90,
+    });
+    expect(liquids[0]).toBe(72);
+    expect(liquids[1]).toBe(18);
+    expect(liquids.reduce((s, n) => s + n, 0)).toBe(90);
+  });
+
+  it('allocateLiquidLineAmounts sem desconto devolve line_totals', () => {
+    expect(
+      allocateLiquidLineAmounts({
+        lineTotals: [50, 25],
+        originalAmount: 75,
+        netAmountAtSale: 75,
+      }),
+    ).toEqual([50, 25]);
+  });
+
+  it('commissionAdjustmentForReturn é proporcional (percent e fixo)', () => {
+    expect(
+      commissionAdjustmentForReturn({
+        commissionOriginalAmount: 10,
+        commissionBasisAmount: 100,
+        returnedCommercial: 50,
+      }),
+    ).toBe(5);
+    expect(
+      commissionAdjustmentForReturn({
+        commissionOriginalAmount: 15,
+        commissionBasisAmount: 80,
+        returnedCommercial: 80,
+      }),
+    ).toBe(15);
+    expect(
+      commissionAdjustmentForReturn({
+        commissionOriginalAmount: 15,
+        commissionBasisAmount: 80,
+        returnedCommercial: 40,
+      }),
+    ).toBe(7.5);
   });
 });

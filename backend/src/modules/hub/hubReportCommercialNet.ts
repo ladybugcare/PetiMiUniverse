@@ -83,7 +83,20 @@ export type SaleLineRow = {
   quantity: number | string | null;
   line_total: number | string | null;
   unit_cost_amount: number | string | null;
+  /** Snapshot de comissão (null = linha pré-implante / fora do regime). */
+  commission_staff_member_id?: string | null;
+  commission_staff_source?: string | null;
+  commission_attributed_at?: string | null;
+  commission_rule_id?: string | null;
+  commission_rule_basis?: string | null;
+  commission_rule_rate?: number | string | null;
+  commission_basis_amount?: number | string | null;
+  commission_original_amount?: number | string | null;
+  commission_accrued_at?: string | null;
 };
+
+const SALE_LINE_SELECT =
+  'id, receivable_id, line_kind, hub_inventory_item_id, hub_service_type_id, description, quantity, line_total, unit_cost_amount, commission_staff_member_id, commission_staff_source, commission_attributed_at, commission_rule_id, commission_rule_basis, commission_rule_rate, commission_basis_amount, commission_original_amount, commission_accrued_at';
 
 export type ReceivableHeaderRow = {
   id: string;
@@ -288,8 +301,7 @@ export async function loadCommercialPeriodBundle(opts: {
     if (!chunk.length) continue;
     const lr = await fetchAllSupabaseRows<SaleLineRow>({
       table: 'hub_receivable_lines',
-      select:
-        'id, receivable_id, line_kind, hub_inventory_item_id, hub_service_type_id, description, quantity, line_total, unit_cost_amount',
+      select: SALE_LINE_SELECT,
       apply: (q) => q.eq('clinic_id', opts.clinicId).in('receivable_id', chunk),
       orderColumns: [{ column: 'id', ascending: true }],
     });
@@ -338,8 +350,7 @@ export async function loadCommercialPeriodBundle(opts: {
     if (!chunk.length) continue;
     const lr = await fetchAllSupabaseRows<SaleLineRow>({
       table: 'hub_receivable_lines',
-      select:
-        'id, receivable_id, line_kind, hub_inventory_item_id, hub_service_type_id, description, quantity, line_total, unit_cost_amount',
+      select: SALE_LINE_SELECT,
       apply: (q) => q.eq('clinic_id', opts.clinicId).in('id', chunk),
       orderColumns: [{ column: 'id', ascending: true }],
     });

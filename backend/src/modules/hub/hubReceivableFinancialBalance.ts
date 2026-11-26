@@ -174,3 +174,95 @@ export function commercialReturnForLines(opts: {
   const factor = net / original;
   return round2Money(sumLines * factor);
 }
+
+/**
+ * Distribui o líquido comercial (após desconto de cabeçalho) entre as linhas.
+ * Usa arredondamento round2 com método do maior resto para que
+ * Σ liquid_i = netAmountAtSale (quando original > 0).
+ *
+ * Inclui linhas não comissionáveis no rateio — o desconto cabeçalho
+ * aplica-se a todas as linhas do recebível.
+ */
+export function allocateLiquidLineAmounts(opts: {
+  lineTotals: number[];
+  originalAmount: number;
+  netAmountAtSale: number;
+}): number[] {
+  const totals = opts.lineTotals.map((n) => round2Money(Number(n || 0)));
+  const original = round2Money(opts.originalAmount);
+  const net = round2Money(opts.netAmountAtSale);
+
+  if (totals.length === 0) return [];
+  if (original <= 0.009) return totals.map((t) => round2Money(t));
+
+  const factor = net / original;
+  const floored = totals.map((t) => {
+    const raw = t * factor;
+    return Math.floor(raw * 100 + Number.EPSILON) / 100;
+  });
+  const sumFloored = round2Money(floored.reduce((s, n) => s + n, 0));
+  let remainderCents = Math.round((net - sumFloored) * 100);
+
+  // Ordena por maior fração residual (maior resto) para distribuir centavos.
+  const remainders = totals.map((t, i) => {
+    const raw = t * factor;
+    const frac = raw * 100 - Math.floor(raw * 100 + Number.EPSILON);
+    return { i, frac, lineTotal: t };
+  });
+  remainders.sort((a, b) => {
+    if (b.frac !== a.frac) return b.frac - a.frac;
+    if (b.lineTotal !== a.lineTotal) return b.lineTotal - a.lineTotal;
+    return a.i - b.i;
+  });
+
+  const result = [...floored];
+  let idx = 0;
+  while (remainderCents > 0 && remainders.length > 0) {
+    const target = remainders[idx % remainders.length]!.i;
+    result[target] = round2Money(result[target]! + 0.01);
+    remainderCents -= 1;
+    idx += 1;
+  }
+  // Se net < sumFloored (arredondamento para cima improvável com floor), remove centavos.
+  while (remainderCents < 0 && remainders.length > 0) {
+    const target = remainders[(remainders.length - 1 - (idx % remainders.length) + remainders.length) % remainders.length]!.i;
+    if (result[target]! >= 0.01) {
+      result[target] = round2Money(result[target]! - 0.01);
+      remainderCents += 1;
+    }
+    idx += 1;
+    if (idx > remainders.length * 3) break;
+  }
+
+  return result.map((n) => round2Money(n));
+}
+
+/** Base líquida de uma única linha (atalho quando o rateio do grupo já não importa). */
+export function liquidAmountForLine(opts: {
+  lineTotal: number;
+  originalAmount: number;
+  netAmountAtSale: number;
+}): number {
+  return commercialReturnForLines({
+    lineTotals: [opts.lineTotal],
+    originalAmount: opts.originalAmount,
+    netAmountAtSale: opts.netAmountAtSale,
+  });
+}
+
+/**
+ * Ajuste de comissão em devolução, proporcional ao valor comercial devolvido
+ * sobre a base líquida original da linha (vale para % e fixo).
+ */
+export function commissionAdjustmentForReturn(opts: {
+  commissionOriginalAmount: number;
+  commissionBasisAmount: number;
+  returnedCommercial: number;
+}): number {
+  const original = round2Money(opts.commissionOriginalAmount);
+  const basis = round2Money(opts.commissionBasisAmount);
+  const returned = round2Money(opts.returnedCommercial);
+  if (original <= 0.009 || basis <= 0.009 || returned <= 0.009) return 0;
+  const ratio = Math.min(1, returned / basis);
+  return round2Money(original * ratio);
+}

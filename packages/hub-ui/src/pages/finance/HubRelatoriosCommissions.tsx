@@ -133,12 +133,12 @@ export const HubRelatoriosCommissions: React.FC<Props> = ({ clinicId, unitId, pe
       <div className="hub-servicos__metrics hub-relatorios__kpi-row" aria-live="polite">
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Comissão estimada</div>
+            <div className="hub-servicos__metric-label">Comissão apurada</div>
             <div className="hub-servicos__metric-value">
               {formatBrl(data?.summary.total_commission ?? 0)}
             </div>
             <div className="hub-servicos__metric-sub">
-              {data?.notes ? 'Estimativa · regras ativas atuais' : periodLabel}
+              {data?.notes ? 'Snapshot por linha · regras futuras não alteram o passado' : periodLabel}
             </div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>
@@ -302,7 +302,7 @@ export const HubRelatoriosCommissions: React.FC<Props> = ({ clinicId, unitId, pe
                 Por profissional
               </h2>
               <p className="hub-relatorios__panel-sub">
-                Comissões com profissional vinculado ao agendamento
+                Inclui o agrupamento Sem profissional nos totais gerenciais
               </p>
             </div>
             <div className="hub-relatorios__panel-stat">

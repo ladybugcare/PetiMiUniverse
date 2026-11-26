@@ -41,6 +41,11 @@ import {
   netPaidEffective as netPaidEffectiveFromParts,
 } from './hubReceivableFinancialBalance';
 import {
+  accrueCommissionSnapshots,
+  commissionAdjustmentForReturn,
+  snapshotToInsertFields,
+} from './hubCommissionAccrual';
+import {
   aggregateMovementBySectorNet,
   aggregateProductSalesNet,
   commercialAmountForReturnedLine,
@@ -1025,11 +1030,29 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
         .single();
       if (rErr || !rec) return res.status(500).json({ error: rErr?.message || 'Erro ao criar recebível manual' });
       const receivableId = rec.id as string;
+      const commissionByKey = await accrueCommissionSnapshots({
+        clinicId: clinic_id,
+        lines: builtLines.map((line, idx) => ({
+          key: `manual-${idx}`,
+          line_total: Number(line.line_total ?? 0),
+          hub_service_type_id: null,
+          hub_inventory_item_id: null,
+          item_kind: 'fee',
+          origin_type: 'manual_line',
+          origin_id: null,
+          sold_by_staff_id: null,
+        })),
+        originalAmount: subtotal,
+        netAmountAtSale: subtotal,
+        actingUserId: req.user?.id ?? null,
+        allowActingUserAsSaleAuthor: false,
+      });
       const { error: lnErr } = await supabaseAdmin.from('hub_receivable_lines').insert(
-        builtLines.map((line) => ({
+        builtLines.map((line, idx) => ({
           ...line,
           clinic_id,
           receivable_id: receivableId,
+          ...snapshotToInsertFields(commissionByKey.get(`manual-${idx}`)),
         }))
       );
       if (lnErr) {
@@ -1174,6 +1197,33 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
     }
     const receivableId = rec.id as string;
 
+    const commissionByKey = await accrueCommissionSnapshots({
+      clinicId: clinic_id,
+      lines: built.lines.map((l, i) => ({
+        key: String(l.source_line_id ?? `direct-${i}`),
+        line_total: Number(l.line_total ?? 0),
+        hub_service_type_id: (l.hub_service_type_id as string | null) ?? null,
+        hub_inventory_item_id: (l.hub_inventory_item_id as string | null) ?? null,
+        item_kind: l.hub_inventory_item_id ? 'product' : 'service',
+        origin_type:
+          l.line_kind === 'appointment_service'
+            ? 'appointment_service'
+            : l.line_kind === 'grooming_extra'
+              ? 'grooming_extra'
+              : l.line_kind === 'quote_line'
+                ? 'quote_line'
+                : l.hub_inventory_item_id
+                  ? 'manual_line'
+                  : null,
+        origin_id: (l.source_line_id as string | null) ?? null,
+        sold_by_staff_id: null,
+        source_line_id: (l.source_line_id as string | null) ?? null,
+      })),
+      originalAmount: built.subtotal,
+      netAmountAtSale: finalAmount,
+      actingUserId: req.user?.id ?? null,
+      allowActingUserAsSaleAuthor: false,
+    });
     const lineRows = built.lines.map((l, i) => ({
       clinic_id,
       receivable_id: receivableId,
@@ -1187,6 +1237,7 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
       unit_sale_amount: l.unit_sale_amount,
       line_total: l.line_total,
       sort_order: l.sort_order ?? i,
+      ...snapshotToInsertFields(commissionByKey.get(String(l.source_line_id ?? `direct-${i}`))),
     }));
     const { error: lnErr } = await supabaseAdmin.from('hub_receivable_lines').insert(lineRows);
     if (lnErr) {
@@ -1594,6 +1645,25 @@ export const postHubFinanceReceivableProductLine = async (req: Request, res: Res
     });
     if (!priced.ok) return res.status(400).json({ error: priced.error });
     const lineTotal = round2(unitSale * quantity);
+    const productCommission = await accrueCommissionSnapshots({
+      clinicId: clinic_id,
+      lines: [
+        {
+          key: 'product-line',
+          line_total: lineTotal,
+          hub_service_type_id: null,
+          hub_inventory_item_id: item_id,
+          item_kind: 'product',
+          origin_type: 'manual_line',
+          origin_id: null,
+          sold_by_staff_id: null,
+        },
+      ],
+      originalAmount: lineTotal,
+      netAmountAtSale: lineTotal,
+      actingUserId: userId,
+      allowActingUserAsSaleAuthor: true,
+    });
     const [{ data: maxRows }, { data: line, error: lineErr }] = await Promise.all([
       supabaseAdmin
         .from('hub_receivable_lines')
@@ -1620,6 +1690,7 @@ export const postHubFinanceReceivableProductLine = async (req: Request, res: Res
               : null,
           line_total: lineTotal,
           sort_order: 9999,
+          ...snapshotToInsertFields(productCommission.get('product-line')),
         })
         .select('*')
         .single(),
@@ -6210,50 +6281,24 @@ type CommissionReportPayload = {
     staff_id: string | null;
     line_total: number;
     commission_amount: number;
+    commission_original_amount?: number;
+    commission_adjustment?: number;
     basis: string | null;
     rate: number | null;
   }>;
 };
+
+const SEM_PROFISSIONAL_KEY = '__none__';
 
 async function buildCommissionsReport(params: {
   clinic_id: string;
   unit_id: string;
   fromYmd: string;
   toYmd: string;
-  /** Se informado, mantém apenas linhas atribuídas a este staff. */
+  /** Se informado, mantém apenas linhas atribuídas a este staff (sem bucket Sem profissional). */
   onlyStaffId?: string | null;
 }): Promise<{ ok: true; data: CommissionReportPayload } | { ok: false; status: number; error: string }> {
   const { clinic_id, unit_id, fromYmd, toYmd, onlyStaffId } = params;
-
-  const { data: rules, error: ruErr } = await supabaseAdmin
-    .from('hub_commission_rules')
-    .select('hub_service_type_id, hub_inventory_item_id, basis, rate, active')
-    .eq('clinic_id', clinic_id)
-    .eq('active', true)
-    .is('deleted_at', null);
-  if (ruErr) {
-    const msg = String(ruErr.message || '');
-    const missingTable =
-      /Could not find the table .*hub_commission_rules/i.test(msg) ||
-      /relation .*hub_commission_rules.* does not exist/i.test(msg);
-    if (missingTable) {
-      return {
-        ok: false,
-        status: 503,
-        error: 'Tabela hub_commission_rules não encontrada. Aplique 038_create_hub_commission_rules.sql.',
-      };
-    }
-    return { ok: false, status: 500, error: msg };
-  }
-  const ruleByService = new Map<string, { basis: string; rate: number }>();
-  const ruleByProduct = new Map<string, { basis: string; rate: number }>();
-  for (const r of rules ?? []) {
-    const entry = { basis: String(r.basis), rate: Number(r.rate ?? 0) };
-    const sid = r.hub_service_type_id as string | null;
-    const pid = r.hub_inventory_item_id as string | null;
-    if (sid) ruleByService.set(sid, entry);
-    if (pid) ruleByProduct.set(pid, entry);
-  }
 
   const bundle = await loadCommercialPeriodBundle({
     clinicId: clinic_id,
@@ -6263,64 +6308,22 @@ async function buildCommissionsReport(params: {
   });
   if (!bundle.ok) return { ok: false, status: 500, error: bundle.error };
 
-  // Metadados de staff/origem: vendas do período + headers de devolução
-  const allHeaders = [
-    ...bundle.salesHeaders,
-    ...[...bundle.returnHeadersById.values()].filter(
-      (h) => !bundle.salesHeaders.some((s) => s.id === h.id),
+  // Somente linhas do novo regime (commission_accrued_at preenchido).
+  const accruedSales = bundle.saleLines.filter((ln) => Boolean(ln.commission_accrued_at));
+  const accruedReturnLineIds = new Set(
+    [...bundle.returnLinesById.values()]
+      .filter((ln) => Boolean(ln.commission_accrued_at))
+      .map((ln) => ln.id),
+  );
+
+  const staffIds = [
+    ...new Set(
+      [
+        ...accruedSales.map((l) => l.commission_staff_member_id),
+        ...[...bundle.returnLinesById.values()].map((l) => l.commission_staff_member_id),
+      ].filter((id): id is string => Boolean(id)),
     ),
   ];
-  const headerIds = allHeaders.map((h) => h.id);
-  const sourceMeta = new Map<string, { source_type: string | null; source_id: string | null }>();
-  for (let i = 0; i < headerIds.length; i += 200) {
-    const chunk = headerIds.slice(i, i + 200);
-    if (!chunk.length) continue;
-    const { data: rows, error } = await supabaseAdmin
-      .from('hub_receivables')
-      .select('id, source_type, source_id')
-      .in('id', chunk);
-    if (error) return { ok: false, status: 500, error: error.message };
-    for (const r of rows ?? []) {
-      sourceMeta.set(r.id as string, {
-        source_type: (r.source_type as string | null) ?? null,
-        source_id: (r.source_id as string | null) ?? null,
-      });
-    }
-  }
-
-  const appointmentIds = [...sourceMeta.values()]
-    .filter((m) => m.source_type === 'appointment' && m.source_id)
-    .map((m) => m.source_id as string);
-  const encounterIds = [...sourceMeta.values()]
-    .filter((m) => m.source_type === 'encounter' && m.source_id)
-    .map((m) => m.source_id as string);
-
-  const staffByAppointment = new Map<string, string>();
-  for (let i = 0; i < appointmentIds.length; i += 200) {
-    const chunk = appointmentIds.slice(i, i + 200);
-    if (!chunk.length) continue;
-    const { data: appts } = await supabaseAdmin
-      .from('hub_appointments')
-      .select('id, hub_staff_member_id')
-      .in('id', chunk);
-    for (const a of appts ?? []) {
-      if (a.hub_staff_member_id) staffByAppointment.set(a.id as string, a.hub_staff_member_id as string);
-    }
-  }
-  const staffByEncounter = new Map<string, string>();
-  for (let i = 0; i < encounterIds.length; i += 200) {
-    const chunk = encounterIds.slice(i, i + 200);
-    if (!chunk.length) continue;
-    const { data: encs } = await supabaseAdmin
-      .from('hub_encounters')
-      .select('id, hub_staff_member_id')
-      .in('id', chunk);
-    for (const e of encs ?? []) {
-      if (e.hub_staff_member_id) staffByEncounter.set(e.id as string, e.hub_staff_member_id as string);
-    }
-  }
-
-  const staffIds = [...new Set([...staffByAppointment.values(), ...staffByEncounter.values()])];
   const staffNames = new Map<string, string>();
   for (let i = 0; i < staffIds.length; i += 200) {
     const chunk = staffIds.slice(i, i + 200);
@@ -6337,7 +6340,10 @@ async function buildCommissionsReport(params: {
     }
   }
 
-  const allLines = [...bundle.saleLines, ...bundle.returnLinesById.values()];
+  const allLines = [
+    ...accruedSales,
+    ...[...bundle.returnLinesById.values()].filter((l) => l.commission_accrued_at),
+  ];
   const serviceIds = [
     ...new Set(allLines.map((l) => l.hub_service_type_id).filter((id): id is string => Boolean(id))),
   ];
@@ -6359,26 +6365,6 @@ async function buildCommissionsReport(params: {
     for (const p of itemRows ?? []) productNames.set(p.id as string, String(p.name ?? p.id));
   }
 
-  const estimateCommission = (
-    rule: { basis: string; rate: number } | undefined,
-    commercialBase: number,
-  ): { commission: number; basis: string | null; rate: number | null } => {
-    if (!rule || commercialBase <= 0.009) return { commission: 0, basis: null, rate: null };
-    if (rule.basis === 'percent_of_sale') {
-      return {
-        commission: round2(commercialBase * (rule.rate / 100)),
-        basis: rule.basis,
-        rate: rule.rate,
-      };
-    }
-    // fixed_per_sale: preserva natureza fixa; teto no base comercial da linha
-    return {
-      commission: round2(Math.min(rule.rate, commercialBase)),
-      basis: rule.basis,
-      rate: rule.rate,
-    };
-  };
-
   const byService = new Map<
     string,
     { service_id: string; name: string; lines_count: number; sales_total: number; commission_total: number }
@@ -6397,34 +6383,28 @@ async function buildCommissionsReport(params: {
   let linesWithCommission = 0;
   const receivableIdsWithKeptLines = new Set<string>();
 
-  const resolveStaff = (receivableId: string): string | null => {
-    const meta = sourceMeta.get(receivableId);
-    if (!meta?.source_id) return null;
-    if (meta.source_type === 'appointment') return staffByAppointment.get(meta.source_id) ?? null;
-    if (meta.source_type === 'encounter') return staffByEncounter.get(meta.source_id) ?? null;
-    return null;
-  };
-
   const pushEntry = (opts: {
     receivableId: string;
     lineId: string;
     description: string;
     stId: string | null;
     itemId: string | null;
+    staffId: string | null;
     commercialBase: number;
-    commission: number;
+    commissionOriginal: number;
+    commissionAdjustment: number;
+    commissionSigned: number;
     basis: string | null;
     rate: number | null;
     sign: 1 | -1;
   }) => {
-    if (opts.commission <= 0.009 && opts.sign === 1) return;
-    const staffId = resolveStaff(opts.receivableId);
-    if (onlyStaffId && staffId !== onlyStaffId) return;
+    if (onlyStaffId) {
+      if (!opts.staffId || opts.staffId !== onlyStaffId) return;
+    }
 
-    const signedCommission = round2(opts.sign * opts.commission);
     const signedSales = round2(opts.sign * opts.commercialBase);
     linesWithCommission += 1;
-    totalCommission = round2(totalCommission + signedCommission);
+    totalCommission = round2(totalCommission + opts.commissionSigned);
     totalSales = round2(totalSales + signedSales);
     receivableIdsWithKeptLines.add(opts.receivableId);
 
@@ -6438,7 +6418,7 @@ async function buildCommissionsReport(params: {
       };
       cur.lines_count += opts.sign === 1 ? 1 : 0;
       cur.sales_total = round2(cur.sales_total + signedSales);
-      cur.commission_total = round2(cur.commission_total + signedCommission);
+      cur.commission_total = round2(cur.commission_total + opts.commissionSigned);
       byService.set(opts.stId, cur);
     }
     if (opts.itemId) {
@@ -6451,103 +6431,136 @@ async function buildCommissionsReport(params: {
       };
       cur.lines_count += opts.sign === 1 ? 1 : 0;
       cur.sales_total = round2(cur.sales_total + signedSales);
-      cur.commission_total = round2(cur.commission_total + signedCommission);
+      cur.commission_total = round2(cur.commission_total + opts.commissionSigned);
       byProduct.set(opts.itemId, cur);
     }
-    if (staffId) {
-      const cur = byStaff.get(staffId) ?? {
-        staff_id: staffId,
-        name: staffNames.get(staffId) ?? 'Profissional',
+
+    const staffBucket = opts.staffId ?? (onlyStaffId ? null : SEM_PROFISSIONAL_KEY);
+    if (staffBucket) {
+      const cur = byStaff.get(staffBucket) ?? {
+        staff_id: staffBucket === SEM_PROFISSIONAL_KEY ? '' : staffBucket,
+        name:
+          staffBucket === SEM_PROFISSIONAL_KEY
+            ? 'Sem profissional'
+            : staffNames.get(staffBucket) ?? 'Profissional',
         lines_count: 0,
         sales_total: 0,
         commission_total: 0,
       };
       cur.lines_count += opts.sign === 1 ? 1 : 0;
       cur.sales_total = round2(cur.sales_total + signedSales);
-      cur.commission_total = round2(cur.commission_total + signedCommission);
-      byStaff.set(staffId, cur);
+      cur.commission_total = round2(cur.commission_total + opts.commissionSigned);
+      byStaff.set(staffBucket, cur);
     }
+
     items.push({
       receivable_id: opts.receivableId,
       line_id: opts.lineId,
       description: opts.description,
       service_name: opts.stId ? serviceNames.get(opts.stId) ?? null : null,
       product_name: opts.itemId ? productNames.get(opts.itemId) ?? null : null,
-      staff_name: staffId ? staffNames.get(staffId) ?? null : null,
-      staff_id: staffId,
+      staff_name: opts.staffId
+        ? staffNames.get(opts.staffId) ?? null
+        : onlyStaffId
+          ? null
+          : 'Sem profissional',
+      staff_id: opts.staffId,
       line_total: signedSales,
-      commission_amount: signedCommission,
+      commission_amount: opts.commissionSigned,
+      commission_original_amount: round2(opts.sign === 1 ? opts.commissionOriginal : -opts.commissionOriginal),
+      commission_adjustment: round2(opts.sign === 1 ? 0 : -opts.commissionAdjustment),
       basis: opts.basis,
       rate: opts.rate,
     });
   };
 
-  for (const ln of bundle.saleLines) {
+  for (const ln of accruedSales) {
     const stId = (ln.hub_service_type_id as string) ?? null;
     const itemId = (ln.hub_inventory_item_id as string) ?? null;
-    const rule = stId ? ruleByService.get(stId) : itemId ? ruleByProduct.get(itemId) : undefined;
-    const commercialBase = round2(Number(ln.line_total ?? 0));
-    const est = estimateCommission(rule, commercialBase);
+    const staffId = (ln.commission_staff_member_id as string | null) ?? null;
+    const basisAmount = round2(Number(ln.commission_basis_amount ?? ln.line_total ?? 0));
+    const originalCommission = round2(Number(ln.commission_original_amount ?? 0));
     pushEntry({
       receivableId: ln.receivable_id,
       lineId: ln.id,
       description: String(ln.description ?? ''),
       stId,
       itemId,
-      commercialBase,
-      commission: est.commission,
-      basis: est.basis,
-      rate: est.rate,
+      staffId,
+      commercialBase: basisAmount,
+      commissionOriginal: originalCommission,
+      commissionAdjustment: 0,
+      commissionSigned: originalCommission,
+      basis: (ln.commission_rule_basis as string | null) ?? null,
+      rate: ln.commission_rule_rate != null ? Number(ln.commission_rule_rate) : null,
       sign: 1,
     });
   }
 
   for (const ev of bundle.returnEvents) {
+    if (!accruedReturnLineIds.has(ev.receivable_line_id)) continue;
     const ln = bundle.returnLinesById.get(ev.receivable_line_id);
     const hdr = bundle.returnHeadersById.get(ev.receivable_id);
     if (!ln || !hdr) continue;
     const netInfo = netAtSaleFromHeader(hdr);
-    const original = Number(hdr.original_amount ?? 0);
-    const commercialBase = commercialAmountForReturnedLine({
+    const originalHdr = Number(hdr.original_amount ?? 0);
+    const returnedCommercial = commercialAmountForReturnedLine({
       lineTotal: Number(ln.line_total ?? 0),
-      originalAmount: original > 0.009 ? original : netInfo.net,
+      originalAmount: originalHdr > 0.009 ? originalHdr : netInfo.net,
       netAmountAtSale: netInfo.net,
+    });
+    const basisAmount = round2(Number(ln.commission_basis_amount ?? 0));
+    const originalCommission = round2(Number(ln.commission_original_amount ?? 0));
+    const adj = commissionAdjustmentForReturn({
+      commissionOriginalAmount: originalCommission,
+      commissionBasisAmount: basisAmount > 0.009 ? basisAmount : returnedCommercial,
+      returnedCommercial,
     });
     const stId = (ln.hub_service_type_id as string) ?? null;
     const itemId = (ln.hub_inventory_item_id as string) ?? null;
-    const rule = stId ? ruleByService.get(stId) : itemId ? ruleByProduct.get(itemId) : undefined;
-    const est = estimateCommission(rule, commercialBase);
+    const staffId = (ln.commission_staff_member_id as string | null) ?? null;
     pushEntry({
       receivableId: ln.receivable_id,
       lineId: ln.id,
       description: `Devolução: ${String(ln.description ?? '')}`,
       stId,
       itemId,
-      commercialBase,
-      commission: est.commission,
-      basis: est.basis,
-      rate: est.rate,
+      staffId,
+      commercialBase: returnedCommercial,
+      commissionOriginal: originalCommission,
+      commissionAdjustment: adj,
+      commissionSigned: round2(-adj),
+      basis: (ln.commission_rule_basis as string | null) ?? null,
+      rate: ln.commission_rule_rate != null ? Number(ln.commission_rule_rate) : null,
       sign: -1,
     });
   }
+
+  const byStaffList = [...byStaff.values()].sort((a, b) => {
+    if (a.name === 'Sem profissional') return 1;
+    if (b.name === 'Sem profissional') return -1;
+    return b.commission_total - a.commission_total;
+  });
 
   return {
     ok: true,
     data: {
       period: { from: fromYmd, to: toYmd },
       summary: {
-        receivables_count: onlyStaffId ? receivableIdsWithKeptLines.size : bundle.salesHeaders.length,
+        receivables_count: onlyStaffId
+          ? receivableIdsWithKeptLines.size
+          : new Set(accruedSales.map((l) => l.receivable_id)).size,
         lines_with_commission: linesWithCommission,
         total_commission: totalCommission,
         total_sales: totalSales,
       },
       by_service: [...byService.values()].sort((a, b) => b.commission_total - a.commission_total),
       by_product: [...byProduct.values()].sort((a, b) => b.commission_total - a.commission_total),
-      by_staff: [...byStaff.values()].sort((a, b) => b.commission_total - a.commission_total),
+      by_staff: byStaffList,
       items: items.slice(0, 300),
       estimation: true,
       notes:
-        'Comissão estimada (regras ativas atuais). Sem snapshot histórico de regra — alteração de regra muda estimativas. Devoluções geram ajuste negativo na competência do evento. Unidade estrita.',
+        'Comissões a partir da nova apuração (snapshot por linha). Alterações de regras afetam somente vendas futuras. Devoluções ajustam o saldo com a regra original. Linhas anteriores à implantação não entram. Unidade estrita.',
     },
   };
 }

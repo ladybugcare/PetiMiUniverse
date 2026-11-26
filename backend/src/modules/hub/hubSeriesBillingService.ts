@@ -4,6 +4,7 @@
 import { supabaseAdmin } from '../../config/supabase';
 import { resolveAppliedSaleAmount } from './hubPricingResolve';
 import { roundMoney2 } from './hubServiceTypesPricingMatrix';
+import { buildCommissionInsertFieldsForItems, snapshotToInsertFields } from './hubCommissionAccrual';
 
 export type SeriesBillingMode = 'per_occurrence' | 'periodic_invoice';
 export type InvoiceIssueRule = 'fixed_day' | 'first_business_day';
@@ -416,11 +417,22 @@ export async function issueSeriesInvoiceForPeriod(input: {
   } else if (receivable?.id) {
     const { data: comandaItems } = await supabaseAdmin
       .from('hub_comanda_items')
-      .select('id, pet_id, origin_id, hub_service_type_id, description, quantity, unit_amount, line_total')
+      .select(
+        'id, pet_id, origin_id, origin_type, item_kind, hub_service_type_id, hub_inventory_item_id, sold_by_staff_id, description, quantity, unit_amount, line_total',
+      )
       .eq('comanda_id', comandaId)
       .order('sort_order', { ascending: true });
+    const items = (comandaItems ?? []) as Record<string, unknown>[];
+    const commissionByItem = await buildCommissionInsertFieldsForItems({
+      clinicId: input.clinicId,
+      items,
+      originalAmount: total,
+      netAmountAtSale: total,
+      allowActingUserAsSaleAuthor: false,
+    });
     let sort = 0;
-    for (const it of comandaItems ?? []) {
+    for (const it of items) {
+      const snap = commissionByItem.get(String(it.id));
       await supabaseAdmin.from('hub_receivable_lines').insert({
         clinic_id: input.clinicId,
         receivable_id: receivable.id,
@@ -435,6 +447,7 @@ export async function issueSeriesInvoiceForPeriod(input: {
         unit_sale_amount: Number(it.unit_amount ?? 0),
         line_total: Number(it.line_total ?? 0),
         sort_order: sort++,
+        ...snapshotToInsertFields(snap),
       });
     }
   }

@@ -94,7 +94,7 @@ export const HubRelatoriosMyCommissions: React.FC<Props> = ({ clinicId, unitId, 
       <div className="hub-relatorios__overview-toolbar">
         <p className="hub-relatorios__overview-period">
           Período analisado: <strong>{periodLabel}</strong>
-          <span className="hub-clientes__muted"> — somente os seus atendimentos</span>
+          <span className="hub-clientes__muted"> — somente as suas comissões apuradas</span>
         </p>
         <HubRelatoriosExportButton
           onClick={onExport}

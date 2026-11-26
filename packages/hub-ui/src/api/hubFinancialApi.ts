@@ -700,6 +700,8 @@ export type HubFinanceCommissionsReport = {
     staff_id?: string | null;
     line_total: number;
     commission_amount: number;
+    commission_original_amount?: number;
+    commission_adjustment?: number;
     basis: string | null;
     rate: number | null;
   }>;

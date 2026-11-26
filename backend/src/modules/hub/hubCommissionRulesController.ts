@@ -288,35 +288,14 @@ export const getHubCommissionPreview = async (req: Request, res: Response) => {
 
     const { data: lines, error: lnErr } = await supabaseAdmin
       .from('hub_receivable_lines')
-      .select('id, hub_service_type_id, hub_inventory_item_id, description, quantity, line_total')
+      .select(
+        'id, hub_service_type_id, hub_inventory_item_id, description, quantity, line_total, commission_accrued_at, commission_basis_amount, commission_original_amount, commission_rule_basis, commission_rule_rate',
+      )
       .eq('receivable_id', receivable_id)
       .order('sort_order', { ascending: true });
     if (lnErr) return res.status(500).json({ error: lnErr.message });
 
-    const { data: rules, error: ruErr } = await supabaseAdmin
-      .from('hub_commission_rules')
-      .select('hub_service_type_id, hub_inventory_item_id, basis, rate, active')
-      .eq('clinic_id', clinic_id)
-      .eq('active', true)
-      .is('deleted_at', null);
-    if (ruErr) {
-      if (String(ruErr.message || '').includes('hub_commission_rules')) {
-        return res.status(503).json({
-          error: 'Tabela hub_commission_rules não encontrada. Aplique 038_create_hub_commission_rules.sql.',
-        });
-      }
-      return res.status(500).json({ error: ruErr.message });
-    }
-
-    const ruleByService = new Map<string, { basis: string; rate: number }>();
-    const ruleByProduct = new Map<string, { basis: string; rate: number }>();
-    for (const r of rules ?? []) {
-      const entry = { basis: String(r.basis), rate: Number(r.rate ?? 0) };
-      const sid = r.hub_service_type_id as string | null;
-      const pid = r.hub_inventory_item_id as string | null;
-      if (sid) ruleByService.set(sid, entry);
-      if (pid) ruleByProduct.set(pid, entry);
-    }
+    const hasSnapshot = (lines ?? []).some((ln) => Boolean(ln.commission_accrued_at));
 
     type LinePreview = {
       line_id: string;
@@ -327,27 +306,75 @@ export const getHubCommissionPreview = async (req: Request, res: Response) => {
       basis: string | null;
       rate: number | null;
       commission_amount: number;
+      from_snapshot?: boolean;
     };
 
     const out: LinePreview[] = [];
     let total = 0;
-    for (const ln of lines ?? []) {
-      const lineTotal = round2(Number(ln.line_total ?? 0));
-      const stId = (ln.hub_service_type_id as string) ?? null;
-      const itemId = (ln.hub_inventory_item_id as string) ?? null;
-      const rule = stId ? ruleByService.get(stId) : itemId ? ruleByProduct.get(itemId) : undefined;
-      const { commission, basis, rate } = applyCommissionRule(lineTotal, rule);
-      total = round2(total + commission);
-      out.push({
-        line_id: ln.id as string,
-        description: String(ln.description ?? ''),
-        line_total: lineTotal,
-        hub_service_type_id: stId,
-        hub_inventory_item_id: itemId,
-        basis,
-        rate,
-        commission_amount: commission,
-      });
+
+    if (hasSnapshot) {
+      for (const ln of lines ?? []) {
+        if (!ln.commission_accrued_at) continue;
+        const commission = round2(Number(ln.commission_original_amount ?? 0));
+        const basisAmount = round2(Number(ln.commission_basis_amount ?? ln.line_total ?? 0));
+        total = round2(total + commission);
+        out.push({
+          line_id: ln.id as string,
+          description: String(ln.description ?? ''),
+          line_total: basisAmount,
+          hub_service_type_id: (ln.hub_service_type_id as string) ?? null,
+          hub_inventory_item_id: (ln.hub_inventory_item_id as string) ?? null,
+          basis: (ln.commission_rule_basis as string | null) ?? null,
+          rate: ln.commission_rule_rate != null ? Number(ln.commission_rule_rate) : null,
+          commission_amount: commission,
+          from_snapshot: true,
+        });
+      }
+    } else {
+      const { data: rules, error: ruErr } = await supabaseAdmin
+        .from('hub_commission_rules')
+        .select('hub_service_type_id, hub_inventory_item_id, basis, rate, active')
+        .eq('clinic_id', clinic_id)
+        .eq('active', true)
+        .is('deleted_at', null);
+      if (ruErr) {
+        if (String(ruErr.message || '').includes('hub_commission_rules')) {
+          return res.status(503).json({
+            error: 'Tabela hub_commission_rules não encontrada. Aplique 038_create_hub_commission_rules.sql.',
+          });
+        }
+        return res.status(500).json({ error: ruErr.message });
+      }
+
+      const ruleByService = new Map<string, { basis: string; rate: number }>();
+      const ruleByProduct = new Map<string, { basis: string; rate: number }>();
+      for (const r of rules ?? []) {
+        const entry = { basis: String(r.basis), rate: Number(r.rate ?? 0) };
+        const sid = r.hub_service_type_id as string | null;
+        const pid = r.hub_inventory_item_id as string | null;
+        if (sid) ruleByService.set(sid, entry);
+        if (pid) ruleByProduct.set(pid, entry);
+      }
+
+      for (const ln of lines ?? []) {
+        const lineTotal = round2(Number(ln.line_total ?? 0));
+        const stId = (ln.hub_service_type_id as string) ?? null;
+        const itemId = (ln.hub_inventory_item_id as string) ?? null;
+        const rule = stId ? ruleByService.get(stId) : itemId ? ruleByProduct.get(itemId) : undefined;
+        const { commission, basis, rate } = applyCommissionRule(lineTotal, rule);
+        total = round2(total + commission);
+        out.push({
+          line_id: ln.id as string,
+          description: String(ln.description ?? ''),
+          line_total: lineTotal,
+          hub_service_type_id: stId,
+          hub_inventory_item_id: itemId,
+          basis,
+          rate,
+          commission_amount: commission,
+          from_snapshot: false,
+        });
+      }
     }
 
     return res.json({
@@ -355,6 +382,7 @@ export const getHubCommissionPreview = async (req: Request, res: Response) => {
       receivable_final_amount: Number(rec.final_amount ?? 0),
       lines: out,
       total_commission: total,
+      from_snapshot: hasSnapshot,
     });
   } catch (e: unknown) {
     console.error('getHubCommissionPreview', e);

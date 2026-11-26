@@ -340,3 +340,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 167. **`167_alter_hub_reception_handoffs_no_consultorio.sql`** — kind `no_consultorio` em `hub_reception_handoffs` (pet já no consultório via encaixe/atendimento espelhado; informativo, sem ação de Chegada). Executar depois do item 132.
 
 168. **`168_create_hub_clinical_term_templates.sql`** — Biblioteca de termos clínicos (`hub_clinical_term_templates`: PDF por clínica, categorias castração/anestesia/internação/eutanásia/outro). Arquivos no bucket `hub-clinical-files` em `{clinicId}/terms/…`. Executar depois de `clinics` + `moddatetime`.
+
+171. **`171_alter_hub_commission_line_snapshot.sql`** — snapshot imutável de comissão em `hub_receivable_lines` (`commission_*` / `commission_accrued_at`) + `sold_by_staff_id` em `hub_comanda_items` (autoria de venda de produto). Relatório gerencial lê o snapshot; serviço → executor, produto → vendedor. Executar depois dos itens 160, 039a e 042.

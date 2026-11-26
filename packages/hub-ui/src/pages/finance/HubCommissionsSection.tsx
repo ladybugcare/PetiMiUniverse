@@ -441,12 +441,12 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
       <div className="hub-finance-page__callout hub-finance-page__callout--hint" role="note">
         <HelpCircle size={18} className="hub-finance-page__callout-icon" aria-hidden />
         <div>
-          <strong>O que é “por item”?</strong>
+          <strong>Como a comissão é atribuída</strong>
           <p className="hub-commissions__callout-text">
-            Uma cobrança pode ter vários itens (ex.: Banho + Tosa + produto). A regra olha cada item com o
-            serviço ou produto correspondente. Ex.: Banho de {formatBrl(EXAMPLE_ITEM_AMOUNT)} com 10% →
-            comissão {formatBrl(8)}. Se a mesma cobrança tiver um produto com R$&nbsp;5 fixos, soma mais
-            R$&nbsp;5.
+            Serviços: comissão de quem <strong>realizou</strong> o serviço. Produtos: de quem{' '}
+            <strong>vendeu</strong>. A regra olha cada item (ex.: Banho de {formatBrl(EXAMPLE_ITEM_AMOUNT)}{' '}
+            com 10% → {formatBrl(8)}). Alterar ou desativar uma regra afeta somente apurações futuras — o
+            valor na venda fica congelado.
           </p>
         </div>
       </div>
@@ -603,7 +603,7 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
       <div className="hub-commissions__preview">
         <h3 className="hub-finance-page__subsection-title">Simular em uma cobrança</h3>
         <p className="hub-clientes__subtitle">
-          Mostra a comissão estimada item a item, com as regras ativas desta clínica.
+          Simulação com regras ativas. Em vendas reais, a comissão fica gravada na linha no momento da cobrança.
         </p>
         <div className="hub-finance-page__form-card">
           <div className="hub-commissions__preview-row">
