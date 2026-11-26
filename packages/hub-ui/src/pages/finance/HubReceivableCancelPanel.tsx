@@ -13,6 +13,10 @@ import {
   type MerchandiseReturnLine,
   type MerchandiseReturnValue,
 } from './HubMerchandiseReturnSection';
+import {
+  HubReceivableCancelIntentField,
+  type ReceivableCancelIntent,
+} from './HubReceivableCancelIntentField';
 import { ReceivableStockReturnBadge } from './ReceivableStockReturnBadge';
 
 type Props = {
@@ -24,8 +28,7 @@ type Props = {
 };
 
 /**
- * Cancelamento de recebível com confirmação opcional de devolução física
- * (usado no day board e demais atalhos que antes usavam só `prompt`).
+ * Cancelamento de recebível com intenção (anular vs reemitir) e devolução física opcional.
  */
 export function HubReceivableCancelPanel({ open, clinicId, receivableId, onClose, onSuccess }: Props) {
   const { showError, showSuccess } = useAlert();
@@ -33,6 +36,7 @@ export function HubReceivableCancelPanel({ open, clinicId, receivableId, onClose
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reason, setReason] = useState('');
+  const [intent, setIntent] = useState<ReceivableCancelIntent>('void_sale');
   const [merchandiseReturn, setMerchandiseReturn] = useState<MerchandiseReturnValue>(() =>
     emptyMerchandiseReturnValue(),
   );
@@ -61,6 +65,7 @@ export function HubReceivableCancelPanel({ open, clinicId, receivableId, onClose
   useEffect(() => {
     if (!open) {
       setReason('');
+      setIntent('void_sale');
       setMerchandiseReturn(emptyMerchandiseReturnValue());
     }
   }, [open]);
@@ -114,9 +119,16 @@ export function HubReceivableCancelPanel({ open, clinicId, receivableId, onClose
       const res = await hubFinancialApi.cancelReceivable(receivableId, {
         clinic_id: clinicId,
         reason: reason.trim(),
+        intent,
         ...stockFields,
       });
-      showSuccess(res.warning || 'Recebível cancelado.');
+      const statusNote =
+        res.comanda_status === 'cancelada'
+          ? ' Comanda cancelada.'
+          : res.comanda_status === 'aberta' && intent === 'reissue_billing'
+            ? ' Comanda reaberta para nova cobrança.'
+            : '';
+      showSuccess((res.warning || 'Recebível cancelado.') + statusNote);
       onSuccess();
       onClose();
     } catch (e) {
@@ -159,6 +171,12 @@ export function HubReceivableCancelPanel({ open, clinicId, receivableId, onClose
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
             <ReceivableStockReturnBadge status={detail.stock_return_status} />
           </div>
+          <HubReceivableCancelIntentField
+            idPrefix="dayboard-cancel"
+            value={intent}
+            onChange={setIntent}
+            disabled={saving}
+          />
           <div className="hub-clientes__field">
             <label className="hub-clientes__label" htmlFor="dayboard-cancel-reason">
               Motivo

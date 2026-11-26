@@ -61,6 +61,10 @@ import {
 } from './HubMerchandiseReturnSection';
 import { formatComandaOriginLabel } from './comandaListPreview';
 import { HubPaymentReversalForm, type PaymentReversalMode } from './HubPaymentReversalForm';
+import {
+  HubReceivableCancelIntentField,
+  type ReceivableCancelIntent,
+} from './HubReceivableCancelIntentField';
 import { ReceivableStockReturnBadge } from './ReceivableStockReturnBadge';
 
 const FINANCE_ESTORNOS_HREF = '/hub/financeiro?tab=adjustments&adjust=reversals';
@@ -176,6 +180,10 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
   const paymentIdempotencyKeysRef = useRef<Record<string, string>>({});
   const [billingAction, setBillingAction] = useState<CheckoutDrawerBillingAction>('receive_now');
   const [cancelReason, setCancelReason] = useState('');
+  const [cancelIntent, setCancelIntent] = useState<ReceivableCancelIntent>('void_sale');
+  const [cancelMerchandiseReturn, setCancelMerchandiseReturn] = useState<MerchandiseReturnValue>(() =>
+    emptyMerchandiseReturnValue(),
+  );
   const [standaloneReturnOpen, setStandaloneReturnOpen] = useState(false);
   const [standaloneReturnReason, setStandaloneReturnReason] = useState('');
   const [standaloneMerchandiseReturn, setStandaloneMerchandiseReturn] = useState<MerchandiseReturnValue>(
@@ -765,15 +773,38 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       showError('Informe o motivo do cancelamento (mín. 3 caracteres).');
       return;
     }
+    const pendingMerchandise = pendingMerchandiseLines.some((l) => !l.alreadyReturned);
+    if (
+      pendingMerchandise &&
+      cancelMerchandiseReturn.returned &&
+      cancelMerchandiseReturn.selectedLineIds.length === 0
+    ) {
+      showError('Selecione ao menos um produto para devolver.');
+      return;
+    }
+    if (pendingMerchandise && cancelMerchandiseReturn.returned && !cancelMerchandiseReturn.condition) {
+      showError('Selecione se a mercadoria está apta ou não para revenda.');
+      return;
+    }
     setPaymentLoading(true);
     try {
-      // Devolução física na comanda é só via "Registrar devolução" (abaixo).
+      const stockFields = pendingMerchandise ? merchandiseReturnApiFields(cancelMerchandiseReturn) : {};
       const res = await hubFinancialApi.cancelReceivable(detail.id, {
         clinic_id: clinicId,
         reason: cancelReason.trim(),
+        intent: cancelIntent,
+        ...stockFields,
       });
-      showSuccess(res.warning || 'Recebível cancelado.');
+      const statusNote =
+        res.comanda_status === 'cancelada'
+          ? ' Comanda cancelada.'
+          : res.comanda_status === 'aberta' && cancelIntent === 'reissue_billing'
+            ? ' Comanda reaberta para nova cobrança.'
+            : '';
+      showSuccess((res.warning || 'Recebível cancelado.') + statusNote);
       setCancelReason('');
+      setCancelIntent('void_sale');
+      setCancelMerchandiseReturn(emptyMerchandiseReturnValue());
       await loadDetail();
       onRefreshComanda?.();
       onCancelSuccess?.();
@@ -787,6 +818,9 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     detail,
     hasPermission,
     cancelReason,
+    cancelIntent,
+    cancelMerchandiseReturn,
+    pendingMerchandiseLines,
     showError,
     showSuccess,
     loadDetail,
@@ -1041,17 +1075,34 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
         {billingAction === 'receive_now' && canRegisterPayment ? paymentLinesEditor : null}
 
         {billingAction === 'cancel' && canCancelReceivable ? (
-          <CheckoutDrawerCancelReasonField
-            id="comanda-fin-cancel-reason"
-            value={cancelReason}
-            onChange={setCancelReason}
-          />
+          <div style={{ display: 'grid', gap: 12 }}>
+            <HubReceivableCancelIntentField
+              idPrefix="comanda-fin-cancel"
+              value={cancelIntent}
+              onChange={setCancelIntent}
+              disabled={paymentLoading}
+            />
+            <CheckoutDrawerCancelReasonField
+              id="comanda-fin-cancel-reason"
+              value={cancelReason}
+              onChange={setCancelReason}
+            />
+            {pendingMerchandiseLines.length > 0 ? (
+              <HubMerchandiseReturnSection
+                idPrefix="comanda-fin-cancel-stock"
+                lines={pendingMerchandiseLines}
+                value={cancelMerchandiseReturn}
+                onChange={setCancelMerchandiseReturn}
+                disabled={paymentLoading}
+              />
+            ) : null}
+          </div>
         ) : null}
       </CheckoutDrawerBillingShell>
     ) : null;
 
-  // Único fluxo de devolução física na comanda: "Registrar devolução"
-  // (motivo + itens + condição). Cancelamento financeiro não embute estoque.
+  // Devolução física também disponível em "Registrar devolução" (abaixo),
+  // independente do cancelamento financeiro.
   const showStandaloneMerchandiseReturn =
     pendingMerchandiseLines.length > 0 && hasPermission('hub.financial.write');
 

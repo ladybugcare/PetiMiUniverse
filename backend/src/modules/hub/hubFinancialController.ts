@@ -2419,6 +2419,11 @@ const cancelReceivableBodySchema = z
   .object({
     clinic_id: uuidStr,
     reason: z.string().trim().min(3).max(2000),
+    /**
+     * void_sale (padrão): anula a venda — não reabre itens; encerra a comanda se for o último recebível ativo.
+     * reissue_billing: corrige cobrança — reabre itens (e reabre comanda fechada).
+     */
+    intent: z.enum(['void_sale', 'reissue_billing']).optional().default('void_sale'),
     confirm_stock_return: z.boolean().optional().default(false),
     stock_return_condition: z.enum(['sellable', 'unsellable']).optional().nullable(),
     stock_return_lines: z.array(stockReturnLineSchema).max(200).optional().nullable(),
@@ -2434,6 +2439,124 @@ const cancelReceivableBodySchema = z
     }
   });
 
+async function applyComandaSideEffectsAfterReceivableCancel(opts: {
+  clinicId: string;
+  comandaId: string | null | undefined;
+  intent: 'void_sale' | 'reissue_billing';
+  reason: string;
+}): Promise<{ comanda_status: string | null }> {
+  const comandaId = opts.comandaId;
+  if (!comandaId) return { comanda_status: null };
+
+  const { data: comandaRow } = await supabaseAdmin
+    .from('hub_comandas')
+    .select('*')
+    .eq('id', comandaId)
+    .eq('clinic_id', opts.clinicId)
+    .maybeSingle();
+  if (!comandaRow) return { comanda_status: null };
+
+  const currentStatus = String(comandaRow.status ?? '');
+  if (currentStatus === 'cancelada') {
+    await refreshComandaFinancialStatus(comandaId, opts.clinicId, comandaRow as Record<string, unknown>);
+    return { comanda_status: 'cancelada' };
+  }
+
+  if (opts.intent === 'reissue_billing') {
+    if (currentStatus === 'fechada') {
+      await supabaseAdmin
+        .from('hub_comandas')
+        .update({ status: 'aberta', closed_at: null })
+        .eq('id', comandaId)
+        .eq('clinic_id', opts.clinicId);
+      const { data: reopened } = await supabaseAdmin
+        .from('hub_comandas')
+        .select('*')
+        .eq('id', comandaId)
+        .maybeSingle();
+      if (reopened) {
+        await refreshComandaFinancialStatus(comandaId, opts.clinicId, reopened as Record<string, unknown>);
+      }
+      return { comanda_status: 'aberta' };
+    }
+    await refreshComandaFinancialStatus(comandaId, opts.clinicId, comandaRow as Record<string, unknown>);
+    return { comanda_status: currentStatus || null };
+  }
+
+  let siblings: Array<Record<string, unknown>> = [];
+  {
+    const primary = await supabaseAdmin
+      .from('hub_receivables')
+      .select('id, status, returned_amount, cancel_rebill')
+      .eq('comanda_id', comandaId)
+      .eq('clinic_id', opts.clinicId)
+      .is('deleted_at', null);
+    if (primary.error && String(primary.error.message || '').includes('cancel_rebill')) {
+      const legacy = await supabaseAdmin
+        .from('hub_receivables')
+        .select('id, status, returned_amount')
+        .eq('comanda_id', comandaId)
+        .eq('clinic_id', opts.clinicId)
+        .is('deleted_at', null);
+      siblings = (legacy.data ?? []) as Array<Record<string, unknown>>;
+    } else {
+      siblings = (primary.data ?? []) as Array<Record<string, unknown>>;
+    }
+  }
+
+  const { receivableListableOnComanda } = await import('./hubReceivableCancelCoverage.js');
+  const stillActive = siblings.some((r) => receivableListableOnComanda(r));
+  if (stillActive) {
+    await refreshComandaFinancialStatus(comandaId, opts.clinicId, comandaRow as Record<string, unknown>);
+    return { comanda_status: currentStatus || null };
+  }
+
+  const now = new Date().toISOString();
+  const originType = String(comandaRow.origin_type ?? '');
+  const originId = comandaRow.origin_id as string | null;
+  const waiveReason = `Anulação financeira: ${opts.reason}`.slice(0, 2000);
+  if (originId) {
+    if (originType === 'grooming_session') {
+      await supabaseAdmin
+        .from('hub_grooming_sessions')
+        .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
+        .eq('id', originId)
+        .eq('clinic_id', opts.clinicId);
+    } else if (originType === 'encounter') {
+      await supabaseAdmin
+        .from('hub_encounters')
+        .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
+        .eq('id', originId)
+        .eq('clinic_id', opts.clinicId);
+    } else if (originType === 'appointment') {
+      await supabaseAdmin
+        .from('hub_appointments')
+        .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
+        .eq('id', originId)
+        .eq('clinic_id', opts.clinicId);
+    } else if (originType === 'quote') {
+      await supabaseAdmin
+        .from('hub_quotes')
+        .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
+        .eq('id', originId)
+        .eq('clinic_id', opts.clinicId);
+    } else if (originType === 'boarding_reservation') {
+      await supabaseAdmin
+        .from('hub_boarding_reservations')
+        .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
+        .eq('id', originId)
+        .eq('clinic_id', opts.clinicId);
+    }
+  }
+
+  await supabaseAdmin
+    .from('hub_comandas')
+    .update({ status: 'cancelada', closed_at: now, financial_status: 'balanced' })
+    .eq('id', comandaId)
+    .eq('clinic_id', opts.clinicId);
+  return { comanda_status: 'cancelada' };
+}
+
 export const postHubFinanceReceivableCancel = async (req: Request, res: Response) => {
   try {
     const receivableId = uuidStr.safeParse(req.params.id);
@@ -2442,17 +2565,39 @@ export const postHubFinanceReceivableCancel = async (req: Request, res: Response
     const {
       clinic_id,
       reason,
+      intent,
       confirm_stock_return,
       stock_return_condition,
       stock_return_lines,
     } = parsed.data;
-    const { data: rec, error: rErr } = await supabaseAdmin
-      .from('hub_receivables')
-      .select('id, clinic_id, status, final_amount, lines:hub_receivable_lines(*)')
-      .eq('id', receivableId.data)
-      .maybeSingle();
-    if (rErr || !rec || rec.clinic_id !== clinic_id) return res.status(404).json({ error: 'Recebível não encontrado' });
-    if (rec.status === 'cancelled') return res.json({ receivable: rec });
+    const cancelRebill = intent === 'reissue_billing';
+
+    let rec: Record<string, unknown> | null = null;
+    {
+      const primary = await supabaseAdmin
+        .from('hub_receivables')
+        .select('id, clinic_id, comanda_id, status, final_amount, cancel_rebill, lines:hub_receivable_lines(*)')
+        .eq('id', receivableId.data)
+        .maybeSingle();
+      if (primary.error && String(primary.error.message || '').includes('cancel_rebill')) {
+        const legacy = await supabaseAdmin
+          .from('hub_receivables')
+          .select('id, clinic_id, comanda_id, status, final_amount, lines:hub_receivable_lines(*)')
+          .eq('id', receivableId.data)
+          .maybeSingle();
+        if (legacy.error || !legacy.data || legacy.data.clinic_id !== clinic_id) {
+          return res.status(404).json({ error: 'Recebível não encontrado' });
+        }
+        rec = legacy.data as Record<string, unknown>;
+      } else if (primary.error || !primary.data || primary.data.clinic_id !== clinic_id) {
+        return res.status(404).json({ error: 'Recebível não encontrado' });
+      } else {
+        rec = primary.data as Record<string, unknown>;
+      }
+    }
+    if (rec.status === 'cancelled') {
+      return res.json({ receivable: rec, comanda_status: null });
+    }
     const { data: payments } = await supabaseAdmin
       .from('hub_payments')
       .select('id')
@@ -2500,13 +2645,31 @@ export const postHubFinanceReceivableCancel = async (req: Request, res: Response
       reason,
       created_by_user_id: req.user?.id ?? null,
     });
-    const { data: updated, error: updErr } = await supabaseAdmin
-      .from('hub_receivables')
-      .update({ status: 'cancelled' })
-      .eq('id', receivableId.data)
-      .select('*, lines:hub_receivable_lines(*)')
-      .single();
-    if (updErr) return res.status(500).json({ error: updErr.message });
+
+    let updated: Record<string, unknown> | null = null;
+    {
+      const upd = await supabaseAdmin
+        .from('hub_receivables')
+        .update({ status: 'cancelled', cancel_rebill: cancelRebill })
+        .eq('id', receivableId.data)
+        .select('*, lines:hub_receivable_lines(*)')
+        .single();
+      if (upd.error && String(upd.error.message || '').includes('cancel_rebill')) {
+        const legacy = await supabaseAdmin
+          .from('hub_receivables')
+          .update({ status: 'cancelled' })
+          .eq('id', receivableId.data)
+          .select('*, lines:hub_receivable_lines(*)')
+          .single();
+        if (legacy.error) return res.status(500).json({ error: legacy.error.message });
+        updated = legacy.data as Record<string, unknown>;
+      } else if (upd.error) {
+        return res.status(500).json({ error: upd.error.message });
+      } else {
+        updated = upd.data as Record<string, unknown>;
+      }
+    }
+
     try {
       const { syncPackageBalancesForReceivable } = await import('./hubPackagesService.js');
       await syncPackageBalancesForReceivable(receivableId.data);
@@ -2515,7 +2678,7 @@ export const postHubFinanceReceivableCancel = async (req: Request, res: Response
       if (msg.startsWith('PACKAGE_BALANCE_HAS_REDEMPTIONS')) {
         await supabaseAdmin
           .from('hub_receivables')
-          .update({ status: rec.status })
+          .update({ status: rec.status as string })
           .eq('id', receivableId.data);
         return res.status(409).json({
           error:
@@ -2524,8 +2687,23 @@ export const postHubFinanceReceivableCancel = async (req: Request, res: Response
       }
       throw syncErr;
     }
+
+    let comandaStatus: string | null = null;
+    try {
+      const side = await applyComandaSideEffectsAfterReceivableCancel({
+        clinicId: clinic_id,
+        comandaId: (rec.comanda_id as string | null) ?? null,
+        intent,
+        reason: reason.trim(),
+      });
+      comandaStatus = side.comanda_status;
+    } catch (sideErr) {
+      console.error('postHubFinanceReceivableCancel comanda side-effects', sideErr);
+    }
+
     return res.json({
       receivable: updated,
+      comanda_status: comandaStatus,
       stock_restored: stockRestored,
       stock_unsellable: stockUnsellable,
       warning: stockWarning,
@@ -6500,7 +6678,10 @@ async function buildCommissionsReport(params: {
     }
 
     const signedSales = round2(opts.sign * opts.commercialBase);
-    linesWithCommission += 1;
+    // KPI e by_* contam só linhas de venda; devoluções ajustam o $ sem inflar a contagem.
+    if (opts.sign === 1) {
+      linesWithCommission += 1;
+    }
     totalCommission = round2(totalCommission + opts.commissionSigned);
     totalSales = round2(totalSales + signedSales);
     receivableIdsWithKeptLines.add(opts.receivableId);

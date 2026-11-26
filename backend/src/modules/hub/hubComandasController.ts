@@ -72,6 +72,12 @@ import {
 import type { HubQuotePricingVariantInput } from './hubPricingResolve';
 import { buildCommissionInsertFieldsForItems, snapshotToInsertFields } from './hubCommissionAccrual';
 import { resolveStaffIdForUser } from './hubStaffResolve';
+import {
+  isFinancialCancelWithoutReturn,
+  receivableBillsComandaItem,
+  receivableListableOnComanda,
+  receivableResidualCountsTowardBalance,
+} from './hubReceivableCancelCoverage';
 
 const uuidStr = z.string().uuid();
 
@@ -849,20 +855,24 @@ async function computeComandaBalancePayload(
   /** Recebível listável na ficha financeira (exclui cancelamento puro sem devolução). */
   let listableRecById = new Map<string, boolean>();
   if (recIds.length) {
-    const { data: recs } = await supabaseAdmin
+    const { data: recs, error: covErr } = await supabaseAdmin
       .from('hub_receivables')
-      .select('id, status, returned_amount')
+      .select('id, status, returned_amount, cancel_rebill')
       .in('id', recIds);
-    for (const r of recs ?? []) {
+  const coverageRows =
+      covErr && String(covErr.message || '').includes('cancel_rebill')
+        ? (
+            await supabaseAdmin
+              .from('hub_receivables')
+              .select('id, status, returned_amount')
+              .in('id', recIds)
+          ).data
+        : recs;
+    for (const r of coverageRows ?? []) {
       const id = r.id as string;
-      const status = String(r.status ?? '');
-      const returned = Number(r.returned_amount ?? 0);
-      // Cancelamento comercial puro (sem devolução) pode reabrir itens; devolução total
-      // marca cancelled/refunded mas o histórico da venda e o líquido vigente devem permanecer.
-      const closedByReturn = returned > 0.009 || status === 'refunded';
-      const isPureCancel = status === 'cancelled' && !closedByReturn;
-      billsItemByRecId.set(id, !isPureCancel);
-      listableRecById.set(id, !isPureCancel);
+      // reissue (legado/cancel_rebill≠false) reabre itens; void_sale mantém cobertos.
+      billsItemByRecId.set(id, receivableBillsComandaItem(r));
+      listableRecById.set(id, receivableListableOnComanda(r));
     }
   }
 
@@ -883,12 +893,27 @@ async function computeComandaBalancePayload(
 
   const postedGross = await sumPaymentsForComandaReceivables(comandaId, clinicId);
 
-  const { data: recs, error: rErr } = await supabaseAdmin
-    .from('hub_receivables')
-    .select('id, final_amount, status, returned_amount')
-    .eq('comanda_id', comandaId)
-    .eq('clinic_id', clinicId);
-  if (rErr) throw new Error(rErr.message);
+  let recs: Array<Record<string, unknown>> | null = null;
+  {
+    const primary = await supabaseAdmin
+      .from('hub_receivables')
+      .select('id, final_amount, status, returned_amount, cancel_rebill')
+      .eq('comanda_id', comandaId)
+      .eq('clinic_id', clinicId);
+    if (primary.error && String(primary.error.message || '').includes('cancel_rebill')) {
+      const legacy = await supabaseAdmin
+        .from('hub_receivables')
+        .select('id, final_amount, status, returned_amount')
+        .eq('comanda_id', comandaId)
+        .eq('clinic_id', clinicId);
+      if (legacy.error) throw new Error(legacy.error.message);
+      recs = (legacy.data ?? []) as Array<Record<string, unknown>>;
+    } else if (primary.error) {
+      throw new Error(primary.error.message);
+    } else {
+      recs = (primary.data ?? []) as Array<Record<string, unknown>>;
+    }
+  }
 
   let receivableResidual = 0;
   let netTotal = 0;
@@ -898,12 +923,9 @@ async function computeComandaBalancePayload(
 
   for (const r of recs ?? []) {
     const rid = r.id as string;
-    const status = String(r.status ?? '');
     const returnedAmt = Number(r.returned_amount ?? 0);
-    const closedByReturn = returnedAmt > 0.009 || status === 'refunded';
-    const isPureCancel = status === 'cancelled' && !closedByReturn;
-    // Cancelamento puro sem devolução não entra no líquido vigente da comanda.
-    if (isPureCancel) continue;
+    // Cancelamento sem devolução (void ou reissue) não entra no líquido vigente.
+    if (isFinancialCancelWithoutReturn(r)) continue;
 
     const fa = Number(r.final_amount ?? 0);
     netTotal = round2(netTotal + fa);
@@ -930,7 +952,10 @@ async function computeComandaBalancePayload(
     lineRefundsTotal = round2(lineRefundsTotal + lineRefundsRec);
     const netPaidRec = round2(Math.max(0, postedRec - lineRefundsRec));
     paidNetTotal = round2(paidNetTotal + netPaidRec);
-    receivableResidual += round2(Math.max(0, fa - netPaidRec));
+    // refunded: episódio financeiro encerrado — sem residual a cobrar.
+    if (receivableResidualCountsTowardBalance(r)) {
+      receivableResidual += round2(Math.max(0, fa - netPaidRec));
+    }
   }
 
   // Itens ainda não faturados entram no líquido vigente da comanda.
@@ -2947,23 +2972,28 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
     .not('comanda_item_id', 'is', null);
 
   const recIds = [...new Set((lineRows ?? []).map((r) => r.receivable_id as string))];
-  /** Itens permanecem faturados salvo cancelamento puro (sem devolução). */
+  /** Itens permanecem faturados salvo reissue (cancelamento puro que reabre cobrança). */
   let billsItemByRecId = new Map<string, boolean>();
   /** Listáveis na ficha: paid/pending/refunded + cancelled-com-devolução. */
   let listableRecById = new Map<string, boolean>();
   if (recIds.length) {
-    const { data: recs } = await supabaseAdmin
+    const { data: recs, error: covErr } = await supabaseAdmin
       .from('hub_receivables')
-      .select('id, status, returned_amount')
+      .select('id, status, returned_amount, cancel_rebill')
       .in('id', recIds);
-    for (const r of recs ?? []) {
+    const coverageRows =
+      covErr && String(covErr.message || '').includes('cancel_rebill')
+        ? (
+            await supabaseAdmin
+              .from('hub_receivables')
+              .select('id, status, returned_amount')
+              .in('id', recIds)
+          ).data
+        : recs;
+    for (const r of coverageRows ?? []) {
       const id = r.id as string;
-      const status = String(r.status ?? '');
-      const returned = Number(r.returned_amount ?? 0);
-      const closedByReturn = returned > 0.009 || status === 'refunded';
-      const isPureCancel = status === 'cancelled' && !closedByReturn;
-      billsItemByRecId.set(id, !isPureCancel);
-      listableRecById.set(id, !isPureCancel);
+      billsItemByRecId.set(id, receivableBillsComandaItem(r));
+      listableRecById.set(id, receivableListableOnComanda(r));
     }
   }
 
@@ -5347,7 +5377,15 @@ async function reverseAllComandaPayments(
         created_by_user_id: userId,
       });
     }
-    await supabaseAdmin.from('hub_receivables').update({ status: 'cancelled' }).eq('id', rid);
+    {
+      const upd = await supabaseAdmin
+        .from('hub_receivables')
+        .update({ status: 'cancelled', cancel_rebill: false })
+        .eq('id', rid);
+      if (upd.error && String(upd.error.message || '').includes('cancel_rebill')) {
+        await supabaseAdmin.from('hub_receivables').update({ status: 'cancelled' }).eq('id', rid);
+      }
+    }
     await syncHubAppointmentPaidFromReceivable({ clinicId, receivableId: rid });
   }
 
