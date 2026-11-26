@@ -321,7 +321,7 @@ export type DayBoardBilling = {
   active_receivable_id: string | null;
   /** Vencimento do recebível ativo (pendente/parcial), quando houver. */
   due_date: string | null;
-  /** Valor final do recebível ativo (para filtrar cobranças zeradas). */
+  /** Saldo a receber do recebível ativo (final − pago líquido). Não é o bruto da venda. */
   receivable_amount?: number | null;
   /** Devolução física de produtos do recebível ativo (quando aplicável). */
   stock_return_status?: 'pending' | 'partial' | 'returned' | 'unsellable' | 'mixed' | null;
