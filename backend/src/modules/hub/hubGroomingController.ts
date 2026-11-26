@@ -383,7 +383,8 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
       ...new Set(
         sessionsForDay
           .map((s) => s.hub_appointment_id as string | null)
-          .filter((aid): aid is string => Boolean(aid) && !groomingApptIds.includes(aid)),
+          .filter((aid): aid is string => typeof aid === 'string' && aid.length > 0)
+          .filter((aid) => !groomingApptIds.includes(aid)),
       ),
     ];
     if (missingLinkedApptIds.length > 0) {
