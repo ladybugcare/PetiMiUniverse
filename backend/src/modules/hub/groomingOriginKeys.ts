@@ -67,3 +67,62 @@ export async function findLinkedGroomingSessionIdForAppointment(
   if (error) throw new Error(error.message);
   return (data?.id as string) ?? null;
 }
+
+/** Mapa sessão → agendamento (e o inverso) para alias de billing no day-board. */
+export async function fetchGroomingAppointmentLinks(
+  clinicId: string,
+  opts: { sessionIds?: string[]; appointmentIds?: string[] },
+): Promise<{
+  appointmentBySessionId: Map<string, string>;
+  sessionIdsByAppointmentId: Map<string, string[]>;
+}> {
+  const appointmentBySessionId = new Map<string, string>();
+  const sessionIdsByAppointmentId = new Map<string, string[]>();
+  const sessionIds = opts.sessionIds ?? [];
+  const appointmentIds = opts.appointmentIds ?? [];
+  if (!sessionIds.length && !appointmentIds.length) {
+    return { appointmentBySessionId, sessionIdsByAppointmentId };
+  }
+
+  const rows: Array<{ id: string; hub_appointment_id: string | null }> = [];
+  if (sessionIds.length) {
+    const { data, error } = await supabaseAdmin
+      .from('hub_grooming_sessions')
+      .select('id, hub_appointment_id')
+      .eq('clinic_id', clinicId)
+      .in('id', sessionIds)
+      .is('deleted_at', null);
+    if (error) throw new Error(error.message);
+    for (const row of data ?? []) {
+      rows.push({
+        id: row.id as string,
+        hub_appointment_id: (row.hub_appointment_id as string | null) ?? null,
+      });
+    }
+  }
+  if (appointmentIds.length) {
+    const { data, error } = await supabaseAdmin
+      .from('hub_grooming_sessions')
+      .select('id, hub_appointment_id')
+      .eq('clinic_id', clinicId)
+      .in('hub_appointment_id', appointmentIds)
+      .is('deleted_at', null);
+    if (error) throw new Error(error.message);
+    for (const row of data ?? []) {
+      rows.push({
+        id: row.id as string,
+        hub_appointment_id: (row.hub_appointment_id as string | null) ?? null,
+      });
+    }
+  }
+
+  for (const row of rows) {
+    const apptId = row.hub_appointment_id;
+    if (!apptId) continue;
+    appointmentBySessionId.set(row.id, apptId);
+    const list = sessionIdsByAppointmentId.get(apptId) ?? [];
+    if (!list.includes(row.id)) list.push(row.id);
+    sessionIdsByAppointmentId.set(apptId, list);
+  }
+  return { appointmentBySessionId, sessionIdsByAppointmentId };
+}

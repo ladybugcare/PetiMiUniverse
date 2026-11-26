@@ -1289,12 +1289,24 @@ export const postHubFinanceWaiveBilling = async (req: Request, res: Response) =>
     }
     const now = new Date().toISOString();
     if (source_type === 'grooming_session') {
-      const { error } = await supabaseAdmin
+      const { data: groomRow, error } = await supabaseAdmin
         .from('hub_grooming_sessions')
         .update({ billing_waived_at: now, billing_waive_reason: reason })
         .eq('id', source_id)
-        .eq('clinic_id', clinic_id);
+        .eq('clinic_id', clinic_id)
+        .select('hub_appointment_id')
+        .maybeSingle();
       if (error) return res.status(500).json({ error: error.message });
+      const linkedApptId = (groomRow?.hub_appointment_id as string | null | undefined) ?? null;
+      if (linkedApptId) {
+        const { error: apptWaiveErr } = await supabaseAdmin
+          .from('hub_appointments')
+          .update({ billing_waived_at: now, billing_waive_reason: reason })
+          .eq('id', linkedApptId)
+          .eq('clinic_id', clinic_id)
+          .is('billing_waived_at', null);
+        if (apptWaiveErr) return res.status(500).json({ error: apptWaiveErr.message });
+      }
     } else if (source_type === 'encounter') {
       const { error } = await supabaseAdmin
         .from('hub_encounters')
@@ -1320,6 +1332,14 @@ export const postHubFinanceWaiveBilling = async (req: Request, res: Response) =>
         .eq('id', source_id)
         .eq('clinic_id', clinic_id);
       if (error) return res.status(500).json({ error: error.message });
+      const { error: groomWaiveErr } = await supabaseAdmin
+        .from('hub_grooming_sessions')
+        .update({ billing_waived_at: now, billing_waive_reason: reason })
+        .eq('hub_appointment_id', source_id)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .is('billing_waived_at', null);
+      if (groomWaiveErr) return res.status(500).json({ error: groomWaiveErr.message });
       try {
         await cascadeWaiveLinkedHospitalizations({
           clinicId: clinic_id,
@@ -3088,7 +3108,7 @@ export const getHubFinanceCashSessionStatus = async (req: Request, res: Response
     const clinic_id = clinicParsed.data;
     const unit_id = unitParsed.data;
 
-    const keys = await fetchActiveReceivableKeys(clinic_id).catch(() => new Set<string>());
+    const keys = await fetchActiveReceivableKeysExpanded(clinic_id).catch(() => new Set<string>());
     const [cashSessionRes, pendingBillingResult, openComandasRes] = await Promise.all([
       supabaseAdmin
         .from('hub_cash_sessions')
@@ -3461,7 +3481,9 @@ async function fetchBilledOriginKeysFromComandas(clinicId: string): Promise<Set<
     }
   }
   const { expandBoardingAppointmentOriginKeys } = await import('./boardingOriginKeys');
-  return expandBoardingAppointmentOriginKeys(clinicId, keys);
+  const { expandGroomingAppointmentOriginKeys } = await import('./groomingOriginKeys');
+  const withBoarding = await expandBoardingAppointmentOriginKeys(clinicId, keys);
+  return expandGroomingAppointmentOriginKeys(clinicId, withBoarding);
 }
 
 async function collectUnbilledItems(
@@ -3512,6 +3534,7 @@ async function collectUnbilledItems(
     if (comandaOpenKeys.has(`grooming_session:${row.id}`)) continue;
     if (billedViaComandaKeys.has(`grooming_session:${row.id}`)) continue;
     const apptId = row.hub_appointment_id as string | null | undefined;
+    if (apptId && keys.has(`appointment:${apptId}`)) continue;
     if (apptId && comandaOpenKeys.has(`appointment:${apptId}`)) continue;
     if (apptId && billedViaComandaKeys.has(`appointment:${apptId}`)) continue;
     const estimated_amount = includeAmounts
@@ -3898,7 +3921,9 @@ const unbilledQuerySchema = z
 async function fetchActiveReceivableKeysExpanded(clinicId: string): Promise<Set<string>> {
   const keys = await fetchActiveReceivableKeys(clinicId);
   const { expandBoardingAppointmentOriginKeys } = await import('./boardingOriginKeys');
-  return expandBoardingAppointmentOriginKeys(clinicId, keys);
+  const { expandGroomingAppointmentOriginKeys } = await import('./groomingOriginKeys');
+  const withBoarding = await expandBoardingAppointmentOriginKeys(clinicId, keys);
+  return expandGroomingAppointmentOriginKeys(clinicId, withBoarding);
 }
 
 export const getHubFinanceUnbilledCompleted = async (req: Request, res: Response) => {
@@ -3981,6 +4006,12 @@ async function fetchBillingStatusBatch(
   }
 
   // Alias Hotel/Creche ↔ agendamento: comanda appointment conta para boarding_reservation e vice-versa.
+  const linkedSourceKeys = new Map<string, string[]>();
+  const pushLinkedSourceKey = (a: string, b: string) => {
+    const list = linkedSourceKeys.get(a) ?? [];
+    if (!list.includes(b)) list.push(b);
+    linkedSourceKeys.set(a, list);
+  };
   const boardingIdsForAlias = originKeys
     .filter((k) => k.origin_type === 'boarding_reservation')
     .map((k) => k.origin_id);
@@ -4000,6 +4031,31 @@ async function fetchBillingStatusBatch(
       const apptComanda = comandaByKey.get(apptKey);
       if (!boardComanda && apptComanda) comandaByKey.set(boardKey, apptComanda);
       if (!apptComanda && boardComanda) comandaByKey.set(apptKey, boardComanda);
+      pushLinkedSourceKey(boardKey, apptKey);
+      pushLinkedSourceKey(apptKey, boardKey);
+    }
+  }
+
+  // Alias Banho & Tosa ↔ agendamento: day-board prefere grooming_session, mas a comanda
+  // pode ter nascido como appointment (ou o inverso) — sem isso a linha fica "Sem cobrança".
+  const groomingIdsForAlias = originKeys
+    .filter((k) => k.origin_type === 'grooming_session')
+    .map((k) => k.origin_id);
+  if (groomingIdsForAlias.length || appointmentIdsForAlias.length) {
+    const { fetchGroomingAppointmentLinks } = await import('./groomingOriginKeys');
+    const links = await fetchGroomingAppointmentLinks(clinicId, {
+      sessionIds: groomingIdsForAlias,
+      appointmentIds: appointmentIdsForAlias,
+    });
+    for (const [sessionId, apptId] of links.appointmentBySessionId) {
+      const sessionKey = `grooming_session:${sessionId}`;
+      const apptKey = `appointment:${apptId}`;
+      const sessionComanda = comandaByKey.get(sessionKey);
+      const apptComanda = comandaByKey.get(apptKey);
+      if (!sessionComanda && apptComanda) comandaByKey.set(sessionKey, apptComanda);
+      if (!apptComanda && sessionComanda) comandaByKey.set(apptKey, sessionComanda);
+      pushLinkedSourceKey(sessionKey, apptKey);
+      pushLinkedSourceKey(apptKey, sessionKey);
     }
   }
 
@@ -4048,6 +4104,9 @@ async function fetchBillingStatusBatch(
     const comanda = comandaByKey.get(key) ?? null;
     const rowsById = new Map<string, { id: string; status: string; due_date: string | null; final_amount: number }>();
     for (const row of receivableRowsBySourceKey.get(key) ?? []) rowsById.set(row.id, row);
+    for (const linkedKey of linkedSourceKeys.get(key) ?? []) {
+      for (const row of receivableRowsBySourceKey.get(linkedKey) ?? []) rowsById.set(row.id, row);
+    }
     if (comanda) {
       for (const row of receivableRowsByComandaId.get(comanda.id) ?? []) rowsById.set(row.id, row);
     }
@@ -5336,7 +5395,7 @@ export const getHubFinanceDashboardSummary = async (req: Request, res: Response)
     const fromIso = utcDayStartIso(fromYmd);
     const toIso = utcDayEndIso(toYmd);
 
-    const keys = await fetchActiveReceivableKeys(clinic_id);
+    const keys = await fetchActiveReceivableKeysExpanded(clinic_id);
     const unbilled = await collectUnbilledItems(clinic_id, unit_id, keys);
 
     const { data: openRecs, error: rErr } = await supabaseAdmin
