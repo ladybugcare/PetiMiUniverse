@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@petimi/web-core';
+import { AUTH_LOGOUT_STARTED_EVENT, isAuthLogoutInProgress, useAuth } from '@petimi/web-core';
 import {
   hubGetNotifications,
   hubGetUnreadCount,
@@ -15,8 +15,9 @@ import { hubNotificationVisual } from '../utils/hubNotificationVisuals';
 
 const HubNotificationBell: React.FC = () => {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, session, isLoggingOut } = useAuth();
   const userId = getHubUserId(user);
+  const authLive = Boolean(session) && Boolean(userId) && !isLoggingOut && !isAuthLogoutInProgress();
   const [open, setOpen] = useState(false);
   const [list, setList] = useState<HubNotification[]>([]);
   const [unread, setUnread] = useState(0);
@@ -25,7 +26,7 @@ const HubNotificationBell: React.FC = () => {
   const lastUnreadFetch = useRef(0);
 
   const loadUnread = useCallback(async () => {
-    if (!userId) return;
+    if (!authLive || !userId || isAuthLogoutInProgress()) return;
     const now = Date.now();
     if (now - lastUnreadFetch.current < 2500) return;
     lastUnreadFetch.current = now;
@@ -35,10 +36,10 @@ const HubNotificationBell: React.FC = () => {
     } catch {
       /* silencioso — API indisponível */
     }
-  }, [userId]);
+  }, [authLive, userId]);
 
   const loadList = useCallback(async () => {
-    if (!userId) return;
+    if (!authLive || !userId || isAuthLogoutInProgress()) return;
     setLoading(true);
     try {
       const rows = await hubGetNotifications(userId, 1, 12);
@@ -48,10 +49,13 @@ const HubNotificationBell: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [authLive, userId]);
 
   useEffect(() => {
-    if (!userId) return;
+    if (!authLive || !userId) {
+      setUnread(0);
+      return;
+    }
     void loadUnread();
     const t = setInterval(() => {
       if (document.visibilityState === 'visible') void loadUnread();
@@ -59,12 +63,19 @@ const HubNotificationBell: React.FC = () => {
     const onVis = () => {
       if (document.visibilityState === 'visible') void loadUnread();
     };
+    const onLogout = () => {
+      clearInterval(t);
+      setUnread(0);
+      setOpen(false);
+    };
     document.addEventListener('visibilitychange', onVis);
+    window.addEventListener(AUTH_LOGOUT_STARTED_EVENT, onLogout);
     return () => {
       clearInterval(t);
       document.removeEventListener('visibilitychange', onVis);
+      window.removeEventListener(AUTH_LOGOUT_STARTED_EVENT, onLogout);
     };
-  }, [userId, loadUnread]);
+  }, [authLive, userId, loadUnread]);
 
   useEffect(() => {
     if (!open) return;

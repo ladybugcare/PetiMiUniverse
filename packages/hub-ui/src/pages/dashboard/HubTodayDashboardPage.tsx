@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { usePermissions, getStoredClinicId } from '@petimi/web-core';
+import {
+  AUTH_LOGOUT_STARTED_EVENT,
+  getStoredClinicId,
+  isAuthLogoutInProgress,
+  useAuth,
+  usePermissions,
+} from '@petimi/web-core';
 import {
   AlertCircle,
   ArrowRight,
@@ -224,6 +230,8 @@ function cardVisual(id: string, summary: HubDayOpsSummary | null, loading: boole
 }
 
 const HubTodayDashboardPage: React.FC = () => {
+  const { session, isLoggingOut } = useAuth();
+  const authLive = Boolean(session) && !isLoggingOut && !isAuthLogoutInProgress();
   const { hasPermission, loading: permLoading } = usePermissions();
   const { showError } = useAlert();
   const clinicId = getStoredClinicId();
@@ -289,7 +297,7 @@ const HubTodayDashboardPage: React.FC = () => {
   );
 
   const load = useCallback(async () => {
-    if (!clinicId || !unitId) {
+    if (!authLive || isAuthLogoutInProgress() || !clinicId || !unitId) {
       setLoading(false);
       return;
     }
@@ -299,20 +307,23 @@ const HubTodayDashboardPage: React.FC = () => {
       try {
         data = await hubOpsApi.getDayOpsSummary(clinicId, unitId, todayYmd);
       } catch {
+        if (isAuthLogoutInProgress()) return;
         data = await loadDayOpsSummaryClient(clinicId, unitId, perms);
       }
+      if (isAuthLogoutInProgress()) return;
       setSummary(data);
       setUpdatedAt(new Date());
     } catch (e) {
+      if (isAuthLogoutInProgress()) return;
       showError((e as Error)?.message || 'Erro ao carregar o painel de hoje');
       setSummary(null);
     } finally {
       setLoading(false);
     }
-  }, [clinicId, unitId, todayYmd, perms, showError]);
+  }, [authLive, clinicId, unitId, todayYmd, perms, showError]);
 
   const loadCashFlow = useCallback(async () => {
-    if (!clinicId || !unitId || !canFinancial) {
+    if (!authLive || isAuthLogoutInProgress() || !clinicId || !unitId || !canFinancial) {
       setCashDays([]);
       return;
     }
@@ -322,29 +333,36 @@ const HubTodayDashboardPage: React.FC = () => {
         days: 7,
         date_basis: 'payment_date',
       });
+      if (isAuthLogoutInProgress()) return;
       setCashDays(res.days ?? []);
     } catch {
       setCashDays([]);
     } finally {
       setCashLoading(false);
     }
-  }, [clinicId, unitId, canFinancial]);
+  }, [authLive, clinicId, unitId, canFinancial]);
 
   useEffect(() => {
-    if (permLoading || !canAccessPage) return;
+    if (!authLive || permLoading || !canAccessPage) return;
     if (!clinicId || !unitId) return;
     void load();
     void loadCashFlow();
-  }, [permLoading, canAccessPage, clinicId, unitId, load, loadCashFlow]);
+  }, [authLive, permLoading, canAccessPage, clinicId, unitId, load, loadCashFlow]);
 
   useEffect(() => {
-    if (permLoading || !canAccessPage || !clinicId || !unitId) return;
+    if (!authLive || permLoading || !canAccessPage || !clinicId || !unitId) return;
     const id = window.setInterval(() => {
+      if (isAuthLogoutInProgress()) return;
       void load();
       void loadCashFlow();
     }, REFRESH_MS);
-    return () => window.clearInterval(id);
-  }, [permLoading, canAccessPage, clinicId, unitId, load, loadCashFlow]);
+    const onLogout = () => window.clearInterval(id);
+    window.addEventListener(AUTH_LOGOUT_STARTED_EVENT, onLogout);
+    return () => {
+      window.clearInterval(id);
+      window.removeEventListener(AUTH_LOGOUT_STARTED_EVENT, onLogout);
+    };
+  }, [authLive, permLoading, canAccessPage, clinicId, unitId, load, loadCashFlow]);
 
   const shell = (children: React.ReactNode) => (
     <div className="hub-clientes hub-servicos-page hub-finance-page hub-finance-page--dashboard hub-today-dash">

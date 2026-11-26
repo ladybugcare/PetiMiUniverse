@@ -13,6 +13,15 @@ export {
   type HubOperationalArea,
 } from './operationalAreas';
 export { CLINIC_STORAGE_UPDATED_EVENT } from './constants/appEvents';
+export {
+  AUTH_LOGOUT_STARTED_EVENT,
+  beginAuthLogout,
+  endAuthLogout,
+  isAuthLogoutInProgress,
+  getAuthLogoutGeneration,
+  isAuthLogoutAbortError,
+  createAuthLogoutAbortError,
+} from './authLogoutGate';
 export { usePermissions } from './usePermissions';
 export { AuthProvider, useAuth } from './AuthContext';
 export type { AuthContextType } from './AuthContext';
