@@ -230,6 +230,7 @@ import {
   type BoardingExtraInput,
 } from './boardingBilling';
 import { isBoardingStatusReadyForComanda } from './boardingOperational';
+import { isGroomingServiceOperationallyDone } from './groomingStages';
 import {
   dropAppointmentLinesReplacedByHospitalization,
   loadHospitalizationComandaItems,
@@ -603,7 +604,8 @@ async function isOperationalCompleteForComanda(comanda: Record<string, unknown>)
       .eq('clinic_id', clinicId)
       .is('deleted_at', null)
       .maybeSingle();
-    return String(s?.grooming_stage ?? '') === 'closed';
+    // Pronto = serviço concluído (custódia/retirada pode continuar em ready).
+    return isGroomingServiceOperationallyDone(String(s?.grooming_stage ?? ''));
   }
   if (originType === 'encounter') {
     const { data: e } = await supabaseAdmin

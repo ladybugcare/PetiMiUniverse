@@ -56,6 +56,11 @@ export function appointmentStatusForGroomingStage(stage: GroomingStage): string 
   }
 }
 
+/** Espelha o backend: Pronto / entregue / encerrado = serviço do salão concluído. */
+export function isGroomingServiceOperationallyDone(stage: string): boolean {
+  return stage === 'ready' || stage === 'delivered' || stage === 'closed';
+}
+
 /** Espelha `backend/src/modules/hub/groomingStages.ts` — transições válidas para PATCH. */
 const ALLOWED_TRANSITIONS: Record<GroomingStage, GroomingStage[]> = {
   scheduled: ['checked_in', 'queued'],
