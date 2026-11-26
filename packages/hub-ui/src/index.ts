@@ -275,6 +275,8 @@ export { default as HubDashboardPage } from './pages/finance/HubDashboardPage';
 export { default as HubTodayDashboardPage } from './pages/dashboard/HubTodayDashboardPage';
 export type { HubDayOpsSummary } from './pages/dashboard/todayOpsTypes';
 export { default as HubRelatoriosPage } from './pages/finance/HubRelatoriosPage';
+export { unitShortLabel, unitOperationalLabel } from './utils/unitDisplayLabel';
+export type { UnitDisplaySource } from './utils/unitDisplayLabel';
 export { maskTaxIdForList } from './utils/maskTaxId';
 export { buildWhatsappLink, normalizeBrPhone } from './utils/whatsappLink';
 export { formatBrPhoneInput, formatBrPhoneFromApi, formatBrPhoneDisplay, digitsOnlyBrPhone } from './utils/formatBrPhone';
