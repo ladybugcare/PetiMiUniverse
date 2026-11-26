@@ -23,6 +23,8 @@ type Props = {
   /** Quando true, mostra campo de valor se o serviço for price_mode=variable (ou sempre se forcePriceInput). */
   allowPriceOverride?: boolean;
   forcePriceInput?: boolean;
+  /** Exclui serviços de aplicação na consulta (fluxo Medicação). */
+  excludeEncounterApplication?: boolean;
   id?: string;
 };
 
@@ -36,6 +38,7 @@ export function HubClinicalServicePicker({
   disabled,
   allowPriceOverride = true,
   forcePriceInput = false,
+  excludeEncounterApplication = false,
   id = 'clinical-svc',
 }: Props) {
   const [services, setServices] = useState<HubServiceType[]>([]);
@@ -46,14 +49,15 @@ export function HubClinicalServicePicker({
     void hubServiceTypesApi
       .list(clinicId)
       .then((r) => {
-        const filtered = filterServicesByClinicalGroup(r.service_types ?? [], group).sort((a, b) =>
-          a.name.localeCompare(b.name, 'pt-BR'),
-        );
-        setServices(filtered);
+        let filtered = filterServicesByClinicalGroup(r.service_types ?? [], group);
+        if (excludeEncounterApplication) {
+          filtered = filtered.filter((s) => !s.is_encounter_application);
+        }
+        setServices(filtered.sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')));
       })
       .catch(() => setServices([]))
       .finally(() => setLoading(false));
-  }, [clinicId, group]);
+  }, [clinicId, group, excludeEncounterApplication]);
 
   const selected = services.find((s) => s.id === value.hub_service_type_id) ?? null;
   const isVariable = selected?.price_mode === 'variable' || forcePriceInput;
@@ -119,7 +123,8 @@ export function HubClinicalServicePicker({
         </div>
       ) : selected && !isVariable ? (
         <p className="hub-cws-exam-form__hint">
-          Na comanda: {formatServicePriceLabel(selected.sale_amount)} ({selected.name}).
+          Cobrança prevista: {formatServicePriceLabel(selected.sale_amount)} ({selected.name}) —
+          sincroniza na comanda aberta enquanto o atendimento estiver em andamento.
         </p>
       ) : null}
     </div>

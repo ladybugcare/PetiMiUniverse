@@ -71,6 +71,8 @@ export interface HubComandaDetailLayoutProps {
   canEdit?: boolean;
   saving: boolean;
   isAberta: boolean;
+  /** false = origem operacional ainda em andamento (ex.: consulta clínica não finalizada). */
+  operationalComplete?: boolean;
   mode?: 'caixa' | 'financeiro';
   readOnlyBanner?: React.ReactNode;
   selectedGuardianId: string | null;
@@ -113,6 +115,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
   canEdit: canEditProp,
   saving,
   isAberta,
+  operationalComplete = true,
   mode = 'caixa',
   readOnlyBanner,
   selectedGuardianId,
@@ -184,11 +187,23 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
           </div>
         ) : null}
 
+        {isAberta && operationalComplete === false ? (
+          <div className="hub-quote-detail__banner" role="status">
+            Atendimento ainda não finalizado — novos itens do vet podem entrar nesta comanda. Prefira
+            cobrar o saldo depois da conclusão, ou cobre agora ciente de que a comanda permanece aberta.
+          </div>
+        ) : null}
+
         <header className="hub-quote-detail__hero">
           <div className="hub-quote-detail__hero-main">
             <div className="hub-quote-detail__title-row">
               <h1 className="hub-quote-detail__title">Comanda #{refShort}</h1>
               <span className={statusClass(status)}>{statusLabel(status)}</span>
+              {isAberta && operationalComplete === false ? (
+                <span className="hub-clientes__pill hub-finance-page__pill--warning">
+                  Atendimento em andamento
+                </span>
+              ) : null}
             </div>
             {metaParts.length > 0 ? <p className="hub-quote-detail__meta-line">{metaParts.join(' · ')}</p> : null}
           </div>

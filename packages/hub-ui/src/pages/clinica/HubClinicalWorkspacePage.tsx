@@ -16,6 +16,7 @@ import {
   Save,
   Stethoscope,
   Syringe,
+  Coins,
 } from 'lucide-react';
 import { RegisterPetDeathModal } from '../pets/RegisterPetDeathModal';
 import type { PetDeathType } from '../pets/petDeath';
@@ -55,6 +56,7 @@ import { HubWorkspaceInClinicMedications } from '../../components/clinical/HubWo
 import { HubCwsTabbedCard, HubCwsTabPanel } from './HubCwsTabbedCard';
 import { HubCwsCollapsibleCard } from './HubCwsCollapsibleCard';
 import { HubWorkspaceAplicadoRegistry } from './HubWorkspaceAplicadoRegistry';
+import { HubWorkspaceEncounterServices } from './HubWorkspaceEncounterServices';
 import { HubWorkspaceSolicitacoesRegistry } from './HubWorkspaceSolicitacoesRegistry';
 import { HubWorkspaceAnamnesis } from './HubWorkspaceAnamnesis';
 import { HubWorkspacePhysicalExam } from './HubWorkspacePhysicalExam';
@@ -548,6 +550,7 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
     { id: 'sec-diagnostico', label: 'Diagnóstico', Icon: Microscope },
     { id: 'sec-evolucao', label: 'Evolução clínica', Icon: MessageSquare },
     { id: 'sec-aplicado', label: 'Aplicado agora', Icon: Syringe },
+    { id: 'sec-servicos', label: 'Serviços realizados', Icon: Coins },
     { id: 'sec-carteirinha', label: 'Carteirinha', Icon: BookOpen },
     { id: 'sec-solicitacoes', label: 'Solicitações', Icon: FileText },
     { id: 'sec-anexos', label: 'Anexos', Icon: Paperclip },
@@ -917,6 +920,19 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
                 />
               </HubCwsTabPanel>
             </HubCwsTabbedCard>
+
+            <HubCwsCollapsibleCard
+              id="sec-servicos"
+              title="Serviços realizados"
+              description="Procedimentos e serviços do grupo Clínica cobráveis nesta consulta (sync na comanda aberta)."
+            >
+              <HubWorkspaceEncounterServices
+                encounter={encounter}
+                clinicId={clinicId!}
+                readOnly={readOnly}
+                onClinicalRefresh={() => void load()}
+              />
+            </HubCwsCollapsibleCard>
 
             <HubCwsCollapsibleCard
               id="sec-carteirinha"

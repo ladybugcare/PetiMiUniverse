@@ -80,7 +80,7 @@ export type HubComandaTimelinePayment = {
 };
 
 export type HubComandaPendingPriceApproval = {
-  kind: 'surgery_service' | 'hospitalization_charge';
+  kind: 'surgery_service' | 'hospitalization_charge' | 'encounter_service';
   id: string;
   parent_id: string;
   service_name: string;

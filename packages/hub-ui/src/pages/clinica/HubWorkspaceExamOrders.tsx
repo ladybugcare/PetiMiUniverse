@@ -370,7 +370,8 @@ export function HubWorkspaceExamOrders({
     <>
       <p className="hub-cws-an-block__hint">
         Solicite o exame e emita o PDF com link validável. Depois de emitir, o item trava — gere outra versão se
-        precisar mudar.
+        precisar mudar. Este pedido não gera cobrança; para cobrar (ex.: Hemograma), lance o serviço em{' '}
+        <strong>Serviços realizados</strong>.
         {encounter.care_location_kind === 'partner_clinic' ? (
           <>
             {' '}

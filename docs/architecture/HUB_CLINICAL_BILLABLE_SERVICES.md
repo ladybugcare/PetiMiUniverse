@@ -1,6 +1,6 @@
-# Serviços cobráveis em Cirurgia e Internação + preço variável
+# Serviços cobráveis em Consulta, Cirurgia e Internação + preço variável
 
-Como cirurgia e internação geram itens na **comanda do atendimento** (`hub_comandas.origin_type = 'encounter'`), sem criar origem nova de comanda.
+Como consulta, cirurgia e internação geram itens na **comanda do atendimento** (`hub_comandas.origin_type = 'encounter'` ou `appointment` com sync), sem origem financeira paralela desnecessária.
 
 ## Âncora: um atendimento, uma comanda
 
@@ -10,6 +10,7 @@ Agenda (hub_appointments + hub_appointment_services)
         ▼
 hub_encounters  ◄── hub_surgeries / hub_hospitalizations
         │
+        ├── hub_encounter_services   (grupo clinica — consulta)
         ├── hub_surgery_services
         ├── hub_hospitalization_charges
         └── diária (runtime: hospitalization_daily)
@@ -19,6 +20,17 @@ hub_encounters  ◄── hub_surgeries / hub_hospitalizations
 ```
 
 `ensureCaseAndAdmissionEncounter` garante `hub_encounter_id` e pode gravar `hub_service_type_id` no atendimento de admissão.
+
+## Consulta (grupo clinica)
+
+| Peça | Papel |
+|------|--------|
+| `hub_encounter_services` | Serviços do grupo `clinica` em Serviços realizados |
+| `origin_type: encounter_service` | Item na comanda (`charge` + `price_status = confirmed`) |
+
+**Não cobra:** pedido de exame (PDF). Para cobrar hemograma etc., lance o serviço do catálogo em Serviços realizados.
+
+**Dedupe:** `hub_appointment_service_id` opcional (mesmo padrão da cirurgia). `is_encounter_application` fica no fluxo Medicação.
 
 ## Cirurgia
 

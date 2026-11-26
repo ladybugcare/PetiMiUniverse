@@ -260,6 +260,8 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
       try {
         if (item.kind === 'surgery_service') {
           await hubClinicalApi.approveSurgeryServicePrice(item.parent_id, item.id, clinicId);
+        } else if (item.kind === 'encounter_service') {
+          await hubClinicalApi.approveEncounterServicePrice(item.parent_id, item.id, clinicId);
         } else {
           await hubClinicalApi.approveHospitalizationChargePrice(item.parent_id, item.id, clinicId);
         }
@@ -799,6 +801,7 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
         canEdit={canEdit}
         saving={saving}
         isAberta={isAberta}
+        operationalComplete={payload.operational_complete !== false}
         mode={mode}
         readOnlyBanner={readOnlyBanner}
         selectedGuardianId={guardian?.id ?? null}

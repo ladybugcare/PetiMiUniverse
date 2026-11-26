@@ -342,6 +342,74 @@ async function fetchBilledComandaOriginKeys(clinicId: string): Promise<Set<strin
   return expandGroomingAppointmentOriginKeys(clinicId, withBoarding);
 }
 
+/**
+ * Origens de itens já faturados em outras comandas (`origin_type:origin_id`).
+ * Checkout grava recebível como `source_type=manual`; a fatura real fica na comanda/linha.
+ * Usado para não re-lançar `appointment_service` (ex.: consulta paga na agenda) ao montar
+ * o snapshot do encounter.
+ */
+async function fetchInvoicedComandaItemOriginKeys(clinicId: string): Promise<Set<string>> {
+  const keys = new Set<string>();
+
+  const addItemOrigins = (rows: Array<{ origin_type?: string | null; origin_id?: string | null }> | null) => {
+    for (const it of rows ?? []) {
+      const ot = it.origin_type as string | null;
+      const oid = it.origin_id as string | null;
+      if (ot && oid) keys.add(`${ot}:${oid}`);
+    }
+  };
+
+  // Comanda fechada = quitada: todos os itens com origem operacional já foram cobrados.
+  const { data: closedComandas, error: closedErr } = await supabaseAdmin
+    .from('hub_comandas')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('status', 'fechada')
+    .is('deleted_at', null);
+  if (closedErr) throw new Error(closedErr.message);
+  const closedIds = (closedComandas ?? []).map((c) => c.id as string);
+  if (closedIds.length > 0) {
+    const { data: closedItems, error: closedItemsErr } = await supabaseAdmin
+      .from('hub_comanda_items')
+      .select('origin_type, origin_id')
+      .eq('clinic_id', clinicId)
+      .in('comanda_id', closedIds);
+    if (closedItemsErr) throw new Error(closedItemsErr.message);
+    addItemOrigins(closedItems as Array<{ origin_type?: string | null; origin_id?: string | null }>);
+  }
+
+  // Comanda ainda aberta com cobrança parcial: só itens ligados a recebível ativo.
+  const { data: receivables, error: rErr } = await supabaseAdmin
+    .from('hub_receivables')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null)
+    .neq('status', 'cancelled');
+  if (rErr) throw new Error(rErr.message);
+  const recIds = (receivables ?? []).map((r) => r.id as string);
+  if (recIds.length === 0) return keys;
+
+  const { data: lines, error: lineErr } = await supabaseAdmin
+    .from('hub_receivable_lines')
+    .select('comanda_item_id')
+    .in('receivable_id', recIds)
+    .not('comanda_item_id', 'is', null);
+  if (lineErr) throw new Error(lineErr.message);
+  const itemIds = [
+    ...new Set((lines ?? []).map((l) => l.comanda_item_id as string).filter(Boolean)),
+  ];
+  if (itemIds.length === 0) return keys;
+
+  const { data: invoicedItems, error: itemsErr } = await supabaseAdmin
+    .from('hub_comanda_items')
+    .select('origin_type, origin_id')
+    .eq('clinic_id', clinicId)
+    .in('id', itemIds);
+  if (itemsErr) throw new Error(itemsErr.message);
+  addItemOrigins(invoicedItems as Array<{ origin_type?: string | null; origin_id?: string | null }>);
+  return keys;
+}
+
 async function findOpenComandaIdByOrigin(
   clinicId: string,
   originType: string,
@@ -587,6 +655,9 @@ async function isOperationalCompleteForComanda(comanda: Record<string, unknown>)
   if (originType === 'manual') return true;
   if (originType === 'package') return true;
   if (originType === 'appointment') {
+    // Encounter clínico aberto → serviço em andamento (mesmo se a agenda já estiver "paid" por cobrança antecipada).
+    const openEncId = await findLatestEncounterIdForAppointment(clinicId, originId, { anyOpen: true });
+    if (openEncId) return false;
     const { data: appt } = await supabaseAdmin
       .from('hub_appointments')
       .select('status')
@@ -956,6 +1027,13 @@ export async function tryAutoCloseComanda(comandaId: string, clinicId: string): 
     .maybeSingle();
   if (error || !comandaRow) return false;
   if (String(comandaRow.status) !== 'aberta') return false;
+
+  // Pagamento antecipado com serviço em andamento: mantém aberta para novos itens (ex. medicação no AT).
+  const opDone = await isOperationalCompleteForComanda(comandaRow as Record<string, unknown>);
+  if (!opDone) {
+    await refreshComandaFinancialStatus(comandaId, clinicId, comandaRow as Record<string, unknown>);
+    return false;
+  }
 
   const detail = await getHubComandaDetailPayload(comandaId, clinicId);
   const stillOpenItems = (detail.open_item_ids as string[]).length > 0;
@@ -1688,6 +1766,134 @@ async function mergeSurgeryServicesIntoComandaItems(opts: {
   });
 }
 
+type EncounterComandaServiceRow = {
+  id: string;
+  hub_service_type_id: string | null;
+  hub_appointment_service_id: string | null;
+  service_name: string | null;
+  quantity: number | null;
+  unit_amount: number | null;
+};
+
+async function loadConfirmedEncounterServiceRows(
+  clinicId: string,
+  encounterId: string,
+): Promise<EncounterComandaServiceRow[]> {
+  const { data, error } = await supabaseAdmin
+    .from('hub_encounter_services')
+    .select(
+      'id, hub_service_type_id, hub_appointment_service_id, service_name, quantity, unit_amount, billing_mode, price_status',
+    )
+    .eq('hub_encounter_id', encounterId)
+    .eq('clinic_id', clinicId)
+    .eq('billing_mode', 'charge')
+    .eq('price_status', 'confirmed')
+    .is('deleted_at', null)
+    .order('sort_order', { ascending: true });
+  if (error && isMissingPostgrestRelation(error)) return [];
+  if (error) throw new Error(error.message);
+  return (data ?? []) as EncounterComandaServiceRow[];
+}
+
+/** @internal exportado para testes — merge de serviços da consulta na comanda. */
+export function applyEncounterServiceLinesToComandaItems(opts: {
+  items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[];
+  encSvcList: EncounterComandaServiceRow[];
+  petId: string | null;
+}): { items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[]; subtotal: number } {
+  const { items, encSvcList, petId } = opts;
+  if (encSvcList.length === 0) {
+    return {
+      items: items.map((it, i) => ({ ...it, sort_order: i })),
+      subtotal: round2(items.reduce((s, it) => s + Number(it.line_total ?? 0), 0)),
+    };
+  }
+
+  const replaceApptIds = new Set(
+    encSvcList
+      .map((row) => row.hub_appointment_service_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const replaceTypeIds = new Set(
+    encSvcList
+      .map((row) => row.hub_service_type_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  let subtotal = 0;
+  const kept: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[] = [];
+  for (const it of items) {
+    if (it.origin_type === 'appointment_service') {
+      const oid = it.origin_id;
+      const typeId = it.hub_service_type_id;
+      if ((oid && replaceApptIds.has(oid)) || (typeId && replaceTypeIds.has(typeId))) {
+        continue;
+      }
+    }
+    if (it.origin_type === 'encounter_service') continue;
+    kept.push({ ...it, sort_order: kept.length });
+    subtotal = round2(subtotal + Number(it.line_total ?? 0));
+  }
+
+  const seenEncSvc = new Set<string>();
+  const seenTypeIds = new Set(
+    kept
+      .map((it) => it.hub_service_type_id)
+      .filter((id): id is string => Boolean(id)),
+  );
+
+  for (const row of encSvcList) {
+    if (seenEncSvc.has(row.id)) continue;
+    seenEncSvc.add(row.id);
+    const typeId = row.hub_service_type_id;
+    if (typeId && seenTypeIds.has(typeId)) continue;
+    if (typeId) seenTypeIds.add(typeId);
+    const qty = Number(row.quantity ?? 1) || 1;
+    const unit = Number(row.unit_amount ?? 0);
+    const lineTotal = round2(qty * unit);
+    kept.push({
+      pet_id: petId,
+      item_kind: 'service',
+      hub_service_type_id: typeId,
+      hub_inventory_item_id: null,
+      hub_inventory_lot_id: null,
+      description: String(row.service_name || 'Serviço clínico'),
+      quantity: qty,
+      unit_amount: unit,
+      discount_amount: 0,
+      line_total: lineTotal,
+      service_date: null,
+      origin_type: 'encounter_service',
+      origin_id: row.id,
+      sort_order: kept.length,
+    });
+    subtotal = round2(subtotal + lineTotal);
+  }
+
+  return { items: kept, subtotal };
+}
+
+async function mergeEncounterServicesIntoComandaItems(opts: {
+  clinicId: string;
+  items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[];
+  subtotal: number;
+  petId: string | null;
+  encounterId: string;
+}): Promise<{ items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[]; subtotal: number }> {
+  const encSvcList = await loadConfirmedEncounterServiceRows(opts.clinicId, opts.encounterId);
+  if (encSvcList.length === 0) {
+    return {
+      items: opts.items.map((it, i) => ({ ...it, sort_order: i })),
+      subtotal: round2(opts.subtotal),
+    };
+  }
+  return applyEncounterServiceLinesToComandaItems({
+    items: opts.items,
+    encSvcList,
+    petId: opts.petId,
+  });
+}
+
 async function buildComandaItemsFromEncounter(
   clinicId: string,
   encounterId: string,
@@ -1867,41 +2073,18 @@ async function buildComandaItemsFromEncounter(
     subtotal += serviceAmount;
   }
 
-  // 4. Clinical exams requested in this encounter
-  const { data: examRows } = await supabaseAdmin
-    .from('hub_clinical_exams')
-    .select('id, exam_type, lab_kind, lab_name, external_lab_name, price')
-    .eq('hub_encounter_id', encounterId)
-    .neq('status', 'cancelled')
-    .is('deleted_at', null);
-  for (const exam of examRows ?? []) {
-    const examRow = exam as Record<string, unknown>;
-    const amount = typeof examRow.price === 'number' ? examRow.price : 0;
-    const labLabel =
-      examRow.lab_kind === 'external'
-        ? examRow.external_lab_name
-          ? ` — ${String(examRow.external_lab_name)}`
-          : ' (externo)'
-        : examRow.lab_name
-          ? ` — ${String(examRow.lab_name)}`
-          : '';
-    allItems.push({
-      pet_id: petId,
-      item_kind: 'service',
-      hub_service_type_id: null,
-      hub_inventory_item_id: null,
-      hub_inventory_lot_id: null,
-      description: `Exame: ${String(examRow.exam_type || 'Exame')}${labLabel}`,
-      quantity: 1,
-      unit_amount: amount,
-      discount_amount: 0,
-      line_total: amount,
-      service_date: null,
-      origin_type: 'clinical_exam',
-      origin_id: examRow.id as string,
-      sort_order: allItems.length,
+  // 4. Serviços do grupo clinica lançados no atendimento (pedido de exame PDF não cobra).
+  {
+    const encSvcMerged = await mergeEncounterServicesIntoComandaItems({
+      clinicId,
+      items: allItems,
+      subtotal,
+      petId,
+      encounterId,
     });
-    subtotal += amount;
+    allItems.length = 0;
+    allItems.push(...encSvcMerged.items);
+    subtotal = encSvcMerged.subtotal;
   }
 
   // 5. Serviços de cirurgia vinculados a este atendimento
@@ -1946,8 +2129,27 @@ async function buildComandaItemsFromEncounter(
   }
   subtotal = round2(subtotal + hospBuilt.subtotal);
 
-  // Fallback: generic consultation fee if nothing was found
-  if (allItems.length === 0) {
+  // Não re-lançar origens já faturadas noutra comanda (ex.: consulta paga na agenda).
+  const hadItemsBeforeInvoicedDedupe = allItems.length > 0;
+  const invoicedOrigins = await fetchInvoicedComandaItemOriginKeys(clinicId);
+  if (invoicedOrigins.size > 0) {
+    const kept: typeof allItems = [];
+    let keptSubtotal = 0;
+    for (const it of allItems) {
+      const ot = it.origin_type;
+      const oid = it.origin_id;
+      if (ot && oid && invoicedOrigins.has(`${ot}:${oid}`)) continue;
+      kept.push({ ...it, sort_order: kept.length });
+      keptSubtotal = round2(keptSubtotal + Number(it.line_total ?? 0));
+    }
+    allItems.length = 0;
+    allItems.push(...kept);
+    subtotal = keptSubtotal;
+  }
+
+  // Fallback genérico só se o encounter nunca teve item cobrável.
+  // Se os itens existiam e já foram faturados noutra comanda, devolve vazio (sem reabrir cobrança).
+  if (allItems.length === 0 && !hadItemsBeforeInvoicedDedupe) {
     allItems.push({
       pet_id: petId,
       item_kind: 'fee',
@@ -2115,9 +2317,16 @@ async function buildDesiredComandaSnapshot(
   const ot = String(comanda.origin_type ?? '');
   const oid = comanda.origin_id as string;
   if (ot === 'appointment') {
-    const encId = await findLatestCompletedEncounterIdForAppointment(clinicId, oid);
+    // Preferir encounter (concluído ou em andamento) para sync ao vivo de medicação/vacina/etc.
+    const completedEncId = await findLatestCompletedEncounterIdForAppointment(clinicId, oid);
+    const openEncId = completedEncId
+      ? null
+      : await findLatestEncounterIdForAppointment(clinicId, oid, { anyOpen: true });
+    const encId = completedEncId ?? openEncId;
     if (encId) {
-      const encBuilt = await buildComandaItemsFromEncounter(clinicId, encId);
+      const encBuilt = await buildComandaItemsFromEncounter(clinicId, encId, {
+        allowIncomplete: !completedEncId,
+      });
       return appendGroomingExtrasToAppointmentSnapshot(clinicId, oid, encBuilt);
     }
 
@@ -2138,7 +2347,8 @@ async function buildDesiredComandaSnapshot(
       snapshot = { ...snapshot, items: surgMerged.items, subtotal: surgMerged.subtotal };
     }
 
-    // Internação ligada ao appointment (ou encounter incompleto): anexa diárias/charges.
+    // Internação ligada ao appointment (sem encounter): anexa diárias/charges.
+    // Com encounter aberto/concluído o snapshot já veio de buildComandaItemsFromEncounter acima.
     const hospForAppt = await loadHospitalizationComandaItems({
       clinicId,
       appointmentId: oid,
@@ -2150,22 +2360,6 @@ async function buildDesiredComandaSnapshot(
         .map((it) => it.hub_service_type_id as string);
       const groupById = await loadServiceGroupByIds(svcIds);
       snapshot = mergeHospitalizationItemsIntoSnapshot(snapshot, hospForAppt.items, groupById);
-    }
-
-    // Encounter aberto com internação: também puxa por encounter_id.
-    const openEncId = await findLatestEncounterIdForAppointment(clinicId, oid, { anyOpen: true });
-    if (openEncId) {
-      const hospForEnc = await loadHospitalizationComandaItems({
-        clinicId,
-        encounterId: openEncId,
-        appointmentId: oid,
-        defaultPetId: snapshot.pet_id,
-      });
-      const svcIds = snapshot.items
-        .filter((it) => it.origin_type === 'appointment_service' && it.hub_service_type_id)
-        .map((it) => it.hub_service_type_id as string);
-      const groupById = await loadServiceGroupByIds(svcIds);
-      snapshot = mergeHospitalizationItemsIntoSnapshot(snapshot, hospForEnc.items, groupById);
     }
 
     const boardingId = await findBillableBoardingReservationForAppointment(clinicId, oid);
@@ -2974,13 +3168,13 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
   };
 }
 
-/** Preços de cirurgia/internação ainda pendentes de aprovação financeira (não entram na comanda até confirmar). */
+/** Preços clínicos ainda pendentes de aprovação financeira (não entram na comanda até confirmar). */
 async function listPendingClinicalPriceApprovals(
   clinicId: string,
   encounterId: string | null,
 ): Promise<
   Array<{
-    kind: 'surgery_service' | 'hospitalization_charge';
+    kind: 'surgery_service' | 'hospitalization_charge' | 'encounter_service';
     id: string;
     parent_id: string;
     service_name: string;
@@ -2990,13 +3184,35 @@ async function listPendingClinicalPriceApprovals(
 > {
   if (!encounterId) return [];
   const out: Array<{
-    kind: 'surgery_service' | 'hospitalization_charge';
+    kind: 'surgery_service' | 'hospitalization_charge' | 'encounter_service';
     id: string;
     parent_id: string;
     service_name: string;
     unit_amount: number;
     quantity: number;
   }> = [];
+
+  const { data: encSvcRows, error: encSvcErr } = await supabaseAdmin
+    .from('hub_encounter_services')
+    .select('id, hub_encounter_id, service_name, unit_amount, quantity')
+    .eq('hub_encounter_id', encounterId)
+    .eq('clinic_id', clinicId)
+    .eq('billing_mode', 'charge')
+    .eq('price_status', 'pending_approval')
+    .is('deleted_at', null);
+  if (!encSvcErr || !isMissingPostgrestRelation(encSvcErr)) {
+    for (const raw of encSvcRows ?? []) {
+      const row = raw as Record<string, unknown>;
+      out.push({
+        kind: 'encounter_service',
+        id: row.id as string,
+        parent_id: row.hub_encounter_id as string,
+        service_name: String(row.service_name || 'Serviço clínico'),
+        unit_amount: Number(row.unit_amount ?? 0),
+        quantity: Number(row.quantity ?? 1) || 1,
+      });
+    }
+  }
 
   const { data: surgeries, error: surgErr } = await supabaseAdmin
     .from('hub_surgeries')
@@ -4685,12 +4901,24 @@ async function ensureOpenComandaForCompletedEncounter(
     if (keys.has(`encounter:${encounterId}`)) return;
     if (appointmentId && keys.has(`appointment:${appointmentId}`)) return;
 
+    // Mesmo critério de postHubComandaOpen: recebível pode nascer como manual.
+    const billedViaComanda = await fetchBilledComandaOriginKeys(clinicId);
+    if (billedViaComanda.has(`encounter:${encounterId}`)) return;
+
     const built = await buildComandaItemsFromEncounter(clinicId, encounterId);
+    // Snapshot já omite appointment_service (e demais origens) faturados na agenda.
+    // Sem saldo clínico novo → não abrir segunda comanda vazia/duplicada.
+    const billableItems = built.items.filter((it) => Number(it.line_total ?? 0) > 0);
+    if (billableItems.length === 0) return;
+
     const discount = 0;
-    const total = round2(Math.max(0, built.subtotal - discount));
+    const subtotal = round2(
+      billableItems.reduce((s, it) => s + Number(it.line_total ?? 0), 0),
+    );
+    const total = round2(Math.max(0, subtotal - discount));
     const resolvedPetId =
       built.pet_id ??
-      (built.items.map((it) => it.pet_id).find((pid): pid is string => Boolean(pid)) ?? null);
+      (billableItems.map((it) => it.pet_id).find((pid): pid is string => Boolean(pid)) ?? null);
 
     const { data: comanda, error: cErr } = await supabaseAdmin
       .from('hub_comandas')
@@ -4705,7 +4933,7 @@ async function ensureOpenComandaForCompletedEncounter(
         hub_encounter_id: encounterId,
         status: 'aberta',
         financial_status: 'open',
-        subtotal_amount: built.subtotal,
+        subtotal_amount: subtotal,
         discount_amount: discount,
         total_amount: total,
         notes: null,
@@ -4717,7 +4945,9 @@ async function ensureOpenComandaForCompletedEncounter(
       return;
     }
     const comandaId = comanda.id as string;
-    const rows = built.items.map((it) => comandaItemInsertRow(clinicId, comandaId, it));
+    const rows = billableItems.map((it, idx) =>
+      comandaItemInsertRow(clinicId, comandaId, { ...it, sort_order: idx }),
+    );
     if (rows.length > 0) {
       const { error: iErr } = await supabaseAdmin.from('hub_comanda_items').insert(rows);
       if (iErr) {

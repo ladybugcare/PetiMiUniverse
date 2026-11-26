@@ -306,6 +306,22 @@ export type HubSurgeryService = {
   sort_order?: number;
 };
 
+export type HubEncounterService = {
+  id: string;
+  clinic_id: string;
+  hub_encounter_id: string;
+  hub_service_type_id: string;
+  hub_appointment_service_id?: string | null;
+  service_name: string;
+  quantity: number;
+  unit_amount: number;
+  pricing_source?: string;
+  price_status: HubClinicalPriceStatus;
+  billing_mode: HubClinicalBillingMode;
+  notes?: string | null;
+  sort_order?: number;
+};
+
 export type HubHospitalizationCharge = {
   id: string;
   clinic_id: string;
@@ -1292,6 +1308,56 @@ export const hubClinicalApi = {
         body: JSON.stringify({ clinic_id: clinicId }),
       },
     ) as Promise<{ charge: HubHospitalizationCharge }>;
+  },
+  listEncounterServices(encounterId: string, clinicId: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${clinicalBase}/encounters/${encounterId}/services?${q}`) as Promise<{
+      services: HubEncounterService[];
+    }>;
+  },
+  createEncounterService(
+    encounterId: string,
+    payload: {
+      clinic_id: string;
+      hub_service_type_id: string;
+      unit_amount?: number | null;
+      quantity?: number;
+      billing_mode?: HubClinicalBillingMode;
+      notes?: string | null;
+    },
+  ) {
+    return apiRequest(`${clinicalBase}/encounters/${encounterId}/services`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }) as Promise<{ service: HubEncounterService }>;
+  },
+  patchEncounterService(
+    encounterId: string,
+    serviceId: string,
+    payload: {
+      clinic_id: string;
+      unit_amount?: number;
+      quantity?: number;
+      billing_mode?: HubClinicalBillingMode;
+      notes?: string | null;
+    },
+  ) {
+    return apiRequest(`${clinicalBase}/encounters/${encounterId}/services/${serviceId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }) as Promise<{ service: HubEncounterService }>;
+  },
+  deleteEncounterService(encounterId: string, serviceId: string, clinicId: string) {
+    const q = new URLSearchParams({ clinic_id: clinicId });
+    return apiRequest(`${clinicalBase}/encounters/${encounterId}/services/${serviceId}?${q}`, {
+      method: 'DELETE',
+    });
+  },
+  approveEncounterServicePrice(encounterId: string, serviceId: string, clinicId: string) {
+    return apiRequest(`${clinicalBase}/encounters/${encounterId}/services/${serviceId}/approve-price`, {
+      method: 'POST',
+      body: JSON.stringify({ clinic_id: clinicId }),
+    }) as Promise<{ service: HubEncounterService }>;
   },
 };
 

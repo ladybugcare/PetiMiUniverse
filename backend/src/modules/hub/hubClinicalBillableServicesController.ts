@@ -39,11 +39,15 @@ const pricingSourceSchema = z.enum([
 async function loadServiceType(
   clinicId: string,
   serviceTypeId: string,
-  expectedGroup?: 'cirurgia' | 'internacao',
-): Promise<ServicePriceModeRow & { service_group: string }> {
+  expectedGroup?: 'cirurgia' | 'internacao' | 'clinica',
+): Promise<
+  ServicePriceModeRow & { service_group: string; is_encounter_application?: boolean | null }
+> {
   const { data, error } = await supabaseAdmin
     .from('hub_service_types')
-    .select('id, name, sale_amount, price_mode, price_min, price_max, service_group, active, deleted_at')
+    .select(
+      'id, name, sale_amount, price_mode, price_min, price_max, service_group, active, deleted_at, is_encounter_application',
+    )
     .eq('id', serviceTypeId)
     .eq('clinic_id', clinicId)
     .maybeSingle();
@@ -54,7 +58,10 @@ async function loadServiceType(
   if (expectedGroup && group !== expectedGroup) {
     throw new Error(`Serviço deve pertencer ao grupo ${expectedGroup}`);
   }
-  return data as ServicePriceModeRow & { service_group: string };
+  return data as ServicePriceModeRow & {
+    service_group: string;
+    is_encounter_application?: boolean | null;
+  };
 }
 
 async function resolveUnitAndStatus(opts: {
@@ -731,3 +738,249 @@ export async function insertSurgeryServicesBatch(opts: {
     });
   }
 }
+
+// ── Encounter services (consulta / grupo clinica) ─────────────────────────────
+
+const encounterServiceBodySchema = z.object({
+  clinic_id: uuidStr,
+  hub_service_type_id: uuidStr,
+  unit_amount: z.number().min(0).optional().nullable(),
+  quantity: z.number().positive().optional().default(1),
+  billing_mode: billingModeSchema.optional().default('charge'),
+  notes: z.string().trim().max(2000).optional().nullable(),
+  sort_order: z.number().int().optional(),
+});
+
+export const listHubEncounterServices = async (req: Request, res: Response) => {
+  const encounterId = uuidStr.safeParse(req.params.id);
+  const clinic_id = uuidStr.safeParse(req.query.clinic_id);
+  if (!encounterId.success || !clinic_id.success) {
+    return res.status(400).json({ error: 'id e clinic_id obrigatórios' });
+  }
+  const { data, error } = await supabaseAdmin
+    .from('hub_encounter_services')
+    .select('*')
+    .eq('hub_encounter_id', encounterId.data)
+    .eq('clinic_id', clinic_id.data)
+    .is('deleted_at', null)
+    .order('sort_order', { ascending: true });
+  if (error) {
+    if (String(error.message).includes('hub_encounter_services') || error.code === '42P01') {
+      return res.json({ services: [] });
+    }
+    return res.status(500).json({ error: error.message });
+  }
+  return res.json({ services: data ?? [] });
+};
+
+export const createHubEncounterService = async (req: Request, res: Response) => {
+  const encounterId = uuidStr.safeParse(req.params.id);
+  const parsed = encounterServiceBodySchema.safeParse(req.body);
+  if (!encounterId.success || !parsed.success) {
+    return res.status(400).json({
+      error: 'Dados inválidos',
+      details: parsed.success ? undefined : parsed.error.flatten(),
+    });
+  }
+  const b = parsed.data;
+
+  const { data: enc, error: encErr } = await supabaseAdmin
+    .from('hub_encounters')
+    .select('id, clinic_id, hub_appointment_id, status, deleted_at')
+    .eq('id', encounterId.data)
+    .eq('clinic_id', b.clinic_id)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (encErr) return res.status(500).json({ error: encErr.message });
+  if (!enc) return res.status(404).json({ error: 'Atendimento não encontrado' });
+  if (String(enc.status) === 'cancelled') {
+    return res.status(400).json({ error: 'Não é possível lançar serviços em atendimento cancelado' });
+  }
+
+  let service: ServicePriceModeRow & {
+    service_group: string;
+    is_encounter_application?: boolean | null;
+  };
+  try {
+    service = await loadServiceType(b.clinic_id, b.hub_service_type_id, 'clinica');
+  } catch (e) {
+    return res.status(400).json({ error: (e as Error).message });
+  }
+  if (service.is_encounter_application) {
+    return res.status(400).json({
+      error: 'Serviço de aplicação na consulta: use o fluxo Medicação (Aplicado agora).',
+    });
+  }
+
+  let hub_appointment_service_id: string | null = null;
+  let unitOverride = b.unit_amount;
+  const apptId = (enc as { hub_appointment_id?: string | null }).hub_appointment_id ?? null;
+  if (apptId) {
+    const dedupe = await findAppointmentServiceDedupe(apptId, b.hub_service_type_id);
+    if (dedupe) {
+      hub_appointment_service_id = dedupe.id;
+      if (unitOverride == null && dedupe.sale_amount_applied != null) {
+        unitOverride = dedupe.sale_amount_applied;
+      }
+    }
+  }
+
+  const resolved = await resolveUnitAndStatus({
+    clinicId: b.clinic_id,
+    userId: req.user?.id,
+    service,
+    unitAmountOverride: unitOverride,
+  });
+
+  const { data, error } = await supabaseAdmin
+    .from('hub_encounter_services')
+    .insert({
+      clinic_id: b.clinic_id,
+      hub_encounter_id: encounterId.data,
+      hub_service_type_id: b.hub_service_type_id,
+      hub_appointment_service_id,
+      service_name: service.name,
+      quantity: b.quantity,
+      unit_amount: resolved.unit_amount,
+      pricing_source: resolved.pricing_source,
+      price_status: hub_appointment_service_id ? 'confirmed' : resolved.price_status,
+      proposed_by_user_id: req.user?.id ?? null,
+      approved_by_user_id:
+        (hub_appointment_service_id || resolved.price_status === 'confirmed') && req.user?.id
+          ? req.user.id
+          : null,
+      approved_at:
+        hub_appointment_service_id || resolved.price_status === 'confirmed'
+          ? new Date().toISOString()
+          : null,
+      billing_mode: b.billing_mode,
+      notes: b.notes ?? null,
+      sort_order: b.sort_order ?? 0,
+    })
+    .select('*')
+    .single();
+  if (error) return res.status(500).json({ error: error.message });
+
+  await syncOpenComandasAfterEncounterChargeableChange(b.clinic_id, encounterId.data);
+  return res.status(201).json({ service: data });
+};
+
+export const patchHubEncounterService = async (req: Request, res: Response) => {
+  const encounterId = uuidStr.safeParse(req.params.id);
+  const serviceId = uuidStr.safeParse(req.params.serviceId);
+  const parsed = z
+    .object({
+      clinic_id: uuidStr,
+      unit_amount: z.number().min(0).optional(),
+      quantity: z.number().positive().optional(),
+      billing_mode: billingModeSchema.optional(),
+      notes: z.string().trim().max(2000).optional().nullable(),
+      sort_order: z.number().int().optional(),
+    })
+    .safeParse(req.body);
+  if (!encounterId.success || !serviceId.success || !parsed.success) {
+    return res.status(400).json({ error: 'Dados inválidos' });
+  }
+  const b = parsed.data;
+
+  const { data: existing, error: getErr } = await supabaseAdmin
+    .from('hub_encounter_services')
+    .select('*')
+    .eq('id', serviceId.data)
+    .eq('hub_encounter_id', encounterId.data)
+    .eq('clinic_id', b.clinic_id)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (getErr) return res.status(500).json({ error: getErr.message });
+  if (!existing) return res.status(404).json({ error: 'Serviço do atendimento não encontrado' });
+
+  const update: Record<string, unknown> = {};
+  if (b.quantity !== undefined) update.quantity = b.quantity;
+  if (b.billing_mode !== undefined) update.billing_mode = b.billing_mode;
+  if (b.notes !== undefined) update.notes = b.notes;
+  if (b.sort_order !== undefined) update.sort_order = b.sort_order;
+
+  if (b.unit_amount !== undefined) {
+    let service: ServicePriceModeRow;
+    try {
+      service = await loadServiceType(b.clinic_id, existing.hub_service_type_id as string);
+    } catch (e) {
+      return res.status(400).json({ error: (e as Error).message });
+    }
+    const resolved = await resolveUnitAndStatus({
+      clinicId: b.clinic_id,
+      userId: req.user?.id,
+      service,
+      unitAmountOverride: b.unit_amount,
+    });
+    update.unit_amount = resolved.unit_amount;
+    update.pricing_source = resolved.pricing_source;
+    update.price_status = resolved.price_status;
+    update.proposed_by_user_id = req.user?.id ?? null;
+    if (resolved.price_status === 'confirmed') {
+      update.approved_by_user_id = req.user?.id ?? null;
+      update.approved_at = new Date().toISOString();
+    } else {
+      update.approved_by_user_id = null;
+      update.approved_at = null;
+    }
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from('hub_encounter_services')
+    .update(update)
+    .eq('id', serviceId.data)
+    .eq('clinic_id', b.clinic_id)
+    .select('*')
+    .maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+
+  await syncOpenComandasAfterEncounterChargeableChange(b.clinic_id, encounterId.data);
+  return res.json({ service: data });
+};
+
+export const deleteHubEncounterService = async (req: Request, res: Response) => {
+  const encounterId = uuidStr.safeParse(req.params.id);
+  const serviceId = uuidStr.safeParse(req.params.serviceId);
+  const clinic_id = uuidStr.safeParse(req.query.clinic_id);
+  if (!encounterId.success || !serviceId.success || !clinic_id.success) {
+    return res.status(400).json({ error: 'id, serviceId e clinic_id obrigatórios' });
+  }
+  const { error } = await supabaseAdmin
+    .from('hub_encounter_services')
+    .update({ deleted_at: new Date().toISOString() })
+    .eq('id', serviceId.data)
+    .eq('hub_encounter_id', encounterId.data)
+    .eq('clinic_id', clinic_id.data)
+    .is('deleted_at', null);
+  if (error) return res.status(500).json({ error: error.message });
+  await syncOpenComandasAfterEncounterChargeableChange(clinic_id.data, encounterId.data);
+  return res.status(204).send();
+};
+
+export const approveHubEncounterServicePrice = async (req: Request, res: Response) => {
+  const encounterId = uuidStr.safeParse(req.params.id);
+  const serviceId = uuidStr.safeParse(req.params.serviceId);
+  const parsed = z.object({ clinic_id: uuidStr }).safeParse(req.body);
+  if (!encounterId.success || !serviceId.success || !parsed.success) {
+    return res.status(400).json({ error: 'Dados inválidos' });
+  }
+  const { clinic_id } = parsed.data;
+  const { data, error } = await supabaseAdmin
+    .from('hub_encounter_services')
+    .update({
+      price_status: 'confirmed',
+      approved_by_user_id: req.user?.id ?? null,
+      approved_at: new Date().toISOString(),
+    })
+    .eq('id', serviceId.data)
+    .eq('hub_encounter_id', encounterId.data)
+    .eq('clinic_id', clinic_id)
+    .is('deleted_at', null)
+    .select('*')
+    .maybeSingle();
+  if (error) return res.status(500).json({ error: error.message });
+  if (!data) return res.status(404).json({ error: 'Serviço do atendimento não encontrado' });
+  await syncOpenComandasAfterEncounterChargeableChange(clinic_id, encounterId.data);
+  return res.json({ service: data });
+};

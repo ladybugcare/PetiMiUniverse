@@ -903,7 +903,8 @@ export function ComandaCheckoutDrawer({
 
                 {detail.operational_complete === false && (
                   <p className="hub-clientes__muted hub-checkout-drawer__hint">
-                    Serviço ainda não concluído — a comanda pode permanecer aberta após pagamento antecipado.
+                    Atendimento ainda não finalizado — a comanda permanece aberta após o pagamento. Itens
+                    novos do vet (ex.: medicação) entram aqui e geram novo saldo.
                   </p>
                 )}
 

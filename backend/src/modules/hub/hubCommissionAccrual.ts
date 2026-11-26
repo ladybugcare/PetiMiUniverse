@@ -195,6 +195,25 @@ export async function resolveServiceExecutorStaff(opts: {
     return (await assertStaffInClinic(clinicId, sid)) ? sid : null;
   }
 
+  if (originType === 'encounter_service') {
+    const { data: es } = await supabaseAdmin
+      .from('hub_encounter_services')
+      .select('hub_encounter_id')
+      .eq('id', originId)
+      .eq('clinic_id', clinicId)
+      .maybeSingle();
+    if (!es?.hub_encounter_id) return null;
+    const { data: enc } = await supabaseAdmin
+      .from('hub_encounters')
+      .select('hub_staff_member_id')
+      .eq('id', es.hub_encounter_id as string)
+      .eq('clinic_id', clinicId)
+      .maybeSingle();
+    const sid = (enc?.hub_staff_member_id as string | null) ?? null;
+    if (!sid) return null;
+    return (await assertStaffInClinic(clinicId, sid)) ? sid : null;
+  }
+
   if (originType === 'hospitalization_daily') {
     return null;
   }

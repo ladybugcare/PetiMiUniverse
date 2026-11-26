@@ -317,7 +317,8 @@ export function HubInClinicMedicationForm({
 
       {selectedService ? (
         <p className="hub-cws-exam-form__hint">
-          Na comanda: {formatMoneyBrl(Number(selectedService.sale_amount ?? 0))} ({selectedService.name})
+          Cobrança prevista: {formatMoneyBrl(Number(selectedService.sale_amount ?? 0))} (
+          {selectedService.name}) — sincroniza na comanda aberta; o atendimento ainda não está finalizado
           {selectedItem
             ? ` · baixa ${draft.quantity || '1'} ${qtyUnitLabel} de ${selectedItem.name}${
                 selectedLot ? ` (lote ${selectedLot.lot_code || 'sem código'})` : ''

@@ -355,6 +355,11 @@ import {
   patchHubHospitalizationCharge,
   deleteHubHospitalizationCharge,
   approveHubHospitalizationChargePrice,
+  listHubEncounterServices,
+  createHubEncounterService,
+  patchHubEncounterService,
+  deleteHubEncounterService,
+  approveHubEncounterServicePrice,
 } from '../hubClinicalBillableServicesController';
 import {
   listHubHospitalizationMedOrders,
@@ -1856,6 +1861,42 @@ router.post(
   authenticateUser,
   requirePermission('hub.financial.write'), requireCoreOpsWrite,
   approveHubSurgeryServicePrice
+);
+
+router.get(
+  '/clinical/encounters/:id/services',
+  authenticateUser,
+  requirePermission('hub.clinic.read'),
+  requireClinicModule,
+  listHubEncounterServices,
+);
+router.post(
+  '/clinical/encounters/:id/services',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  requireClinicWrite,
+  createHubEncounterService,
+);
+router.patch(
+  '/clinical/encounters/:id/services/:serviceId',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  requireClinicWrite,
+  patchHubEncounterService,
+);
+router.delete(
+  '/clinical/encounters/:id/services/:serviceId',
+  authenticateUser,
+  requirePermission('hub.clinic.write'),
+  requireClinicWrite,
+  deleteHubEncounterService,
+);
+router.post(
+  '/clinical/encounters/:id/services/:serviceId/approve-price',
+  authenticateUser,
+  requirePermission('hub.financial.write'),
+  requireCoreOpsWrite,
+  approveHubEncounterServicePrice,
 );
 
 /** Comandas / checkout operacional */
