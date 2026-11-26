@@ -4,6 +4,7 @@ import {
   canOpenGroomingSessionFromAppointment,
   getItemBoardStage,
   groomingOpenSessionStage,
+  isGroomingServiceOperationallyDone,
   resolveGroomingQuickAction,
 } from './groomingStages';
 
@@ -22,6 +23,8 @@ describe('appointmentStatusForGroomingStage', () => {
 
   it('encerrado operacional espelha agenda done (paid só no caixa)', () => {
     expect(appointmentStatusForGroomingStage('ready')).toBe('done');
+    expect(isGroomingServiceOperationallyDone('ready')).toBe(true);
+    expect(isGroomingServiceOperationallyDone('in_service')).toBe(false);
     expect(appointmentStatusForGroomingStage('closed')).toBe('done');
   });
 });

@@ -24,6 +24,14 @@ describe('hubFinancialDayBoard', () => {
     it('grooming_session closed é completo', () => {
       expect(isDayBoardOperationallyComplete('grooming_session', 'closed')).toBe(true);
     });
+
+    it('grooming_session ready (Pronto) é completo', () => {
+      expect(isDayBoardOperationallyComplete('grooming_session', 'ready')).toBe(true);
+    });
+
+    it('grooming_session in_service não é completo', () => {
+      expect(isDayBoardOperationallyComplete('grooming_session', 'in_service')).toBe(false);
+    });
   });
 
   describe('matchesFinanceiroDayBoardScope', () => {

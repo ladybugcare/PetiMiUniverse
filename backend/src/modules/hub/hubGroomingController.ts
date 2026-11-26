@@ -11,8 +11,10 @@ import {
   appointmentStatusForGroomingStage,
   boardStageFromAppointmentStatus,
   canTransitionGroomingStage,
+  isGroomingServiceOperationallyDone,
   type GroomingStage,
 } from './groomingStages';
+import { ensureGroomingAppointmentLinesExecuted } from './groomingExecution';
 import { prepareResourceForGroomingStart, releaseAppointmentResource } from './hubResourcesService';
 import { buildGroomingDisplayTags } from './groomingPetTags';
 import {
@@ -1098,10 +1100,18 @@ export const patchHubGroomingSession = async (req: Request, res: Response) => {
         current.hub_appointment_id as string | null,
         b.grooming_stage,
       );
-      if (b.grooming_stage === 'ready' || b.grooming_stage === 'delivered' || b.grooming_stage === 'closed') {
+      if (isGroomingServiceOperationallyDone(b.grooming_stage)) {
         await releaseAppointmentResource(b.clinic_id, current.hub_appointment_id as string | null);
-      }
-      if (b.grooming_stage === 'closed') {
+        // Pronto ⇒ linhas do agendamento feitas (contador X/Y) + comanda deixa de ser «em andamento».
+        try {
+          await ensureGroomingAppointmentLinesExecuted({
+            clinicId: b.clinic_id,
+            appointmentId: current.hub_appointment_id as string | null,
+            executedByStaffId: (current.hub_staff_member_id as string | null) ?? null,
+          });
+        } catch (markErr) {
+          console.error('ensureGroomingAppointmentLinesExecuted', id.data, markErr);
+        }
         void syncOpenComandasAfterGroomingClosed(b.clinic_id, id.data);
       }
       if (b.grooming_stage === 'ready') {

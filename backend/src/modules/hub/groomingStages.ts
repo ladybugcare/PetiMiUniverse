@@ -73,6 +73,14 @@ export function appointmentStatusForGroomingStage(stage: GroomingStage): string 
   }
 }
 
+/**
+ * Serviço do salão concluído (Pronto / legado entregue / encerrado).
+ * Distinto da custódia: pet pode ficar em `ready` aguardando retirada.
+ */
+export function isGroomingServiceOperationallyDone(stage: string): boolean {
+  return stage === 'ready' || stage === 'delivered' || stage === 'closed';
+}
+
 export function boardStageFromAppointmentStatus(status: string, appointmentKind?: string | null): GroomingStage {
   // Encaixe já fez check-in na agenda; na fila entra em Aguardando até existir sessão.
   if (appointmentKind === 'walk_in' && (status === 'checked_in' || status === 'in_progress')) {

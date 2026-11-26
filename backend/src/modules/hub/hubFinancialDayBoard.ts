@@ -1,11 +1,13 @@
 import type { DayBoardBilling } from './boardingBilling';
+import { isGroomingServiceOperationallyDone } from './groomingStages';
 
 export function isDayBoardOperationallyComplete(originType: string, operationalStatus: string): boolean {
   switch (originType) {
     case 'appointment':
       return operationalStatus === 'done' || operationalStatus === 'paid';
     case 'grooming_session':
-      return operationalStatus === 'closed';
+      // Alinhado à comanda: Pronto (e legado entregue/encerrado) = serviço concluído.
+      return isGroomingServiceOperationallyDone(operationalStatus);
     case 'encounter':
       return operationalStatus === 'completed';
     case 'boarding_reservation':
