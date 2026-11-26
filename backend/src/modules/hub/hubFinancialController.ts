@@ -2068,16 +2068,14 @@ function mapLineRefundListRow(adj: Record<string, unknown>): PaymentListRow | nu
   );
   const amount = round2(Number(adj.amount ?? 0));
   if (amount <= 0.009) return null;
-  const effectiveDate =
-    adj.refund_effective_date != null && String(adj.refund_effective_date).trim()
-      ? `${String(adj.refund_effective_date).slice(0, 10)}T12:00:00.000-03:00`
-      : adj.created_at;
+  // refund_effective_date é só calendário (date); fabricar T12:00 mostrava
+  // sempre meio-dia em vez do horário real do lançamento. Usar created_at.
   return {
     id: `line-refund:${String(adj.id)}`,
     amount,
     payment_method: adj.refund_method ?? 'other',
     installments: 1,
-    payment_date: effectiveDate,
+    payment_date: adj.created_at,
     notes: adj.reason ?? null,
     cash_session_status: null,
     status: 'reversed',
