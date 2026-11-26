@@ -346,3 +346,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 171. **`171_alter_hub_commission_line_snapshot.sql`** — snapshot imutável de comissão em `hub_receivable_lines` (`commission_*` / `commission_accrued_at`) + `sold_by_staff_id` em `hub_comanda_items` (autoria de venda de produto). Relatório gerencial lê o snapshot; serviço → executor, produto → vendedor. Executar depois dos itens 160, 039a e 042.
 
 172. **`172_hub_cash_refund_drawer_no_double_count.sql`** — anti double-count na gaveta: `financial_adjustment_id` em `hub_cash_movements` + `hub_return_receivable_product_lines` só faz Sangria em devolução parcial; ao zerar a venda, reverse do payment cash remove Entradas e anula sangrias de reembolso vinculadas. Executar depois do item 164.
+
+175. **`175_alter_hub_commission_basis_per_unit.sql`** — adiciona `fixed_per_unit` ao CHECK de `hub_commission_rules.basis` e `hub_receivable_lines.commission_rule_basis` (valor fixo × quantidade da linha, com teto na base líquida). Executar depois dos itens 038 e 171.

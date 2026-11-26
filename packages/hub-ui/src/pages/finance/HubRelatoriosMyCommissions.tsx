@@ -125,7 +125,7 @@ export const HubRelatoriosMyCommissions: React.FC<Props> = ({ clinicId, unitId, 
               {(data?.summary.lines_with_commission ?? 0).toLocaleString('pt-BR')}
             </div>
             <div className="hub-servicos__metric-sub">
-              {(data?.summary.receivables_count ?? 0).toLocaleString('pt-BR')} recebíveis
+              {(data?.summary.receivables_count ?? 0).toLocaleString('pt-BR')} recebíveis · só vendas
             </div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>

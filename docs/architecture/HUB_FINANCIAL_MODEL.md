@@ -126,7 +126,10 @@ Regras por **serviço** (`hub_service_type_id`) **ou** **produto** (`hub_invento
 
 - `clinic_id` + alvo: `hub_service_type_id` **ou** `hub_inventory_item_id` (CHECK: exatamente um preenchido).
 - No máximo uma regra activa por par clínica+serviço ou clínica+produto (índices únicos parciais com `deleted_at IS NULL`).
-- `basis`: `percent_of_sale` (taxa em % sobre `line_total` da linha do recebível) ou `fixed_per_sale` (valor fixo por linha, limitado ao total da linha).
+- `basis`:
+  - `percent_of_sale` — % sobre a base líquida da linha (já escala com quantidade/desconto);
+  - `fixed_per_sale` — valor fixo **uma vez por linha** (mesmo com várias unidades), limitado ao total da linha;
+  - `fixed_per_unit` — valor fixo **× quantidade** da linha, limitado ao total da linha.
 - `rate` (numeric), `active`, `notes`, `created_at` / `updated_at`, `deleted_at` (soft delete).
 - Pré-visualização e relatório percorrem `hub_receivable_lines` e aplicam a regra activa cujo `hub_service_type_id` ou `hub_inventory_item_id` coincide com o da linha.
 

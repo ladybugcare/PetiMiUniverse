@@ -63,6 +63,17 @@ describe('hubCommissionAccrual — cálculo puro', () => {
     expect(computeCommissionAmount({ basis: 'percent_of_sale', rate: 10 }, 0)).toBe(0);
   });
 
+  it('fixed_per_unit multiplica pela quantidade e respeita teto da linha', () => {
+    expect(computeCommissionAmount({ basis: 'fixed_per_unit', rate: 5 }, 500, 5)).toBe(25);
+    expect(computeCommissionAmount({ basis: 'fixed_per_unit', rate: 5 }, 500, 1)).toBe(5);
+    // Mesma qty=5 sem multiplicar no fixed_per_sale
+    expect(computeCommissionAmount({ basis: 'fixed_per_sale', rate: 5 }, 500, 5)).toBe(5);
+    // Teto: 5 × 5 = 25, mas linha só vale 12
+    expect(computeCommissionAmount({ basis: 'fixed_per_unit', rate: 5 }, 12, 5)).toBe(12);
+    // qty inválida cai para 1
+    expect(computeCommissionAmount({ basis: 'fixed_per_unit', rate: 5 }, 100, 0)).toBe(5);
+  });
+
   it('apuração com desconto de cabeçalho: base líquida + percent', () => {
     const liquids = allocateLiquidLineAmounts({
       lineTotals: [100, 100],

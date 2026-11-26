@@ -253,16 +253,22 @@ export function liquidAmountForLine(opts: {
 /**
  * Ajuste de comissão em devolução, proporcional ao valor comercial devolvido
  * sobre a base líquida original da linha (vale para % e fixo).
+ * `alreadyAdjusted` limita o acumulado a no máximo a comissão original (múltiplas parciais).
  */
 export function commissionAdjustmentForReturn(opts: {
   commissionOriginalAmount: number;
   commissionBasisAmount: number;
   returnedCommercial: number;
+  /** Soma dos ajustes já aplicados nesta linha (outras devoluções). */
+  alreadyAdjusted?: number;
 }): number {
   const original = round2Money(opts.commissionOriginalAmount);
   const basis = round2Money(opts.commissionBasisAmount);
   const returned = round2Money(opts.returnedCommercial);
+  const already = round2Money(Math.max(0, opts.alreadyAdjusted ?? 0));
   if (original <= 0.009 || basis <= 0.009 || returned <= 0.009) return 0;
+  const remaining = round2Money(Math.max(0, original - already));
+  if (remaining <= 0.009) return 0;
   const ratio = Math.min(1, returned / basis);
-  return round2Money(original * ratio);
+  return round2Money(Math.min(remaining, original * ratio));
 }

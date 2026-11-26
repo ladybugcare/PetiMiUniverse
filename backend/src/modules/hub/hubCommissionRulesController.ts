@@ -8,7 +8,7 @@ function round2(n: number): number {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 
-const basisSchema = z.enum(['percent_of_sale', 'fixed_per_sale']);
+const basisSchema = z.enum(['percent_of_sale', 'fixed_per_sale', 'fixed_per_unit']);
 
 const RULE_SELECT = `
   *,
@@ -259,15 +259,21 @@ const previewQuerySchema = z
 
 function applyCommissionRule(
   lineTotal: number,
-  rule: { basis: string; rate: number } | undefined
+  rule: { basis: string; rate: number } | undefined,
+  quantity = 1,
 ): { commission: number; basis: string | null; rate: number | null } {
   if (!rule) return { commission: 0, basis: null, rate: null };
   const basis = rule.basis;
   const rate = rule.rate;
-  const commission =
-    rule.basis === 'percent_of_sale'
-      ? round2(lineTotal * (rule.rate / 100))
-      : round2(Math.min(rule.rate, lineTotal));
+  const qty = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+  let commission: number;
+  if (rule.basis === 'percent_of_sale') {
+    commission = round2(lineTotal * (rule.rate / 100));
+  } else if (rule.basis === 'fixed_per_unit') {
+    commission = round2(Math.min(rule.rate * qty, lineTotal));
+  } else {
+    commission = round2(Math.min(rule.rate, lineTotal));
+  }
   return { commission, basis, rate };
 }
 
@@ -358,10 +364,11 @@ export const getHubCommissionPreview = async (req: Request, res: Response) => {
 
       for (const ln of lines ?? []) {
         const lineTotal = round2(Number(ln.line_total ?? 0));
+        const qty = Number(ln.quantity ?? 1) || 1;
         const stId = (ln.hub_service_type_id as string) ?? null;
         const itemId = (ln.hub_inventory_item_id as string) ?? null;
         const rule = stId ? ruleByService.get(stId) : itemId ? ruleByProduct.get(itemId) : undefined;
-        const { commission, basis, rate } = applyCommissionRule(lineTotal, rule);
+        const { commission, basis, rate } = applyCommissionRule(lineTotal, rule, qty);
         total = round2(total + commission);
         out.push({
           line_id: ln.id as string,

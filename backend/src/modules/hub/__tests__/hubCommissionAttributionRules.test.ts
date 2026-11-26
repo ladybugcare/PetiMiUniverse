@@ -116,8 +116,25 @@ describe('atribuição financeira — cenários do plano', () => {
       commissionOriginalAmount: original,
       commissionBasisAmount: basis,
       returnedCommercial: 40,
+      alreadyAdjusted: adj1,
     });
     expect(adj1 + adj2).toBeLessThanOrEqual(original + 0.001);
+    expect(adj1 + adj2).toBe(15);
+
+    // Duas parciais > 100% da base sem teto acumulado estourariam; com alreadyAdjusted não.
+    const over1 = commissionAdjustmentForReturn({
+      commissionOriginalAmount: original,
+      commissionBasisAmount: basis,
+      returnedCommercial: 50,
+    });
+    const over2 = commissionAdjustmentForReturn({
+      commissionOriginalAmount: original,
+      commissionBasisAmount: basis,
+      returnedCommercial: 50,
+      alreadyAdjusted: over1,
+    });
+    expect(over1 + over2).toBeLessThanOrEqual(original + 0.001);
+
     const full = commissionAdjustmentForReturn({
       commissionOriginalAmount: original,
       commissionBasisAmount: basis,

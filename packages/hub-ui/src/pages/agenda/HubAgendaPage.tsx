@@ -2737,9 +2737,15 @@ const HubAgendaPage: React.FC = () => {
           unitId={checkoutUnitId}
           originType="appointment"
           originId={checkoutAppointmentId}
-          onSuccess={() => {
+          onSuccess={({ kind }) => {
             bumpReload();
-            showSuccess('Cobrança concluída.');
+            showSuccess(
+              kind === 'leave_pending'
+                ? 'Comanda enviada ao financeiro.'
+                : kind === 'cancel'
+                  ? 'Comanda cancelada.'
+                  : 'Cobrança concluída.',
+            );
           }}
         />
       ) : null}

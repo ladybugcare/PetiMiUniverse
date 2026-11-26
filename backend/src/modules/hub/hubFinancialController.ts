@@ -1035,6 +1035,7 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
         lines: builtLines.map((line, idx) => ({
           key: `manual-${idx}`,
           line_total: Number(line.line_total ?? 0),
+          quantity: Number(line.quantity ?? 1) || 1,
           hub_service_type_id: null,
           hub_inventory_item_id: null,
           item_kind: 'fee',
@@ -1202,6 +1203,7 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
       lines: built.lines.map((l, i) => ({
         key: String(l.source_line_id ?? `direct-${i}`),
         line_total: Number(l.line_total ?? 0),
+        quantity: Number(l.quantity ?? 1) || 1,
         hub_service_type_id: (l.hub_service_type_id as string | null) ?? null,
         hub_inventory_item_id: (l.hub_inventory_item_id as string | null) ?? null,
         item_kind: l.hub_inventory_item_id ? 'product' : 'service',
@@ -1671,6 +1673,7 @@ export const postHubFinanceReceivableProductLine = async (req: Request, res: Res
         {
           key: 'product-line',
           line_total: lineTotal,
+          quantity,
           hub_service_type_id: null,
           hub_inventory_item_id: item_id,
           item_kind: 'product',
@@ -6591,6 +6594,7 @@ async function buildCommissionsReport(params: {
     });
   }
 
+  const commissionAdjustedByLineId = new Map<string, number>();
   for (const ev of bundle.returnEvents) {
     if (!accruedReturnLineIds.has(ev.receivable_line_id)) continue;
     const ln = bundle.returnLinesById.get(ev.receivable_line_id);
@@ -6605,11 +6609,14 @@ async function buildCommissionsReport(params: {
     });
     const basisAmount = round2(Number(ln.commission_basis_amount ?? 0));
     const originalCommission = round2(Number(ln.commission_original_amount ?? 0));
+    const alreadyAdjusted = commissionAdjustedByLineId.get(ln.id) ?? 0;
     const adj = commissionAdjustmentForReturn({
       commissionOriginalAmount: originalCommission,
       commissionBasisAmount: basisAmount > 0.009 ? basisAmount : returnedCommercial,
       returnedCommercial,
+      alreadyAdjusted,
     });
+    commissionAdjustedByLineId.set(ln.id, round2(alreadyAdjusted + adj));
     const stId = (ln.hub_service_type_id as string) ?? null;
     const itemId = (ln.hub_inventory_item_id as string) ?? null;
     const staffId = (ln.commission_staff_member_id as string | null) ?? null;

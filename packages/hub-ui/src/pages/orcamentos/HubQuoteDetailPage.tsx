@@ -381,8 +381,14 @@ const HubQuoteDetailPage: React.FC = () => {
         unitId={(quote.unit_id || getSelectedUnitId()) as string}
         originType="quote"
         originId={id}
-        onSuccess={async () => {
-          showSuccess('Cobrança concluída.');
+        onSuccess={async ({ kind }) => {
+          showSuccess(
+            kind === 'leave_pending'
+              ? 'Comanda enviada ao financeiro.'
+              : kind === 'cancel'
+                ? 'Comanda cancelada.'
+                : 'Cobrança concluída.',
+          );
           setCheckoutOpen(false);
           await load();
         }}

@@ -1562,7 +1562,13 @@ const HubCaixaPage: React.FC = () => {
             void loadDayBoard();
           }}
           onSuccess={({ comandaId, kind, receivableIds }) => {
-            showSuccess(kind === 'leave_pending' ? 'Comanda enviada ao financeiro.' : 'Cobrança concluída.');
+            showSuccess(
+              kind === 'leave_pending'
+                ? 'Comanda enviada ao financeiro.'
+                : kind === 'cancel'
+                  ? 'Comanda cancelada.'
+                  : 'Cobrança concluída.',
+            );
             setCheckoutComandaId(null);
             setCheckoutScheduleContext(null);
             void load();

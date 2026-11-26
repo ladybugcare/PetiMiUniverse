@@ -38,6 +38,8 @@ export type AccrualLineInput = {
   /** Identificador estável só para mapear líquidos (ex.: comanda_item_id). */
   key: string;
   line_total: number;
+  /** Quantidade da linha — usada em fixed_per_unit. */
+  quantity?: number | null;
   hub_service_type_id: string | null;
   hub_inventory_item_id: string | null;
   item_kind: string | null;
@@ -295,7 +297,7 @@ export async function accrueCommissionSnapshots(
       allowActingUserAsSaleAuthor: opts.allowActingUserAsSaleAuthor ?? false,
     });
     const rule = matchRuleForLine(rules, line);
-    const commission = computeCommissionAmount(rule, liquidBase);
+    const commission = computeCommissionAmount(rule, liquidBase, line.quantity);
 
     out.set(line.key, {
       commission_staff_member_id: staff.staffId,
@@ -327,6 +329,7 @@ export function comandaItemsToAccrualInputs(
   return items.map((it, idx) => ({
     key: String(it.id ?? `idx-${idx}`),
     line_total: Number(it.line_total ?? 0),
+    quantity: Number(it.quantity ?? 1) || 1,
     hub_service_type_id: (it.hub_service_type_id as string | null) ?? null,
     hub_inventory_item_id: (it.hub_inventory_item_id as string | null) ?? null,
     item_kind: (it.item_kind as string | null) ?? null,

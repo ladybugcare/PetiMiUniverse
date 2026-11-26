@@ -47,18 +47,21 @@ function embedOne<T>(x: T | T[] | null | undefined): T | null {
 }
 
 const BASIS_LABELS: Record<HubCommissionBasis, string> = {
-  percent_of_sale: '% do item',
-  fixed_per_sale: 'Valor fixo por item',
+  percent_of_sale: '% do valor',
+  fixed_per_sale: 'Fixo por linha',
+  fixed_per_unit: 'Fixo por unidade',
 };
 
 const BASIS_CHIP: Record<HubCommissionBasis, string> = {
-  percent_of_sale: '% do item',
-  fixed_per_sale: 'Valor fixo',
+  percent_of_sale: '% do valor',
+  fixed_per_sale: 'Fixo/linha',
+  fixed_per_unit: 'Fixo/un.',
 };
 
 const BASIS_HELP: Record<HubCommissionBasis, string> = {
-  percent_of_sale: 'Calcula a comissão sobre o valor daquele item na cobrança.',
-  fixed_per_sale: 'Paga um valor fixo cada vez que o item aparece. Nunca passa do valor do item.',
+  percent_of_sale: 'Porcentagem sobre o valor líquido da linha (já considera quantidade e desconto).',
+  fixed_per_sale: 'Valor fixo uma vez por linha, mesmo com várias unidades. Nunca passa do valor da linha.',
+  fixed_per_unit: 'Valor fixo × quantidade da linha. Nunca passa do valor da linha.',
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -91,9 +94,21 @@ function parseRateInput(raw: string): number | null {
   return value;
 }
 
-function estimateCommission(basis: HubCommissionBasis, rate: number, itemAmount: number): number {
+/** Exemplo didático: 5 un. × R$ 16 = R$ 80 (mesmo EXAMPLE_ITEM_AMOUNT). */
+const EXAMPLE_QTY = 5;
+
+function estimateCommission(
+  basis: HubCommissionBasis,
+  rate: number,
+  itemAmount: number,
+  quantity = 1,
+): number {
   if (basis === 'percent_of_sale') {
     return Math.round(((itemAmount * rate) / 100 + Number.EPSILON) * 100) / 100;
+  }
+  if (basis === 'fixed_per_unit') {
+    const qty = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+    return Math.min(Math.round((rate * qty + Number.EPSILON) * 100) / 100, itemAmount);
   }
   return Math.min(rate, itemAmount);
 }
@@ -277,6 +292,7 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
           basis,
           basis === 'percent_of_sale' && rateValue > 100 ? 100 : rateValue,
           EXAMPLE_ITEM_AMOUNT,
+          basis === 'fixed_per_unit' ? EXAMPLE_QTY : 1,
         );
 
   const resetForm = () => {
@@ -797,14 +813,20 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
                   [
                     {
                       id: 'percent_of_sale' as const,
-                      label: '% do item',
-                      hint: 'Ex.: 10% de um Banho de R$ 80 = R$ 8',
+                      label: '% do valor',
+                      hint: 'Ex.: 10% de R$ 80 = R$ 8 (escala com a quantidade)',
                       Icon: Percent,
                     },
                     {
                       id: 'fixed_per_sale' as const,
-                      label: 'Valor fixo por item',
-                      hint: 'Ex.: R$ 5 toda vez que o item aparecer',
+                      label: 'Fixo por linha',
+                      hint: 'Ex.: R$ 5 uma vez, mesmo vendendo 5 un.',
+                      Icon: Wallet,
+                    },
+                    {
+                      id: 'fixed_per_unit' as const,
+                      label: 'Fixo por unidade',
+                      hint: 'Ex.: R$ 5 × 5 un. = R$ 25',
                       Icon: Wallet,
                     },
                   ] as const
@@ -834,7 +856,11 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
 
             <div className="hub-clientes__field hub-finance-page__field-span-6">
               <label className="hub-clientes__label" htmlFor="fin-comm-rate">
-                {basis === 'percent_of_sale' ? 'Porcentagem' : 'Valor fixo (R$)'}
+                {basis === 'percent_of_sale'
+                  ? 'Porcentagem'
+                  : basis === 'fixed_per_unit'
+                    ? 'Valor por unidade (R$)'
+                    : 'Valor por linha (R$)'}
               </label>
               <input
                 id="fin-comm-rate"
@@ -864,6 +890,7 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
               <div className="hub-commissions__example-label">Exemplo rápido</div>
               <p className="hub-commissions__example-text">
                 Item de {formatBrl(EXAMPLE_ITEM_AMOUNT)}
+                {basis === 'fixed_per_unit' ? ` (${EXAMPLE_QTY} un.)` : ''}
                 {selectedService
                   ? ` (${selectedService.name})`
                   : selectedProduct
@@ -872,7 +899,8 @@ const HubCommissionsSection: React.FC<Props> = ({ clinicId, unitId, canWrite, sh
                 {exampleCommission != null && rateValue != null ? (
                   <>
                     {' '}
-                    com {formatRate(basis, rateValue)} → comissão{' '}
+                    com {formatRate(basis, rateValue)}
+                    {basis === 'fixed_per_unit' ? ` × ${EXAMPLE_QTY}` : ''} → comissão{' '}
                     <strong>{formatBrl(exampleCommission)}</strong>
                   </>
                 ) : (

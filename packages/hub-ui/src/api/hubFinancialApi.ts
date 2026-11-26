@@ -458,7 +458,7 @@ export type HubCashSessionSummary = {
   };
 };
 
-export type HubCommissionBasis = 'percent_of_sale' | 'fixed_per_sale';
+export type HubCommissionBasis = 'percent_of_sale' | 'fixed_per_sale' | 'fixed_per_unit';
 
 export type HubCommissionRule = {
   id: string;
@@ -1113,12 +1113,15 @@ export const hubFinancialApi = {
     body: {
       clinic_id: string;
       reason: string;
+      /** void_sale (padrão): anula venda. reissue_billing: reabre itens para nova cobrança. */
+      intent?: 'void_sale' | 'reissue_billing';
       confirm_stock_return?: boolean;
       stock_return_condition?: 'sellable' | 'unsellable' | null;
       stock_return_lines?: Array<{ line_id: string; qty?: number }> | null;
     },
   ): Promise<{
     receivable: HubFinanceReceivable;
+    comanda_status?: string | null;
     stock_restored?: number;
     stock_unsellable?: number;
     warning?: string | null;
@@ -1128,6 +1131,7 @@ export const hubFinancialApi = {
       body: JSON.stringify(body),
     }) as Promise<{
       receivable: HubFinanceReceivable;
+      comanda_status?: string | null;
       stock_restored?: number;
       stock_unsellable?: number;
       warning?: string | null;
