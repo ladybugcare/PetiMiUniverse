@@ -416,11 +416,13 @@ export function AgendaAppointmentCard({
         <div className="hub-agenda-card__pet">{a.petName}</div>
         <div className="hub-agenda-card__service">
           {serviceLabel}
+          {resourceLabel ? (
+            <span className="hub-agenda-card__resource-inline"> · {resourceLabel}</span>
+          ) : null}
           {a.guardianName && a.guardianName !== '—' ? (
             <span className="hub-agenda-card__guardian"> · {guardianFirstName(a.guardianName)}</span>
           ) : null}
         </div>
-        {resourceLabel ? <div className="hub-agenda-card__resource">{resourceLabel}</div> : null}
       </AgendaCardShell>
     );
   }

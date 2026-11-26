@@ -4,6 +4,8 @@ export const SCHEDULE_OVERLAP_CONFIRM_TITLE = 'Horário em conflito';
 export const SCHEDULE_OVERLAP_CONFIRM_TEXT = 'Agendar mesmo assim';
 export const SCHEDULE_OVERLAP_SERIES_CONFIRM_TEXT = 'Criar só as livres';
 export const SCHEDULE_OVERLAP_CANCEL_TEXT = 'Voltar e ajustar';
+export const SCHEDULE_OVERLAP_ALL_DATES_MESSAGE =
+  'Todos os horários solicitados entram em conflito.';
 
 export type LocalScheduleWindow = {
   staffId: string | null;

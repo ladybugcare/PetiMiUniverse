@@ -1048,6 +1048,11 @@
   white-space: nowrap;
 }
 
+.hub-agenda-card__resource-inline {
+  font-weight: 500;
+  opacity: 0.85;
+}
+
 .hub-agenda-card__status-row {
   display: flex;
   align-items: center;

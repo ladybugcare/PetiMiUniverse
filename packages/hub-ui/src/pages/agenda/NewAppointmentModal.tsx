@@ -117,6 +117,7 @@ import { STATUS_META, type AgendaAppointment, type AgendaStatus } from './agenda
 import { ReceptionQuickRegisterPanel, type QuickRegisterSaveResult } from './ReceptionQuickRegisterPanel';
 import { resolveWalkInAppointmentKind } from './walkInUtils';
 import {
+  SCHEDULE_OVERLAP_ALL_DATES_MESSAGE,
   SCHEDULE_OVERLAP_CANCEL_TEXT,
   SCHEDULE_OVERLAP_CONFIRM_TEXT,
   SCHEDULE_OVERLAP_SERIES_CONFIRM_TEXT,
@@ -129,6 +130,7 @@ import {
   isSeriesAllDatesConflictMessage,
   type LocalScheduleWindow,
 } from './scheduleConflict';
+import { generateOccurrenceDates } from './recurrenceDates';
 import {
   blockAnchorGroup,
   blockPickupCoveredByVisitHint,
@@ -2461,13 +2463,53 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       for (const block of extraBlocks) {
         if (block.appointment_id) exclude.add(block.appointment_id);
       }
-      const found = findLocalScheduleConflict(
-        windows,
-        existingAppointments.map(agendaAppointmentToConflictSlot),
-        exclude,
-      );
+      const existingSlots = existingAppointments.map(agendaAppointmentToConflictSlot);
+      const found = findLocalScheduleConflict(windows, existingSlots, exclude);
       if (found) {
-        askOverlapConfirm(found.label, found.reason, () => void handleSaveRef.current());
+        let reason = found.reason;
+        // Série: se todas as ocorrências conflitam localmente, não oferecer «Criar só as livres».
+        if (withRecurrence && !isEditMode && !isMultiPetSelection) {
+          const occDates = generateOccurrenceDates(dateYmd, {
+            kind: recurrence.kind,
+            interval_value: recurrenceIntervalFor(recurrence.kind, recurrence.interval_value),
+            days_of_week: recurrence.days_of_week.length > 0 ? recurrence.days_of_week : undefined,
+            day_of_month: recurrence.kind === 'monthly' ? new Date(`${dateYmd}T12:00:00`).getDate() : undefined,
+            until_date:
+              recurrence.end_kind === 'until' && recurrence.until_date ? recurrence.until_date : undefined,
+            occurrences:
+              recurrence.end_kind === 'occurrences' ? recurrence.occurrences : undefined,
+          });
+          const allConflict =
+            occDates.length > 0 &&
+            occDates.every((occ) => {
+              const occWindows: LocalScheduleWindow[] = [
+                windowFromHm(occ, startsHm, endsHm, staffId, resourceLabel, hubResourceId),
+              ];
+              for (const block of extraBlocks) {
+                const blockYmd = block.starts_date_ymd || dateYmd;
+                const offsetDays = Math.round(
+                  (new Date(`${blockYmd}T12:00:00`).getTime() - new Date(`${dateYmd}T12:00:00`).getTime()) /
+                    86_400_000,
+                );
+                const occBlock = new Date(`${occ}T12:00:00`);
+                occBlock.setDate(occBlock.getDate() + offsetDays);
+                const y = `${occBlock.getFullYear()}-${String(occBlock.getMonth() + 1).padStart(2, '0')}-${String(occBlock.getDate()).padStart(2, '0')}`;
+                occWindows.push(
+                  windowFromHm(
+                    y,
+                    block.starts_hm,
+                    block.ends_hm,
+                    block.hub_staff_member_id || staffId,
+                    block.resource_label || resourceLabel,
+                    block.hub_resource_id ?? hubResourceId,
+                  ),
+                );
+              }
+              return Boolean(findLocalScheduleConflict(occWindows, existingSlots, exclude));
+            });
+          if (allConflict) reason = SCHEDULE_OVERLAP_ALL_DATES_MESSAGE;
+        }
+        askOverlapConfirm(found.label, reason, () => void handleSaveRef.current());
         return;
       }
     }

@@ -643,10 +643,11 @@ export const getHubGroomingDayBoard = async (req: Request, res: Response) => {
       const grooming_stage = session
         ? (session.grooming_stage as GroomingStage)
         : boardStageFromAppointmentStatus(appointment_status, a.appointment_kind as string | null);
+      // Folga de 2 min: antecipar futuro para «agora» não marca ATENÇÃO/Em atraso na hora.
       const is_late =
         ['scheduled', 'checked_in', 'queued'].includes(grooming_stage) &&
         ['pending_confirm', 'confirmed', 'checked_in', 'in_progress'].includes(appointment_status) &&
-        new Date(startsAt).getTime() < nowMs;
+        new Date(startsAt).getTime() < nowMs - 2 * 60_000;
 
       const staffId = (session?.hub_staff_member_id as string) ?? (a.hub_staff_member_id as string | null);
       const guardianId = (session?.guardian_id as string | null) ?? (a.guardian_id as string | null);
