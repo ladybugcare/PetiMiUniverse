@@ -471,7 +471,10 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
       footer={footer}
     >
       <div className="hub-grooming-drawer">
-        <HubRefreshingBanner show={Boolean(drawer && drawerLoading)} label="Atualizando detalhes…" />
+        <HubRefreshingBanner
+          show={Boolean(busy) || Boolean(drawer && drawerLoading)}
+          label={busy ? 'Atualizando estágio…' : 'Atualizando detalhes…'}
+        />
 
         <div className="hub-grooming-drawer__hero">
           {item.pet?.avatar_url ? (

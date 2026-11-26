@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ChevronDown, ChevronRight } from 'lucide-react';
+import { ChevronDown, ChevronRight, Loader } from 'lucide-react';
 import type { GroomingDayBoardItem } from '../../api/hubGroomingApi';
 import { PORTE_LABELS, type PetBodyPorteValue } from '../../utils/hubServiceTypesPricingMatrix';
 import {
@@ -86,6 +86,10 @@ type Props = {
   items: GroomingDayBoardItem[];
   canWrite: boolean;
   searchQ: string;
+  /** Desabilita ações enquanto uma transição de estágio está em andamento. */
+  busy?: boolean;
+  /** Chave do item cuja ação está rodando (para spinner no botão certo). */
+  busyItemKey?: string | null;
   onSelect: (item: GroomingDayBoardItem) => void;
   onQuickAction: (item: GroomingDayBoardItem, action: GroomingQuickAction) => void;
   onClearSearch?: () => void;
@@ -95,6 +99,8 @@ const GroomingDayList: React.FC<Props> = ({
   items,
   canWrite,
   searchQ,
+  busy = false,
+  busyItemKey = null,
   onSelect,
   onQuickAction,
   onClearSearch,
@@ -225,17 +231,25 @@ const GroomingDayList: React.FC<Props> = ({
               <button
                 type="button"
                 className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+                disabled={busy}
+                aria-busy={busy && busyItemKey === itemBoardKey(item)}
                 onClick={(e) => {
                   e.stopPropagation();
                   void onQuickAction(item, quick);
                 }}
               >
-                {quickActionLabel(quick, item)}
+                {busy && busyItemKey === itemBoardKey(item) ? (
+                  <Loader size={14} className="spin" aria-hidden />
+                ) : null}
+                {busy && busyItemKey === itemBoardKey(item)
+                  ? 'Atualizando…'
+                  : quickActionLabel(quick, item)}
               </button>
             ) : null}
             <button
               type="button"
               className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+              disabled={busy}
               onClick={(e) => {
                 e.stopPropagation();
                 onSelect(item);
