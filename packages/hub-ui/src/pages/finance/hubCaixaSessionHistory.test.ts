@@ -13,9 +13,10 @@ function dayBoardItem(
   partial: Partial<HubFinanceDayBoardItem['billing']> & {
     estimated_amount?: number;
     origin_id?: string;
+    has_receivable?: boolean;
   } = {},
 ): HubFinanceDayBoardItem {
-  const { estimated_amount, origin_id, ...billing } = partial;
+  const { estimated_amount, origin_id, has_receivable, ...billing } = partial;
   return {
     origin_type: 'appointment',
     origin_id: origin_id ?? 'appt-1',
@@ -31,7 +32,7 @@ function dayBoardItem(
     billing: {
       comanda_id: 'c1',
       comanda_status: 'aberta',
-      has_receivable: true,
+      has_receivable: has_receivable ?? true,
       receivable_status: 'pending',
       finance_handoff_at: null,
       ...billing,
@@ -48,6 +49,43 @@ describe('sumDayBoardPendingAmount', () => {
       ]),
     ).toBe(40);
   });
+
+  it('pagamento parcial usa saldo restante (receivable_amount), não o bruto estimado', () => {
+    expect(
+      sumDayBoardPendingAmount([
+        dayBoardItem({
+          estimated_amount: 80,
+          receivable_status: 'partially_paid',
+          receivable_amount: 40,
+        }),
+      ]),
+    ).toBe(40);
+  });
+
+  it('pending com receivable_amount usa o saldo do título', () => {
+    expect(
+      sumDayBoardPendingAmount([
+        dayBoardItem({
+          estimated_amount: 80,
+          receivable_status: 'pending',
+          receivable_amount: 80,
+        }),
+      ]),
+    ).toBe(80);
+  });
+
+  it('sem recebível continua no estimated_amount', () => {
+    expect(
+      sumDayBoardPendingAmount([
+        dayBoardItem({
+          estimated_amount: 55,
+          has_receivable: false,
+          receivable_status: null,
+          receivable_amount: null,
+        }),
+      ]),
+    ).toBe(55);
+  });
 });
 
 describe('sumOpenComandasPendingAmount', () => {
@@ -61,6 +99,15 @@ describe('sumOpenComandasPendingAmount', () => {
         new Set(),
       ),
     ).toBe(30);
+  });
+
+  it('prefere balance_due ao total_amount (pagamento parcial)', () => {
+    expect(
+      sumOpenComandasPendingAmount(
+        [{ id: 'c1', status: 'aberta', finance_handoff_at: null, total_amount: 80, balance_due: 40 }],
+        new Set(),
+      ),
+    ).toBe(40);
   });
 });
 

@@ -201,18 +201,42 @@ function compositionFromComandaRecord(comanda: Record<string, unknown>): {
   return { has_product, has_service };
 }
 
+/**
+ * Valor cobrável de um item do painel do dia para o KPI "A receber no dia".
+ * Com recebível pending/parcial: usa saldo restante (receivable_amount), não o bruto estimado —
+ * evita double-count / salto do valor cheio no pagamento parcial.
+ */
+export function dayBoardItemPendingAmount(item: HubFinanceDayBoardItem): number {
+  if (item.billing.finance_handoff_at) return 0;
+  if (item.billing.receivable_status === 'paid') return 0;
+  if (item.billing.receivable_status === 'cancelled' || item.billing.receivable_status === 'refunded') {
+    return 0;
+  }
+  if (item.coverage_kind === 'series_invoice' || item.series_invoice_comanda_id) return 0;
+  if ((item.has_package_balance || item.coverage_kind === 'package') && Number(item.estimated_amount ?? 0) <= 0.009) {
+    return 0;
+  }
+  const status = item.billing.receivable_status;
+  if (status === 'pending' || status === 'partially_paid') {
+    if (item.billing.receivable_amount != null && Number.isFinite(Number(item.billing.receivable_amount))) {
+      return Math.max(0, Number(item.billing.receivable_amount));
+    }
+  }
+  return Math.max(0, Number(item.estimated_amount ?? 0));
+}
+
 export function sumDayBoardPendingAmount(items: HubFinanceDayBoardItem[]): number {
-  return round2(
-    items.reduce((sum, item) => {
-      if (item.billing.finance_handoff_at) return sum;
-      if (item.billing.receivable_status === 'paid') return sum;
-      if (item.coverage_kind === 'series_invoice' || item.series_invoice_comanda_id) return sum;
-      if ((item.has_package_balance || item.coverage_kind === 'package') && Number(item.estimated_amount ?? 0) <= 0.009) {
-        return sum;
-      }
-      return sum + Number(item.estimated_amount ?? 0);
-    }, 0),
-  );
+  return round2(items.reduce((sum, item) => sum + dayBoardItemPendingAmount(item), 0));
+}
+
+/** Saldo cobrável de comanda aberta no KPI (preferir balance_due). */
+export function openComandaPendingAmount(comanda: Record<string, unknown>): number {
+  const balance = comanda.balance_due;
+  if (typeof balance === 'number' && Number.isFinite(balance)) return Math.max(0, balance);
+  if (typeof balance === 'string' && balance.trim() !== '' && Number.isFinite(Number(balance))) {
+    return Math.max(0, Number(balance));
+  }
+  return Math.max(0, Number(comanda.total_amount ?? 0));
 }
 
 export function sumOpenComandasPendingAmount(
@@ -225,7 +249,7 @@ export function sumOpenComandasPendingAmount(
       if (!id || excludeComandaIds.has(id)) return sum;
       if (String(comanda.status ?? '') !== 'aberta') return sum;
       if (comanda.finance_handoff_at) return sum;
-      return sum + Number(comanda.total_amount ?? 0);
+      return sum + openComandaPendingAmount(comanda);
     }, 0),
   );
 }

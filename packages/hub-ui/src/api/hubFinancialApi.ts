@@ -47,6 +47,7 @@ export type HubFinanceDayBoardBilling = {
   finance_handoff_at?: string | null;
   active_receivable_id?: string | null;
   due_date?: string | null;
+  /** Saldo a receber do recebível ativo (final − pago líquido), não o bruto da venda. */
   receivable_amount?: number | null;
   stock_return_status?: HubStockReturnStatus;
 };

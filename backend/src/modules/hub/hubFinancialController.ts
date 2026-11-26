@@ -4065,6 +4065,7 @@ async function fetchBillingStatusBatch(
       finance_handoff_at: comanda?.finance_handoff_at ?? null,
       active_receivable_id: activeId,
       due_date: activeRow?.due_date ?? null,
+      // Placeholder: saldo real (final − pago) preenchido abaixo em lote.
       receivable_amount: activeRow != null ? Number(activeRow.final_amount ?? 0) : null,
       stock_return_status: null,
     });
@@ -4074,7 +4075,8 @@ async function fetchBillingStatusBatch(
     .map((b) => b.active_receivable_id)
     .filter((id): id is string => Boolean(id));
   if (activeIds.length > 0) {
-    const [{ data: productLines }, { data: returnEvents }] = await Promise.all([
+    const [{ data: productLines }, { data: returnEvents }, { data: postedPays }, { data: lineRefundAdj }] =
+      await Promise.all([
       supabaseAdmin
         .from('hub_receivable_lines')
         .select('id, receivable_id, line_kind, hub_inventory_item_id, hub_inventory_lot_id, quantity')
@@ -4092,7 +4094,42 @@ async function fetchBillingStatusBatch(
           if (r.error) throw new Error(r.error.message);
           return r;
         }),
+      supabaseAdmin
+        .from('hub_payments')
+        .select('receivable_id, amount')
+        .in('receivable_id', activeIds)
+        .eq('status', 'posted'),
+      supabaseAdmin
+        .from('hub_financial_adjustments')
+        .select('receivable_id, amount, payment_id')
+        .in('receivable_id', activeIds)
+        .eq('adjustment_type', 'refund'),
     ]);
+
+    const postedByRec = new Map<string, number>();
+    for (const p of postedPays ?? []) {
+      const rid = String((p as { receivable_id: string }).receivable_id);
+      postedByRec.set(rid, round2((postedByRec.get(rid) ?? 0) + Number((p as { amount: number }).amount ?? 0)));
+    }
+    const lineRefundByRec = new Map<string, number>();
+    for (const adj of lineRefundAdj ?? []) {
+      if ((adj as { payment_id?: string | null }).payment_id != null) continue;
+      const rid = String((adj as { receivable_id: string }).receivable_id);
+      lineRefundByRec.set(
+        rid,
+        round2((lineRefundByRec.get(rid) ?? 0) + Number((adj as { amount: number }).amount ?? 0)),
+      );
+    }
+    for (const billing of result.values()) {
+      const rid = billing.active_receivable_id;
+      if (!rid) continue;
+      const finalAmt = Number(billing.receivable_amount ?? 0);
+      billing.receivable_amount = balanceDueFromNetPaid({
+        finalAmount: finalAmt,
+        postedPayments: postedByRec.get(rid) ?? 0,
+        lineRefundsAlreadyPaidOut: lineRefundByRec.get(rid) ?? 0,
+      });
+    }
 
     const linesByRec = new Map<string, string[]>();
     for (const line of productLines ?? []) {
