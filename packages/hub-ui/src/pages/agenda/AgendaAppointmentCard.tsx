@@ -379,22 +379,21 @@ export function AgendaAppointmentCard({
   }
 
   if (size === 'compact') {
+    // Uma linha só: altura baixa (densidade C) não comporta 2ª/3ª linha sem cortar.
+    const compactPet = resourceLabel && !narrow ? `${a.petName} · ${resourceLabel}` : a.petName;
     return (
       <AgendaCardShell {...shellProps}>
         <div className="hub-agenda-card__row hub-agenda-card__row--compact">
           {!narrow ? (
             <span className="hub-agenda-card__time hub-agenda-card__time--inline">{formatHm(a.start)}</span>
           ) : null}
-          <span className="hub-agenda-card__pet hub-agenda-card__pet--inline">{a.petName}</span>
+          <span className="hub-agenda-card__pet hub-agenda-card__pet--inline">{compactPet}</span>
           <span
             className={`hub-agenda-card__status-dot hub-agenda-card__status-dot--${a.status}`}
             title={st.label}
           />
           <CardBadges appt={a} compact criticalOnly={narrow} />
         </div>
-        {resourceLabel && !narrow ? (
-          <div className="hub-agenda-card__resource">{resourceLabel}</div>
-        ) : null}
       </AgendaCardShell>
     );
   }

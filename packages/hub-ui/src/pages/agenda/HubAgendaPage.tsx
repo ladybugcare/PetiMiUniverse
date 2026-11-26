@@ -117,8 +117,18 @@ const DAY_COL_PER_CARD_W = 112;
 
 function loadPersistedDensity(): AgendaDensity {
   try {
-    const raw = sessionStorage.getItem(AGENDA_DENSITY_STORAGE_KEY);
-    if (raw === 'compact' || raw === 'comfortable' || raw === 'spacious') return raw;
+    // localStorage: sobrevive hard refresh / novo login (sessionStorage caía com a sessão).
+    const raw =
+      localStorage.getItem(AGENDA_DENSITY_STORAGE_KEY) ??
+      sessionStorage.getItem(AGENDA_DENSITY_STORAGE_KEY);
+    if (raw === 'compact' || raw === 'comfortable' || raw === 'spacious') {
+      try {
+        localStorage.setItem(AGENDA_DENSITY_STORAGE_KEY, raw);
+      } catch {
+        /* ignore */
+      }
+      return raw;
+    }
   } catch {
     /* ignore */
   }
@@ -263,6 +273,7 @@ const HubAgendaPage: React.FC = () => {
 
   useEffect(() => {
     try {
+      localStorage.setItem(AGENDA_DENSITY_STORAGE_KEY, density);
       sessionStorage.setItem(AGENDA_DENSITY_STORAGE_KEY, density);
     } catch {
       /* ignore */

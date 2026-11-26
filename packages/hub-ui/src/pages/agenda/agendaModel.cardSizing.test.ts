@@ -11,7 +11,10 @@ import {
 describe('agendaCardSizeFromHeight', () => {
   it('usa altura para compact/medium/tall quando largura é omitida', () => {
     expect(agendaCardSizeFromHeight(30)).toBe('compact');
-    expect(agendaCardSizeFromHeight(50)).toBe('medium');
+    // 60 min na densidade C (~44px) não cabe layout médio de 3 linhas
+    expect(agendaCardSizeFromHeight(44)).toBe('compact');
+    expect(agendaCardSizeFromHeight(50)).toBe('compact');
+    expect(agendaCardSizeFromHeight(52)).toBe('medium');
     expect(agendaCardSizeFromHeight(80)).toBe('tall');
   });
 
@@ -23,7 +26,7 @@ describe('agendaCardSizeFromHeight', () => {
   it('só fica completo com altura ≥ 72 e largura ≥ 120', () => {
     expect(agendaCardSizeFromHeight(80, 130)).toBe('tall');
     expect(agendaCardSizeFromHeight(80, 100)).toBe('medium');
-    expect(agendaCardSizeFromHeight(50, 130)).toBe('medium');
+    expect(agendaCardSizeFromHeight(60, 130)).toBe('medium');
   });
 });
 

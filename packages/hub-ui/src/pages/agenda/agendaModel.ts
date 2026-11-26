@@ -530,12 +530,13 @@ export function agendaDayStayPeriodLabel(
 
 /**
  * Modo do card por altura e largura útil.
- * - mínimo: altura &lt; 40 ou largura &lt; 96
- * - completo: altura ≥ 72 e largura ≥ 120 (ou largura desconhecida)
- * - compacto: demais casos
+ * - compacto: altura &lt; 52 (ex.: 60 min na densidade C ≈ 44px) ou largura &lt; 96 —
+ *   não cabe 3 linhas sem cortar
+ * - completo (tall): altura ≥ 72 e largura ≥ 120 (ou largura desconhecida)
+ * - médio: demais casos (ex.: 60 min na densidade M ≈ 52px)
  */
 export function agendaCardSizeFromHeight(heightPx: number, widthPx?: number): AgendaCardSize {
-  if (heightPx < 40 || (widthPx != null && widthPx < DAY_CARD_MIN_WIDTH_PX)) return 'compact';
+  if (heightPx < 52 || (widthPx != null && widthPx < DAY_CARD_MIN_WIDTH_PX)) return 'compact';
   if (heightPx >= 72 && (widthPx == null || widthPx >= DAY_CARD_FULL_WIDTH_PX)) return 'tall';
   return 'medium';
 }
