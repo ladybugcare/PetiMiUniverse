@@ -64,6 +64,24 @@ Exemplos:
 | `hub.payments.read` | *(Legado doc)* Preferir `hub.financial.read` |
 | `hub.payments.write` | *(Legado doc)* Preferir `hub.cash.receive` + `hub.receivables.create` |
 | `hub.dashboard.read` | Dashboard operacional da unidade |
+| `hub.reports.read` | **Acesso à área Relatórios** (menu/página). **Não** autoriza domínio de um card, PDF nem agendamento por e-mail. |
+| `hub.commissions.read_own` | Relatório **Minhas comissões** (self: staff resolvido no servidor; CADMIN sem vínculo staff → 403). |
+
+### Relatórios Hub — responsabilidades
+
+Fonte declarativa: `@petimi/hub-reports-contract` (espelho em `backend/src/modules/hub/reportsContract.ts`).
+
+| Camada | Responsabilidade |
+|--------|------------------|
+| `hub.reports.read` | Abrir área Relatórios; **não** libera cards/PDF/schedule |
+| Permissão de domínio do `report_id` (`permissionsAny`) | Acesso a dados, PDF e agendamento daquele relatório |
+| `unit.view.all` + `unitMode` do contrato | Membership / consolidação; omissão de `unit_id` não amplia escopo. Na matriz atual, **só CADMIN** tem `unit.view.all` (consolidação multi-unidade). |
+| `scope: self` | Isolamento por `resolveStaffIdForUser` (sem fallback global) |
+| Audiência clínica | Allowlist de cards; estoque clínico forçado no backend |
+| PDF | Exige `report_id` + auth completa; residual cliente em `CLIENT_CONTROLLED_PDF_REPORT_IDS` |
+| E-mail agendado | Auth por `report_id` na create/edit; revalidação do proprietário no run/cron; destinatário = usuário ativo da clínica |
+
+Helpers: `authorizeHubReport`, `resolveReportUnitScope`, `authorizeReportScheduleExecution`.
 
 ---
 

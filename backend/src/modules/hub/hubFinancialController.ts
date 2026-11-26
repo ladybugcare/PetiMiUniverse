@@ -4113,7 +4113,18 @@ export const getHubFinanceUnbilledCompleted = async (req: Request, res: Response
     if (!parsed.success) {
       return res.status(400).json({ error: 'clinic_id obrigatório (UUID)' });
     }
-    const { clinic_id, unit_id } = parsed.data;
+    const { clinic_id } = parsed.data;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Usuário não autenticado' });
+    const { resolveReportUnitScope } = await import('./hubReportUnitScope');
+    const unitScope = await resolveReportUnitScope({
+      userId,
+      clinicId: clinic_id,
+      requestedUnitId: parsed.data.unit_id ?? null,
+      unitMode: 'required',
+    });
+    if (!unitScope.ok) return res.status(unitScope.status).json({ error: unitScope.error });
+    const unit_id = unitScope.unitId ?? undefined;
     const keys = await fetchActiveReceivableKeysExpanded(clinic_id);
     const items = await collectUnbilledItems(clinic_id, unit_id, keys);
     return res.json({ items, count: items.length });
@@ -4129,7 +4140,18 @@ export const getHubFinancePendingBillingCount = async (req: Request, res: Respon
     if (!parsed.success) {
       return res.status(400).json({ error: 'clinic_id obrigatório (UUID)' });
     }
-    const { clinic_id, unit_id } = parsed.data;
+    const { clinic_id } = parsed.data;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Usuário não autenticado' });
+    const { resolveReportUnitScope } = await import('./hubReportUnitScope');
+    const unitScope = await resolveReportUnitScope({
+      userId,
+      clinicId: clinic_id,
+      requestedUnitId: parsed.data.unit_id ?? null,
+      unitMode: 'required',
+    });
+    if (!unitScope.ok) return res.status(unitScope.status).json({ error: unitScope.error });
+    const unit_id = unitScope.unitId ?? undefined;
     const keys = await fetchActiveReceivableKeysExpanded(clinic_id);
     const items = await collectUnbilledItems(clinic_id, unit_id, keys);
     return res.json({ pending_billing_count: items.length });
@@ -5553,6 +5575,35 @@ function parsePeriodQuery(q: {
   return { ok: true, clinic_id: clinic.data, unit_id: unit.data, fromYmd, toYmd, date_basis };
 }
 
+/** Parse de período financeiro + membership de unidade (unit.view.all / vínculo). */
+async function parsePeriodQueryAuthorized(
+  req: Request,
+): Promise<
+  | { ok: true; clinic_id: string; unit_id: string; fromYmd: string; toYmd: string; date_basis: FinanceDateBasis }
+  | { ok: false; status: number; error: string }
+> {
+  const parsed = parsePeriodQuery(req.query);
+  if (!parsed.ok) return { ok: false, status: 400, error: parsed.error };
+  const userId = req.user?.id;
+  if (!userId) return { ok: false, status: 401, error: 'Usuário não autenticado' };
+  const { resolveReportUnitScope } = await import('./hubReportUnitScope');
+  const scope = await resolveReportUnitScope({
+    userId,
+    clinicId: parsed.clinic_id,
+    requestedUnitId: parsed.unit_id,
+    unitMode: 'required',
+  });
+  if (!scope.ok) return { ok: false, status: scope.status, error: scope.error };
+  return {
+    ok: true,
+    clinic_id: parsed.clinic_id,
+    unit_id: scope.unitId ?? parsed.unit_id,
+    fromYmd: parsed.fromYmd,
+    toYmd: parsed.toYmd,
+    date_basis: parsed.date_basis,
+  };
+}
+
 const expenseCategorySchema = z.enum([
   'supplies',
   'services',
@@ -5570,8 +5621,8 @@ const expensePaymentMethodSchema = z
 
 export const getHubFinanceDashboardSummary = async (req: Request, res: Response) => {
   try {
-    const parsed = parsePeriodQuery(req.query);
-    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const parsed = await parsePeriodQueryAuthorized(req);
+    if (!parsed.ok) return res.status(parsed.status).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
     const fromIso = utcDayStartIso(fromYmd);
     const toIso = utcDayEndIso(toYmd);
@@ -5737,8 +5788,8 @@ type CashFlowDay = {
 
 export const getHubFinanceCashFlow = async (req: Request, res: Response) => {
   try {
-    const parsed = parsePeriodQuery(req.query);
-    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const parsed = await parsePeriodQueryAuthorized(req);
+    if (!parsed.ok) return res.status(parsed.status).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd, date_basis } = parsed;
     const fromIso = utcDayStartIso(fromYmd);
     const toIso = utcDayEndIso(toYmd);
@@ -5875,8 +5926,8 @@ export const getHubFinanceCashFlow = async (req: Request, res: Response) => {
 
 export const getHubFinanceRevenueReport = async (req: Request, res: Response) => {
   try {
-    const parsed = parsePeriodQuery(req.query);
-    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const parsed = await parsePeriodQueryAuthorized(req);
+    if (!parsed.ok) return res.status(parsed.status).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd, date_basis } = parsed;
     const fromIso = utcDayStartIso(fromYmd);
     const toIso = utcDayEndIso(toYmd);
@@ -5945,8 +5996,8 @@ const revenueSeriesBucketSchema = z.enum(['day', 'week', 'month']);
 /** Pagamentos no período agregados por dia/semana/mês (mesma regra de unidade do fluxo de caixa). */
 export const getHubFinanceRevenueSeries = async (req: Request, res: Response) => {
   try {
-    const parsed = parsePeriodQuery(req.query);
-    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const parsed = await parsePeriodQueryAuthorized(req);
+    if (!parsed.ok) return res.status(parsed.status).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
     const fromIso = utcDayStartIso(fromYmd);
     const toIso = utcDayEndIso(toYmd);
@@ -6023,8 +6074,8 @@ export const getHubFinanceRevenueSeries = async (req: Request, res: Response) =>
 
 export const getHubFinanceTicketAverageReport = async (req: Request, res: Response) => {
   try {
-    const parsed = parsePeriodQuery(req.query);
-    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const parsed = await parsePeriodQueryAuthorized(req);
+    if (!parsed.ok) return res.status(parsed.status).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
 
     const bundle = await loadCommercialPeriodBundle({
@@ -6057,8 +6108,8 @@ export const getHubFinanceTicketAverageReport = async (req: Request, res: Respon
 
 export const getHubFinanceTopServicesReport = async (req: Request, res: Response) => {
   try {
-    const parsed = parsePeriodQuery(req.query);
-    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const parsed = await parsePeriodQueryAuthorized(req);
+    if (!parsed.ok) return res.status(parsed.status).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
     const fromIso = utcDayStartIso(fromYmd);
     const toIso = utcDayEndIso(toYmd);
@@ -6113,8 +6164,8 @@ export const getHubFinanceTopServicesReport = async (req: Request, res: Response
  */
 export const getHubFinanceProductSalesReport = async (req: Request, res: Response) => {
   try {
-    const parsed = parsePeriodQuery(req.query);
-    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const parsed = await parsePeriodQueryAuthorized(req);
+    if (!parsed.ok) return res.status(parsed.status).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
 
     const bundle = await loadCommercialPeriodBundle({
@@ -6215,8 +6266,8 @@ export const getHubFinanceProductSalesReport = async (req: Request, res: Respons
  */
 export const getHubFinanceMovementBySectorReport = async (req: Request, res: Response) => {
   try {
-    const parsed = parsePeriodQuery(req.query);
-    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const parsed = await parsePeriodQueryAuthorized(req);
+    if (!parsed.ok) return res.status(parsed.status).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
 
     const bundle = await loadCommercialPeriodBundle({
@@ -6300,6 +6351,17 @@ export const getHubFinanceAgingReport = async (req: Request, res: Response) => {
     const clinic = uuidStr.safeParse(req.query.clinic_id);
     const unit = uuidStr.safeParse(req.query.unit_id);
     if (!clinic.success || !unit.success) return res.status(400).json({ error: 'clinic_id e unit_id são obrigatórios' });
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Usuário não autenticado' });
+    const { resolveReportUnitScope } = await import('./hubReportUnitScope');
+    const unitScope = await resolveReportUnitScope({
+      userId,
+      clinicId: clinic.data,
+      requestedUnitId: unit.data,
+      unitMode: 'required',
+    });
+    if (!unitScope.ok) return res.status(unitScope.status).json({ error: unitScope.error });
+    const unitId = unitScope.unitId ?? unit.data;
     const asOfRaw = typeof req.query.as_of === 'string' ? req.query.as_of.trim() : '';
     const asOf =
       /^\d{4}-\d{2}-\d{2}$/.test(asOfRaw) && !Number.isNaN(Date.parse(`${asOfRaw}T00:00:00Z`)) ? asOfRaw : ymdTodayUtc();
@@ -6307,7 +6369,7 @@ export const getHubFinanceAgingReport = async (req: Request, res: Response) => {
       .from('hub_receivables')
       .select('id, final_amount, due_date')
       .eq('clinic_id', clinic.data)
-      .eq('unit_id', unit.data)
+      .eq('unit_id', unitId)
       .is('deleted_at', null)
       .in('status', ['pending', 'partially_paid']);
     if (error) return res.status(500).json({ error: error.message });
@@ -6379,8 +6441,8 @@ export const getHubFinanceAgingReport = async (req: Request, res: Response) => {
 /** Vendas (recebíveis criados) e acertos (descontos, estornos, write-offs) no período. */
 export const getHubFinanceSalesAdjustmentsReport = async (req: Request, res: Response) => {
   try {
-    const parsed = parsePeriodQuery(req.query);
-    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const parsed = await parsePeriodQueryAuthorized(req);
+    if (!parsed.ok) return res.status(parsed.status).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
     const fromIso = utcDayStartIso(fromYmd);
     const toIso = utcDayEndIso(toYmd);
@@ -6850,8 +6912,8 @@ async function buildCommissionsReport(params: {
 /** Comissões estimadas no período (regras ativas × linhas de recebíveis não cancelados). */
 export const getHubFinanceCommissionsReport = async (req: Request, res: Response) => {
   try {
-    const parsed = parsePeriodQuery(req.query);
-    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const parsed = await parsePeriodQueryAuthorized(req);
+    if (!parsed.ok) return res.status(parsed.status).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
     const built = await buildCommissionsReport({ clinic_id, unit_id, fromYmd, toYmd });
     if (!built.ok) return res.status(built.status).json({ error: built.error });
@@ -6868,8 +6930,8 @@ export const getHubFinanceCommissionsReport = async (req: Request, res: Response
  */
 export const getHubFinanceMyCommissionsReport = async (req: Request, res: Response) => {
   try {
-    const parsed = parsePeriodQuery(req.query);
-    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const parsed = await parsePeriodQueryAuthorized(req);
+    if (!parsed.ok) return res.status(parsed.status).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
 
     const myStaffId = await resolveStaffIdForUser(clinic_id, req.user?.id);
@@ -6902,8 +6964,8 @@ export const getHubFinanceMyCommissionsReport = async (req: Request, res: Respon
 /** Top clientes por faturamento (pagamentos) no período. */
 export const getHubFinanceTopClientsReport = async (req: Request, res: Response) => {
   try {
-    const parsed = parsePeriodQuery(req.query);
-    if (!parsed.ok) return res.status(400).json({ error: parsed.error });
+    const parsed = await parsePeriodQueryAuthorized(req);
+    if (!parsed.ok) return res.status(parsed.status).json({ error: parsed.error });
     const { clinic_id, unit_id, fromYmd, toYmd } = parsed;
     const fromIso = utcDayStartIso(fromYmd);
     const toIso = utcDayEndIso(toYmd);
@@ -7009,6 +7071,18 @@ export const getHubFinancePackagesReport = async (req: Request, res: Response) =
     const clinic = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
+    const userId = req.user?.id;
+    if (!userId) return res.status(401).json({ error: 'Usuário não autenticado' });
+    const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
+    const { resolveReportUnitScope } = await import('./hubReportUnitScope');
+    const unitScope = await resolveReportUnitScope({
+      userId,
+      clinicId: clinic_id,
+      requestedUnitId: unitRaw || null,
+      unitMode: 'clinic_aggregate_if_allowed',
+    });
+    if (!unitScope.ok) return res.status(unitScope.status).json({ error: unitScope.error });
+    // Pacotes hoje são agregados por clínica; membership já validado acima.
     const period = (() => {
       const fromRaw = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).safeParse(req.query.from);
       const toRaw = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).safeParse(req.query.to);

@@ -79,6 +79,8 @@ export const HubRelatoriosGroomingProductivity: React.FC<Props> = ({
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'grooming-productivity' as const,
+    unitId,
     title: 'Produtividade Banho & Tosa',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: 'produtividade-banho-tosa',

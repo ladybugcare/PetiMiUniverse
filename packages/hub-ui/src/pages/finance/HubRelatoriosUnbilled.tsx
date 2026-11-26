@@ -216,6 +216,8 @@ export const HubRelatoriosUnbilled: React.FC<Props> = ({ clinicId, unitId, perio
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'unbilled' as const,
+    unitId,
     title: 'Cobrança não gerada',
     subtitle: periodLabel,
     slug: 'cobranca-nao-gerada',

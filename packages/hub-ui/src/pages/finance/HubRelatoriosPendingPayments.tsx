@@ -140,6 +140,8 @@ export const HubRelatoriosPendingPayments: React.FC<HubRelatoriosPendingPayments
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'pending-payments' as const,
+    unitId,
     title: 'Pagamentos pendentes',
     slug: 'pagamentos-pendentes',
     headers: ['Cliente', 'Serviços', 'Status', 'Vencimento', 'Dias atraso', 'Valor'],

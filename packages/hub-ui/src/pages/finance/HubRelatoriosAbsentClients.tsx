@@ -84,6 +84,8 @@ export const HubRelatoriosAbsentClients: React.FC<HubRelatoriosAbsentClientsProp
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'absent-clients' as const,
+    unitId,
     title: 'Clientes ausentes',
     subtitle: `≥ ${days} dias`,
     slug: 'clientes-ausentes',

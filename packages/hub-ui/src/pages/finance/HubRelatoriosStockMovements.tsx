@@ -114,6 +114,7 @@ export const HubRelatoriosStockMovements: React.FC<HubRelatoriosStockMovementsPr
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'stock-movements' as const,
     title: clinicalStock ? 'Entradas e saídas (uso clínico)' : 'Entradas e saídas',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: clinicalStock ? 'estoque-movimentos-clinico' : 'estoque-movimentos',

@@ -74,6 +74,8 @@ export const HubRelatoriosProductSales: React.FC<Props> = ({ clinicId, unitId, p
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'product-sales' as const,
+    unitId,
     title: 'Vendas por produto',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: 'vendas-produto',

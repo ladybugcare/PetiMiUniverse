@@ -72,6 +72,8 @@ export const HubRelatoriosBoardingOccupancy: React.FC<Props> = ({ clinicId, unit
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'boarding-occupancy' as const,
+    unitId,
     title: 'Ocupação hotel e creche',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: 'ocupacao-hotel',

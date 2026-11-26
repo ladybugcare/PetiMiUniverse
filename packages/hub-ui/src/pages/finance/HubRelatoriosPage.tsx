@@ -33,6 +33,8 @@ import { HubRelatoriosPeriodToolbar } from './HubRelatoriosPeriodToolbar';
 import {
   HUB_REPORT_CATEGORIES,
   HUB_REPORTS,
+  SCHEDULABLE_REPORT_IDS,
+  canAccessReportsArea,
   parseHubReportId,
   reportAllowed,
   type HubReportId,
@@ -65,25 +67,11 @@ const HubRelatoriosPage: React.FC = () => {
   const unitId = useSelectedUnitId();
   const reportId = parseHubReportId(searchParams.get('relatorio'));
 
-  const canReports = hasPermission('hub.reports.read');
-  const canFinancial = hasPermission('hub.financial.read');
-  const canInventory = hasPermission('hub.inventory.read');
-  const canGuardians = hasPermission('hub.guardians.read');
-  const canAppointments = hasPermission('hub.appointments.read');
-  const canBoarding = hasPermission('boarding.reservations.read');
-  const canGrooming = hasPermission('grooming.queue.read');
-  const canClinic = hasPermission('hub.clinic.read');
-  const canMyCommissions = hasPermission('hub.commissions.read_own');
-  const canAccess =
-    canReports ||
-    canFinancial ||
-    canInventory ||
-    canGuardians ||
-    canAppointments ||
-    canBoarding ||
-    canGrooming ||
-    canClinic ||
-    canMyCommissions;
+  const canAccess = canAccessReportsArea(hasPermission);
+  const canScheduleReports = SCHEDULABLE_REPORT_IDS.some((id) => {
+    const def = HUB_REPORTS.find((r) => r.id === id);
+    return def ? reportAllowed(hasPermission, def) : false;
+  });
 
   const activeReport = useMemo(() => {
     if (!reportId) return null;
@@ -203,7 +191,7 @@ const HubRelatoriosPage: React.FC = () => {
         {!activeReport ? (
           <>
             <HubRelatoriosCatalog hasPermission={hasPermission} onSelectReport={setReport} />
-            {canReports || canFinancial ? (
+            {canScheduleReports ? (
               <HubRelatoriosEmailSchedules clinicId={clinicId} unitId={unitId} />
             ) : null}
           </>

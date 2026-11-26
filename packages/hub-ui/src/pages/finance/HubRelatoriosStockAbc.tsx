@@ -73,6 +73,7 @@ export const HubRelatoriosStockAbc: React.FC<Props> = ({ clinicId, period }) => 
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'stock-abc' as const,
     title: 'Curva ABC',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: 'curva-abc-estoque',

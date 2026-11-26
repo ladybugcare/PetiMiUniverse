@@ -96,6 +96,8 @@ export const HubRelatoriosCashFlow: React.FC<Props> = ({ clinicId, unitId, perio
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'cash-flow' as const,
+    unitId,
     title: 'Fluxo de caixa',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: 'fluxo-caixa',

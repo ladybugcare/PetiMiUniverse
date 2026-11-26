@@ -70,6 +70,8 @@ export const HubRelatoriosMyCommissions: React.FC<Props> = ({ clinicId, unitId, 
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'my-commissions' as const,
+    unitId,
     title: 'Minhas comissões',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: 'minhas-comissoes',

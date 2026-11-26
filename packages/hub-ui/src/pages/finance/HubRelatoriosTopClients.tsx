@@ -63,6 +63,8 @@ export const HubRelatoriosTopClients: React.FC<Props> = ({ clinicId, unitId, per
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'top-clients' as const,
+    unitId,
     title: 'Top clientes',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: 'top-clientes',

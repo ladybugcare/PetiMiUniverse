@@ -97,6 +97,7 @@ export const HubRelatoriosPackages: React.FC<Props> = ({ clinicId, period }) => 
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'packages' as const,
     title: 'Pacotes',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: 'pacotes',

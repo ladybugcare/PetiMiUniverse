@@ -58,6 +58,7 @@ export const HubRelatoriosBirthdays: React.FC<Props> = ({ clinicId, days }) => {
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'birthdays' as const,
     title: 'Aniversariantes',
     subtitle: `Próximos ${days} dias`,
     slug: 'aniversariantes',

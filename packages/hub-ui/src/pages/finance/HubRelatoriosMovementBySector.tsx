@@ -100,6 +100,8 @@ export const HubRelatoriosMovementBySector: React.FC<Props> = ({ clinicId, unitI
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'movement-by-sector' as const,
+    unitId,
     title: 'Movimentação por setor',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: 'movimentacao-por-setor',

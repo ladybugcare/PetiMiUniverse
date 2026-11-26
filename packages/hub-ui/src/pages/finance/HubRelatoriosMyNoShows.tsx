@@ -52,6 +52,8 @@ export const HubRelatoriosMyNoShows: React.FC<Props> = ({ clinicId, unitId, peri
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'my-no-shows' as const,
+    unitId,
     title: 'Meus no-shows',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: 'meus-no-shows',

@@ -2,8 +2,32 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { resolveStaffIdForUser } from './hubStaffResolve';
+import { resolveReportUnitScope } from './hubReportUnitScope';
+import type { HubReportUnitMode } from './reportsContract';
 
 const uuidStr = z.string().uuid();
+
+async function resolveUnitFromReportQuery(
+  req: Request,
+  clinicId: string,
+  unitMode: HubReportUnitMode,
+): Promise<{ ok: true; unit_id: string | null } | { ok: false; status: number; error: string }> {
+  const userId = req.user?.id;
+  if (!userId) return { ok: false, status: 401, error: 'Usuário não autenticado' };
+  const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
+  if (unitRaw) {
+    const unitParsed = uuidStr.safeParse(unitRaw);
+    if (!unitParsed.success) return { ok: false, status: 400, error: 'unit_id inválido' };
+  }
+  const scope = await resolveReportUnitScope({
+    userId,
+    clinicId,
+    requestedUnitId: unitRaw || null,
+    unitMode,
+  });
+  if (!scope.ok) return { ok: false, status: scope.status, error: scope.error };
+  return { ok: true, unit_id: scope.unitId };
+}
 
 function ymdTodayUtc(): string {
   const dt = new Date();
@@ -37,10 +61,9 @@ export const getHubAbsentClientsReport = async (req: Request, res: Response) => 
     const clinic = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
-    const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
-    const unitParsed = unitRaw ? uuidStr.safeParse(unitRaw) : null;
-    if (unitRaw && !unitParsed?.success) return res.status(400).json({ error: 'unit_id inválido' });
-    const unit_id = unitParsed?.success ? unitParsed.data : null;
+    const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'clinic_aggregate_if_allowed');
+    if (!unitRes.ok) return res.status(unitRes.status).json({ error: unitRes.error });
+    const unit_id = unitRes.unit_id;
 
     const daysParsed = z.coerce.number().int().min(7).max(730).safeParse(req.query.days);
     const days = daysParsed.success ? daysParsed.data : 60;
@@ -179,10 +202,9 @@ export const getHubNoShowsReport = async (req: Request, res: Response) => {
     const clinic = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
-    const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
-    const unitParsed = unitRaw ? uuidStr.safeParse(unitRaw) : null;
-    if (unitRaw && !unitParsed?.success) return res.status(400).json({ error: 'unit_id inválido' });
-    const unit_id = unitParsed?.success ? unitParsed.data : null;
+    const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'clinic_aggregate_if_allowed');
+    if (!unitRes.ok) return res.status(unitRes.status).json({ error: unitRes.error });
+    const unit_id = unitRes.unit_id;
 
     const period = parseReportPeriod(req.query);
     if (!period.ok) return res.status(400).json({ error: period.error });
@@ -354,10 +376,9 @@ export const getHubBoardingOccupancySeriesReport = async (req: Request, res: Res
     const clinic = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
-    const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
-    const unitParsed = unitRaw ? uuidStr.safeParse(unitRaw) : null;
-    if (unitRaw && !unitParsed?.success) return res.status(400).json({ error: 'unit_id inválido' });
-    const unit_id = unitParsed?.success ? unitParsed.data : null;
+    const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'clinic_aggregate_if_allowed');
+    if (!unitRes.ok) return res.status(unitRes.status).json({ error: unitRes.error });
+    const unit_id = unitRes.unit_id;
 
     const period = parseReportPeriod(req.query);
     if (!period.ok) return res.status(400).json({ error: period.error });
@@ -473,10 +494,9 @@ export const getHubClientCohortsReport = async (req: Request, res: Response) => 
     const clinic = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
-    const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
-    const unitParsed = unitRaw ? uuidStr.safeParse(unitRaw) : null;
-    if (unitRaw && !unitParsed?.success) return res.status(400).json({ error: 'unit_id inválido' });
-    const unit_id = unitParsed?.success ? unitParsed.data : null;
+    const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'clinic_aggregate_if_allowed');
+    if (!unitRes.ok) return res.status(unitRes.status).json({ error: unitRes.error });
+    const unit_id = unitRes.unit_id;
 
     const period = parseReportPeriod(req.query);
     if (!period.ok) return res.status(400).json({ error: period.error });
@@ -623,6 +643,8 @@ export const getHubBirthdaysReport = async (req: Request, res: Response) => {
     const clinic = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
+    const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'none');
+    if (!unitRes.ok) return res.status(unitRes.status).json({ error: unitRes.error });
     const daysParsed = z.coerce.number().int().min(1).max(90).safeParse(req.query.days);
     const days = daysParsed.success ? daysParsed.data : 30;
     const asOf = ymdTodayUtc();
@@ -754,10 +776,9 @@ export const getHubGroomingProductivityReport = async (req: Request, res: Respon
     const clinic = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
-    const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
-    const unitParsed = unitRaw ? uuidStr.safeParse(unitRaw) : null;
-    if (unitRaw && !unitParsed?.success) return res.status(400).json({ error: 'unit_id inválido' });
-    const unit_id = unitParsed?.success ? unitParsed.data : null;
+    const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'clinic_aggregate_if_allowed');
+    if (!unitRes.ok) return res.status(unitRes.status).json({ error: unitRes.error });
+    const unit_id = unitRes.unit_id;
 
     const period = parseReportPeriod(req.query);
     if (!period.ok) return res.status(400).json({ error: period.error });
@@ -894,6 +915,8 @@ export const getHubVaccinesDueReport = async (req: Request, res: Response) => {
     const clinic = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
+    const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'none');
+    if (!unitRes.ok) return res.status(unitRes.status).json({ error: unitRes.error });
     const daysParsed = z.coerce.number().int().min(1).max(180).safeParse(req.query.days);
     const days = daysParsed.success ? daysParsed.data : 30;
     const asOf = ymdTodayUtc();
@@ -1010,10 +1033,9 @@ export const getHubMyAttendancesReport = async (req: Request, res: Response) => 
     const clinic = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
-    const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
-    const unitParsed = unitRaw ? uuidStr.safeParse(unitRaw) : null;
-    if (unitRaw && !unitParsed?.success) return res.status(400).json({ error: 'unit_id inválido' });
-    const unit_id = unitParsed?.success ? unitParsed.data : null;
+    const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'optional_single');
+    if (!unitRes.ok) return res.status(unitRes.status).json({ error: unitRes.error });
+    const unit_id = unitRes.unit_id;
 
     const period = parseReportPeriod(req.query);
     if (!period.ok) return res.status(400).json({ error: period.error });
@@ -1189,10 +1211,9 @@ export const getHubMyNoShowsReport = async (req: Request, res: Response) => {
     const clinic = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
-    const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
-    const unitParsed = unitRaw ? uuidStr.safeParse(unitRaw) : null;
-    if (unitRaw && !unitParsed?.success) return res.status(400).json({ error: 'unit_id inválido' });
-    const unit_id = unitParsed?.success ? unitParsed.data : null;
+    const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'optional_single');
+    if (!unitRes.ok) return res.status(unitRes.status).json({ error: unitRes.error });
+    const unit_id = unitRes.unit_id;
 
     const period = parseReportPeriod(req.query);
     if (!period.ok) return res.status(400).json({ error: period.error });

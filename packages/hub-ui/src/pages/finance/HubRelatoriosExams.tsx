@@ -79,6 +79,7 @@ export const HubRelatoriosExams: React.FC<Props> = ({ clinicId, period }) => {
 
   const { onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'exams-requested' as const,
     title: 'Exames solicitados',
     subtitle: periodLabel,
     slug: 'exames-solicitados',

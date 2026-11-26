@@ -348,3 +348,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 172. **`172_hub_cash_refund_drawer_no_double_count.sql`** — anti double-count na gaveta: `financial_adjustment_id` em `hub_cash_movements` + `hub_return_receivable_product_lines` só faz Sangria em devolução parcial; ao zerar a venda, reverse do payment cash remove Entradas e anula sangrias de reembolso vinculadas. Executar depois do item 164.
 
 175. **`175_alter_hub_commission_basis_per_unit.sql`** — adiciona `fixed_per_unit` ao CHECK de `hub_commission_rules.basis` e `hub_receivable_lines.commission_rule_basis` (valor fixo × quantidade da linha, com teto na base líquida). Executar depois dos itens 038 e 171.
+
+176. **`176_alter_hub_report_email_schedules_auth.sql`** — coluna `suspension_reason` e status `suspended` em `hub_report_email_schedules` (revalidação de auth de agendamentos). Executar depois de `096_create_hub_report_email_schedules.sql`.

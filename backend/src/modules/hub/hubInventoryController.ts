@@ -514,6 +514,30 @@ function matchesSalePurpose(value: string | null | undefined, filter: string | n
   );
 }
 
+/**
+ * Audiência clínica: força sale_purpose=CLINICAL (restrição de acesso, não só UI).
+ * Ignora/sobrescreve SALE|INTERNAL enviados pelo cliente.
+ */
+async function resolveInventoryReportSalePurpose(
+  req: { user?: { id?: string }; query: Record<string, unknown> },
+  clinicId: string,
+): Promise<{ ok: true; salePurpose: string | null } | { ok: false; status: number; error: string }> {
+  const userId = req.user?.id;
+  if (!userId) return { ok: false, status: 401, error: 'Usuário não autenticado' };
+  const { loadClinicUserMembership } = await import('./hubReportUnitScope');
+  const { hasEffectivePermission } = await import('../../utils/permissions');
+  const { usesClinicalStockScope } = await import('./reportsContract');
+  const membership = await loadClinicUserMembership(userId, clinicId);
+  if (!membership) return { ok: false, status: 403, error: 'Sem vínculo ativo nesta clínica' };
+  const areas = (membership.operational_areas as string[] | null) ?? [];
+  const hasPerm = (p: string) =>
+    hasEffectivePermission(membership.role as import('../../utils/permissions').Role, p, areas);
+  if (usesClinicalStockScope(hasPerm)) {
+    return { ok: true, salePurpose: 'CLINICAL' };
+  }
+  return { ok: true, salePurpose: parseSalePurposeFilter(req.query.sale_purpose) };
+}
+
 function normalizeContentFields(opts: {
   unit_label: string | null | undefined;
   content_qty: number | null | undefined;
@@ -1063,7 +1087,9 @@ export const getHubInventoryMovementsReport = async (req: Request, res: Response
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
     const direction = (req.query.direction as string) || 'all';
-    const salePurpose = parseSalePurposeFilter(req.query.sale_purpose);
+    const purposeRes = await resolveInventoryReportSalePurpose(req, clinic_id);
+    if (!purposeRes.ok) return res.status(purposeRes.status).json({ error: purposeRes.error });
+    const salePurpose = purposeRes.salePurpose;
     const fromRaw = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).safeParse(req.query.from);
     const toRaw = z.string().regex(/^\d{4}-\d{2}-\d{2}$/).safeParse(req.query.to);
     const daysParsed = z.coerce.number().int().min(1).max(366).safeParse(req.query.days);
@@ -1394,7 +1420,9 @@ export const listHubLowStock = async (req: Request, res: Response) => {
     const parsed = uuidStr.safeParse(req.query.clinic_id);
     if (!parsed.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = parsed.data;
-    const salePurpose = parseSalePurposeFilter(req.query.sale_purpose);
+    const purposeRes = await resolveInventoryReportSalePurpose(req, clinic_id);
+    if (!purposeRes.ok) return res.status(purposeRes.status).json({ error: purposeRes.error });
+    const salePurpose = purposeRes.salePurpose;
     let q = supabaseAdmin
       .from('hub_inventory_items')
       .select('id, name, item_kind, min_stock_qty, sale_purpose')
@@ -1429,7 +1457,9 @@ export const listHubNearlyEmptyLots = async (req: Request, res: Response) => {
     const parsed = uuidStr.safeParse(req.query.clinic_id);
     if (!parsed.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = parsed.data;
-    const salePurpose = parseSalePurposeFilter(req.query.sale_purpose);
+    const purposeRes = await resolveInventoryReportSalePurpose(req, clinic_id);
+    if (!purposeRes.ok) return res.status(purposeRes.status).json({ error: purposeRes.error });
+    const salePurpose = purposeRes.salePurpose;
 
     let itemsQ = supabaseAdmin
       .from('hub_inventory_items')
@@ -1580,6 +1610,9 @@ export const getHubInventoryAbcReport = async (req: Request, res: Response) => {
     const clinic = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
+    const purposeRes = await resolveInventoryReportSalePurpose(req, clinic_id);
+    if (!purposeRes.ok) return res.status(purposeRes.status).json({ error: purposeRes.error });
+    const salePurpose = purposeRes.salePurpose;
     const period = parseInventoryReportPeriod(req.query);
     if (!period.ok) return res.status(400).json({ error: period.error });
     const { fromYmd, toYmd } = period;
@@ -1641,11 +1674,13 @@ export const getHubInventoryAbcReport = async (req: Request, res: Response) => {
       const chunk = 500;
       for (let i = 0; i < itemIds.length; i += chunk) {
         const slice = itemIds.slice(i, i + chunk);
-        const { data: items, error: iErr } = await supabaseAdmin
+        let itemsQ = supabaseAdmin
           .from('hub_inventory_items')
-          .select('id, name, item_kind, cost_amount, unit_label')
+          .select('id, name, item_kind, cost_amount, unit_label, sale_purpose')
           .in('id', slice)
           .is('deleted_at', null);
+        if (salePurpose) itemsQ = itemsQ.eq('sale_purpose', salePurpose);
+        const { data: items, error: iErr } = await itemsQ;
         if (iErr) return res.status(500).json({ error: iErr.message });
         for (const it of items ?? []) {
           itemMeta.set(it.id as string, {
@@ -1659,6 +1694,7 @@ export const getHubInventoryAbcReport = async (req: Request, res: Response) => {
     }
 
     const ranked = itemIds
+      .filter((id) => itemMeta.has(id))
       .map((id) => {
         const c = consumption.get(id)!;
         const meta = itemMeta.get(id);
@@ -1721,6 +1757,9 @@ export const getHubInventoryTurnoverReport = async (req: Request, res: Response)
     const clinic = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
+    const purposeRes = await resolveInventoryReportSalePurpose(req, clinic_id);
+    if (!purposeRes.ok) return res.status(purposeRes.status).json({ error: purposeRes.error });
+    const salePurpose = purposeRes.salePurpose;
     const period = parseInventoryReportPeriod(req.query);
     if (!period.ok) return res.status(400).json({ error: period.error });
     const { fromYmd, toYmd } = period;
@@ -1786,11 +1825,13 @@ export const getHubInventoryTurnoverReport = async (req: Request, res: Response)
       const chunk = 500;
       for (let i = 0; i < itemIds.length; i += chunk) {
         const slice = itemIds.slice(i, i + chunk);
-        const { data: items, error: iErr } = await supabaseAdmin
+        let itemsQ = supabaseAdmin
           .from('hub_inventory_items')
-          .select('id, name, item_kind, unit_label, active')
+          .select('id, name, item_kind, unit_label, active, sale_purpose')
           .in('id', slice)
           .is('deleted_at', null);
+        if (salePurpose) itemsQ = itemsQ.eq('sale_purpose', salePurpose);
+        const { data: items, error: iErr } = await itemsQ;
         if (iErr) return res.status(500).json({ error: iErr.message });
         for (const it of items ?? []) {
           if (it.active === false) continue;
@@ -1864,7 +1905,9 @@ export const getHubInventoryValuationReport = async (req: Request, res: Response
     const clinic = uuidStr.safeParse(req.query.clinic_id);
     if (!clinic.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = clinic.data;
-    const salePurpose = parseSalePurposeFilter(req.query.sale_purpose);
+    const purposeRes = await resolveInventoryReportSalePurpose(req, clinic_id);
+    if (!purposeRes.ok) return res.status(purposeRes.status).json({ error: purposeRes.error });
+    const salePurpose = purposeRes.salePurpose;
 
     let valuationQ = supabaseAdmin
       .from('hub_inventory_items')

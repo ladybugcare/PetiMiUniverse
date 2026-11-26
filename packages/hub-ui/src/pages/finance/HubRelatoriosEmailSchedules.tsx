@@ -9,19 +9,11 @@ import {
   hubReportSchedulesApi,
   type HubReportEmailSchedule,
 } from './hubRelatoriosPdf';
-import { HUB_REPORTS } from './hubRelatoriosConfig';
+import { HUB_REPORTS, SCHEDULABLE_REPORT_IDS, reportAllowed } from './hubRelatoriosConfig';
 import { HubRelatoriosEmpty } from './HubRelatoriosEmpty';
+import { usePermissions } from '@petimi/web-core';
 
-const SCHEDULABLE = new Set([
-  'finance-overview',
-  'pending-payments',
-  'sales-adjustments',
-  'top-clients',
-  'cash-flow',
-  'absent-clients',
-  'packages',
-  'stock-abc',
-]);
+const SCHEDULABLE = new Set(SCHEDULABLE_REPORT_IDS);
 
 const PERIOD_OPTIONS: HubComboboxOption[] = [
   { value: '7', label: '7 dias' },
@@ -36,6 +28,7 @@ type Props = {
 
 export const HubRelatoriosEmailSchedules: React.FC<Props> = ({ clinicId, unitId }) => {
   const { showError, showSuccess } = useAlert();
+  const { hasPermission } = usePermissions();
   const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [schedules, setSchedules] = useState<HubReportEmailSchedule[]>([]);
   const [reportId, setReportId] = useState('cash-flow');
@@ -45,12 +38,12 @@ export const HubRelatoriosEmailSchedules: React.FC<Props> = ({ clinicId, unitId 
 
   const reportOptions = useMemo<HubComboboxOption[]>(
     () =>
-      HUB_REPORTS.filter((r) => SCHEDULABLE.has(r.id)).map((r) => ({
+      HUB_REPORTS.filter((r) => SCHEDULABLE.has(r.id) && reportAllowed(hasPermission, r)).map((r) => ({
         value: r.id,
         label: r.title,
         searchText: r.description,
       })),
-    [],
+    [hasPermission],
   );
 
   const load = useCallback(async () => {

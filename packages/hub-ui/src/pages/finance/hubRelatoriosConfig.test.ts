@@ -3,6 +3,7 @@ import {
   CLINICAL_AUDIENCE_REPORT_IDS,
   HUB_REPORTS,
   HUB_REPORT_LINKS,
+  canAccessReportsArea,
   isClinicalReportsAudience,
   reportAllowed,
   reportLinkAllowed,
@@ -71,5 +72,25 @@ describe('audiência clínica de relatórios', () => {
   it('financeiro continua liberando visão financeira', () => {
     const fin = perms('hub.financial.read', 'hub.reports.read');
     expect(reportAllowed(fin, HUB_REPORTS.find((r) => r.id === 'finance-overview')!)).toBe(true);
+  });
+});
+
+describe('hub.reports.read sem super-read', () => {
+  it('não libera cards de domínio só com hub.reports.read', () => {
+    const onlyReports = perms('hub.reports.read');
+    expect(canAccessReportsArea(onlyReports)).toBe(true);
+    for (const id of ['stock-position', 'absent-clients', 'finance-overview', 'no-shows'] as const) {
+      const def = HUB_REPORTS.find((r) => r.id === id)!;
+      expect(reportAllowed(onlyReports, def)).toBe(false);
+    }
+  });
+
+  it('libera card de estoque com hub.inventory.read', () => {
+    const p = perms('hub.inventory.read', 'hub.reports.read');
+    expect(reportAllowed(p, HUB_REPORTS.find((r) => r.id === 'stock-position')!)).toBe(true);
+  });
+
+  it('vet acessa área sem hub.reports.read', () => {
+    expect(canAccessReportsArea(vetPerms)).toBe(true);
   });
 });

@@ -61,6 +61,7 @@ export const HubRelatoriosStockTurnover: React.FC<Props> = ({ clinicId, period }
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'stock-turnover' as const,
     title: 'Giro de estoque',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: 'giro-estoque',

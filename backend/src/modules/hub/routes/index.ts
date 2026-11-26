@@ -1075,40 +1075,52 @@ router.get(
 router.post(
   '/reports/export-pdf',
   authenticateUser,
-  requirePermission(['hub.reports.read', 'hub.financial.read', 'hub.inventory.read', 'hub.guardians.read']),
+  // Gate amplo: authorizeHubReport no handler valida domínio/unidade/self por report_id.
+  // hub.reports.read NÃO autoriza PDF sozinho.
+  requirePermission([
+    'hub.financial.read',
+    'hub.inventory.read',
+    'hub.guardians.read',
+    'hub.appointments.read',
+    'hub.clinic.read',
+    'hub.commissions.read_own',
+    'grooming.queue.read',
+    'boarding.reservations.read',
+  ]),
   postHubReportExportPdf
 );
 router.get(
   '/reports/email-schedules',
   authenticateUser,
-  requirePermission(['hub.reports.read', 'hub.financial.read']),
+  // hub.reports.read NÃO autoriza agendamento; domínio validado no controller por report_id.
+  requirePermission(['hub.financial.read', 'hub.guardians.read', 'hub.inventory.read']),
   listHubReportEmailSchedules
 );
 router.post(
   '/reports/email-schedules',
   authenticateUser,
-  requirePermission(['hub.reports.read', 'hub.financial.read']),
+  requirePermission(['hub.financial.read', 'hub.guardians.read', 'hub.inventory.read']),
   requireCoreCatalogWrite,
   createHubReportEmailSchedule
 );
 router.patch(
   '/reports/email-schedules/:id',
   authenticateUser,
-  requirePermission(['hub.reports.read', 'hub.financial.read']),
+  requirePermission(['hub.financial.read', 'hub.guardians.read', 'hub.inventory.read']),
   requireCoreCatalogWrite,
   patchHubReportEmailSchedule
 );
 router.delete(
   '/reports/email-schedules/:id',
   authenticateUser,
-  requirePermission(['hub.reports.read', 'hub.financial.read']),
+  requirePermission(['hub.financial.read', 'hub.guardians.read', 'hub.inventory.read']),
   requireCoreCatalogWrite,
   deleteHubReportEmailSchedule
 );
 router.post(
   '/reports/email-schedules/:id/run',
   authenticateUser,
-  requirePermission(['hub.reports.read', 'hub.financial.read']),
+  requirePermission(['hub.financial.read', 'hub.guardians.read', 'hub.inventory.read']),
   requireCoreCatalogWrite,
   runHubReportEmailSchedule
 );

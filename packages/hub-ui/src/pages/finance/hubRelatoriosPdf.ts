@@ -2,6 +2,8 @@ import { apiRequest, getApiBaseUrl, getSupabase } from '@petimi/web-core';
 
 export type ReportPdfPayload = {
   clinicId: string;
+  reportId: string;
+  unitId?: string | null;
   title: string;
   subtitle?: string | null;
   filename?: string | null;
@@ -29,6 +31,8 @@ export async function downloadReportPdf(payload: ReportPdfPayload): Promise<void
     },
     body: JSON.stringify({
       clinic_id: payload.clinicId,
+      report_id: payload.reportId,
+      unit_id: payload.unitId ?? null,
       title: payload.title,
       subtitle: payload.subtitle ?? null,
       filename: payload.filename ?? null,

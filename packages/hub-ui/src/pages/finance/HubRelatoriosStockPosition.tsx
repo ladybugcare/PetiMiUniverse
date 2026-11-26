@@ -146,6 +146,7 @@ export const HubRelatoriosStockPosition: React.FC<HubRelatoriosStockPositionProp
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'stock-position' as const,
     title: clinicalStock ? 'Posição de estoque (uso clínico)' : 'Posição de estoque',
     slug: clinicalStock ? 'posicao-estoque-clinico' : 'posicao-estoque',
     headers: clinicalStock

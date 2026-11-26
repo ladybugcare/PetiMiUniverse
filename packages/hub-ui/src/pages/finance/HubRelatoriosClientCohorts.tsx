@@ -77,6 +77,8 @@ export const HubRelatoriosClientCohorts: React.FC<Props> = ({ clinicId, unitId, 
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'client-cohorts' as const,
+    unitId,
     title: 'Novos e recorrentes',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: 'novos-recorrentes',

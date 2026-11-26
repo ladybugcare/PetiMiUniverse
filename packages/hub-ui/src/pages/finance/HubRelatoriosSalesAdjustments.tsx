@@ -155,6 +155,8 @@ export const HubRelatoriosSalesAdjustments: React.FC<HubRelatoriosSalesAdjustmen
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'sales-adjustments' as const,
+    unitId,
     title: 'Vendas e acertos',
     subtitle: periodLabel !== '—' ? periodLabel : null,
     slug: 'vendas-acertos',

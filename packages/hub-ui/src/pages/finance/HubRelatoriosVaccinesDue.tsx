@@ -61,6 +61,7 @@ export const HubRelatoriosVaccinesDue: React.FC<Props> = ({ clinicId, days }) =>
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
+    reportId: 'vaccines-due' as const,
     title: 'Vacinas a vencer',
     subtitle: `Vencidas + próximos ${days} dias`,
     slug: 'vacinas-a-vencer',
