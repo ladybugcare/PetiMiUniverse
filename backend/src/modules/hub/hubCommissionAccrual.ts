@@ -297,7 +297,11 @@ export async function accrueCommissionSnapshots(
       allowActingUserAsSaleAuthor: opts.allowActingUserAsSaleAuthor ?? false,
     });
     const rule = matchRuleForLine(rules, line);
-    const commission = computeCommissionAmount(rule, liquidBase, line.quantity);
+    const commission = computeCommissionAmount(
+      rule,
+      liquidBase,
+      line.quantity == null ? undefined : Number(line.quantity),
+    );
 
     out.set(line.key, {
       commission_staff_member_id: staff.staffId,
