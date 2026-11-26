@@ -8,17 +8,24 @@ function toYmd(d: Date): string {
   return `${y}-${m}-${day}`;
 }
 
+function isBoardingStayKind(kind: string | null | undefined): boolean {
+  return kind === 'hotel_stay' || kind === 'daycare_block';
+}
+
 /**
- * Filhos no mesmo dia do pai ficam só no modal do hotel (evita card duplicado).
- * Filhos em outro dia (ex.: banho na saída) aparecem na grade desse dia.
+ * Só oculta filhos de estadia (hotel/creche) no **mesmo dia** do pai —
+ * editam-se pelo modal da estadia (evita card duplicado).
+ * Banho + consulta (ou outros blocos standard no mesmo dia) **aparecem** na grade.
+ * Filhos em outro dia (ex.: banho na saída do hotel) também aparecem.
  */
 export function isExtraBlockChildHiddenFromGrid(
   appt: Pick<AgendaAppointment, 'id' | 'parent_appointment_id' | 'start'>,
-  all: Array<Pick<AgendaAppointment, 'id' | 'start'>>,
+  all: Array<Pick<AgendaAppointment, 'id' | 'start' | 'appointment_kind'>>,
 ): boolean {
   if (!appt.parent_appointment_id) return false;
   const parent = all.find((a) => a.id === appt.parent_appointment_id);
   if (!parent) return false;
+  if (!isBoardingStayKind(parent.appointment_kind)) return false;
   return toYmd(appt.start) === toYmd(parent.start);
 }
 

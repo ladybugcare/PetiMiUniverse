@@ -38,9 +38,17 @@ export interface AgendaAppointmentCardProps {
   /** Motivo (tooltip) quando o card não pode ser arrastado. */
   dragBlockedReason?: string | null;
   showProfessional?: boolean;
+  /** Exibe recurso/sala no card (útil fora da vista agrupada por recurso). */
+  showResource?: boolean;
   onClick?: (e: React.MouseEvent) => void;
   /** Pointer-based drag (substitui HTML5 DnD). */
   onDragPointerDown?: (e: React.PointerEvent) => void;
+}
+
+function resourceDisplayLabel(label: string | null | undefined): string | null {
+  const t = (label ?? '').trim();
+  if (!t || t === '—') return null;
+  return t;
 }
 
 /** Fundo opaco (as linhas da grade não atravessam o card). */
@@ -265,12 +273,14 @@ export function AgendaAppointmentCard({
   dragging = false,
   dragBlockedReason = null,
   showProfessional = false,
+  showResource = false,
   onClick,
   onDragPointerDown,
 }: AgendaAppointmentCardProps) {
   const color = resolveServiceAccentColor(a.agendaColor, a.group);
   const st = STATUS_META[a.status];
   const serviceLabel = a.displayServiceLabel ?? a.serviceName;
+  const resourceLabel = showResource ? resourceDisplayLabel(a.resourceLabel) : null;
   const isWeek = variant === 'week';
   const isMonth = variant === 'month';
   const isStay = variant === 'stay';
@@ -305,7 +315,7 @@ export function AgendaAppointmentCard({
     : dragBlockedReason || undefined;
   const ariaLabel = isStay
     ? `${a.petName}, ${serviceLabel}, ${periodLabel ?? formatHm(a.start)}, ${statusAria}`
-    : `${a.petName}, ${serviceLabel}, ${formatHm(a.start)}, ${statusAria}`;
+    : [a.petName, serviceLabel, resourceLabel, formatHm(a.start), statusAria].filter(Boolean).join(', ');
 
   const shellProps = {
     className: classNames,
@@ -361,6 +371,7 @@ export function AgendaAppointmentCard({
         </div>
         <div className="hub-agenda-card__pet">{a.petName}</div>
         <div className="hub-agenda-card__service hub-agenda-card__service--muted">{serviceLabel}</div>
+        {resourceLabel ? <div className="hub-agenda-card__resource">{resourceLabel}</div> : null}
       </AgendaCardShell>
     );
   }
@@ -404,6 +415,7 @@ export function AgendaAppointmentCard({
             <span className="hub-agenda-card__guardian"> · {guardianFirstName(a.guardianName)}</span>
           ) : null}
         </div>
+        {resourceLabel && !narrow ? <div className="hub-agenda-card__resource">{resourceLabel}</div> : null}
       </AgendaCardShell>
     );
   }
@@ -424,6 +436,7 @@ export function AgendaAppointmentCard({
           <span className="hub-agenda-card__guardian"> · {a.guardianName}</span>
         ) : null}
       </div>
+      {resourceLabel ? <div className="hub-agenda-card__resource">{resourceLabel}</div> : null}
       {showProfessional && a.professionalName ? (
         <div className="hub-agenda-card__professional">{a.professionalName}</div>
       ) : null}

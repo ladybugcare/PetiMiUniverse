@@ -742,7 +742,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     }
     if (initial) {
       if (initial.date) setDateYmd(initial.date);
+      else if (!isEditMode && !isWalkIn) setDateYmd(todayYmd());
+      // Create: sem seed de horário/staff → defaults limpos (evita herdar o agendamento anterior).
       if (initial.starts_at) setStartsHm(tsToHm(initial.starts_at));
+      else if (!isEditMode && !isWalkIn) setStartsHm('09:00');
       if (initial.ends_at) {
         setEndsHm(tsToHm(initial.ends_at));
         // Hotel multi-dia: saída pode ser em outro dia que a entrada.
@@ -755,11 +758,13 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           setHotelCheckoutDateYmd(outYmd);
           setHotelCheckoutHm(tsToHm(initial.ends_at));
         }
+      } else if (!isEditMode && !isWalkIn) {
+        setEndsHm('10:00');
       }
       if (initial.hub_staff_member_id) setStaffId(initial.hub_staff_member_id);
-      else if (isEditMode) setStaffId('');
+      else setStaffId('');
       if (initial.resource_label) setResourceLabel(initial.resource_label);
-      else if (isEditMode) setResourceLabel('');
+      else setResourceLabel('');
       setHubResourceId(initial.hub_resource_id ?? null);
       if (initial.guardian_id) setGuardianId(initial.guardian_id);
       if (initial.guardian_name) setGuardianName(initial.guardian_name);
@@ -840,6 +845,12 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         }
       }
     } else if (!isWalkIn && !isEditMode) {
+      setDateYmd(todayYmd());
+      setStartsHm('09:00');
+      setEndsHm('10:00');
+      setStaffId('');
+      setResourceLabel('');
+      setHubResourceId(null);
       setExtraBlocks([]);
     }
   }, [open, initial, serviceTypes, isEditMode, isWalkIn]);
@@ -1983,6 +1994,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           startsHm: defaultStartsHm,
           staffId: staffId,
           resourceLabel: resourceLabel,
+          hubResourceId: hubResourceId,
           startsDateYmd: defaultBlockDate || null,
         }),
       ];
@@ -2703,6 +2715,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   const resetForm = () => {
     confirmedOverlapRef.current = false;
+    endsHmManualRef.current = false;
     setMobileStep('form');
     setServices([]);
     setGuardianId('');
@@ -2736,6 +2749,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     setExtraBlocks([]);
     setSaveError(null);
     setConflicts([]);
+    setDateYmd(todayYmd());
+    setStartsHm('09:00');
+    setEndsHm('10:00');
+    setStaffId('');
     setResourceLabel('');
     setHubResourceId(null);
     setWalkInEmergency(false);
@@ -3839,6 +3856,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   computedStartHm={timing?.startsHm ?? startsHm}
                   computedEndHm={timing?.endsHm ?? endsHm}
                   defaultResourceLabel={resourceLabel}
+                  defaultHubResourceId={hubResourceId}
                   clinicId={clinicId}
                   unitId={selectedUnitId}
                   visitPickup={visitPickupActive}

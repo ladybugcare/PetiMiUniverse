@@ -1032,6 +1032,15 @@
   white-space: nowrap;
 }
 
+.hub-agenda-card__resource {
+  margin-top: 2px;
+  font-size: 10px;
+  opacity: 0.8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .hub-agenda-card__status-row {
   display: flex;
   align-items: center;

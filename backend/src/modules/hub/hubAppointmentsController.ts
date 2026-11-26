@@ -365,6 +365,30 @@ function buildOccurrenceConflictWindows(
   return windows;
 }
 
+/** Conflito entre janelas do mesmo create (principal × bloco extra, L&T, etc.). */
+function findMutualOccurrenceWindowConflict(
+  windows: OccurrenceConflictWindow[],
+): { reason: string; label: string } | null {
+  for (let i = 0; i < windows.length; i++) {
+    const a = windows[i]!;
+    for (let j = i + 1; j < windows.length; j++) {
+      const b = windows[j]!;
+      if (!intervalsOverlap(a.starts, a.ends, b.starts, b.ends)) continue;
+      const staffConflict = Boolean(a.staff && b.staff && a.staff === b.staff);
+      const resourceConflict = isResourceScheduleConflict(
+        { hubResourceId: a.resourceId ?? null, resourceLabel: a.resource, unitId: null },
+        { hubResourceId: b.resourceId ?? null, resourceLabel: b.resource, unitId: null, releasedAt: null },
+      );
+      if (!staffConflict && !resourceConflict) continue;
+      const reason = staffConflict
+        ? 'Horário em conflito com outro atendimento do mesmo profissional.'
+        : 'Horário em conflito com outro atendimento no mesmo recurso/sala.';
+      return { reason: `${b.label}: ${reason}`, label: b.label };
+    }
+  }
+  return null;
+}
+
 function scheduleConflictJson(
   error: string,
   extra?: {
@@ -1261,6 +1285,61 @@ function isStructuralAppointmentPatch(body: z.infer<typeof patchAppointmentSchem
   );
 }
 
+/** Check-in/cancel/notas não devem travar por overlap já aceito na criação. */
+function isScheduleRelevantAppointmentPatch(body: z.infer<typeof patchAppointmentSchema>): boolean {
+  return (
+    body.hub_staff_member_id !== undefined ||
+    body.starts_at !== undefined ||
+    body.ends_at !== undefined ||
+    body.hub_resource_id !== undefined ||
+    body.resource_label !== undefined ||
+    body.unit_id !== undefined ||
+    body.care_location_kind !== undefined ||
+    body.hub_partner_clinic_id !== undefined
+  );
+}
+
+async function loadRelatedScheduleExcludeIds(
+  clinicId: string,
+  appointmentId: string,
+  existing: Record<string, unknown>,
+): Promise<string[]> {
+  const ids = new Set<string>([appointmentId]);
+  const parentId = existing.parent_appointment_id as string | null | undefined;
+  if (parentId) ids.add(parentId);
+  const visitGroupId = existing.visit_group_id as string | null | undefined;
+
+  const { data: children } = await supabaseAdmin
+    .from('hub_appointments')
+    .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('parent_appointment_id', appointmentId)
+    .is('deleted_at', null);
+  for (const row of children ?? []) ids.add((row as { id: string }).id);
+
+  if (parentId) {
+    const { data: siblings } = await supabaseAdmin
+      .from('hub_appointments')
+      .select('id')
+      .eq('clinic_id', clinicId)
+      .eq('parent_appointment_id', parentId)
+      .is('deleted_at', null);
+    for (const row of siblings ?? []) ids.add((row as { id: string }).id);
+  }
+
+  if (visitGroupId) {
+    const { data: visitSiblings } = await supabaseAdmin
+      .from('hub_appointments')
+      .select('id')
+      .eq('clinic_id', clinicId)
+      .eq('visit_group_id', visitGroupId)
+      .is('deleted_at', null);
+    for (const row of visitSiblings ?? []) ids.add((row as { id: string }).id);
+  }
+
+  return [...ids];
+}
+
 type PatchExtraBlock = z.infer<typeof patchExtraBlockSchema>;
 
 async function syncExtraBlocksForParent(
@@ -2029,6 +2108,11 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       const useShift = Boolean(b.recurrence);
       for (const occDate of occurrenceDates) {
         const windows = buildOccurrenceConflictWindows(scheduleBody, occDate, useShift, standalonePickupMode);
+        const mutual = findMutualOccurrenceWindowConflict(windows);
+        if (mutual) {
+          preConflicts.push({ date: occDate, reason: mutual.reason });
+          break;
+        }
         for (const w of windows) {
           const chk = await assertNoScheduleConflict(
             b.clinic_id,
@@ -2997,10 +3081,15 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       nextResource = snap.resource_label;
     }
 
-    if (b.allow_schedule_overlap !== true) {
+    if (b.allow_schedule_overlap !== true && isScheduleRelevantAppointmentPatch(b)) {
+      const excludeIds = await loadRelatedScheduleExcludeIds(
+        b.clinic_id,
+        id,
+        existing as Record<string, unknown>,
+      );
       const check = await assertNoScheduleConflict(
         b.clinic_id,
-        [id],
+        excludeIds,
         nextStaff,
         nextResource,
         careResolved.value.unit_id,

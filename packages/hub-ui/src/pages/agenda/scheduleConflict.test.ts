@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildScheduleOverlapConfirmMessage,
   findLocalScheduleConflict,
+  findLocalWindowsMutualConflict,
   isScheduleConflictMessage,
   type LocalExistingSlot,
 } from './scheduleConflict';
@@ -108,6 +109,26 @@ describe('findLocalScheduleConflict', () => {
     const found = findLocalScheduleConflict(
       [{ staffId: null, resourceLabel: 'Sala 1', startMs: 10, endMs: 20 }],
       [slot({ id: 'r1', staffId: null, resourceLabel: 'Sala 1', startMs: 12, endMs: 18, label: 'Sala 1' })],
+    );
+    expect(found?.reason).toMatch(/recurso/);
+  });
+
+  it('detecta conflito entre blocos da mesma visita (staff)', () => {
+    const found = findLocalWindowsMutualConflict([
+      { staffId: 'ana', resourceLabel: null, startMs: 10, endMs: 20 },
+      { staffId: 'ana', resourceLabel: null, startMs: 15, endMs: 25 },
+    ]);
+    expect(found?.reason).toMatch(/profissional/);
+    expect(found?.label).toMatch(/visita/);
+  });
+
+  it('detecta conflito entre blocos da mesma visita (recurso)', () => {
+    const found = findLocalScheduleConflict(
+      [
+        { staffId: 'ana', resourceLabel: 'Banheira 1', resourceId: 'r1', startMs: 10, endMs: 20 },
+        { staffId: 'bruno', resourceLabel: 'Banheira 1', resourceId: 'r1', startMs: 12, endMs: 18 },
+      ],
+      [],
     );
     expect(found?.reason).toMatch(/recurso/);
   });

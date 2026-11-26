@@ -1044,6 +1044,8 @@ const HubAgendaPage: React.FC = () => {
   const filtered = useMemo(() => {
     const q = searchQ.trim().toLowerCase();
     return allAppointments.filter((a) => {
+      // Cancelados só na grade quando o filtro de status pede explicitamente.
+      if (statusFilter === 'all' && a.status === 'cancelled') return false;
       if (unitFilter !== 'all') {
         if (unitFilter === '__partner__') {
           if (!isPartnerCareLocation(a)) return false;
@@ -2102,6 +2104,7 @@ const HubAgendaPage: React.FC = () => {
                 widthPx={estimatedWidthPx}
                 selected={selected}
                 showProfessional={groupMode !== 'professional'}
+                showResource={groupMode !== 'resource'}
                 {...appointmentDragHandlers(a)}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -2169,6 +2172,7 @@ const HubAgendaPage: React.FC = () => {
                   variant="week"
                   selected={selectedId === a.id}
                   showProfessional={groupMode !== 'professional'}
+                  showResource={groupMode !== 'resource'}
                   onClick={() => openAppointmentDetail(a.id)}
                 />
                 {groupMode === 'professional' ? (
@@ -2478,6 +2482,7 @@ const HubAgendaPage: React.FC = () => {
                                   appointment={a}
                                   variant="week"
                                   selected={selectedId === a.id}
+                                  showResource={groupMode !== 'resource'}
                                   {...appointmentDragHandlers(a)}
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -2662,6 +2667,7 @@ const HubAgendaPage: React.FC = () => {
         open={createOpen}
         onClose={() => {
           setCreateOpen(false);
+          setCreateInitial(null);
           setCreateModalLayout('default');
         }}
         onCreated={handleAppointmentCreated}

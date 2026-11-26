@@ -483,6 +483,7 @@ export function createEmptyExtraBlock(opts: {
   startsHm: string;
   staffId: string;
   resourceLabel: string;
+  hubResourceId?: string | null;
   /** Data de início do bloco (YYYY-MM-DD). Default: null (usa a data do agendamento + cursor). */
   startsDateYmd?: string | null;
 }): ExtraBlock {
@@ -501,6 +502,7 @@ export function createEmptyExtraBlock(opts: {
     starts_date_ymd: opts.startsDateYmd ?? null,
     hub_staff_member_id: opts.staffId,
     resource_label: opts.resourceLabel,
+    hub_resource_id: opts.hubResourceId ?? null,
     recurrence: defaultBlockRecurrence(),
     pickup: defaultBlockPickup(opts.startsHm, ends),
     checkout_date_ymd: null,

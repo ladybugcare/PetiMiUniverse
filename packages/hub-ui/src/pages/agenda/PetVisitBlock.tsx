@@ -101,6 +101,7 @@ type PetVisitBlockProps = {
   computedStartHm: string;
   computedEndHm: string;
   defaultResourceLabel: string;
+  defaultHubResourceId?: string | null;
   clinicId?: string | null;
   unitId?: string | null;
   /** L&T da visita ligado (esconde L&T nos extras avulsos). */
@@ -133,6 +134,7 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
   computedStartHm,
   computedEndHm,
   defaultResourceLabel,
+  defaultHubResourceId = null,
   clinicId = null,
   unitId = null,
   visitPickup = false,
@@ -339,6 +341,7 @@ export const PetVisitBlock: React.FC<PetVisitBlockProps> = ({
           startsHm: computedEndHm,
           staffId: config.hubStaffMemberId,
           resourceLabel: defaultResourceLabel,
+          hubResourceId: defaultHubResourceId,
           startsDateYmd: dateYmd || null,
         }),
       ],

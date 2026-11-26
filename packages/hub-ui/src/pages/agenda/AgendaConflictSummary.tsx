@@ -60,10 +60,10 @@ export function AgendaConflictSummary({
           id={listId}
           className="hub-agenda-conflict-summary__popover"
           role="listbox"
-          aria-label="Sobreposições na coluna"
+          aria-label="Conflitos de horário"
         >
           <p className="hub-agenda-conflict-summary__hint">
-            Sobreposição na mesma coluna da vista (não é o aviso de staff/recurso ao remarcar).
+            Mesmo profissional ou mesmo recurso/sala no mesmo horário.
           </p>
           <ul className="hub-agenda-conflict-summary__list">
             {conflictAppts.map((a) => (

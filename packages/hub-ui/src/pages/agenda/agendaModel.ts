@@ -330,26 +330,48 @@ function apptIntervalsOverlap(a: AgendaAppointment, b: AgendaAppointment): boole
   return a.start.getTime() < b.end.getTime() && a.end.getTime() > b.start.getTime();
 }
 
-/** IDs com sobreposição de horário na mesma linha/coluna (exclui cancelados). */
-export function computeOverlapConflictIds(list: AgendaAppointment[], groupMode: AgendaGroupMode): Set<string> {
-  const active = list.filter((x) => x.status !== 'cancelled');
-  const byLane = new Map<string, AgendaAppointment[]>();
-  for (const a of active) {
-    const k = laneKeyForAppointment(a, groupMode);
-    const arr = byLane.get(k) ?? [];
-    arr.push(a);
-    byLane.set(k, arr);
-  }
+function normalizeAgendaResourceLabel(label: string | null | undefined): string | null {
+  const t = (label ?? '').trim();
+  if (!t || t === '—') return null;
+  return t;
+}
+
+/** Conflito de agenda: overlap + (mesmo profissional OU mesmo recurso). Alinhado a `scheduleConflict.ts`. */
+function appointmentsShareScheduleConflict(a: AgendaAppointment, b: AgendaAppointment): boolean {
+  if (!apptIntervalsOverlap(a, b)) return false;
+  const staffConflict = Boolean(a.professionalId && b.professionalId && a.professionalId === b.professionalId);
+  if (staffConflict) return true;
+
+  if (a.resourceReleasedAt || b.resourceReleasedAt) return false;
+  if (a.hubResourceId && b.hubResourceId) return a.hubResourceId === b.hubResourceId;
+  const labelA = normalizeAgendaResourceLabel(a.resourceLabel);
+  const labelB = normalizeAgendaResourceLabel(b.resourceLabel);
+  return Boolean(labelA && labelB && labelA === labelB);
+}
+
+/**
+ * IDs com conflito real de horário (mesmo profissional ou mesmo recurso).
+ * Exclui cancelados. Não usa a coluna da vista: agendamentos sem recurso/staff
+ * em comum no mesmo horário (ex. balde «Sem recurso») não contam.
+ * O parâmetro `groupMode` é ignorado (mantido por compatibilidade das call sites).
+ */
+export function computeOverlapConflictIds(
+  list: AgendaAppointment[],
+  _groupMode?: AgendaGroupMode,
+): Set<string> {
+  const active = list
+    .filter((x) => x.status !== 'cancelled')
+    .slice()
+    .sort((x, y) => x.start.getTime() - y.start.getTime());
   const bad = new Set<string>();
-  for (const arr of byLane.values()) {
-    arr.sort((x, y) => x.start.getTime() - y.start.getTime());
-    for (let i = 0; i < arr.length; i++) {
-      for (let j = i + 1; j < arr.length; j++) {
-        if (arr[j]!.start.getTime() >= arr[i]!.end.getTime()) break;
-        if (apptIntervalsOverlap(arr[i]!, arr[j]!)) {
-          bad.add(arr[i]!.id);
-          bad.add(arr[j]!.id);
-        }
+  for (let i = 0; i < active.length; i++) {
+    const a = active[i]!;
+    for (let j = i + 1; j < active.length; j++) {
+      const b = active[j]!;
+      if (b.start.getTime() >= a.end.getTime()) break;
+      if (appointmentsShareScheduleConflict(a, b)) {
+        bad.add(a.id);
+        bad.add(b.id);
       }
     }
   }
@@ -757,15 +779,22 @@ function uniqueServiceGroups(services: AgendaAppointment['services'], fallback: 
 
 /** Enriquece agendamentos com metadados de card e filtra pernas L&T ocultas. */
 export function enrichAgendaCardsForGrid(list: AgendaAppointment[]): AgendaAppointment[] {
-  const visitGroupCounts = new Map<string, number>();
-  const visitGroupPets = new Map<string, string[]>();
+  /** Conta pets únicos (não blocos): Banho+Consulta do mesmo pet ≠ «2 pets». */
+  const visitGroupPetKeys = new Map<string, Set<string>>();
+  const visitGroupPetNames = new Map<string, string[]>();
   for (const appt of list) {
     const vg = appt.visit_group_id;
     if (!vg) continue;
-    visitGroupCounts.set(vg, (visitGroupCounts.get(vg) ?? 0) + 1);
-    const names = visitGroupPets.get(vg) ?? [];
-    if (appt.petName && appt.petName !== '—') names.push(appt.petName);
-    visitGroupPets.set(vg, names);
+    const key = appt.petId || `name:${appt.petName || appt.id}`;
+    const keys = visitGroupPetKeys.get(vg) ?? new Set<string>();
+    const isNew = !keys.has(key);
+    keys.add(key);
+    visitGroupPetKeys.set(vg, keys);
+    if (isNew && appt.petName && appt.petName !== '—') {
+      const names = visitGroupPetNames.get(vg) ?? [];
+      names.push(appt.petName);
+      visitGroupPetNames.set(vg, names);
+    }
   }
 
   const enriched = list.map((appt) => {
@@ -773,10 +802,11 @@ export function enrichAgendaCardsForGrid(list: AgendaAppointment[]): AgendaAppoi
     const displayServiceLabel = computeDisplayServiceLabel(appt);
     const pickupPackage = computePickupPackage(appt, list);
     const vg = appt.visit_group_id;
-    const visitGroupSize = vg ? visitGroupCounts.get(vg) ?? 1 : undefined;
+    const uniquePets = vg ? visitGroupPetKeys.get(vg)?.size ?? 1 : 1;
+    const visitGroupSize = vg && uniquePets > 1 ? uniquePets : undefined;
     const visitGroupLabel =
       vg && visitGroupSize && visitGroupSize > 1
-        ? (visitGroupPets.get(vg) ?? []).join(' · ')
+        ? (visitGroupPetNames.get(vg) ?? []).join(' · ')
         : undefined;
     return {
       ...appt,
