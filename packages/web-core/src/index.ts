@@ -25,4 +25,9 @@ export {
 export { usePermissions } from './usePermissions';
 export { AuthProvider, useAuth } from './AuthContext';
 export type { AuthContextType } from './AuthContext';
+export {
+  buildLoginHref,
+  isAuthShellReturnPath,
+  safeInternalReturnPath,
+} from './loginReturnUrl';
 export type { AppRole, ClinicStaffRole } from './types';

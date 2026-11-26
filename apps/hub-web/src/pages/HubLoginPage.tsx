@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Link, useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, Eye, EyeOff } from 'lucide-react';
-import { login, useAuth } from '@petimi/web-core';
+import { login, safeInternalReturnPath, useAuth } from '@petimi/web-core';
 import { getHubPostLoginDestination } from '../authNavigation';
 import { signupLinkState } from '../utils/signupReturn';
 import { applyHubSessionContext, hubSessionApi } from '../services/hubSessionApi';
@@ -12,13 +12,6 @@ const REMEMBER_KEY = 'petimi_hub_login_remember';
 const REMEMBER_EMAIL_KEY = 'petimi_hub_login_email';
 const baseUrl = (import.meta.env.BASE_URL || '/').replace(/\/?$/, '/');
 const logoSrc = `${baseUrl}petmi-hub.svg`;
-
-function safeInternalRedirect(raw: string | null): string | null {
-  if (!raw) return null;
-  const path = raw.trim();
-  if (!path.startsWith('/') || path.startsWith('//')) return null;
-  return path;
-}
 
 const HubLoginPage: React.FC = () => {
   const [email, setEmail] = useState('');
@@ -34,7 +27,7 @@ const HubLoginPage: React.FC = () => {
   const { setAuthFromLogin, user, loading: authLoading } = useAuth();
 
   const redirectAfterLogin = useMemo(
-    () => safeInternalRedirect(searchParams.get('redirect')),
+    () => safeInternalReturnPath(searchParams.get('redirect')),
     [searchParams],
   );
   const isInviteLogin = Boolean(redirectAfterLogin?.startsWith('/accept-invitation'));

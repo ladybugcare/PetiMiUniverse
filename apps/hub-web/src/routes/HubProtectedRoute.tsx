@@ -1,6 +1,6 @@
 import React, { ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
-import { useAuth } from '@petimi/web-core';
+import { Navigate, useLocation } from 'react-router-dom';
+import { buildLoginHref, useAuth } from '@petimi/web-core';
 import { HUB_VALID_ROLES } from '../authNavigation';
 
 /** Reads the server-assigned clinic_user role from localStorage (set by setAuthFromLogin). */
@@ -19,13 +19,19 @@ function getStoredClinicUserRole(): string | null {
 
 const HubProtectedRoute = ({ children }: { children: ReactNode }) => {
   const { user, role, loading } = useAuth();
+  const location = useLocation();
 
   if (loading) {
     return <div style={{ padding: 24 }}>Carregando…</div>;
   }
 
   if (!user) {
-    return <Navigate to="/login" replace />;
+    return (
+      <Navigate
+        to={buildLoginHref(`${location.pathname}${location.search}`)}
+        replace
+      />
+    );
   }
 
   // Check role from auth context (derived from user_metadata) and, as a

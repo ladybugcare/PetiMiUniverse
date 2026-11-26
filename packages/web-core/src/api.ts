@@ -6,6 +6,7 @@ import {
   isAuthLogoutAbortError,
   isAuthLogoutInProgress,
 } from './authLogoutGate';
+import { buildLoginHref } from './loginReturnUrl';
 
 function isPublicAuthEndpoint(endpoint: string): boolean {
   return (
@@ -231,8 +232,9 @@ async function executeApiRequest(
           console.warn('[web-core] Token inválido ou expirado. Limpando sessão...');
           await handleInvalidToken();
           if (typeof window !== 'undefined') {
+            const loginHref = buildLoginHref();
             setTimeout(() => {
-              window.location.href = '/login';
+              window.location.href = loginHref;
             }, 100);
           }
           throw new Error('Sessão expirada. Por favor, faça login novamente.');
