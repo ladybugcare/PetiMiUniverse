@@ -22,6 +22,7 @@ import { useMyStaffMember } from '../../hooks/useMyStaffMember';
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
 import { logMessageAttempt } from '../../api/hubMessageLogsApi';
 import { formatHubClinicalExamStatus } from './clinicalDisplay';
+import { resolveExamIssueBlockReason } from './clinicalIssueBlockReason';
 import { buildExamOrderWhatsAppMessage, openExamOrderWhatsApp } from './hubExamOrderShareUtils';
 import { CareLocationBadge } from '../../components/CareLocationFields';
 import { HubMultiSelectCombobox } from '../../components/HubMultiSelectCombobox';
@@ -48,15 +49,6 @@ function examOrderPdfPath(documentId: string, clinicId: string): string {
 
 function isExamItemEditLocked(readOnly: boolean, exam: HubClinicalExam): boolean {
   return readOnly || exam.document_status === 'issued';
-}
-
-function resolveIssueBlockReason(encounter: HubEncounter, exams: HubClinicalExam[]): string | null {
-  if (!exams.length) return 'Adicione ao menos um exame antes de gerar o documento.';
-  if (!encounter.pet_id) return 'Vincule um pet ao atendimento antes de emitir.';
-  if (!encounter.hub_staff_member_id) {
-    return 'Defina o veterinário responsável no atendimento antes de emitir.';
-  }
-  return null;
 }
 
 const emptyDraft = () => ({
@@ -143,7 +135,10 @@ export function HubWorkspaceExamOrders({
       .catch(() => setGuardianPhone(null));
   }, [encounter.guardian_id, clinicId]);
 
-  const issueBlockReason = useMemo(() => resolveIssueBlockReason(encounter, exams), [encounter, exams]);
+  const issueBlockReason = useMemo(
+    () => resolveExamIssueBlockReason(encounter, exams.length),
+    [encounter, exams.length],
+  );
 
   const examTypeOptions = useMemo(() => {
     const opts = EXAM_TYPE_OPTIONS.map((o) => ({ value: o.key, label: o.key }));
@@ -207,6 +202,8 @@ export function HubWorkspaceExamOrders({
   };
 
   const issueDocument = async (scope: 'encounter_bundle' | 'single', examId?: string) => {
+    // Sem exames: no-op silencioso — evita modal vermelho falso ao finalizar sem pedir emitir.
+    if (!exams.length) return;
     if (issueBlockReason) {
       showError(issueBlockReason);
       return;
