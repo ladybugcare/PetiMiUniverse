@@ -102,24 +102,19 @@ export type HubGuardianPetRow = {
   birth_date: string | null;
 };
 
+/** Evita HeadersOverflow no PostgREST (~16KB) em `.in('id', [muitos UUIDs])`. */
+function chunkIds(ids: string[], size = 80): string[][] {
+  const out: string[][] = [];
+  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
+  return out;
+}
+
 async function fetchPetsByGuardianIds(
   clinicId: string,
   guardianIds: string[]
 ): Promise<Map<string, HubGuardianPetRow[]>> {
   const map = new Map<string, HubGuardianPetRow[]>();
   if (guardianIds.length === 0) return map;
-
-  const { data, error } = await supabaseAdmin
-    .from('hub_pet_guardians')
-    .select(
-      'guardian_id, role, hub_pets(id, name, species, breed, sex, size_tier, coat_type, coat_color, birth_date, clinic_id, deleted_at)'
-    )
-    .in('guardian_id', guardianIds);
-
-  if (error || !data) {
-    console.error('[hub_guardians] fetchPetsByGuardianIds', error);
-    return map;
-  }
 
   type PetEmbed = {
     id: string;
@@ -140,7 +135,23 @@ async function fetchPetsByGuardianIds(
     hub_pets: PetEmbed | PetEmbed[] | null;
   };
 
-  for (const row of data as unknown as LinkRow[]) {
+  const data: LinkRow[] = [];
+  for (const part of chunkIds(guardianIds)) {
+    const { data: chunk, error } = await supabaseAdmin
+      .from('hub_pet_guardians')
+      .select(
+        'guardian_id, role, hub_pets(id, name, species, breed, sex, size_tier, coat_type, coat_color, birth_date, clinic_id, deleted_at)'
+      )
+      .in('guardian_id', part);
+
+    if (error) {
+      console.error('[hub_guardians] fetchPetsByGuardianIds', error);
+      return map;
+    }
+    data.push(...((chunk ?? []) as unknown as LinkRow[]));
+  }
+
+  for (const row of data) {
     const rawPet = row.hub_pets;
     const pet = Array.isArray(rawPet) ? rawPet[0] : rawPet;
     if (!pet || pet.clinic_id !== clinicId || pet.deleted_at != null) continue;

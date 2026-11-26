@@ -86,6 +86,13 @@ const updateHubPetBodySchema = z.object({
 const HUB_PET_SELECT_COLUMNS =
   'id, petmi_pet_id, clinic_id, name, species, breed, sex, birth_date, notes, behavior_tags, neutered, size_tier, coat_color, coat_type, external_microchip, created_at, updated_at';
 
+/** Evita HeadersOverflow no PostgREST (~16KB) em `.in('id', [muitos UUIDs])`. */
+function chunkIds(ids: string[], size = 80): string[][] {
+  const out: string[][] = [];
+  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
+  return out;
+}
+
 function actorUserId(req: Request): string | null {
   return req.user?.id ?? null;
 }
@@ -130,34 +137,45 @@ export const listHubPets = async (req: Request, res: Response) => {
     }
 
     const petIds = list.map((p) => p.id);
-    const { data: primaries, error: linkErr } = await supabaseAdmin
-      .from('hub_pet_guardians')
-      .select('pet_id, guardian_id, hub_guardians(full_name)')
-      .eq('role', 'primary')
-      .in('pet_id', petIds);
-
-    if (linkErr) {
-      console.error('[hub_pets] list primaries', linkErr);
-      return res.status(500).json({ error: 'Erro ao carregar tutores dos pets' });
+    type LinkRow = {
+      pet_id: string;
+      guardian_id: string;
+      hub_guardians: { full_name?: string } | null;
+    };
+    const primaries: LinkRow[] = [];
+    for (const part of chunkIds(petIds)) {
+      const { data, error: linkErr } = await supabaseAdmin
+        .from('hub_pet_guardians')
+        .select('pet_id, guardian_id, hub_guardians(full_name)')
+        .eq('role', 'primary')
+        .in('pet_id', part);
+      if (linkErr) {
+        console.error('[hub_pets] list primaries', linkErr);
+        return res.status(500).json({ error: 'Erro ao carregar tutores dos pets' });
+      }
+      primaries.push(...((data ?? []) as LinkRow[]));
     }
 
-    const { data: secondaries, error: secListErr } = await supabaseAdmin
-      .from('hub_pet_guardians')
-      .select('pet_id, guardian_id, hub_guardians(full_name)')
-      .eq('role', 'secondary')
-      .in('pet_id', petIds);
-
-    if (secListErr) {
-      console.error('[hub_pets] list secondaries', secListErr);
-      return res.status(500).json({ error: 'Erro ao carregar tutores secundários' });
+    const secondaries: LinkRow[] = [];
+    for (const part of chunkIds(petIds)) {
+      const { data, error: secListErr } = await supabaseAdmin
+        .from('hub_pet_guardians')
+        .select('pet_id, guardian_id, hub_guardians(full_name)')
+        .eq('role', 'secondary')
+        .in('pet_id', part);
+      if (secListErr) {
+        console.error('[hub_pets] list secondaries', secListErr);
+        return res.status(500).json({ error: 'Erro ao carregar tutores secundários' });
+      }
+      secondaries.push(...((data ?? []) as LinkRow[]));
     }
 
     const primaryByPet = new Map<
       string,
       { guardian_id: string; guardian_name: string | null }
     >();
-    for (const row of primaries ?? []) {
-      const g = row.hub_guardians as { full_name?: string } | null;
+    for (const row of primaries) {
+      const g = row.hub_guardians;
       primaryByPet.set(row.pet_id, {
         guardian_id: row.guardian_id,
         guardian_name: g?.full_name ?? null,
@@ -168,9 +186,9 @@ export const listHubPets = async (req: Request, res: Response) => {
       string,
       { guardian_id: string; guardian_name: string | null }
     >();
-    for (const row of secondaries ?? []) {
+    for (const row of secondaries) {
       if (secondaryByPet.has(row.pet_id)) continue;
-      const g = row.hub_guardians as { full_name?: string } | null;
+      const g = row.hub_guardians;
       secondaryByPet.set(row.pet_id, {
         guardian_id: row.guardian_id,
         guardian_name: g?.full_name ?? null,
