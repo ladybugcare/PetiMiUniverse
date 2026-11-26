@@ -69,6 +69,11 @@ import {
   attachmentPublicUrl,
 } from './clinicalDisplay';
 import { clinicalCaseDisplayTitle } from './clinicalCaseTitle';
+import {
+  NEEDS_CLINICAL_CONTENT_COMPLETE_HINT,
+  NEEDS_IDENTIFICATION_COMPLETE_HINT,
+  resolveEncounterCompleteBlockReason,
+} from './clinicalCompleteBlockReason';
 import { petAgeDetailedLabel } from '../pets/petAge';
 import { useDebouncedSave } from '../../hooks/useDebouncedSave';
 import './clinica-page.css';
@@ -284,15 +289,11 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
     });
   };
 
-  const hasBillingIdentity =
-    !!(encounter?.guardian_id && encounter?.pet_id) || !!encounter?.hub_case_id;
-
   const finish = async () => {
     if (!clinicId || !encounterId || !canWrite || !encounter) return;
-    if (!hasBillingIdentity) {
-      showError(
-        'Para finalizar, associe tutor e pet ao atendimento — ou vincule um caso clínico com pet/tutor cadastrado.',
-      );
+    const blockReason = resolveEncounterCompleteBlockReason(encounter);
+    if (blockReason) {
+      showError(blockReason);
       return;
     }
     setCompleting(true);
@@ -525,7 +526,11 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
   const suspicionsText = String(dx.suspicions ?? '').trim();
   const weight = pe.weight_kg != null && pe.weight_kg !== '' ? `${pe.weight_kg} kg` : '—';
   const readOnly = !canWrite || encounter.status === 'completed';
-  const needsIdentificationForCheckout = !hasBillingIdentity && encounter.status !== 'completed';
+  const completeBlockReason =
+    encounter.status === 'completed' ? null : resolveEncounterCompleteBlockReason(encounter);
+  const needsIdentificationForCheckout = completeBlockReason === NEEDS_IDENTIFICATION_COMPLETE_HINT;
+  const needsClinicalContentForCheckout =
+    completeBlockReason === NEEDS_CLINICAL_CONTENT_COMPLETE_HINT;
 
   const STEPPER_STEPS = [
     { id: 'sec-resumo', label: 'Consulta' },
@@ -722,6 +727,19 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
             ) : null}
             <p className="hub-clientes__muted" style={{ marginTop: 8, marginBottom: 0 }}>
               Cadastro de tutores: <Link to="/hub/clientes">Clientes</Link>
+            </p>
+          </div>
+        ) : null}
+
+        {needsClinicalContentForCheckout ? (
+          <div className="hub-clinic-banner hub-cws-banner">
+            <p style={{ margin: 0 }}>
+              <strong>Conteúdo clínico pendente.</strong> Para <strong>finalizar</strong>, registre a{' '}
+              <strong>queixa principal</strong> ou preencha o <strong>SOAP</strong> (anamnese, exame físico ou
+              diagnóstico). Receita, exame e encaminhamento vazios não bloqueiam a finalização.
+            </p>
+            <p className="hub-clientes__muted" style={{ marginTop: 8, marginBottom: 0 }}>
+              Comece pela seção Consulta (queixa) ou Anamnese / Exame físico / Diagnóstico.
             </p>
           </div>
         ) : null}
@@ -1103,11 +1121,13 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
               <button
                 type="button"
                 className="hub-clientes__btn hub-clientes__btn--primary hub-cws-footer__btn hub-cws-footer__btn--primary"
-                disabled={completing || needsIdentificationForCheckout}
+                disabled={completing || Boolean(completeBlockReason)}
                 title={
                   needsIdentificationForCheckout
                     ? 'Associe um tutor ao atendimento antes de finalizar.'
-                    : undefined
+                    : needsClinicalContentForCheckout
+                      ? NEEDS_CLINICAL_CONTENT_COMPLETE_HINT
+                      : undefined
                 }
                 onClick={() => void finish()}
               >

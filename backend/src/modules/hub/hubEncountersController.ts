@@ -606,6 +606,39 @@ async function assertPetInClinic(clinicId: string, petId: string): Promise<boole
   return assertPetEligibleForNewOp(clinicId, petId);
 }
 
+function hasNonEmptyClinicalText(value: unknown): boolean {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function hasMeaningfulClinicalValue(value: unknown): boolean {
+  if (value == null) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (typeof value === 'number') return Number.isFinite(value);
+  if (typeof value === 'boolean') return true;
+  if (Array.isArray(value)) return value.some((item) => hasMeaningfulClinicalValue(item));
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>).some((item) => hasMeaningfulClinicalValue(item));
+  }
+  return false;
+}
+
+/** Mínimo clínico para finalizar: queixa/resumo ou SOAP (anamnese, exame, diagnóstico). */
+function hasMinimumClinicalContent(enc: {
+  chief_complaint?: string | null;
+  summary_notes?: string | null;
+  anamnesis?: unknown;
+  physical_exam?: unknown;
+  diagnosis?: unknown;
+}): boolean {
+  if (hasNonEmptyClinicalText(enc.chief_complaint) || hasNonEmptyClinicalText(enc.summary_notes)) {
+    return true;
+  }
+  if (hasMeaningfulClinicalValue(enc.anamnesis)) return true;
+  if (hasMeaningfulClinicalValue(enc.physical_exam)) return true;
+  if (hasMeaningfulClinicalValue(enc.diagnosis)) return true;
+  return false;
+}
+
 /**
  * Resolve a identidade faturável do atendimento: (guardian_id + pet_id) diretos no encounter
  * OU derivados do caso clínico vinculado (pet_id do caso + tutor principal ou snapshot).
@@ -1754,7 +1787,9 @@ export const completeHubEncounter = async (req: Request, res: Response) => {
 
     const { data: beforeComplete, error: bfErr } = await supabaseAdmin
       .from('hub_encounters')
-      .select('guardian_id, pet_id, hub_appointment_id, hub_case_id, chief_complaint, status')
+      .select(
+        'guardian_id, pet_id, hub_appointment_id, hub_case_id, chief_complaint, summary_notes, anamnesis, physical_exam, diagnosis, status',
+      )
       .eq('id', id.data)
       .eq('clinic_id', clinic_id.data)
       .is('deleted_at', null)
@@ -1762,7 +1797,18 @@ export const completeHubEncounter = async (req: Request, res: Response) => {
     if (bfErr) return res.status(500).json({ error: bfErr.message });
     if (!beforeComplete) return res.status(404).json({ error: 'Atendimento não encontrado' });
 
-    const bf = beforeComplete as { guardian_id: string | null; pet_id: string | null; hub_appointment_id: string | null; hub_case_id: string | null; chief_complaint: string | null; status: string };
+    const bf = beforeComplete as {
+      guardian_id: string | null;
+      pet_id: string | null;
+      hub_appointment_id: string | null;
+      hub_case_id: string | null;
+      chief_complaint: string | null;
+      summary_notes: string | null;
+      anamnesis: unknown;
+      physical_exam: unknown;
+      diagnosis: unknown;
+      status: string;
+    };
 
     const billingId = await resolveBillingIdentity({
       pet_id: bf.pet_id,
@@ -1775,6 +1821,13 @@ export const completeHubEncounter = async (req: Request, res: Response) => {
       return res.status(409).json({
         error:
           'Para finalizar, associe tutor e pet ao atendimento — ou vincule um caso clínico que possua pet/tutor cadastrado. Em urgência, a identificação é obrigatória para encerramento.',
+      });
+    }
+
+    if (!hasMinimumClinicalContent(bf)) {
+      return res.status(409).json({
+        error:
+          'Para finalizar, registre a queixa principal ou o SOAP (anamnese, exame físico ou diagnóstico).',
       });
     }
 
