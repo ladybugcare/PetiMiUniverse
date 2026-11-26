@@ -344,3 +344,5 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 169. **`169_alter_hub_pets_death.sql`** — óbito do animal: campos em `hub_pets`, desfecho em encounter/cirurgia, auditoria e RPCs. Independente de soft-delete. Executar depois do item 168.
 
 171. **`171_alter_hub_commission_line_snapshot.sql`** — snapshot imutável de comissão em `hub_receivable_lines` (`commission_*` / `commission_accrued_at`) + `sold_by_staff_id` em `hub_comanda_items` (autoria de venda de produto). Relatório gerencial lê o snapshot; serviço → executor, produto → vendedor. Executar depois dos itens 160, 039a e 042.
+
+172. **`172_hub_cash_refund_drawer_no_double_count.sql`** — anti double-count na gaveta: `financial_adjustment_id` em `hub_cash_movements` + `hub_return_receivable_product_lines` só faz Sangria em devolução parcial; ao zerar a venda, reverse do payment cash remove Entradas e anula sangrias de reembolso vinculadas. Executar depois do item 164.

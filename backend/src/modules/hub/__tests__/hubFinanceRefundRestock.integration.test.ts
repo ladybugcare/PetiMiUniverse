@@ -553,6 +553,230 @@ describe('Finance refund ↔ estoque (sem reentrada automática)', () => {
     expect(returnEvents()).toHaveLength(0);
   });
 
+  it('cash: devolução total não cria Sangria (evita double-count na gaveta)', async () => {
+    const SESSION_ID = '55555555-5555-4555-8555-555555555501';
+    configureSupabaseMock({
+      tables: baseTables({
+        hub_receivables: [
+          {
+            id: RECEIVABLE_ID,
+            clinic_id: TEST_CLINIC_ID,
+            unit_id: TEST_UNIT_ID,
+            comanda_id: null,
+            guardian_id: null,
+            final_amount: 150,
+            original_amount: 150,
+            net_amount_at_sale: 150,
+            returned_amount: 0,
+            status: 'paid',
+            deleted_at: null,
+          },
+        ],
+        hub_receivable_lines: [
+          productLine({
+            id: LINE_ID,
+            line_total: 100,
+            quantity: 1,
+            description: 'Antipulgas QA',
+          }),
+          productLine({
+            id: LINE_ID_2,
+            hub_inventory_item_id: ITEM_ID_2,
+            hub_inventory_lot_id: LOT_ID_2,
+            line_total: 50,
+            quantity: 1,
+            description: 'Shampoo QA',
+          }),
+        ],
+        hub_payments: [
+          {
+            id: PAYMENT_ID,
+            clinic_id: TEST_CLINIC_ID,
+            receivable_id: RECEIVABLE_ID,
+            amount: 150,
+            payment_method: 'cash',
+            status: 'posted',
+            posting_kind: 'operational',
+            cash_session_id: SESSION_ID,
+          },
+        ],
+        hub_cash_sessions: [
+          {
+            id: SESSION_ID,
+            clinic_id: TEST_CLINIC_ID,
+            unit_id: TEST_UNIT_ID,
+            status: 'open',
+            opening_balance: 150,
+          },
+        ],
+        hub_stock_movements: [
+          {
+            id: '99999999-9999-4999-8999-999999999911',
+            clinic_id: TEST_CLINIC_ID,
+            item_id: ITEM_ID,
+            lot_id: LOT_ID,
+            movement_type: 'sale_out',
+            qty: 1,
+            reference_type: 'hub_receivable_line',
+            reference_id: LINE_ID,
+          },
+          {
+            id: '99999999-9999-4999-8999-999999999912',
+            clinic_id: TEST_CLINIC_ID,
+            item_id: ITEM_ID_2,
+            lot_id: LOT_ID_2,
+            movement_type: 'sale_out',
+            qty: 1,
+            reference_type: 'hub_receivable_line',
+            reference_id: LINE_ID_2,
+          },
+        ],
+      }),
+    });
+
+    const res = await request(app).post(`/api/hub/finance/receivables/${RECEIVABLE_ID}/product-returns`).send({
+      clinic_id: TEST_CLINIC_ID,
+      reason: 'QA Grok EtapaA devolução total',
+      stock_return_condition: 'sellable',
+      stock_return_lines: [{ line_id: LINE_ID }, { line_id: LINE_ID_2 }],
+      refund_method: 'cash',
+      refund_effective_date: '2026-11-26',
+      idempotency_key: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa10',
+    });
+    expect(res.status).toBe(200);
+    expect(res.body.refund_amount).toBe(150);
+    const pay = getMockSupabaseClient()._state.tables.hub_payments?.find((p) => p.id === PAYMENT_ID);
+    expect(pay?.status).toBe('reversed');
+    const withdrawals = (getMockSupabaseClient()._state.tables.hub_cash_movements ?? []).filter(
+      (m) => m.movement_type === 'withdrawal',
+    );
+    expect(withdrawals).toHaveLength(0);
+  });
+
+  it('cash: devolução parcial cria Sangria; sucessiva que zera remove Sangria e reverte payment', async () => {
+    const SESSION_ID = '55555555-5555-4555-8555-555555555502';
+    configureSupabaseMock({
+      tables: baseTables({
+        hub_receivables: [
+          {
+            id: RECEIVABLE_ID,
+            clinic_id: TEST_CLINIC_ID,
+            unit_id: TEST_UNIT_ID,
+            comanda_id: null,
+            guardian_id: null,
+            final_amount: 150,
+            original_amount: 150,
+            net_amount_at_sale: 150,
+            returned_amount: 0,
+            status: 'paid',
+            deleted_at: null,
+          },
+        ],
+        hub_receivable_lines: [
+          productLine({
+            id: LINE_ID,
+            line_total: 100,
+            quantity: 1,
+            description: 'Antipulgas QA',
+          }),
+          productLine({
+            id: LINE_ID_2,
+            hub_inventory_item_id: ITEM_ID_2,
+            hub_inventory_lot_id: LOT_ID_2,
+            line_total: 50,
+            quantity: 1,
+            description: 'Shampoo QA',
+          }),
+        ],
+        hub_payments: [
+          {
+            id: PAYMENT_ID,
+            clinic_id: TEST_CLINIC_ID,
+            receivable_id: RECEIVABLE_ID,
+            amount: 150,
+            payment_method: 'cash',
+            status: 'posted',
+            posting_kind: 'operational',
+            cash_session_id: SESSION_ID,
+          },
+        ],
+        hub_cash_sessions: [
+          {
+            id: SESSION_ID,
+            clinic_id: TEST_CLINIC_ID,
+            unit_id: TEST_UNIT_ID,
+            status: 'open',
+            opening_balance: 150,
+          },
+        ],
+        hub_stock_movements: [
+          {
+            id: '99999999-9999-4999-8999-999999999921',
+            clinic_id: TEST_CLINIC_ID,
+            item_id: ITEM_ID,
+            lot_id: LOT_ID,
+            movement_type: 'sale_out',
+            qty: 1,
+            reference_type: 'hub_receivable_line',
+            reference_id: LINE_ID,
+          },
+          {
+            id: '99999999-9999-4999-8999-999999999922',
+            clinic_id: TEST_CLINIC_ID,
+            item_id: ITEM_ID_2,
+            lot_id: LOT_ID_2,
+            movement_type: 'sale_out',
+            qty: 1,
+            reference_type: 'hub_receivable_line',
+            reference_id: LINE_ID_2,
+          },
+        ],
+      }),
+    });
+
+    const partial = await request(app)
+      .post(`/api/hub/finance/receivables/${RECEIVABLE_ID}/product-returns`)
+      .send({
+        clinic_id: TEST_CLINIC_ID,
+        reason: 'QA Grok EtapaA devolução parcial',
+        stock_return_condition: 'sellable',
+        stock_return_lines: [{ line_id: LINE_ID }],
+        refund_method: 'cash',
+        refund_effective_date: '2026-11-26',
+        idempotency_key: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa11',
+      });
+    expect(partial.status).toBe(200);
+    expect(partial.body.refund_amount).toBe(100);
+    let withdrawals = (getMockSupabaseClient()._state.tables.hub_cash_movements ?? []).filter(
+      (m) => m.movement_type === 'withdrawal',
+    );
+    expect(withdrawals).toHaveLength(1);
+    expect(Number(withdrawals[0].amount)).toBe(100);
+    expect(withdrawals[0].financial_adjustment_id).toBeTruthy();
+    let pay = getMockSupabaseClient()._state.tables.hub_payments?.find((p) => p.id === PAYMENT_ID);
+    expect(pay?.status).toBe('posted');
+
+    const full = await request(app)
+      .post(`/api/hub/finance/receivables/${RECEIVABLE_ID}/product-returns`)
+      .send({
+        clinic_id: TEST_CLINIC_ID,
+        reason: 'QA Grok EtapaA sucessiva',
+        stock_return_condition: 'sellable',
+        stock_return_lines: [{ line_id: LINE_ID_2 }],
+        refund_method: 'cash',
+        refund_effective_date: '2026-11-26',
+        idempotency_key: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaa12',
+      });
+    expect(full.status).toBe(200);
+    expect(full.body.refund_amount).toBe(50);
+    pay = getMockSupabaseClient()._state.tables.hub_payments?.find((p) => p.id === PAYMENT_ID);
+    expect(pay?.status).toBe('reversed');
+    withdrawals = (getMockSupabaseClient()._state.tables.hub_cash_movements ?? []).filter(
+      (m) => m.movement_type === 'withdrawal',
+    );
+    expect(withdrawals).toHaveLength(0);
+  });
+
   it('endpoint product-returns com pagamento posted reembolsa só o item selecionado', async () => {
     configureSupabaseMock({
       tables: baseTables({

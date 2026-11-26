@@ -1072,25 +1072,31 @@ async function returnReceivableProductLinesTsFallback(opts: {
         throw e;
       }
     } else if (opts.refundMethod === 'cash' && rec.unit_id) {
-      const { data: openSession } = await supabaseAdmin
-        .from('hub_cash_sessions')
-        .select('id')
-        .eq('clinic_id', opts.clinicId)
-        .eq('unit_id', rec.unit_id as string)
-        .eq('status', 'open')
-        .maybeSingle();
-      if (openSession?.id) {
-        await supabaseAdmin.from('hub_cash_movements').insert({
-          clinic_id: opts.clinicId,
-          cash_session_id: openSession.id,
-          movement_type: 'withdrawal',
-          amount: snap.financialRefundNow,
-          notes: `Reembolso devolução de produto: ${reason}`,
-          created_by_user_id: opts.userId,
-        });
-      } else {
-        warning =
-          'Reembolso em dinheiro registrado sem sessão de caixa aberta — ajuste a gaveta manualmente se necessário.';
+      // Sangria só na devolução parcial (payment cash continua posted).
+      // Se a venda zera, o reverse do payment já remove o cash_in — withdrawal
+      // aqui descontaria em dobro na gaveta (entrada some + Sangria −valor).
+      if (snap.finalAmountAfter > 0.009) {
+        const { data: openSession } = await supabaseAdmin
+          .from('hub_cash_sessions')
+          .select('id')
+          .eq('clinic_id', opts.clinicId)
+          .eq('unit_id', rec.unit_id as string)
+          .eq('status', 'open')
+          .maybeSingle();
+        if (openSession?.id) {
+          await supabaseAdmin.from('hub_cash_movements').insert({
+            clinic_id: opts.clinicId,
+            cash_session_id: openSession.id,
+            movement_type: 'withdrawal',
+            amount: snap.financialRefundNow,
+            notes: `Reembolso devolução de produto: ${reason}`,
+            created_by_user_id: opts.userId,
+            financial_adjustment_id: adjustmentId,
+          });
+        } else {
+          warning =
+            'Reembolso em dinheiro registrado sem sessão de caixa aberta — ajuste a gaveta manualmente se necessário.';
+        }
       }
     }
   }
@@ -1119,11 +1125,15 @@ async function returnReceivableProductLinesTsFallback(opts: {
   if (snap.finalAmountAfter <= 0.009 && posted > 0.009) {
     const { data: postedPays } = await supabaseAdmin
       .from('hub_payments')
-      .select('id')
+      .select('id, payment_method, cash_session_id')
       .eq('receivable_id', opts.receivableId)
       .eq('status', 'posted');
     const now = new Date().toISOString();
+    const cashSessionIds = new Set<string>();
     for (const pay of postedPays ?? []) {
+      if (String(pay.payment_method) === 'cash' && pay.cash_session_id) {
+        cashSessionIds.add(String(pay.cash_session_id));
+      }
       await supabaseAdmin
         .from('hub_payments')
         .update({
@@ -1135,6 +1145,47 @@ async function returnReceivableProductLinesTsFallback(opts: {
           reversal_adjustment_id: adjustmentId,
         })
         .eq('id', pay.id);
+    }
+
+    // Anula sangrias de reembolso cash de devoluções parciais anteriores —
+    // o reverse do payment já tirou o valor de Entradas (anti double-count).
+    const { data: cashRefundAdjs } = await supabaseAdmin
+      .from('hub_financial_adjustments')
+      .select('id, amount')
+      .eq('clinic_id', opts.clinicId)
+      .eq('receivable_id', opts.receivableId)
+      .eq('adjustment_type', 'refund')
+      .eq('refund_method', 'cash')
+      .is('payment_id', null);
+    const adjIds = (cashRefundAdjs ?? []).map((a) => String(a.id));
+    const adjAmounts = new Set(
+      (cashRefundAdjs ?? []).map((a) => round2Ledger(Number(a.amount ?? 0))),
+    );
+    if (adjIds.length) {
+      const { data: linkedMovs } = await supabaseAdmin
+        .from('hub_cash_movements')
+        .select('id')
+        .eq('clinic_id', opts.clinicId)
+        .eq('movement_type', 'withdrawal')
+        .in('financial_adjustment_id', adjIds);
+      for (const mov of linkedMovs ?? []) {
+        await supabaseAdmin.from('hub_cash_movements').delete().eq('id', mov.id);
+      }
+    }
+    if (cashSessionIds.size && adjAmounts.size) {
+      const { data: legacyMovs } = await supabaseAdmin
+        .from('hub_cash_movements')
+        .select('id, amount, notes, financial_adjustment_id, cash_session_id')
+        .eq('clinic_id', opts.clinicId)
+        .eq('movement_type', 'withdrawal')
+        .in('cash_session_id', [...cashSessionIds]);
+      for (const mov of legacyMovs ?? []) {
+        if (mov.financial_adjustment_id) continue;
+        const notes = String(mov.notes ?? '');
+        if (!notes.startsWith('Reembolso devolução de produto:')) continue;
+        if (!adjAmounts.has(round2Ledger(Number(mov.amount ?? 0)))) continue;
+        await supabaseAdmin.from('hub_cash_movements').delete().eq('id', mov.id);
+      }
     }
   }
 
