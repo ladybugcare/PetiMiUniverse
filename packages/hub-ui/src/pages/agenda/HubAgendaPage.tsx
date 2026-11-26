@@ -26,6 +26,7 @@ import { AppointmentSidePanel } from './AppointmentSidePanel';
 import { NewAppointmentModal } from './NewAppointmentModal';
 import type { CreateHubAppointmentResult, NewAppointmentInitial } from './NewAppointmentModal';
 import { SERVICE_GROUP_OPTIONS } from '../../utils/serviceTypeSlug';
+import { unitOperationalLabel } from '../../utils/unitDisplayLabel';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
 import './hub-agenda-page.css';
@@ -239,7 +240,10 @@ const HubAgendaPage: React.FC = () => {
   const [rawList, setRawList] = useState<AgendaAppointment[]>([]);
   const [reloadToken, setReloadToken] = useState(0);
   const [pollTick, setPollTick] = useState(0);
-  const [clinicUnits, setClinicUnits] = useState<{ id: string; name: string }[]>([]);
+  const [clinicUnits, setClinicUnits] = useState<
+    { id: string; name: string; nickname?: string | null; is_main?: boolean }[]
+  >([]);
+  const [clinicName, setClinicName] = useState('');
   const [staffOptions, setStaffOptions] = useState<{ id: string; name: string; role: string; hasLogin: boolean }[]>([]);
   const [fullStaff, setFullStaff] = useState<HubStaffMember[]>([]);
   const [serviceTypes, setServiceTypes] = useState<{ id: string; name: string }[]>([]);
@@ -280,7 +284,16 @@ const HubAgendaPage: React.FC = () => {
     }
   }, [density]);
 
-  const allAppointments = rawList;
+  const allAppointments = useMemo(() => {
+    if (!clinicUnits.length) return rawList;
+    return rawList.map((a) => {
+      if (!a.unitId) return a;
+      const u = clinicUnits.find((x) => x.id === a.unitId);
+      if (!u) return a;
+      const label = unitOperationalLabel(u, clinicName, clinicUnits.length);
+      return label === a.unitName ? a : { ...a, unitName: label };
+    });
+  }, [rawList, clinicUnits, clinicName]);
 
   const fullSvcTypesRef = useRef(fullSvcTypes);
   fullSvcTypesRef.current = fullSvcTypes;
@@ -756,13 +769,22 @@ const HubAgendaPage: React.FC = () => {
     let cancelled = false;
     (async () => {
       try {
-        const r = (await apiRequest(
-          `/units/clinic/${encodeURIComponent(clinicId)}?activeOnly=true`,
-        )) as { units?: { id: string; name: string }[] };
+        const [unitsRes, clinicRes] = await Promise.all([
+          apiRequest(`/units/clinic/${encodeURIComponent(clinicId)}?activeOnly=true`) as Promise<{
+            units?: { id: string; name: string; nickname?: string | null; is_main?: boolean }[];
+          }>,
+          apiRequest(`/clinics/${encodeURIComponent(clinicId)}`) as Promise<{
+            clinic?: { name?: string | null };
+          }>,
+        ]);
         if (cancelled) return;
-        setClinicUnits(r.units ?? []);
+        setClinicUnits(unitsRes.units ?? []);
+        setClinicName(clinicRes?.clinic?.name?.trim() || '');
       } catch {
-        if (!cancelled) setClinicUnits([]);
+        if (!cancelled) {
+          setClinicUnits([]);
+          setClinicName('');
+        }
       }
     })();
     return () => {
@@ -929,7 +951,10 @@ const HubAgendaPage: React.FC = () => {
   const unitComboOptions = useMemo((): HubComboboxOption[] => {
     const rows: HubComboboxOption[] = [{ value: 'all', label: 'Todas' }];
     for (const u of clinicUnits) {
-      rows.push({ value: u.id, label: u.name });
+      rows.push({
+        value: u.id,
+        label: unitOperationalLabel(u, clinicName, clinicUnits.length),
+      });
     }
     rows.push({ value: '__partner__', label: 'Clínica parceira' });
     if (unitFilter !== 'all' && !rows.some((o) => o.value === unitFilter)) {
@@ -940,7 +965,7 @@ const HubAgendaPage: React.FC = () => {
       });
     }
     return rows;
-  }, [clinicUnits, unitFilter, allAppointments]);
+  }, [clinicUnits, clinicName, unitFilter, allAppointments]);
 
   useEffect(() => {
     if (!clinicId) {
@@ -1292,7 +1317,9 @@ const HubAgendaPage: React.FC = () => {
         subtitle: 'Grupo de serviço',
       }));
     }
-    const unitNameById = new Map(clinicUnits.map((u) => [u.id, u.name]));
+    const unitNameById = new Map(
+      clinicUnits.map((u) => [u.id, unitOperationalLabel(u, clinicName, clinicUnits.length)]),
+    );
     if (visibleCatalogResources.length > 0) {
       const cols = visibleCatalogResources.map((r) => {
         const unitName = unitNameById.get(r.unit_id);
@@ -1334,6 +1361,7 @@ const HubAgendaPage: React.FC = () => {
     visibleCatalogResources,
     unitFilter,
     clinicUnits,
+    clinicName,
     groupFilter,
   ]);
 
