@@ -19,6 +19,9 @@ import {
   parseMoney,
   type ComandaItemDraft,
 } from './comandaItemDraft';
+import { isValidBrTaxId } from '../../utils/formatBrTaxId';
+import { isValidBrPhone } from '../../utils/formatBrPhone';
+import { normalizeProductQtyInput } from './quickSaleQty';
 import '../clientes/clientes.css';
 import './hub-finance-page.css';
 
@@ -69,6 +72,39 @@ function pickLotWithStock(lots: HubInventoryLotRow[], itemId: string): HubInvent
     lots.find((l) => l.item_id === itemId && Number(l.qty_on_hand ?? 0) > 0) ??
     lots.find((l) => l.item_id === itemId)
   );
+}
+
+function lotOnHand(lots: HubInventoryLotRow[], lotId: string | null | undefined): number {
+  if (!lotId) return 0;
+  const lot = lots.find((l) => l.id === lotId);
+  return Number(lot?.qty_on_hand ?? 0);
+}
+
+function stockIssueForItems(
+  items: ComandaItemDraft[],
+  lots: HubInventoryLotRow[],
+  inventory: HubInventoryItem[],
+): string | null {
+  for (const it of items) {
+    if (it.item_kind !== 'product') continue;
+    const inv = it.hub_inventory_item_id
+      ? inventory.find((p) => p.id === it.hub_inventory_item_id)
+      : undefined;
+    const allowFractional = Boolean(inv?.allow_fractional);
+    const onHand = lotOnHand(lots, it.hub_inventory_lot_id);
+    const parsed = normalizeProductQtyInput(it.quantity, onHand, allowFractional);
+    const label = it.description.trim() || inv?.name || 'produto';
+    if (parsed.invalid) {
+      return allowFractional
+        ? `Quantidade inválida (${label}).`
+        : `Quantidade inválida — use um número inteiro (${label}).`;
+    }
+    const qty = parseMoney(parsed.quantity);
+    if (qty > onHand) {
+      return `Quantidade insuficiente no lote (disponível: ${onHand}). (produto: ${label})`;
+    }
+  }
+  return null;
 }
 
 export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpened, onCheckout }) => {
@@ -245,7 +281,30 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
     setItems((prev) =>
       prev.map((it, i) => {
         if (i !== idx) return it;
-        const next = { ...it, ...patch };
+        let next = { ...it, ...patch };
+        if (patch.quantity !== undefined && next.item_kind === 'product') {
+          const inv = next.hub_inventory_item_id
+            ? inventoryItemsRef.current.find((p) => p.id === next.hub_inventory_item_id)
+            : undefined;
+          const onHand = lotOnHand(inventoryLotsRef.current, next.hub_inventory_lot_id);
+          const norm = normalizeProductQtyInput(
+            patch.quantity,
+            onHand,
+            Boolean(inv?.allow_fractional),
+          );
+          if (norm.invalid) {
+            // Mantém digitação parcial (ex.: campo vazio enquanto edita); bloqueio no cobrança.
+            next = { ...next, quantity: patch.quantity };
+          } else {
+            if (norm.capped) {
+              setScanFeedback({
+                tone: 'err',
+                text: `${next.description || inv?.name || 'Produto'}: máximo ${onHand} no lote`,
+              });
+            }
+            next = { ...next, quantity: norm.quantity };
+          }
+        }
         next.line_total = computeLineTotal(next);
         return next;
       }),
@@ -260,7 +319,18 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
     setItems((prev) =>
       prev.map((it, i) => {
         if (i !== idx) return it;
-        const nextQty = Math.max(1, parseMoney(it.quantity) + delta);
+        const current = parseMoney(it.quantity);
+        let nextQty = Math.max(1, current + delta);
+        if (it.item_kind === 'product' && delta > 0) {
+          const onHand = lotOnHand(inventoryLotsRef.current, it.hub_inventory_lot_id);
+          if (onHand > 0 && nextQty > onHand) {
+            nextQty = onHand;
+            setScanFeedback({
+              tone: 'err',
+              text: `${it.description || 'Produto'}: máximo ${onHand} no lote`,
+            });
+          }
+        }
         const next = { ...it, quantity: String(nextQty) };
         next.line_total = computeLineTotal(next);
         return next;
@@ -286,11 +356,13 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
 
   const addOrIncrementProduct = useCallback((inv: HubInventoryItem, lots: HubInventoryLotRow[]) => {
     const lot = pickLotWithStock(lots, inv.id);
-    const onHand = Number(inv.qty_on_hand ?? lot?.qty_on_hand ?? 0);
+    const onHand = Number(lot?.qty_on_hand ?? inv.qty_on_hand ?? 0);
     if (onHand <= 0 || !lot) {
       setScanFeedback({ tone: 'err', text: `${inv.name}: sem estoque disponível` });
       return false;
     }
+
+    let outcome: 'added' | 'capped' = 'added';
     setItems((prev) => {
       const existingIdx = prev.findIndex(
         (it) =>
@@ -299,12 +371,16 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
           (it.hub_inventory_lot_id === lot.id || !it.hub_inventory_lot_id),
       );
       if (existingIdx >= 0) {
+        const current = parseMoney(prev[existingIdx].quantity);
+        if (current >= onHand) {
+          outcome = 'capped';
+          return prev;
+        }
         return prev.map((it, i) => {
           if (i !== existingIdx) return it;
-          const qty = parseMoney(it.quantity) + 1;
           const next = {
             ...it,
-            quantity: String(qty),
+            quantity: String(current + 1),
             hub_inventory_lot_id: it.hub_inventory_lot_id || lot.id,
           };
           next.line_total = computeLineTotal(next);
@@ -324,6 +400,11 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
       draft.line_total = computeLineTotal(draft);
       return [...prev, draft];
     });
+
+    if (outcome === 'capped') {
+      setScanFeedback({ tone: 'err', text: `${inv.name}: máximo ${onHand} no lote` });
+      return false;
+    }
     setScanFeedback({ tone: 'ok', text: `${inv.name} adicionado` });
     return true;
   }, []);
@@ -373,12 +454,24 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
       setCreateError('Informe o nome do tutor.');
       return;
     }
+    if (fullName.trim().length > 200) {
+      setCreateError('Nome deve ter no máximo 200 caracteres.');
+      return;
+    }
     if (!phone.trim()) {
       setCreateError('Informe o telefone.');
       return;
     }
+    if (!isValidBrPhone(phone)) {
+      setCreateError('Telefone inválido (use DDD + número).');
+      return;
+    }
     if (!taxId.trim()) {
       setCreateError('Informe o CPF.');
+      return;
+    }
+    if (!isValidBrTaxId(taxId)) {
+      setCreateError('CPF/CNPJ inválido.');
       return;
     }
 
@@ -423,31 +516,51 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
     if (readyItems.length === 0) throw new Error('Adicione ao menos um produto ou serviço.');
     if (productMissingLot) throw new Error('Selecione o lote de cada produto.');
 
-    const detail = await hubComandaApi.openComanda({
-      clinic_id: clinicId,
-      origin_type: 'manual',
-      guardian_id: guardianId || null,
-      pet_id: petId || null,
-      unit_id: unitId,
-      manual_lines: [],
-    });
-    const comandaId = (detail.comanda as Record<string, unknown>).id as string;
-    await hubComandaApi.addItems(comandaId, {
-      clinic_id: clinicId,
-      edit_context: 'caixa',
-      items: readyItems.map((it) => ({
+    const stockIssue = stockIssueForItems(readyItems, inventoryLots, inventoryItems);
+    if (stockIssue) throw new Error(stockIssue);
+
+    let comandaId: string | null = null;
+    try {
+      const detail = await hubComandaApi.openComanda({
+        clinic_id: clinicId,
+        origin_type: 'manual',
+        guardian_id: guardianId || null,
         pet_id: petId || null,
-        hub_service_type_id: it.hub_service_type_id,
-        hub_inventory_item_id: it.hub_inventory_item_id,
-        hub_inventory_lot_id: it.hub_inventory_lot_id,
-        description: it.description.trim(),
-        quantity: parseMoney(it.quantity),
-        unit_amount: parseMoney(it.unit_amount),
-        discount_amount: parseMoney(it.discount_amount),
-        item_kind: it.item_kind,
-      })),
-    });
-    return comandaId;
+        unit_id: unitId,
+        manual_lines: [],
+      });
+      comandaId = (detail.comanda as Record<string, unknown>).id as string;
+      await hubComandaApi.addItems(comandaId, {
+        clinic_id: clinicId,
+        edit_context: 'caixa',
+        items: readyItems.map((it) => ({
+          pet_id: petId || null,
+          hub_service_type_id: it.hub_service_type_id,
+          hub_inventory_item_id: it.hub_inventory_item_id,
+          hub_inventory_lot_id: it.hub_inventory_lot_id,
+          description: it.description.trim(),
+          quantity: parseMoney(it.quantity),
+          unit_amount: parseMoney(it.unit_amount),
+          discount_amount: parseMoney(it.discount_amount),
+          item_kind: it.item_kind,
+        })),
+      });
+      return comandaId;
+    } catch (e) {
+      if (comandaId) {
+        try {
+          await hubComandaApi.checkout(comandaId, {
+            clinic_id: clinicId,
+            grouping: 'all',
+            action: 'cancel',
+            waive_reason: 'Venda rápida: falha ao montar itens (comanda cancelada automaticamente)',
+          });
+        } catch (cancelErr) {
+          console.warn('[QuickSale] falha ao cancelar comanda órfã', cancelErr);
+        }
+      }
+      throw e;
+    }
   };
 
   const handleCheckout = async () => {

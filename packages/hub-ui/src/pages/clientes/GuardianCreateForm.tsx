@@ -6,6 +6,7 @@ import { HubBrPhoneInput } from '../../components/HubBrPhoneInput';
 import { HubBrTaxIdInput } from '../../components/HubBrTaxIdInput';
 import { formatBrPhoneFromApi } from '../../utils/formatBrPhone';
 import { formatBrTaxIdFromApi } from '../../utils/formatBrTaxId';
+import { requiredFieldPtProps } from '../../utils/requiredFieldPt';
 import { brDateToIso, isoDateToBr } from './formatters';
 
 export type GuardianFormValues = {
@@ -153,8 +154,9 @@ export const GuardianCreateForm: React.FC<GuardianCreateFormProps> = ({
           className="hub-clientes__input"
           value={value.full_name}
           onChange={(e) => patch({ full_name: e.target.value })}
-          required
+          maxLength={200}
           placeholder={isCompany ? 'Nome da empresa' : 'Nome completo'}
+          {...requiredFieldPtProps('Informe o nome.')}
         />
       </div>
 
@@ -164,7 +166,7 @@ export const GuardianCreateForm: React.FC<GuardianCreateFormProps> = ({
           className="hub-clientes__input"
           value={value.phone}
           onChange={(phone) => patch({ phone })}
-          required
+          {...requiredFieldPtProps('Informe o telefone.')}
         />
       </div>
 
@@ -205,8 +207,8 @@ export const GuardianCreateForm: React.FC<GuardianCreateFormProps> = ({
           value={value.tax_id}
           onChange={(tax_id) => patch({ tax_id })}
           placeholder="000.000.000-00"
-          required
           aria-required
+          {...requiredFieldPtProps('Informe o CPF/CNPJ.')}
         />
       </div>
 

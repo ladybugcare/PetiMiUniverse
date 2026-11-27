@@ -70,8 +70,13 @@ import {
   restoreHubCustomerCredit,
 } from './hubCustomerCredit';
 import type { HubQuotePricingVariantInput } from './hubPricingResolve';
-import { buildCommissionInsertFieldsForItems, snapshotToInsertFields } from './hubCommissionAccrual';
+import {
+  assertServiceLinesHaveExecutor,
+  buildCommissionInsertFieldsForItems,
+  snapshotToInsertFields,
+} from './hubCommissionAccrual';
 import { resolveStaffIdForUser } from './hubStaffResolve';
+import { isAppointmentPendingPeriodicSeriesInvoice } from './hubSeriesBillingService';
 import {
   isFinancialCancelWithoutReturn,
   receivableBillsComandaItem,
@@ -1258,6 +1263,80 @@ const APPOINTMENT_STATUSES_OPEN_FOR_COMANDA = new Set([
   'paid',
 ]);
 
+/** Agendamentos com comanda ativa (não cancelada) na origem `appointment`. */
+async function appointmentIdsWithActiveComanda(
+  clinicId: string,
+  appointmentIds: string[],
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!appointmentIds.length) return out;
+  const { data, error } = await supabaseAdmin
+    .from('hub_comandas')
+    .select('origin_id')
+    .eq('clinic_id', clinicId)
+    .eq('origin_type', 'appointment')
+    .neq('status', 'cancelada')
+    .is('deleted_at', null)
+    .in('origin_id', appointmentIds);
+  if (error) throw new Error(error.message);
+  for (const row of data ?? []) {
+    const oid = row.origin_id as string | null;
+    if (oid) out.add(oid);
+  }
+  return out;
+}
+
+type ComandaSnapshotCore = {
+  items: Omit<ComandaItemInsert, 'clinic_id' | 'comanda_id'>[];
+  subtotal: number;
+  unit_id: string | null;
+  guardian_id: string;
+  pet_id: string | null;
+};
+
+/**
+ * Inclui serviços das pernas `pickup_route` filhas na comanda do ancestral (pai ou bloco).
+ * Não inclui perna que já tenha comanda própria (anti-duplicata).
+ */
+async function appendAttachedPickupLegsToComandaSnapshot(
+  clinicId: string,
+  parentAppointmentId: string,
+  snapshot: ComandaSnapshotCore,
+): Promise<ComandaSnapshotCore> {
+  const { data: legs, error } = await supabaseAdmin
+    .from('hub_appointments')
+    .select('id, status')
+    .eq('clinic_id', clinicId)
+    .eq('parent_appointment_id', parentAppointmentId)
+    .eq('appointment_kind', 'pickup_route')
+    .is('deleted_at', null);
+  if (error) throw new Error(error.message);
+
+  const candidateIds: string[] = [];
+  for (const leg of legs ?? []) {
+    const st = String((leg as { status?: string }).status ?? '');
+    if (st === 'cancelled' || st === 'no_show') continue;
+    candidateIds.push((leg as { id: string }).id);
+  }
+  if (candidateIds.length === 0) return snapshot;
+
+  const withOwnComanda = await appointmentIdsWithActiveComanda(clinicId, candidateIds);
+  const items = [...snapshot.items];
+  let subtotal = snapshot.subtotal;
+  let sortBase = items.length;
+
+  for (const legId of candidateIds) {
+    if (withOwnComanda.has(legId)) continue;
+    const legBuilt = await sumAppointmentServicesSaleForComanda(legId, snapshot.pet_id);
+    for (const it of legBuilt.items) {
+      items.push({ ...it, sort_order: sortBase++ });
+    }
+    subtotal = round2(subtotal + legBuilt.subtotal);
+  }
+
+  return { ...snapshot, items, subtotal };
+}
+
 async function buildComandaItemsFromAppointment(
   clinicId: string,
   appointmentId: string,
@@ -1288,8 +1367,17 @@ async function buildComandaItemsFromAppointment(
   const petId = (appt.pet_id as string | null) ?? null;
 
   const built = await sumAppointmentServicesSaleForComanda(appointmentId, petId);
-  if (built.items.length === 0) {
-    built.items.push({
+  let snapshot: ComandaSnapshotCore = {
+    items: built.items,
+    subtotal: built.subtotal,
+    unit_id: (appt.unit_id as string) ?? null,
+    guardian_id: guardianId,
+    pet_id: petId,
+  };
+  snapshot = await appendAttachedPickupLegsToComandaSnapshot(clinicId, appointmentId, snapshot);
+
+  if (snapshot.items.length === 0) {
+    snapshot.items.push({
       pet_id: petId,
       item_kind: 'fee',
       hub_service_type_id: null,
@@ -1310,7 +1398,7 @@ async function buildComandaItemsFromAppointment(
   const applied = await autoApplyEligiblePackagesToItems({
     clinicId,
     guardianId,
-    items: built.items,
+    items: snapshot.items,
     resolvePricingVariant: async (item) => {
       if (item.origin_type === 'appointment_service' && item.origin_id) {
         const { data: svc } = await supabaseAdmin
@@ -1342,11 +1430,11 @@ async function buildComandaItemsFromAppointment(
   });
 
   return {
-    items: built.items,
-    subtotal: applied.appliedCount > 0 ? applied.subtotal : built.subtotal,
-    unit_id: (appt.unit_id as string) ?? null,
-    guardian_id: guardianId,
-    pet_id: petId,
+    items: snapshot.items,
+    subtotal: applied.appliedCount > 0 ? applied.subtotal : snapshot.subtotal,
+    unit_id: snapshot.unit_id,
+    guardian_id: snapshot.guardian_id,
+    pet_id: snapshot.pet_id,
   };
 }
 
@@ -2349,10 +2437,12 @@ async function buildDesiredComandaSnapshot(
       : await findLatestEncounterIdForAppointment(clinicId, oid, { anyOpen: true });
     const encId = completedEncId ?? openEncId;
     if (encId) {
-      const encBuilt = await buildComandaItemsFromEncounter(clinicId, encId, {
+      let encBuilt = await buildComandaItemsFromEncounter(clinicId, encId, {
         allowIncomplete: !completedEncId,
       });
-      return appendGroomingExtrasToAppointmentSnapshot(clinicId, oid, encBuilt);
+      encBuilt = await appendGroomingExtrasToAppointmentSnapshot(clinicId, oid, encBuilt);
+      // Encounter não carrega L&T; pernas anexadas entram na comanda do appointment pai/bloco.
+      return appendAttachedPickupLegsToComandaSnapshot(clinicId, oid, encBuilt);
     }
 
     let snapshot = await buildComandaItemsFromAppointment(clinicId, oid, { allowIncompleteStatus: true });
@@ -2556,6 +2646,10 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
     // Hotel/Creche: com reserva cobrável (ativa ou checked_out), preferir boarding_reservation
     // e reutilizar comanda appointment já aberta quando existir.
     // Banho: com sessão ligada, preferir grooming_session (origem canônica) para colidir no unique index.
+    /** Agendamento original para trava de fatura em série (antes de remap boarding/grooming). */
+    let seriesGuardAppointmentId: string | null =
+      origin_type === 'appointment' ? effectiveOriginId : null;
+
     if (origin_type === 'appointment') {
       const existingApptOrLinked = await resolveExistingOpenComandaIdForOpen(
         clinic_id,
@@ -2583,6 +2677,31 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
           origin_type = 'grooming_session';
           effectiveOriginId = linkedSession;
         }
+      }
+    } else if (origin_type === 'grooming_session') {
+      const { data: sess } = await supabaseAdmin
+        .from('hub_grooming_sessions')
+        .select('hub_appointment_id')
+        .eq('id', effectiveOriginId)
+        .eq('clinic_id', clinic_id)
+        .maybeSingle();
+      seriesGuardAppointmentId =
+        ((sess as { hub_appointment_id?: string | null } | null)?.hub_appointment_id as string | null) ??
+        null;
+    }
+
+    if (seriesGuardAppointmentId) {
+      const seriesGuard = await isAppointmentPendingPeriodicSeriesInvoice(seriesGuardAppointmentId);
+      if (seriesGuard.seriesInvoiceComandaId) {
+        const detail = await getHubComandaDetailPayload(seriesGuard.seriesInvoiceComandaId, clinic_id);
+        return res.status(200).json(detail);
+      }
+      if (seriesGuard.pending) {
+        return res.status(409).json({
+          code: 'SERIES_PERIODIC_PENDING',
+          error:
+            'Esta ocorrência faz parte de uma série com fatura mensal. A cobrança será lançada na fatura da série, não no caixa do dia.',
+        });
       }
     }
 
@@ -3820,6 +3939,15 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'due_date obrigatório para deixar pendente' });
     }
 
+    const executorCheck = await assertServiceLinesHaveExecutor(clinic_id, items);
+    if (!executorCheck.ok) {
+      return res.status(409).json({
+        error: executorCheck.message,
+        code: 'COMMISSION_EXECUTOR_REQUIRED',
+        missing: executorCheck.missing,
+      });
+    }
+
     const itemById = new Map(items.map((it) => [it.id as string, it]));
 
     let groups: string[][] = [];
@@ -4390,6 +4518,16 @@ export async function leavePendingHandoffComanda(
         receivable_ids: [],
         skipped: true,
         error: 'Não há itens em aberto para enviar ao financeiro',
+      };
+    }
+
+    const executorCheck = await assertServiceLinesHaveExecutor(clinicId, items);
+    if (!executorCheck.ok) {
+      return {
+        comanda_id: comandaId,
+        receivable_ids: [],
+        error: executorCheck.message,
+        code: 'COMMISSION_EXECUTOR_REQUIRED',
       };
     }
 
@@ -5078,6 +5216,9 @@ export async function syncOpenComandasAfterAppointmentOperationalComplete(
   clinicId: string,
   appointmentId: string
 ): Promise<void> {
+  const seriesGuard = await isAppointmentPendingPeriodicSeriesInvoice(appointmentId);
+  // Série com fatura mensal pendente: não criar/sincronizar cobrança da ocorrência no dia.
+  if (seriesGuard.pending) return;
   const id = await findOpenComandaIdByOrigin(clinicId, 'appointment', appointmentId);
   if (!id) return;
   await syncAndTryAutoCloseComanda(clinicId, id);
@@ -5828,6 +5969,67 @@ async function recomputeComandaTotals(comandaId: string, clinicId: string): Prom
     .update({ subtotal_amount: sumAll, total_amount: total })
     .eq('id', comandaId)
     .eq('clinic_id', clinicId);
+}
+
+/**
+ * Após editar desconto de comanda `series_invoice`, alinha recebível pending e total da fatura.
+ * Rejeita se o novo total ficar abaixo do já pago.
+ */
+async function syncSeriesInvoiceTotalsAfterDiscount(
+  comandaId: string,
+  clinicId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const { data: comanda } = await supabaseAdmin
+    .from('hub_comandas')
+    .select('id, origin_type, origin_id, total_amount, discount_amount')
+    .eq('id', comandaId)
+    .eq('clinic_id', clinicId)
+    .maybeSingle();
+  if (!comanda || String(comanda.origin_type) !== 'series_invoice') {
+    return { ok: true };
+  }
+
+  const newTotal = round2(Number(comanda.total_amount ?? 0));
+  const { paid_total } = await computeComandaBalancePayload(comandaId, clinicId);
+  if (newTotal + 0.009 < paid_total) {
+    return {
+      ok: false,
+      error: `Desconto deixa o total (R$ ${newTotal.toFixed(2)}) abaixo do já pago (R$ ${paid_total.toFixed(2)}).`,
+    };
+  }
+
+  const { data: receivables } = await supabaseAdmin
+    .from('hub_receivables')
+    .select('id, status, original_amount, final_amount')
+    .eq('comanda_id', comandaId)
+    .eq('clinic_id', clinicId)
+    .eq('status', 'pending');
+
+  for (const rec of receivables ?? []) {
+    const patch: Record<string, unknown> = { final_amount: newTotal };
+    if (paid_total <= 0.009) {
+      patch.original_amount = newTotal;
+    }
+    const { error } = await supabaseAdmin
+      .from('hub_receivables')
+      .update(patch)
+      .eq('id', rec.id as string)
+      .eq('clinic_id', clinicId);
+    if (error) {
+      return { ok: false, error: error.message };
+    }
+  }
+
+  const invoiceId = comanda.origin_id as string | null;
+  if (invoiceId) {
+    await supabaseAdmin
+      .from('hub_series_invoices')
+      .update({ total_amount: newTotal })
+      .eq('id', invoiceId)
+      .eq('clinic_id', clinicId);
+  }
+
+  return { ok: true };
 }
 
 const addComandaItemsBodySchema = z
@@ -6621,6 +6823,15 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
 
         const guardianId = (detail.comanda as Record<string, unknown>).guardian_id as string;
         const subtotal = round2(items.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+        const bulkExecutorCheck = await assertServiceLinesHaveExecutor(clinic_id, items);
+        if (!bulkExecutorCheck.ok) {
+          results.push({
+            comanda_id: comandaId,
+            receivable_ids: [],
+            error: bulkExecutorCheck.message,
+          });
+          continue;
+        }
         const manualSourceId = randomUUID();
 
         const { data: rec, error: rErr } = await supabaseAdmin
@@ -6835,7 +7046,7 @@ export const patchHubComanda = async (req: Request, res: Response) => {
 
     const { data: comanda, error: cErr } = await supabaseAdmin
       .from('hub_comandas')
-      .select('id, status, clinic_id, finance_handoff_at')
+      .select('id, status, clinic_id, finance_handoff_at, origin_type, discount_amount')
       .eq('id', comandaId)
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
@@ -6877,6 +7088,8 @@ export const patchHubComanda = async (req: Request, res: Response) => {
       }
     }
 
+    const previousDiscount = Number((comanda as { discount_amount?: number }).discount_amount ?? 0);
+
     const patch: Record<string, unknown> = {};
     if (discount_amount !== undefined) patch.discount_amount = discount_amount;
     if (notes !== undefined) patch.notes = notes;
@@ -6895,6 +7108,16 @@ export const patchHubComanda = async (req: Request, res: Response) => {
 
     if (discount_amount !== undefined) {
       await recomputeComandaTotals(comandaId, clinic_id);
+      const sync = await syncSeriesInvoiceTotalsAfterDiscount(comandaId, clinic_id);
+      if (!sync.ok) {
+        await supabaseAdmin
+          .from('hub_comandas')
+          .update({ discount_amount: previousDiscount })
+          .eq('id', comandaId)
+          .eq('clinic_id', clinic_id);
+        await recomputeComandaTotals(comandaId, clinic_id);
+        return res.status(409).json({ error: sync.error });
+      }
     }
 
     const detail = await getHubComandaDetailPayload(comandaId, clinic_id);

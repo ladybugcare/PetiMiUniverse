@@ -30,6 +30,8 @@ import { formValuesToCreatePayload, formValuesToUpdatePayload } from './clientes
 import { hubQuotesApi, type HubQuote } from '../api/hubQuotesApi';
 import { quoteProspectToGuardianFormValues, prospectFromQuote } from './orcamentos/quoteToGuardianForm';
 import { clearManualQuoteConversion } from './orcamentos/quoteManualConversionStorage';
+import { isValidBrTaxId } from '../utils/formatBrTaxId';
+import { isValidBrPhone } from '../utils/formatBrPhone';
 
 type MainTab = 'tutores' | 'empresas';
 type PanelMode = 'create' | 'detail' | 'edit' | 'quote_review';
@@ -220,6 +222,7 @@ const HubGuardiansPage: React.FC = () => {
   }, [filteredRows, page, pageSize]);
 
   const openCreate = useCallback(() => {
+    if (!canWrite) return;
     setSelectedId(null);
     setPanelMode('create');
     setEditingId(null);
@@ -235,7 +238,7 @@ const HubGuardiansPage: React.FC = () => {
     } else {
       setForm({ ...emptyGuardianForm, client_kind: defaultKind });
     }
-  }, [fromQuoteId, quoteForConversion, mainTab]);
+  }, [canWrite, fromQuoteId, quoteForConversion, mainTab]);
 
   const selectGuardian = useCallback((g: HubGuardian) => {
     setSelectedId(g.id);
@@ -288,12 +291,24 @@ const HubGuardiansPage: React.FC = () => {
       showError('Nome é obrigatório');
       return;
     }
+    if (form.full_name.trim().length > 200) {
+      showError('Nome deve ter no máximo 200 caracteres');
+      return;
+    }
     if (!form.phone.trim()) {
       showError('Telefone é obrigatório');
       return;
     }
+    if (!isValidBrPhone(form.phone)) {
+      showError('Telefone inválido (use DDD + número)');
+      return;
+    }
     if (!form.tax_id.trim()) {
       showError('CPF/CNPJ é obrigatório');
+      return;
+    }
+    if (!isValidBrTaxId(form.tax_id)) {
+      showError('CPF/CNPJ inválido');
       return;
     }
     setSubmitting(true);
@@ -402,6 +417,7 @@ const HubGuardiansPage: React.FC = () => {
           careLocationFilter={careLocationFilter}
           onCareLocationFilterChange={setCareLocationFilter}
           onNewClient={openCreate}
+          canWrite={canWrite}
         />
 
         <HubRefreshingBanner show={refreshing} label="Atualizando lista…" />

@@ -2,6 +2,33 @@ import { roundMoney2 } from './hubServiceTypesPricingMatrix';
 
 export type PickupPriceScope = 'round_trip' | 'per_leg';
 
+/** Preferência da clínica para L&T em lote multi-pet. */
+export type MultipetPickupBilling = 'per_visit' | 'per_pet';
+
+/**
+ * Decide se este pet do lote deve receber pernas de L&T.
+ * Em `per_visit`, só o primeiro pet de cada dia de calendário (YYYY-MM-DD) leva o transporte;
+ * dias distintos no mesmo lote naturalmente cobram por pet.
+ */
+export function shouldAttachPickupInMultipetBatch(opts: {
+  billing: MultipetPickupBilling;
+  sharedHasPickup: boolean;
+  dayKey: string;
+  claimedDays: Set<string>;
+}): boolean {
+  const { billing, sharedHasPickup, dayKey, claimedDays } = opts;
+  if (!sharedHasPickup) return false;
+  if (billing === 'per_pet') return true;
+  if (claimedDays.has(dayKey)) return false;
+  claimedDays.add(dayKey);
+  return true;
+}
+
+/** Edição de série não deve regravar serviços de pernas de L&T. */
+export function shouldRewriteAppointmentServicesOnPatch(appointmentKind: string | null | undefined): boolean {
+  return String(appointmentKind ?? '') !== 'pickup_route';
+}
+
 /** Reparte um total comercial em duas linhas com soma exacta. */
 export function splitMoneyTotalAcrossTwoLegs(total: number): [number, number] {
   const a = roundMoney2(total / 2);

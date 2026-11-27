@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Copy, Ban, Receipt } from 'lucide-react';
+import { Copy, Ban, Receipt, UserX } from 'lucide-react';
 import type { AgendaStatus } from './agendaModel';
 
 export type PanelAction = {
@@ -13,6 +13,13 @@ export type PanelAction = {
 
 import type { OperationalModule } from './walkInUtils';
 import { operationalOpenLabel } from './walkInUtils';
+
+const NO_SHOW_ELIGIBLE: AgendaStatus[] = [
+  'pending_confirm',
+  'confirmed',
+  'checked_in',
+  'in_progress',
+];
 
 export function buildPanelActions(
   status: AgendaStatus,
@@ -29,6 +36,7 @@ export function buildPanelActions(
     onOpenInBoarding: () => void;
     onDuplicate: () => void;
     onCancel: () => void;
+    onNoShow: () => void;
   },
   operationalModule?: OperationalModule | null,
   canOpenComanda?: boolean,
@@ -49,6 +57,14 @@ export function buildPanelActions(
     variant: 'ghost',
     icon: <Ban size={16} />,
     onClick: handlers.onCancel,
+    disabled: !canWrite,
+  };
+  const noShow: PanelAction = {
+    key: 'no-show',
+    label: 'Marcar falta',
+    variant: 'ghost',
+    icon: <UserX size={16} />,
+    onClick: handlers.onNoShow,
     disabled: !canWrite,
   };
 
@@ -73,10 +89,11 @@ export function buildPanelActions(
         }
       : null;
 
-  /** Cancelar + Duplicar à vista (direita), nunca no menu ⋯. */
+  /** Falta (quando elegível) + Cancelar + Duplicar à vista (direita), nunca no menu ⋯. */
   const utilities = (extra: PanelAction[] = []): PanelAction[] => {
     if (!canWrite) return extra;
-    return [cancel, dup, ...extra];
+    const base = NO_SHOW_ELIGIBLE.includes(status) ? [noShow, cancel, dup] : [cancel, dup];
+    return [...base, ...extra];
   };
 
   const operationalPrimary: PanelAction | null =
@@ -157,6 +174,12 @@ export function buildPanelActions(
         utilities: [],
       };
     case 'cancelled':
+      return {
+        primary: canWrite ? { ...dup, variant: 'primary' as const, icon: undefined } : null,
+        comanda: null,
+        utilities: [],
+      };
+    case 'no_show':
       return {
         primary: canWrite ? { ...dup, variant: 'primary' as const, icon: undefined } : null,
         comanda: null,

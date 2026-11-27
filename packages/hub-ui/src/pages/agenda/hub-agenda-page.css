@@ -1395,6 +1395,10 @@
   background: #e8f5e9;
   color: #33691e;
 }
+.hub-agenda__pill--st-noshow {
+  background: #fff3e0;
+  color: #e65100;
+}
 
 /* —— Painel detalhe —— */
 .hub-agenda__panel-head {

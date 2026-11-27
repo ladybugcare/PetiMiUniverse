@@ -94,7 +94,10 @@ export const HubRelatoriosMyNoShows: React.FC<Props> = ({ clinicId, unitId, peri
           <div className="hub-servicos__metric-card__text">
             <div className="hub-servicos__metric-label">Suas faltas</div>
             <div className="hub-servicos__metric-value">{total.toLocaleString('pt-BR')}</div>
-            <div className="hub-servicos__metric-sub">Agendamentos sem evolução</div>
+            <div className="hub-servicos__metric-sub">
+              {(data?.summary.appointment_no_shows ?? 0).toLocaleString('pt-BR')} faltas ·{' '}
+              {(data?.summary.appointment_implied_no_shows ?? 0).toLocaleString('pt-BR')} implícitas
+            </div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>
             <UserMinus size={20} strokeWidth={2} />
@@ -129,7 +132,7 @@ export const HubRelatoriosMyNoShows: React.FC<Props> = ({ clinicId, unitId, peri
               Detalhe
             </h2>
             <p className="hub-relatorios__panel-sub">
-              Agendamentos seus que passaram do horário sem evolução
+              Faltas marcadas e agendamentos seus que passaram do horário sem evolução
             </p>
           </div>
         </div>

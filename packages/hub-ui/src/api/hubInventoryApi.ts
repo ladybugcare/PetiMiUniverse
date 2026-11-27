@@ -48,7 +48,8 @@ export interface HubInventoryItem {
   product_group: string | null;
   default_supplier_id: string | null;
   description: string | null;
-  cost_amount: number;
+  /** Null quando o papel não pode ver custo (ex.: só inventory.read). */
+  cost_amount: number | null;
   sale_amount: number;
   supplier_discount_pct: number;
   max_sale_discount_pct: number;

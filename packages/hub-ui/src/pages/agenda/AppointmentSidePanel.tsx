@@ -197,6 +197,7 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
       onOpenInBoarding: () => void onOpenInBoarding?.(appt.id),
       onDuplicate,
       onCancel,
+      onNoShow: () => void onStatusChange('no_show'),
     }),
     [
       onStatusChange,

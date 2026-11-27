@@ -122,4 +122,12 @@ describe('computeOverlapConflictIds', () => {
     ]);
     expect(ids.size).toBe(0);
   });
+
+  it('ignora faltas (no_show)', () => {
+    const ids = computeOverlapConflictIds([
+      appt({ id: 'a', professionalId: 'ana', start: t10, end: t11, status: 'no_show' }),
+      appt({ id: 'b', professionalId: 'ana', start: t10, end: t11 }),
+    ]);
+    expect(ids.size).toBe(0);
+  });
 });

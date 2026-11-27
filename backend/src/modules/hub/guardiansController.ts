@@ -1,6 +1,12 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import {
+  firstZodFieldMessage,
+  isValidBrPhone,
+  isValidBrTaxId,
+  normalizeBrTaxId,
+} from '../../utils/brTaxId';
 
 const uuidStr = z.string().uuid();
 
@@ -13,8 +19,51 @@ const clientStatusSchema = z.enum(['active', 'inactive']);
 const sexSchema = z.enum(['M', 'F', 'U']).optional().nullable();
 
 function normalizeGuardianTaxId(raw: string | null | undefined): string {
-  if (!raw) return '';
-  return String(raw).replace(/\D/g, '');
+  return normalizeBrTaxId(raw);
+}
+
+const taxIdCreateSchema = z
+  .string()
+  .trim()
+  .min(1, 'CPF/CNPJ é obrigatório')
+  .max(32, 'CPF/CNPJ muito longo')
+  .refine((v) => isValidBrTaxId(v), {
+    message: 'CPF/CNPJ inválido',
+  });
+
+const phoneCreateSchema = z
+  .string()
+  .trim()
+  .min(1, 'Telefone é obrigatório')
+  .max(40, 'Telefone muito longo')
+  .refine((v) => isValidBrPhone(v), {
+    message: 'Telefone inválido (use DDD + número)',
+  });
+
+async function findDuplicateGuardianByTaxId(
+  clinicId: string,
+  taxId: string,
+  excludeId?: string,
+): Promise<{ id: string; full_name: string } | null> {
+  const taxNorm = normalizeGuardianTaxId(taxId);
+  if (!taxNorm) return null;
+  const { data, error } = await supabaseAdmin
+    .from('hub_guardians')
+    .select('id, full_name, tax_id')
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null)
+    .limit(200);
+  if (error) {
+    console.error('[hub_guardians] duplicate tax lookup', error);
+    throw error;
+  }
+  for (const row of data ?? []) {
+    if (excludeId && row.id === excludeId) continue;
+    if (normalizeGuardianTaxId(row.tax_id as string | null) === taxNorm) {
+      return { id: row.id as string, full_name: String(row.full_name ?? '') };
+    }
+  }
+  return null;
 }
 
 const optionalTrimmed = (max: number) =>
@@ -26,8 +75,8 @@ const optionalTrimmed = (max: number) =>
 
 const createHubGuardianBodySchema = z.object({
   clinic_id: uuidStr,
-  full_name: z.string().trim().min(1, 'Nome é obrigatório').max(200),
-  phone: z.string().trim().min(1, 'Telefone é obrigatório').max(40),
+  full_name: z.string().trim().min(1, 'Nome é obrigatório').max(200, 'Nome deve ter no máximo 200 caracteres'),
+  phone: phoneCreateSchema,
   email: optionalTrimmed(254).optional(),
   notes: optionalTrimmed(8000).optional(),
   client_kind: clientKindSchema.optional(),
@@ -38,7 +87,7 @@ const createHubGuardianBodySchema = z.object({
     .transform((v) => (v === undefined || v === null || v === '' ? undefined : String(v)))
     .refine((v) => v === undefined || /^\d{4}-\d{2}-\d{2}$/.test(v), { message: 'Data inválida (use AAAA-MM-DD)' }),
   sex: sexSchema,
-  tax_id: z.string().trim().min(1, 'CPF/CNPJ é obrigatório').max(32),
+  tax_id: taxIdCreateSchema,
   id_doc_type: optionalTrimmed(80).optional(),
   id_doc_number: optionalTrimmed(80).optional(),
   lead_source: optionalTrimmed(120).optional(),
@@ -54,8 +103,16 @@ const createHubGuardianBodySchema = z.object({
 
 const updateHubGuardianBodySchema = z.object({
   clinic_id: uuidStr,
-  full_name: z.string().trim().min(1).max(200).optional(),
-  phone: z.string().trim().max(40).optional().nullable(),
+  full_name: z.string().trim().min(1).max(200, 'Nome deve ter no máximo 200 caracteres').optional(),
+  phone: z
+    .string()
+    .trim()
+    .max(40)
+    .optional()
+    .nullable()
+    .refine((v) => v === undefined || v === null || v === '' || isValidBrPhone(v), {
+      message: 'Telefone inválido (use DDD + número)',
+    }),
   email: optionalTrimmed(254).optional(),
   notes: optionalTrimmed(8000).optional(),
   /** true = soft delete; false = restaurar */
@@ -75,7 +132,8 @@ const updateHubGuardianBodySchema = z.object({
     .transform((v) => (v === undefined ? undefined : v == null ? '' : String(v).trim()))
     .optional()
     .refine((v) => v === undefined || v.length >= 1, { message: 'CPF/CNPJ é obrigatório' })
-    .refine((v) => v === undefined || v.length <= 32, { message: 'CPF/CNPJ muito longo' }),
+    .refine((v) => v === undefined || v.length <= 32, { message: 'CPF/CNPJ muito longo' })
+    .refine((v) => v === undefined || isValidBrTaxId(v), { message: 'CPF/CNPJ inválido' }),
   id_doc_type: optionalTrimmed(80).optional(),
   id_doc_number: optionalTrimmed(80).optional(),
   lead_source: optionalTrimmed(120).optional(),
@@ -430,9 +488,18 @@ export const createHubGuardian = async (req: Request, res: Response) => {
   try {
     const body = createHubGuardianBodySchema.safeParse(req.body);
     if (!body.success) {
-      return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
+      const flat = body.error.flatten();
+      return res.status(400).json({ error: firstZodFieldMessage(flat), details: flat });
     }
     const d = body.data;
+
+    const dup = await findDuplicateGuardianByTaxId(d.clinic_id, d.tax_id);
+    if (dup) {
+      return res.status(409).json({
+        error: `Já existe tutor com este CPF/CNPJ (${dup.full_name}).`,
+        duplicate_guardian: dup,
+      });
+    }
 
     const row: Record<string, unknown> = {
       clinic_id: d.clinic_id,
@@ -445,7 +512,7 @@ export const createHubGuardian = async (req: Request, res: Response) => {
       legal_name: d.legal_name ?? null,
       birth_date: d.birth_date ?? null,
       sex: d.sex ?? null,
-      tax_id: d.tax_id,
+      tax_id: normalizeGuardianTaxId(d.tax_id) || d.tax_id,
       id_doc_type: d.id_doc_type ?? null,
       id_doc_number: d.id_doc_number ?? null,
       lead_source: d.lead_source ?? null,
@@ -487,7 +554,8 @@ export const updateHubGuardian = async (req: Request, res: Response) => {
 
     const body = updateHubGuardianBodySchema.safeParse(req.body);
     if (!body.success) {
-      return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
+      const flat = body.error.flatten();
+      return res.status(400).json({ error: firstZodFieldMessage(flat), details: flat });
     }
     const d = body.data;
     const { clinic_id, archived } = d;
@@ -503,6 +571,16 @@ export const updateHubGuardian = async (req: Request, res: Response) => {
     }
     if (existing.clinic_id !== clinic_id) {
       return res.status(403).json({ error: 'Tutor não pertence a esta clínica' });
+    }
+
+    if (d.tax_id !== undefined) {
+      const dup = await findDuplicateGuardianByTaxId(clinic_id, d.tax_id, id);
+      if (dup) {
+        return res.status(409).json({
+          error: `Já existe tutor com este CPF/CNPJ (${dup.full_name}).`,
+          duplicate_guardian: dup,
+        });
+      }
     }
 
     const patch: Record<string, unknown> = {};
@@ -523,7 +601,7 @@ export const updateHubGuardian = async (req: Request, res: Response) => {
     if (d.legal_name !== undefined) patch.legal_name = d.legal_name;
     if (d.birth_date !== undefined) patch.birth_date = d.birth_date;
     if (d.sex !== undefined) patch.sex = d.sex;
-    if (d.tax_id !== undefined) patch.tax_id = d.tax_id;
+    if (d.tax_id !== undefined) patch.tax_id = normalizeGuardianTaxId(d.tax_id) || d.tax_id;
     if (d.id_doc_type !== undefined) patch.id_doc_type = d.id_doc_type;
     if (d.id_doc_number !== undefined) patch.id_doc_number = d.id_doc_number;
     if (d.lead_source !== undefined) patch.lead_source = d.lead_source;

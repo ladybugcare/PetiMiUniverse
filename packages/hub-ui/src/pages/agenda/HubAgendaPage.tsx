@@ -1090,7 +1090,7 @@ const HubAgendaPage: React.FC = () => {
     const q = searchQ.trim().toLowerCase();
     return allAppointments.filter((a) => {
       // Cancelados só na grade quando o filtro de status pede explicitamente.
-      if (statusFilter === 'all' && a.status === 'cancelled') return false;
+      if (statusFilter === 'all' && (a.status === 'cancelled' || a.status === 'no_show')) return false;
       if (unitFilter !== 'all') {
         if (unitFilter === '__partner__') {
           if (!isPartnerCareLocation(a)) return false;
@@ -1587,6 +1587,14 @@ const HubAgendaPage: React.FC = () => {
           () => void patchAppointmentStatus('cancelled'),
           'Cancelar',
         );
+        return;
+      }
+      if (status === 'no_show' && selected.status !== 'no_show') {
+        const msg =
+          selected.status === 'in_progress'
+            ? 'O atendimento já está em andamento. Registrar falta mesmo assim?'
+            : 'Registrar falta deste atendimento?';
+        showConfirm(msg, () => void patchAppointmentStatus('no_show'), 'Marcar falta');
         return;
       }
       await patchAppointmentStatus(status);

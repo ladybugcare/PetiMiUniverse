@@ -6,6 +6,7 @@ import {
   formatBrTaxIdDisplay,
   formatBrTaxIdFromApi,
   formatBrTaxIdInput,
+  isValidBrTaxId,
 } from './formatBrTaxId';
 
 describe('formatBrTaxId', () => {
@@ -39,5 +40,10 @@ describe('formatBrTaxId', () => {
     expect(formatBrTaxIdFromApi('26290449800')).toBe('262.904.498-00');
     expect(formatBrTaxIdDisplay(null)).toBe('—');
     expect(formatBrTaxIdDisplay('', 'N/A')).toBe('N/A');
+  });
+
+  it('isValidBrTaxId rejeita CPF repetido e aceita válido', () => {
+    expect(isValidBrTaxId('111.111.111-11')).toBe(false);
+    expect(isValidBrTaxId('262.904.498-00')).toBe(true);
   });
 });

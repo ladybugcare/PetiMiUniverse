@@ -27,7 +27,7 @@ describe('canEditAgendaAppointment / agendaAppointmentEditBlockReason', () => {
   });
 
   it('bloqueia statuses encerrados com motivo legível', () => {
-    for (const status of ['done', 'cancelled', 'paid'] as AgendaStatus[]) {
+    for (const status of ['done', 'cancelled', 'paid', 'no_show'] as AgendaStatus[]) {
       expect(canEditAgendaAppointment(appt(status, future), { canWrite: true })).toBe(false);
       const reason = agendaAppointmentEditBlockReason(appt(status, future), { canWrite: true });
       expect(reason).toMatch(/Não é possível remarcar/);

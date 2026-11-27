@@ -8,8 +8,11 @@ import { COAT_TYPE_VALUES, PORTE_VALUES, parsePricingMatrixJson, roundMoney2 } f
 import {
   normalizePickupPriceScope,
   resolvePickupLegAmounts,
+  shouldAttachPickupInMultipetBatch,
+  shouldRewriteAppointmentServicesOnPatch,
   type PickupPriceScope,
 } from './hubPickupPricing';
+import { canTransitionToNoShow } from './hubNoShowUtils';
 import {
   PET_BODY_SIZE_TIERS,
   requiresCoatPricing,
@@ -117,6 +120,7 @@ const appointmentStatusSchema = z.enum([
   'done',
   'cancelled',
   'paid',
+  'no_show',
 ]);
 
 const appointmentKindSchema = z.enum([
@@ -210,7 +214,7 @@ function rowConflictsWith(
   startsAt: string,
   endsAt: string,
 ): boolean {
-  if (row.status === 'cancelled') return false;
+  if (row.status === 'cancelled' || row.status === 'no_show') return false;
   if (!intervalsOverlap(startsAt, endsAt, row.starts_at, row.ends_at)) return false;
   return isStaffConflict(staffId, row) || isResourceConflict(resourceLabel, resourceId, unitId, row);
 }
@@ -1130,6 +1134,7 @@ const recurrenceSchema = z.object({
   invoice_due_rule: z.enum(['same_day', 'plus_days', 'fixed_day']).optional().nullable(),
   invoice_due_day: z.number().int().min(1).max(28).optional().nullable(),
   invoice_due_plus_days: z.number().int().min(0).max(90).optional().nullable(),
+  invoice_discount_percent: z.number().min(0).max(100).optional().nullable(),
 });
 
 const extraBlockSchema = extraBlockBaseSchema.extend({
@@ -1652,7 +1657,7 @@ export const getHubAppointmentsStatsByServiceGroup = async (req: Request, res: R
       .select('hub_service_type_id')
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
-      .neq('status', 'cancelled')
+      .not('status', 'in', '("cancelled","no_show")')
       .lt('starts_at', toIso)
       .gt('ends_at', fromIso)
       .or(`unit_id.eq.${unit_id},unit_id.is.null`);
@@ -2190,13 +2195,23 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       const seriesStartDate = b.starts_at.slice(0, 10);
       // Persistir o dia da semana efetivo (mesmo fallback usado na geração das datas).
       const seriesDows = seriesDaysOfWeek(seriesStartDate, rule);
+      const ruleBilling = rule as typeof rule & {
+        billing_mode?: 'per_occurrence' | 'periodic_invoice';
+        invoice_issue_rule?: 'fixed_day' | 'first_business_day' | null;
+        invoice_issue_day?: number | null;
+        invoice_due_rule?: 'same_day' | 'plus_days' | 'fixed_day' | null;
+        invoice_due_day?: number | null;
+        invoice_due_plus_days?: number | null;
+        invoice_discount_percent?: number | null;
+      };
       const billingFields = normalizeSeriesBillingForInsert({
-        billing_mode: rule.billing_mode ?? 'per_occurrence',
-        invoice_issue_rule: rule.invoice_issue_rule,
-        invoice_issue_day: rule.invoice_issue_day,
-        invoice_due_rule: rule.invoice_due_rule,
-        invoice_due_day: rule.invoice_due_day,
-        invoice_due_plus_days: rule.invoice_due_plus_days,
+        billing_mode: ruleBilling.billing_mode ?? 'per_occurrence',
+        invoice_issue_rule: ruleBilling.invoice_issue_rule,
+        invoice_issue_day: ruleBilling.invoice_issue_day,
+        invoice_due_rule: ruleBilling.invoice_due_rule,
+        invoice_due_day: ruleBilling.invoice_due_day,
+        invoice_due_plus_days: ruleBilling.invoice_due_plus_days,
+        invoice_discount_percent: ruleBilling.invoice_discount_percent,
       });
 
       if (billingFields.billing_mode === 'periodic_invoice') {
@@ -2675,13 +2690,23 @@ export const createHubAppointment = async (req: Request, res: Response) => {
           const rule = normalizeRecurrenceRule(block.recurrence);
           const seriesStartDate = block.starts_at.slice(0, 10);
           const seriesDows = seriesDaysOfWeek(seriesStartDate, rule);
+          const blockBilling = rule as typeof rule & {
+            billing_mode?: 'per_occurrence' | 'periodic_invoice';
+            invoice_issue_rule?: 'fixed_day' | 'first_business_day' | null;
+            invoice_issue_day?: number | null;
+            invoice_due_rule?: 'same_day' | 'plus_days' | 'fixed_day' | null;
+            invoice_due_day?: number | null;
+            invoice_due_plus_days?: number | null;
+            invoice_discount_percent?: number | null;
+          };
           const billingFields = normalizeSeriesBillingForInsert({
-            billing_mode: rule.billing_mode ?? 'per_occurrence',
-            invoice_issue_rule: rule.invoice_issue_rule,
-            invoice_issue_day: rule.invoice_issue_day,
-            invoice_due_rule: rule.invoice_due_rule,
-            invoice_due_day: rule.invoice_due_day,
-            invoice_due_plus_days: rule.invoice_due_plus_days,
+            billing_mode: blockBilling.billing_mode ?? 'per_occurrence',
+            invoice_issue_rule: blockBilling.invoice_issue_rule,
+            invoice_issue_day: blockBilling.invoice_issue_day,
+            invoice_due_rule: blockBilling.invoice_due_rule,
+            invoice_due_day: blockBilling.invoice_due_day,
+            invoice_due_plus_days: blockBilling.invoice_due_plus_days,
+            invoice_discount_percent: blockBilling.invoice_discount_percent,
           });
           const { data: seriesRow, error: serErr } = await supabaseAdmin
             .from('hub_appointment_series')
@@ -2729,19 +2754,51 @@ export const createHubAppointment = async (req: Request, res: Response) => {
           catalogSale: number;
           catalogCost: number;
           priceScope: PickupPriceScope;
-          kmVariant: { km_tier_index?: number; custom_tier_index?: number } | null;
+          kmVariant: HubQuotePricingVariantInput | null;
         } | null = null;
         if (blockHasPickup && block.pickup_route_pricing) {
-          const ltSt = stMap.get(block.pickup_route_pricing.hub_service_type_id);
+          const ltId = block.pickup_route_pricing.hub_service_type_id;
+          const ltSt = stMap.get(ltId);
           const ge = validateLevaTrazServiceType(ltSt);
           if (ge) return res.status(400).json({ error: ge });
-          const scope = normalizePickupPriceScope(ltSt!.pickup_price_scope as string | null | undefined);
-          blockPickupPricingBase = {
-            catalogSale: roundMoney2(Number(ltSt!.sale_amount) || 0),
-            catalogCost: roundMoney2(Number(ltSt!.cost_amount) || 0),
-            priceScope: scope,
-            kmVariant: block.pickup_route_pricing.pricing_variant ?? null,
-          };
+          const ltMatrix = parsePricingMatrixJson(ltSt?.pricing_matrix);
+          const matrixKind =
+            ltMatrix != null && typeof ltMatrix === 'object' && 'kind' in ltMatrix
+              ? (ltMatrix as { kind: string }).kind
+              : null;
+          let kmVariant: HubQuotePricingVariantInput | null = null;
+          if (matrixKind === 'km_banda') {
+            kmVariant = {
+              km_tier_index: block.pickup_route_pricing.pricing_variant?.km_tier_index ?? 0,
+            };
+          } else if (matrixKind === 'personalizado') {
+            kmVariant = {
+              custom_tier_index: block.pickup_route_pricing.pricing_variant?.custom_tier_index ?? 0,
+            };
+          }
+          try {
+            const baseRows = buildServiceLineSnapshots({
+              lines: [{ hub_service_type_id: ltId, duration_minutes: 1, pricing_variant: kmVariant }],
+              stMap,
+              pet,
+              appointmentYmd: block.starts_at.slice(0, 10),
+              puppyMaxMonths: puppy.pet_puppy_max_months,
+              appointmentOverride: apptOverride,
+              appointmentCoatOverride: apptCoatOverride,
+            });
+            const br = baseRows[0];
+            if (!br) throw new Error('Preço Leva e Traz do bloco inválido');
+            blockPickupPricingBase = {
+              catalogSale: br.sale_amount_applied,
+              catalogCost: br.cost_amount_applied,
+              priceScope: normalizePickupPriceScope(ltSt?.pickup_price_scope as string | null | undefined),
+              kmVariant,
+            };
+          } catch (e) {
+            return res
+              .status(400)
+              .json({ error: (e as Error).message || 'Erro ao precificar Leva e Traz do bloco' });
+          }
         }
 
         for (const occDate of blockOccDates) {
@@ -3013,6 +3070,16 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       .maybeSingle();
     if (exErr) return res.status(500).json({ error: exErr.message });
     if (!existing) return res.status(404).json({ error: 'Agendamento não encontrado' });
+
+    if (b.status === 'no_show') {
+      const currentStatus = String((existing as Record<string, unknown>).status ?? '');
+      if (!canTransitionToNoShow(currentStatus)) {
+        return res.status(400).json({
+          error:
+            'Só é possível marcar falta a partir de a confirmar, confirmado, aguardando ou em atendimento.',
+        });
+      }
+    }
 
     if (isStructuralAppointmentPatch(b) && !isAppointmentStructurallyEditable(existing as Record<string, unknown>)) {
       return res.status(409).json({
@@ -3298,6 +3365,29 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
     }
 
     for (const tid of targetIds) {
+      const { data: kindRow } = await supabaseAdmin
+        .from('hub_appointments')
+        .select('appointment_kind')
+        .eq('id', tid)
+        .eq('clinic_id', b.clinic_id)
+        .maybeSingle();
+      const appointmentKind = (kindRow as { appointment_kind?: string } | null)?.appointment_kind;
+      const isPickupRouteLeg = !shouldRewriteAppointmentServicesOnPatch(appointmentKind);
+
+      // Pernas de L&T compartilham series_id: só propagar status (ex.: cancelar série).
+      // Nunca regravar hub_service_type_id / serviços do banho nelas.
+      if (isPickupRouteLeg) {
+        if (patch.status !== undefined) {
+          const { error: pErr } = await supabaseAdmin
+            .from('hub_appointments')
+            .update({ status: patch.status })
+            .eq('id', tid)
+            .eq('clinic_id', b.clinic_id);
+          if (pErr) return res.status(500).json({ error: pErr.message });
+        }
+        continue;
+      }
+
       if (Object.keys(patch).length > 0) {
         const { error: pErr } = await supabaseAdmin
           .from('hub_appointments')
@@ -3407,8 +3497,51 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       }
     }
 
-    if (patch.status === 'cancelled') {
+    if (patch.status === 'cancelled' || patch.status === 'no_show') {
+      const terminalStatus = patch.status as 'cancelled' | 'no_show';
+      const cascadedLegIds: string[] = [];
       for (const tid of targetIds) {
+        const { data: parentKindRow } = await supabaseAdmin
+          .from('hub_appointments')
+          .select('appointment_kind')
+          .eq('id', tid)
+          .eq('clinic_id', b.clinic_id)
+          .maybeSingle();
+        const parentKind = String(
+          (parentKindRow as { appointment_kind?: string } | null)?.appointment_kind ?? '',
+        );
+        if (parentKind === 'pickup_route') continue;
+
+        const { data: childLegs } = await supabaseAdmin
+          .from('hub_appointments')
+          .select('id')
+          .eq('clinic_id', b.clinic_id)
+          .eq('parent_appointment_id', tid)
+          .eq('appointment_kind', 'pickup_route')
+          .is('deleted_at', null)
+          .not('status', 'in', '("cancelled","no_show")');
+        const legIds = (childLegs ?? [])
+          .map((r) => (r as { id: string }).id)
+          .filter((legId) => !targetIds.includes(legId));
+        if (legIds.length === 0) continue;
+
+        const { error: cascadeErr } = await supabaseAdmin
+          .from('hub_appointments')
+          .update({ status: terminalStatus })
+          .in('id', legIds)
+          .eq('clinic_id', b.clinic_id);
+        if (cascadeErr) {
+          console.error(
+            `patchHubAppointment cascade ${terminalStatus} pickup legs`,
+            tid,
+            cascadeErr.message,
+          );
+        } else {
+          cascadedLegIds.push(...legIds);
+        }
+      }
+
+      for (const tid of [...targetIds, ...cascadedLegIds]) {
         void maybeFlagComandaCancellationPending(b.clinic_id, 'appointment', tid);
       }
     }
@@ -3607,6 +3740,14 @@ export const createHubAppointmentBatch = async (req: Request, res: Response) => 
     const visitGroupId = inputVisitGroupId ?? randomUUID();
     const createdIds: string[] = [];
     let createdCount = 0;
+    const clinicSettings = await getOrCreateHubClinicSettings(clinic_id);
+    const multipetPickupBilling = clinicSettings.multipet_pickup_billing;
+    const sharedHasPickup = Boolean(
+      (shared as { with_pickup_route_before?: unknown }).with_pickup_route_before ??
+        (shared as { with_pickup_route_after?: unknown }).with_pickup_route_after,
+    );
+    /** Em `per_visit`, só o 1º pet de cada dia de calendário leva L&T. */
+    const pickupDayClaimed = new Set<string>();
 
     const rollbackCreated = async () => {
       if (createdIds.length === 0) return;
@@ -3621,10 +3762,18 @@ export const createHubAppointmentBatch = async (req: Request, res: Response) => 
     try {
       for (const petEntry of pets) {
         const petServices = petEntry.services ?? shared.services;
-        const body = {
+        const startsAt = petEntry.starts_at ?? shared.starts_at;
+        const dayKey = String(startsAt).slice(0, 10);
+        const includePickup = shouldAttachPickupInMultipetBatch({
+          billing: multipetPickupBilling,
+          sharedHasPickup,
+          dayKey,
+          claimedDays: pickupDayClaimed,
+        });
+        const body: Record<string, unknown> = {
           ...shared,
           pet_id: petEntry.pet_id,
-          starts_at: petEntry.starts_at ?? shared.starts_at,
+          starts_at: startsAt,
           ends_at: petEntry.ends_at ?? shared.ends_at,
           hub_staff_member_id:
             petEntry.hub_staff_member_id !== undefined
@@ -3640,6 +3789,11 @@ export const createHubAppointmentBatch = async (req: Request, res: Response) => 
           allow_schedule_overlap: true,
           visit_group_id: visitGroupId,
         };
+        if (!includePickup) {
+          body.with_pickup_route_before = null;
+          body.with_pickup_route_after = null;
+          body.pickup_route_pricing = null;
+        }
 
         const fakeReq = { body, user: req.user } as Request;
         let statusCode = 201;

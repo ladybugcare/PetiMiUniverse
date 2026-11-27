@@ -13,6 +13,8 @@ export const postHubSeriesInvoiceIssue = async (req: Request, res: Response) => 
         series_id: uuidStr,
         ref_ymd: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
         force: z.boolean().optional(),
+        /** Override absoluto (R$) do desconto de cabeçalho neste mês. */
+        discount_amount: z.number().min(0).optional().nullable(),
       })
       .strict()
       .safeParse(req.body);
@@ -25,6 +27,7 @@ export const postHubSeriesInvoiceIssue = async (req: Request, res: Response) => 
       refYmd: parsed.data.ref_ymd,
       force: parsed.data.force ?? true,
       actorUserId: req.user?.id ?? null,
+      discountAmount: parsed.data.discount_amount,
     });
     return res.status(result.already_issued ? 200 : 201).json(result);
   } catch (e: unknown) {

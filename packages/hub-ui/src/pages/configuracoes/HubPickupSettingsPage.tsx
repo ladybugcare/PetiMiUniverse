@@ -2,6 +2,10 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Car, ChevronDown, ChevronUp, Edit2, Package, Plus, Trash2 } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import {
+  hubClinicSettingsApi,
+  type HubMultipetPickupBilling,
+} from '../../api/hubClinicSettingsApi';
+import {
   hubPickupVehiclesApi,
   type PickupVehicle,
   type TransportCage,
@@ -846,6 +850,9 @@ const HubPickupSettingsPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [vehicles, setVehicles] = useState<PickupVehicle[]>([]);
   const [showInactive, setShowInactive] = useState(false);
+  const [billingMode, setBillingMode] = useState<HubMultipetPickupBilling>('per_visit');
+  const [savedBillingMode, setSavedBillingMode] = useState<HubMultipetPickupBilling>('per_visit');
+  const [billingSaving, setBillingSaving] = useState(false);
 
   const [vehiclePanel, setVehiclePanel] = useState<{ open: boolean; editing: PickupVehicle | null }>({
     open: false,
@@ -866,9 +873,16 @@ const HubPickupSettingsPage: React.FC = () => {
       if (!clinicId || !canRead) return;
       setLoading(true);
       try {
-        const res = await hubPickupVehiclesApi.listVehicles(clinicId, { includeInactive: true });
+        const [res, settingsRes] = await Promise.all([
+          hubPickupVehiclesApi.listVehicles(clinicId, { includeInactive: true }),
+          hubClinicSettingsApi.get(clinicId).catch(() => null),
+        ]);
         if (signal?.cancelled) return;
         setVehicles(res.vehicles);
+        const mode: HubMultipetPickupBilling =
+          settingsRes?.settings.multipet_pickup_billing === 'per_pet' ? 'per_pet' : 'per_visit';
+        setBillingMode(mode);
+        setSavedBillingMode(mode);
       } catch (e: unknown) {
         if (signal?.cancelled) return;
         showError((e as Error)?.message || 'Erro ao carregar veículos');
@@ -955,6 +969,27 @@ const HubPickupSettingsPage: React.FC = () => {
     }
   };
 
+  const billingDirty = billingMode !== savedBillingMode;
+
+  const handleSaveBilling = async () => {
+    if (!clinicId || !canWrite || !billingDirty) return;
+    setBillingSaving(true);
+    try {
+      const res = await hubClinicSettingsApi.patch(clinicId, {
+        multipet_pickup_billing: billingMode,
+      });
+      const mode: HubMultipetPickupBilling =
+        res.settings.multipet_pickup_billing === 'per_pet' ? 'per_pet' : 'per_visit';
+      setBillingMode(mode);
+      setSavedBillingMode(mode);
+      showSuccess('Cobrança multi-pet atualizada.');
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao salvar cobrança multi-pet');
+    } finally {
+      setBillingSaving(false);
+    }
+  };
+
   if (!canRead) {
     return (
       <div className="hub-ps__state">
@@ -974,6 +1009,49 @@ const HubPickupSettingsPage: React.FC = () => {
           capacidade total é usada como referência ao montar rotas.
         </p>
       </header>
+
+      <section className={`hub-ps__billing${billingDirty ? ' hub-ps__billing--dirty' : ''}`}>
+        <h3 className="hub-ps__billing-title">Cobrança multi-pet</h3>
+        <p className="hub-ps__billing-text">
+          Define se o Leva e Traz de uma visita com vários pets cobra uma vez por dia ou uma vez por
+          pet. Se os pets forem buscados em dias diferentes no mesmo lote, a cobrança é sempre por
+          pet.
+        </p>
+        <div className="hub-ps__billing-seg" role="group" aria-label="Modo de cobrança multi-pet">
+          <button
+            type="button"
+            className={
+              billingMode === 'per_visit' ? 'hub-ps__billing-btn hub-ps__billing-btn--active' : 'hub-ps__billing-btn'
+            }
+            disabled={!canWrite || billingSaving}
+            onClick={() => setBillingMode('per_visit')}
+          >
+            Por visita
+          </button>
+          <button
+            type="button"
+            className={
+              billingMode === 'per_pet' ? 'hub-ps__billing-btn hub-ps__billing-btn--active' : 'hub-ps__billing-btn'
+            }
+            disabled={!canWrite || billingSaving}
+            onClick={() => setBillingMode('per_pet')}
+          >
+            Por pet
+          </button>
+        </div>
+        {canWrite && (
+          <div className="hub-ps__billing-actions">
+            <button
+              type="button"
+              className="hub-clientes__btn hub-clientes__btn--primary"
+              disabled={!billingDirty || billingSaving}
+              onClick={() => void handleSaveBilling()}
+            >
+              {billingSaving ? 'Salvando…' : 'Salvar cobrança'}
+            </button>
+          </div>
+        )}
+      </section>
 
       {!isTrulyEmpty && (
         <div className="hub-ps__toolbar">

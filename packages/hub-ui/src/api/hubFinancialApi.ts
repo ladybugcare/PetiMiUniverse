@@ -67,7 +67,7 @@ export type HubFinanceDayBoardItem = {
   services: Array<{ name: string; amount: number; kind?: 'service' | 'product' | 'fee' | null }>;
   billing: HubFinanceDayBoardBilling;
   has_package_balance?: boolean;
-  coverage_kind?: 'none' | 'package' | 'series_invoice';
+  coverage_kind?: 'none' | 'package' | 'series_invoice' | 'series_pending';
   series_invoice_comanda_id?: string | null;
   /** Presente em `hospitalization`: origem real da comanda. */
   billing_origin_type?: 'encounter' | 'appointment' | null;
@@ -743,6 +743,7 @@ export type HubMyNoShowsReport = {
   staff_id: string;
   summary: {
     total_no_shows: number;
+    appointment_no_shows?: number;
     appointment_implied_no_shows: number;
     attended_count: number;
     rate_pct: number;
@@ -926,6 +927,8 @@ export type HubNoShowsReport = {
   summary: {
     total_no_shows: number;
     boarding_no_shows: number;
+    /** Faltas explícitas (`status = no_show`) na agenda. */
+    appointment_no_shows?: number;
     appointment_implied_no_shows: number;
     attended_count: number;
     rate_pct: number;
@@ -1016,6 +1019,8 @@ export const hubFinancialApi = {
     series_id: string;
     ref_ymd?: string;
     force?: boolean;
+    /** Override absoluto (R$) do desconto de cabeçalho neste mês. */
+    discount_amount?: number | null;
   }): Promise<{
     series_invoice_id: string;
     comanda_id: string;

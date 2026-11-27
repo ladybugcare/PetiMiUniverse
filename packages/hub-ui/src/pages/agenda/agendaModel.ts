@@ -14,7 +14,8 @@ export type AgendaStatus =
   | 'in_progress'
   | 'done'
   | 'cancelled'
-  | 'paid';
+  | 'paid'
+  | 'no_show';
 
 export const STATUS_OPTIONS: { value: AgendaStatus; label: string; short: string }[] = [
   { value: 'pending_confirm', label: 'A confirmar', short: '?' },
@@ -24,6 +25,7 @@ export const STATUS_OPTIONS: { value: AgendaStatus; label: string; short: string
   { value: 'done', label: 'Finalizado', short: '✓' },
   { value: 'cancelled', label: 'Cancelado', short: '×' },
   { value: 'paid', label: 'Pago', short: '$' },
+  { value: 'no_show', label: 'Falta', short: 'F' },
 ];
 
 export const STATUS_META: Record<
@@ -37,6 +39,7 @@ export const STATUS_META: Record<
   done: { label: 'Finalizado', short: '✓', pillClass: 'hub-agenda__pill--st-done' },
   cancelled: { label: 'Cancelado', short: '×', pillClass: 'hub-agenda__pill--st-cancelled' },
   paid: { label: 'Pago', short: '$', pillClass: 'hub-agenda__pill--st-paid' },
+  no_show: { label: 'Falta', short: 'F', pillClass: 'hub-agenda__pill--st-noshow' },
 };
 
 export type AgendaAppointment = {
@@ -126,7 +129,7 @@ export function isPartnerCareLocation(
 }
 
 /** Statuses já encerrados — não permitem remarcar por arraste nem no painel. */
-const LOCKED_AGENDA_STATUSES: AgendaStatus[] = ['done', 'cancelled', 'paid'];
+const LOCKED_AGENDA_STATUSES: AgendaStatus[] = ['done', 'cancelled', 'paid', 'no_show'];
 
 /**
  * Motivo pelo qual o agendamento não pode ser remarcado/editado, ou `null` se pode.
@@ -202,7 +205,7 @@ export function computeAgendaHourRange(
   };
 
   for (const a of appointments) {
-    if (a.status === 'cancelled') continue;
+    if (a.status === 'cancelled' || a.status === 'no_show') continue;
     const startMinutes = a.start.getHours() * 60 + a.start.getMinutes();
     // Overnight: ignora o horário de checkout no outro dia (a grade do dia já cobre até o padrão/estendido).
     const endMinutes = isSameDay(a.start, a.end)
@@ -360,7 +363,7 @@ export function computeOverlapConflictIds(
   _groupMode?: AgendaGroupMode,
 ): Set<string> {
   const active = list
-    .filter((x) => x.status !== 'cancelled')
+    .filter((x) => x.status !== 'cancelled' && x.status !== 'no_show')
     .slice()
     .sort((x, y) => x.start.getTime() - y.start.getTime());
   const bad = new Set<string>();

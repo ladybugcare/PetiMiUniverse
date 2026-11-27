@@ -698,6 +698,11 @@ const GroomingAppointmentDrawer: React.FC<GroomingAppointmentDrawerProps> = ({
               Agenda.
             </p>
           ) : null}
+          {item.session_id && drawer && drawer.appointment_lines.length > 0 && executedCount < linesCount ? (
+            <p className="hub-grooming-drawer__hint">
+              Marque os serviços como feitos antes de cobrar — a comissão fica com quem executou.
+            </p>
+          ) : null}
         </section>
 
         {item.session_id && drawer && checklistRows.length > 0 ? (

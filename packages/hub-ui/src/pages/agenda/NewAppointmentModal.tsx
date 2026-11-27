@@ -26,7 +26,10 @@ import {
 import { hubGuardiansApi } from '../../api/hubGuardiansApi';
 import type { HubGuardian } from '../../api/hubGuardiansApi';
 import { hubClinicalCasesApi, type HubClinicalCase } from '../../api/hubClinicalApi';
-import { hubClinicSettingsApi } from '../../api/hubClinicSettingsApi';
+import {
+  hubClinicSettingsApi,
+  type HubMultipetPickupBilling,
+} from '../../api/hubClinicSettingsApi';
 import { hubSpecialPricesApi } from '../../api/hubSpecialPricesApi';
 import type { HubStaffMember } from '../../api/hubStaffApi';
 import { hubServiceGroupsApi } from '../../api/hubServiceGroupsApi';
@@ -314,6 +317,7 @@ type RecurrenceForm = {
   invoice_due_rule: 'same_day' | 'plus_days' | 'fixed_day';
   invoice_due_day: number;
   invoice_due_plus_days: number;
+  invoice_discount_percent: number;
 };
 
 const DEFAULT_RECURRENCE: RecurrenceForm = {
@@ -329,6 +333,7 @@ const DEFAULT_RECURRENCE: RecurrenceForm = {
   invoice_due_rule: 'same_day',
   invoice_due_day: 1,
   invoice_due_plus_days: 0,
+  invoice_discount_percent: 0,
 };
 
 const DOW_LABELS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
@@ -509,6 +514,8 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [intakeNewCaseTitle, setIntakeNewCaseTitle] = useState('');
 
   const [puppyMaxMonths, setPuppyMaxMonths] = useState(8);
+  const [multipetPickupBilling, setMultipetPickupBilling] =
+    useState<HubMultipetPickupBilling>('per_visit');
   /** Vazio = automático (null no API). */
   const [pricingApptPorteTier, setPricingApptPorteTier] = useState('');
   /** Vazio = automático (pelagem do pet, quando existir). */
@@ -958,8 +965,16 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     if (!open || !clinicId) return;
     hubClinicSettingsApi
       .get(clinicId)
-      .then((r) => setPuppyMaxMonths(r.settings.pet_puppy_max_months))
-      .catch(() => setPuppyMaxMonths(8));
+      .then((r) => {
+        setPuppyMaxMonths(r.settings.pet_puppy_max_months);
+        setMultipetPickupBilling(
+          r.settings.multipet_pickup_billing === 'per_pet' ? 'per_pet' : 'per_visit',
+        );
+      })
+      .catch(() => {
+        setPuppyMaxMonths(8);
+        setMultipetPickupBilling('per_visit');
+      });
   }, [open, clinicId]);
 
   // Load guardians
@@ -1767,6 +1782,20 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
     pickupKmTierIndex,
     pickupMode,
     serviceTypes,
+  ]);
+
+  /** Multi-pet: espelha a regra da clínica (`per_visit` = 1× no dia; `per_pet` = 1× por pet). */
+  const multipetAttachedPickupSaleTotal = useMemo(() => {
+    if (!pickupPricingPreview || pickupPricingPreview.source !== 'attached') return 0;
+    if (!isMultiPetSelection) return pickupPricingPreview.totalSale;
+    const petCount = Math.max(1, effectiveSelectedPetIds.length);
+    const units = multipetPickupBilling === 'per_pet' ? petCount : 1;
+    return pickupPricingPreview.totalSale * units;
+  }, [
+    pickupPricingPreview,
+    isMultiPetSelection,
+    effectiveSelectedPetIds.length,
+    multipetPickupBilling,
   ]);
 
   const pricingTierComboOptions = useMemo<HubComboboxOption[]>(() => {
@@ -2741,6 +2770,10 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             recurrence.invoice_due_rule === 'fixed_day' ? recurrence.invoice_due_day : null;
           rule.invoice_due_plus_days =
             recurrence.invoice_due_rule === 'plus_days' ? recurrence.invoice_due_plus_days : null;
+          rule.invoice_discount_percent = Math.min(
+            100,
+            Math.max(0, Number(recurrence.invoice_discount_percent) || 0),
+          );
         }
         if (recurrence.end_kind === 'until' && recurrence.until_date) {
           rule.until_date = recurrence.until_date;
@@ -3102,10 +3135,18 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   : pickupPricingPreview.mode === 'pickup_only'
                     ? ' · só busca'
                     : ' · só retorno'}
+                {isMultiPetSelection && multipetPickupBilling === 'per_pet'
+                  ? ` · × ${Math.max(1, effectiveSelectedPetIds.length)} pets`
+                  : isMultiPetSelection
+                    ? ' · por visita'
+                    : ''}
                 )
               </span>
               <span className="nam-aside__muted">
-                {pickupPricingPreview.totalSale.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                {multipetAttachedPickupSaleTotal.toLocaleString('pt-BR', {
+                  style: 'currency',
+                  currency: 'BRL',
+                })}
               </span>
             </div>
           ) : null}
@@ -3154,7 +3195,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
             <strong>
               {(isMultiPetSelection && multiPetPricingSummaries
                 ? multiPetPricingSummaries.reduce((s, r) => s + r.total, 0) +
-                  (pickupPricingPreview?.source === 'attached' ? pickupPricingPreview.totalSale : 0)
+                  multipetAttachedPickupSaleTotal
                 : pickupPricingPreview?.source === 'standalone'
                   ? pickupPricingPreview.totalSale
                   : pricingPreview.totalSale +
@@ -4600,6 +4641,29 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                       <div className="nam-field" />
                     )}
                   </div>
+                  <div className="nam-field" style={{ marginTop: 8 }}>
+                    <label className="nam-label">Desconto na fatura (%)</label>
+                    <input
+                      className="nam-input"
+                      type="number"
+                      min={0}
+                      max={100}
+                      step={0.01}
+                      value={recurrence.invoice_discount_percent}
+                      onChange={(e) =>
+                        setRecurrence((r) => ({
+                          ...r,
+                          invoice_discount_percent: Math.min(
+                            100,
+                            Math.max(0, Number(e.target.value) || 0),
+                          ),
+                        }))
+                      }
+                    />
+                    <p className="nam-aside__muted" style={{ marginTop: 4 }}>
+                      Aplicado sobre o total do mês na emissão.
+                    </p>
+                  </div>
                   <p className="nam-aside__muted" style={{ marginTop: 8 }}>
                     Preview: fatura mensal · emite{' '}
                     {recurrence.invoice_issue_rule === 'first_business_day'
@@ -4611,6 +4675,9 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                       : recurrence.invoice_due_rule === 'plus_days'
                         ? `${recurrence.invoice_due_plus_days} dia(s) depois`
                         : `no dia ${recurrence.invoice_due_day}`}
+                    {recurrence.invoice_discount_percent > 0
+                      ? ` · desconto ${recurrence.invoice_discount_percent}%`
+                      : ''}
                     .
                   </p>
                 </div>

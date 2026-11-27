@@ -117,6 +117,7 @@ export function CheckoutPaymentLinesEditor({
   const fees = cardMachineFees ?? emptyCardMachineFees();
   const distributed = sumPaymentLines(lines);
   const remaining = round2(Math.max(0, due - distributed));
+  const excess = round2(Math.max(0, distributed - due));
   const change = totalChangeDue(lines);
   const feeTotal = totalCardFeeEstimate(lines, fees);
   const methods = acceptedMethods.length ? acceptedMethods : (['pix'] as HubPaymentMethod[]);
@@ -152,14 +153,23 @@ export function CheckoutPaymentLinesEditor({
         </div>
         <div>
           <span className="ui-label">Distribuído</span>
-          <strong>{formatBrl(distributed)}</strong>
-        </div>
-        <div>
-          <span className="ui-label">Restante</span>
-          <strong className={remaining > 0.009 ? 'hub-checkout-payment-lines__remaining' : undefined}>
-            {formatBrl(remaining)}
+          <strong className={excess > 0.009 ? 'hub-checkout-payment-lines__remaining' : undefined}>
+            {formatBrl(distributed)}
           </strong>
         </div>
+        {excess > 0.009 ? (
+          <div>
+            <span className="ui-label">Excesso</span>
+            <strong className="hub-checkout-payment-lines__remaining">{formatBrl(excess)}</strong>
+          </div>
+        ) : (
+          <div>
+            <span className="ui-label">Restante</span>
+            <strong className={remaining > 0.009 ? 'hub-checkout-payment-lines__remaining' : undefined}>
+              {formatBrl(remaining)}
+            </strong>
+          </div>
+        )}
         {change > 0.009 ? (
           <div>
             <span className="ui-label">Troco</span>

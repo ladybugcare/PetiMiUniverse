@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { digitsOnlyBrPhone, formatBrPhoneFromApi, formatBrPhoneDisplay, formatBrPhoneInput } from './formatBrPhone';
+import {
+  digitsOnlyBrPhone,
+  formatBrPhoneFromApi,
+  formatBrPhoneDisplay,
+  formatBrPhoneInput,
+  isValidBrPhone,
+} from './formatBrPhone';
 
 describe('formatBrPhone', () => {
   it('formata celular com 11 dígitos', () => {
@@ -26,5 +32,10 @@ describe('formatBrPhone', () => {
     expect(formatBrPhoneDisplay(null)).toBe('—');
     expect(formatBrPhoneDisplay('11988888888')).toBe('(11) 98888-8888');
     expect(formatBrPhoneDisplay('', 'N/A')).toBe('N/A');
+  });
+
+  it('isValidBrPhone exige 10 ou 11 dígitos', () => {
+    expect(isValidBrPhone('(11) 98888-8888')).toBe(true);
+    expect(isValidBrPhone('123')).toBe(false);
   });
 });

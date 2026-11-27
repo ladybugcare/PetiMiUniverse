@@ -126,16 +126,18 @@ export const GuardianDrawer: React.FC<GuardianDrawerProps> = ({
       return (
         <div className="hub-finance-page__drawer-footer">
           <button type="button" className="hub-clientes__btn hub-clientes__btn--ghost" onClick={handleCancel} disabled={submitting}>
-            Cancelar
+            {canWrite ? 'Cancelar' : 'Fechar'}
           </button>
-          <button
-            type="submit"
-            form={GUARDIAN_FORM_ID}
-            className="hub-clientes__btn hub-clientes__btn--primary"
-            disabled={submitting || !canWrite}
-          >
-            {submitting ? 'Salvando…' : isCompany ? 'Salvar empresa' : 'Salvar tutor'}
-          </button>
+          {canWrite ? (
+            <button
+              type="submit"
+              form={GUARDIAN_FORM_ID}
+              className="hub-clientes__btn hub-clientes__btn--primary"
+              disabled={submitting}
+            >
+              {submitting ? 'Salvando…' : isCompany ? 'Salvar empresa' : 'Salvar tutor'}
+            </button>
+          ) : null}
         </div>
       );
     }

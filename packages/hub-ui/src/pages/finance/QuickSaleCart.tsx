@@ -4,6 +4,7 @@ import { HubSearchableCombobox, type HubComboboxOption } from '../../components/
 import type { HubInventoryItem, HubInventoryLotRow } from '../../api/hubInventoryApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import { computeLineTotal, parseMoney, type ComandaItemDraft } from './comandaItemDraft';
+import { normalizeProductQtyInput } from './quickSaleQty';
 
 type Props = {
   items: ComandaItemDraft[];
@@ -116,12 +117,23 @@ export const QuickSaleCart: React.FC<Props> = ({
             const lineTotal = computeLineTotal(it);
             const qty = parseMoney(it.quantity) || 1;
             const editingPrice = editingPriceIdx === idx && !priceLocked;
+            const lotQty = it.hub_inventory_lot_id
+              ? Number(
+                  inventoryLots.find((l) => l.id === it.hub_inventory_lot_id)?.qty_on_hand ?? 0,
+                )
+              : 0;
+            const atStockCap = isProduct && lotQty > 0 && qty >= lotQty;
+            const overStock = isProduct && lotQty > 0 && qty > lotQty;
+            const qtyNorm = isProduct
+              ? normalizeProductQtyInput(it.quantity, lotQty > 0 ? lotQty : Number.POSITIVE_INFINITY, Boolean(inv?.allow_fractional))
+              : null;
+            const qtyInvalid = Boolean(qtyNorm?.invalid && String(it.quantity).trim());
 
             return (
               <li
                 key={it.id ?? `line-${idx}`}
                 className={
-                  lotMissing
+                  lotMissing || overStock
                     ? 'hub-quick-sale-cart__line hub-quick-sale-cart__line--warn'
                     : 'hub-quick-sale-cart__line'
                 }
@@ -198,21 +210,64 @@ export const QuickSaleCart: React.FC<Props> = ({
                         <Minus size={14} strokeWidth={2.5} />
                       </button>
                       <input
-                        className="hub-quick-sale-cart__qty-input"
+                        className={
+                          qtyInvalid || overStock
+                            ? 'hub-quick-sale-cart__qty-input hub-quick-sale-cart__qty-input--warn'
+                            : 'hub-quick-sale-cart__qty-input'
+                        }
                         value={it.quantity}
-                        inputMode="decimal"
+                        inputMode={inv?.allow_fractional ? 'decimal' : 'numeric'}
                         aria-label="Quantidade"
-                        onChange={(e) => onUpdateItem(idx, { quantity: e.target.value })}
+                        aria-invalid={qtyInvalid || overStock}
+                        onChange={(e) => {
+                          const raw = e.target.value;
+                          if (isProduct && !inv?.allow_fractional) {
+                            // Só dígitos (permite vazio enquanto edita).
+                            if (raw !== '' && !/^\d+$/.test(raw.trim())) {
+                              onUpdateItem(idx, { quantity: raw });
+                              return;
+                            }
+                          }
+                          onUpdateItem(idx, { quantity: raw });
+                        }}
+                        onBlur={() => {
+                          if (!isProduct) return;
+                          const norm = normalizeProductQtyInput(
+                            it.quantity,
+                            lotQty > 0 ? lotQty : Number.POSITIVE_INFINITY,
+                            Boolean(inv?.allow_fractional),
+                          );
+                          if (norm.invalid) {
+                            onUpdateItem(idx, { quantity: '1' });
+                            return;
+                          }
+                          if (norm.quantity !== it.quantity) {
+                            onUpdateItem(idx, { quantity: norm.quantity });
+                          }
+                        }}
                       />
                       <button
                         type="button"
                         className="hub-quick-sale-cart__qty-btn"
                         aria-label="Aumentar quantidade"
+                        disabled={atStockCap}
+                        title={atStockCap ? `Máximo no lote: ${lotQty}` : undefined}
                         onClick={() => onBumpQty(idx, 1)}
                       >
                         <Plus size={14} strokeWidth={2.5} />
                       </button>
                     </div>
+                    {qtyInvalid ? (
+                      <span className="hub-quick-sale-cart__lot-warn">
+                        {inv?.allow_fractional
+                          ? 'Quantidade inválida'
+                          : 'Use um número inteiro'}
+                      </span>
+                    ) : overStock ? (
+                      <span className="hub-quick-sale-cart__lot-warn">
+                        Disponível no lote: {lotQty}
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="hub-quick-sale-cart__field hub-quick-sale-cart__field--price">

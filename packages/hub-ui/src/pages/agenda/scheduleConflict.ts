@@ -160,7 +160,9 @@ export function findLocalScheduleConflict(
   if (mutual) return mutual;
 
   const exclude = new Set(excludeIds);
-  const active = existing.filter((row) => row.status !== 'cancelled' && !exclude.has(row.id));
+  const active = existing.filter(
+    (row) => row.status !== 'cancelled' && row.status !== 'no_show' && !exclude.has(row.id),
+  );
 
   for (const window of windows) {
     const resource = normalizeResource(window.resourceLabel);

@@ -193,9 +193,10 @@ function compositionFromComandaRecord(comanda: Record<string, unknown>): {
   let has_product = false;
   let has_service = false;
   for (const raw of items) {
-    const it = raw as { item_kind?: string };
+    const it = raw as { item_kind?: string; hub_inventory_item_id?: string | null };
     const kind = String(it?.item_kind ?? '');
-    if (kind === 'product') has_product = true;
+    const hasInventory = Boolean(it?.hub_inventory_item_id);
+    if (kind === 'product' || hasInventory) has_product = true;
     else if (kind === 'service' || kind === 'fee') has_service = true;
   }
   return { has_product, has_service };
@@ -212,7 +213,13 @@ export function dayBoardItemPendingAmount(item: HubFinanceDayBoardItem): number 
   if (item.billing.receivable_status === 'cancelled' || item.billing.receivable_status === 'refunded') {
     return 0;
   }
-  if (item.coverage_kind === 'series_invoice' || item.series_invoice_comanda_id) return 0;
+  if (
+    item.coverage_kind === 'series_invoice' ||
+    item.coverage_kind === 'series_pending' ||
+    item.series_invoice_comanda_id
+  ) {
+    return 0;
+  }
   if ((item.has_package_balance || item.coverage_kind === 'package') && Number(item.estimated_amount ?? 0) <= 0.009) {
     return 0;
   }
@@ -361,7 +368,8 @@ export function buildCaixaSessionHistoryItems(
       const meta = dayBoardBillingMeta(item);
       const saleChannel = resolveSaleChannel(item.origin_type);
       const hasService = (item.services ?? []).length > 0;
-      const composition = resolveComposition(false, hasService) ?? (saleChannel === 'agenda' ? 'service' : null);
+      // Não forçar «Serviço» só porque veio da agenda — sem itens conhecidos, omitir chip.
+      const composition = resolveComposition(false, hasService);
       const chips = buildHistoryChips({
         saleChannel: saleChannel ?? 'agenda',
         composition,

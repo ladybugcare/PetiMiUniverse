@@ -42,6 +42,7 @@ import {
 } from './hubReceivableFinancialBalance';
 import {
   accrueCommissionSnapshots,
+  assertServiceLinesHaveExecutor,
   commissionAdjustmentForReturn,
   snapshotToInsertFields,
 } from './hubCommissionAccrual';
@@ -99,7 +100,10 @@ import { financeSourceTypeSchema, receivableSourceTypeSchema } from './hubFinanc
 import { notifyHubPaymentDue } from './hubNotifyEvents';
 import { syncChargeBundleStatusForReceivable } from './hubChargeBundlesService';
 import { applyPackageCoverageToEstimate, hasPackageBalanceForServices, listActivePackageBalances } from './hubPackagesService';
-import { findSeriesInvoiceCoverageForAppointments } from './hubSeriesBillingService';
+import {
+  findPeriodicInvoiceSeriesAppointments,
+  findSeriesInvoiceCoverageForAppointments,
+} from './hubSeriesBillingService';
 import {
   markHubAppointmentPaidFromReceivable,
   syncHubAppointmentPaidFromReceivable,
@@ -1175,6 +1179,32 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
 
     const finalAmount =
       'final_amount' in built && typeof built.final_amount === 'number' ? built.final_amount : built.subtotal;
+
+    if (source_type === 'appointment' || source_type === 'grooming_session') {
+      const executorCheck = await assertServiceLinesHaveExecutor(
+        clinic_id,
+        built.lines.map((l) => ({
+          origin_type:
+            l.line_kind === 'appointment_service'
+              ? 'appointment_service'
+              : l.line_kind === 'grooming_extra'
+                ? 'grooming_extra'
+                : null,
+          origin_id: (l.source_line_id as string | null) ?? null,
+          source_line_id: (l.source_line_id as string | null) ?? null,
+          line_kind: (l.line_kind as string | null) ?? null,
+          description: (l.description as string | null) ?? null,
+        })),
+      );
+      if (!executorCheck.ok) {
+        return res.status(409).json({
+          error: executorCheck.message,
+          code: 'COMMISSION_EXECUTOR_REQUIRED',
+          missing: executorCheck.missing,
+        });
+      }
+    }
+
     const { data: rec, error: rErr } = await supabaseAdmin
       .from('hub_receivables')
       .insert({
@@ -3502,7 +3532,10 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
 
       const [{ data: comandas }, { data: items }] = await Promise.all([
         supabaseAdmin.from('hub_comandas').select('id, origin_type').in('id', comandaIds),
-        supabaseAdmin.from('hub_comanda_items').select('comanda_id, item_kind').in('comanda_id', comandaIds),
+        supabaseAdmin
+          .from('hub_comanda_items')
+          .select('comanda_id, item_kind, hub_inventory_item_id')
+          .in('comanda_id', comandaIds),
       ]);
 
       const originByComanda = new Map<string, string>();
@@ -3515,7 +3548,8 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
         if (!cid) continue;
         const prev = compositionByComanda.get(cid) ?? { has_product: false, has_service: false };
         const kind = String(it?.item_kind ?? '');
-        if (kind === 'product') prev.has_product = true;
+        const hasInventory = Boolean(it?.hub_inventory_item_id);
+        if (kind === 'product' || hasInventory) prev.has_product = true;
         else if (kind === 'service' || kind === 'fee') prev.has_service = true;
         compositionByComanda.set(cid, prev);
       }
@@ -4497,8 +4531,8 @@ type DayBoardItem = {
   services: Array<{ name: string; amount: number; kind?: 'service' | 'product' | 'fee' | null }>;
   billing: DayBoardBilling;
   has_package_balance?: boolean;
-  /** none | package | series_invoice */
-  coverage_kind?: 'none' | 'package' | 'series_invoice';
+  /** none | package | series_invoice (emitida) | series_pending (fatura mensal ainda não emitida) */
+  coverage_kind?: 'none' | 'package' | 'series_invoice' | 'series_pending';
   series_invoice_comanda_id?: string | null;
   /** Presente em `hospitalization`: origem real da comanda. */
   billing_origin_type?: 'encounter' | 'appointment' | null;
@@ -4634,22 +4668,18 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       }
     }
 
-    for (const row of apptRows ?? []) {
-      if (row.billing_waived_at) continue;
-      const id = row.id as string;
-      const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
-      const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
-      const services =
-        (row.appointment_services as Array<{
-          sale_amount_applied?: number | null;
-          hub_service_type_id?: string | null;
-          service_type?: {
-            name?: string;
-            service_group?: string | null;
-            sale_amount?: number | null;
-          } | null;
-        }>) ?? [];
-      const servicesEnriched = services.map((sv) => {
+    type ApptSvcRow = {
+      sale_amount_applied?: number | null;
+      hub_service_type_id?: string | null;
+      service_type?: {
+        name?: string;
+        service_group?: string | null;
+        sale_amount?: number | null;
+      } | null;
+    };
+
+    const enrichApptServices = (services: ApptSvcRow[]): ApptSvcRow[] =>
+      services.map((sv) => {
         const embedded = sv.service_type;
         if (embedded?.service_group != null && embedded?.sale_amount != null) return sv;
         const typeId = sv.hub_service_type_id as string | null | undefined;
@@ -4664,8 +4694,44 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
           },
         };
       });
+
+    /** Pernas L&T anexadas (com parent) cobram na comanda do ancestral — não entram soltas no caixa. */
+    const attachedPickupLegsByParent = new Map<string, Array<Record<string, unknown>>>();
+    for (const row of apptRows ?? []) {
+      const kind = String(row.appointment_kind ?? '');
+      const parentId = (row.parent_appointment_id as string | null | undefined) ?? null;
+      if (kind === 'pickup_route' && parentId) {
+        const list = attachedPickupLegsByParent.get(parentId) ?? [];
+        list.push(row);
+        attachedPickupLegsByParent.set(parentId, list);
+      }
+    }
+
+    for (const row of apptRows ?? []) {
+      if (row.billing_waived_at) continue;
+      const kind = String(row.appointment_kind ?? '');
+      const parentId = (row.parent_appointment_id as string | null | undefined) ?? null;
+      // L&T anexado: omitir do day board (valor sobe no ancestral). Standalone (sem parent) permanece.
+      if (kind === 'pickup_route' && parentId) continue;
+
+      const id = row.id as string;
+      const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
+      const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
+      const services = (row.appointment_services as ApptSvcRow[] | null) ?? [];
+      const servicesEnriched = enrichApptServices(services);
+
+      const rolledLegServices: ApptSvcRow[] = [];
+      for (const leg of attachedPickupLegsByParent.get(id) ?? []) {
+        if (leg.billing_waived_at) continue;
+        const legStatus = String(leg.status ?? '');
+        if (legStatus === 'cancelled' || legStatus === 'no_show') continue;
+        const legSvcs = enrichApptServices((leg.appointment_services as ApptSvcRow[] | null) ?? []);
+        rolledLegServices.push(...legSvcs);
+      }
+
+      const allServicesForEstimate = [...servicesEnriched, ...rolledLegServices];
       const estimated = round2(
-        servicesEnriched.reduce(
+        allServicesForEstimate.reduce(
           (s, sv) => s + resolveAppliedSaleAmount(sv.sale_amount_applied, sv.service_type?.sale_amount),
           0
         )
@@ -4691,7 +4757,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
         pet: pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null,
         operational_status: String(row.status),
         estimated_amount: estimated,
-        services: servicesEnriched.map((sv) => ({
+        services: allServicesForEstimate.map((sv) => ({
           name: String(sv.service_type?.name ?? 'Serviço'),
           amount: resolveAppliedSaleAmount(sv.sale_amount_applied, sv.service_type?.sale_amount),
           kind: 'service' as const,
@@ -4705,7 +4771,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
           active_receivable_id: null,
           due_date: null,
         },
-        parent_appointment_id: (row.parent_appointment_id as string | null | undefined) ?? null,
+        parent_appointment_id: parentId,
         visit_group_id: (row.visit_group_id as string | null | undefined) ?? null,
         appointment_kind: (row.appointment_kind as string | null | undefined) ?? null,
       });
@@ -5379,6 +5445,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
     const clinicBalances = await listActivePackageBalances({ clinicId: clinic_id });
     const appointmentIds = items.filter((i) => i.origin_type === 'appointment').map((i) => i.origin_id);
     const seriesCoverage = await findSeriesInvoiceCoverageForAppointments(appointmentIds);
+    const periodicPendingIds = await findPeriodicInvoiceSeriesAppointments(appointmentIds);
 
     for (const item of items) {
       item.coverage_kind = 'none';
@@ -5399,6 +5466,15 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
             comanda_status: item.billing.comanda_status ?? 'aberta',
           };
         }
+        continue;
+      }
+
+      // Fatura em série ainda não emitida: não cobrar no dia (nem cair no ramo de pacote).
+      if (item.origin_type === 'appointment' && periodicPendingIds.has(item.origin_id)) {
+        item.coverage_kind = 'series_pending';
+        item.has_package_balance = false;
+        item.estimated_amount = 0;
+        item.services = item.services.map((s) => ({ ...s, amount: 0 }));
         continue;
       }
 

@@ -157,6 +157,8 @@ const HubEstoqueItemsPage: React.FC = () => {
   const { loading: permLoading, hasPermission } = usePermissions();
   const clinicId = getStoredClinicId();
   const canWrite = hasPermission('hub.inventory.write');
+  /** Custo unitário: só quem pode escrever no estoque (recepção com read-only não vê). */
+  const canViewCost = canWrite;
   const accessAllowed = hasPermission('hub.inventory.read');
   const clinicalStock = usesClinicalStockScope(hasPermission);
   const [searchParams, setSearchParams] = useSearchParams();
@@ -770,7 +772,7 @@ const HubEstoqueItemsPage: React.FC = () => {
                       <th>Mín.</th>
                       {!clinicalStock ? (
                         <>
-                          <th className="hub-servicos__td-money">Custo</th>
+                          {canViewCost ? <th className="hub-servicos__td-money">Custo</th> : null}
                           <th className="hub-servicos__td-money">Venda</th>
                         </>
                       ) : null}
@@ -829,9 +831,11 @@ const HubEstoqueItemsPage: React.FC = () => {
                           <td>{t.min_stock_qty}</td>
                           {!clinicalStock ? (
                             <>
-                              <td className="hub-servicos__td-money">
-                                {formatMoneyCurrencyBrl(Number(t.cost_amount))}
-                              </td>
+                              {canViewCost ? (
+                                <td className="hub-servicos__td-money">
+                                  {formatMoneyCurrencyBrl(Number(t.cost_amount))}
+                                </td>
+                              ) : null}
                               <td className="hub-servicos__td-money">
                                 {formatMoneyCurrencyBrl(Number(t.sale_amount))}
                               </td>

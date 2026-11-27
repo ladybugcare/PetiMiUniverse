@@ -18,7 +18,27 @@ export type SeriesBillingConfig = {
   invoice_due_rule?: InvoiceDueRule | null;
   invoice_due_day?: number | null;
   invoice_due_plus_days?: number | null;
+  /** Desconto de cabeçalho (%) na fatura mensal (0–100). */
+  invoice_discount_percent?: number | null;
 };
+
+/** Resolve desconto de cabeçalho da fatura: override absoluto ganha do % da série. */
+export function resolveSeriesInvoiceDiscount(opts: {
+  subtotal: number;
+  percent?: number | null;
+  overrideAmount?: number | null;
+}): { discount: number; net: number } {
+  const subtotal = roundMoney2(Math.max(0, Number(opts.subtotal) || 0));
+  let discount = 0;
+  if (opts.overrideAmount != null && Number.isFinite(Number(opts.overrideAmount))) {
+    discount = roundMoney2(Math.max(0, Number(opts.overrideAmount)));
+  } else {
+    const pct = Math.min(100, Math.max(0, Number(opts.percent) || 0));
+    discount = roundMoney2((subtotal * pct) / 100);
+  }
+  if (discount > subtotal) discount = subtotal;
+  return { discount, net: roundMoney2(Math.max(0, subtotal - discount)) };
+}
 
 export function parseYmd(ymd: string): { y: number; m: number; d: number } {
   const [y, m, d] = ymd.split('-').map(Number);
@@ -89,10 +109,12 @@ export function normalizeSeriesBillingForInsert(
       invoice_due_rule: null,
       invoice_due_day: null,
       invoice_due_plus_days: null,
+      invoice_discount_percent: 0,
     };
   }
   const issueRule = input?.invoice_issue_rule ?? 'first_business_day';
   const dueRule = input?.invoice_due_rule ?? 'same_day';
+  const discountPct = Math.min(100, Math.max(0, Number(input?.invoice_discount_percent) || 0));
   return {
     billing_mode: 'periodic_invoice',
     invoice_cycle: 'calendar_month',
@@ -101,6 +123,7 @@ export function normalizeSeriesBillingForInsert(
     invoice_due_rule: dueRule,
     invoice_due_day: dueRule === 'fixed_day' ? Math.min(28, Math.max(1, Number(input?.invoice_due_day ?? 1))) : null,
     invoice_due_plus_days: dueRule === 'plus_days' ? Math.max(0, Number(input?.invoice_due_plus_days ?? 0)) : null,
+    invoice_discount_percent: roundMoney2(discountPct),
   };
 }
 
@@ -147,6 +170,185 @@ export async function findSeriesInvoiceCoverageForAppointments(
   return map;
 }
 
+/**
+ * Agendamentos cuja série está em `periodic_invoice` (cobrança só na fatura mensal).
+ * Usado no day board / openComanda para travar cobrança do dia antes da emissão.
+ */
+export async function findPeriodicInvoiceSeriesAppointments(
+  appointmentIds: string[]
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  if (!appointmentIds.length) return out;
+
+  const { data: appts, error: aErr } = await supabaseAdmin
+    .from('hub_appointments')
+    .select('id, series_id')
+    .in('id', appointmentIds)
+    .is('deleted_at', null);
+  if (aErr) {
+    if (String(aErr.message || '').includes('series_id')) return out;
+    throw new Error(aErr.message);
+  }
+
+  const seriesIds = [
+    ...new Set(
+      (appts ?? [])
+        .map((r) => (r as { series_id?: string | null }).series_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  if (!seriesIds.length) return out;
+
+  const { data: seriesRows, error: sErr } = await supabaseAdmin
+    .from('hub_appointment_series')
+    .select('id, billing_mode')
+    .in('id', seriesIds);
+  if (sErr) {
+    if (String(sErr.message || '').includes('billing_mode')) return out;
+    throw new Error(sErr.message);
+  }
+
+  const periodicSeries = new Set(
+    (seriesRows ?? [])
+      .filter((r) => String((r as { billing_mode?: string }).billing_mode) === 'periodic_invoice')
+      .map((r) => (r as { id: string }).id),
+  );
+  if (!periodicSeries.size) return out;
+
+  for (const row of appts ?? []) {
+    const r = row as { id: string; series_id?: string | null };
+    if (r.series_id && periodicSeries.has(r.series_id)) out.add(r.id);
+  }
+  return out;
+}
+
+/** True se o agendamento pertence a série periodic_invoice e ainda não tem fatura emitida cobrindo-o. */
+export async function isAppointmentPendingPeriodicSeriesInvoice(
+  appointmentId: string
+): Promise<{ pending: boolean; seriesInvoiceComandaId: string | null }> {
+  const periodic = await findPeriodicInvoiceSeriesAppointments([appointmentId]);
+  if (!periodic.has(appointmentId)) {
+    return { pending: false, seriesInvoiceComandaId: null };
+  }
+  const coverage = await findSeriesInvoiceCoverageForAppointments([appointmentId]);
+  const cov = coverage.get(appointmentId);
+  if (cov?.comanda_id) {
+    return { pending: false, seriesInvoiceComandaId: cov.comanda_id };
+  }
+  return { pending: true, seriesInvoiceComandaId: null };
+}
+
+/**
+ * Ocorrências que já foram cobradas no dia (comanda/recebível da ocorrência ou sessão de banho).
+ * Usado na emissão da fatura mensal para não duplicar.
+ */
+export async function findAlreadyBilledSeriesOccurrenceIds(
+  clinicId: string,
+  appointmentIds: string[]
+): Promise<Set<string>> {
+  const billed = new Set<string>();
+  if (!appointmentIds.length) return billed;
+
+  const { data: apptRecs } = await supabaseAdmin
+    .from('hub_receivables')
+    .select('source_id')
+    .eq('clinic_id', clinicId)
+    .eq('source_type', 'appointment')
+    .in('source_id', appointmentIds)
+    .is('deleted_at', null)
+    .neq('status', 'cancelled');
+  for (const r of apptRecs ?? []) {
+    if (r.source_id) billed.add(r.source_id as string);
+  }
+
+  const { data: apptComandas } = await supabaseAdmin
+    .from('hub_comandas')
+    .select('id, origin_id, status')
+    .eq('clinic_id', clinicId)
+    .eq('origin_type', 'appointment')
+    .in('origin_id', appointmentIds)
+    .neq('status', 'cancelada')
+    .is('deleted_at', null);
+
+  const comandaIds = (apptComandas ?? []).map((c) => c.id as string);
+  const billedComandaIds = new Set<string>();
+  if (comandaIds.length) {
+    const { data: linkedRecs } = await supabaseAdmin
+      .from('hub_receivables')
+      .select('comanda_id')
+      .eq('clinic_id', clinicId)
+      .in('comanda_id', comandaIds)
+      .is('deleted_at', null)
+      .neq('status', 'cancelled');
+    for (const r of linkedRecs ?? []) {
+      if (r.comanda_id) billedComandaIds.add(r.comanda_id as string);
+    }
+  }
+  for (const c of apptComandas ?? []) {
+    if (billedComandaIds.has(c.id as string) || String(c.status) === 'fechada') {
+      if (c.origin_id) billed.add(c.origin_id as string);
+    }
+  }
+
+  const { data: sessions } = await supabaseAdmin
+    .from('hub_grooming_sessions')
+    .select('id, hub_appointment_id')
+    .eq('clinic_id', clinicId)
+    .in('hub_appointment_id', appointmentIds);
+  const sessionIds = (sessions ?? []).map((s) => s.id as string);
+  const sessionToAppt = new Map(
+    (sessions ?? []).map((s) => [
+      s.id as string,
+      (s as { hub_appointment_id?: string | null }).hub_appointment_id as string | null,
+    ]),
+  );
+  if (sessionIds.length) {
+    const { data: sessRecs } = await supabaseAdmin
+      .from('hub_receivables')
+      .select('source_id')
+      .eq('clinic_id', clinicId)
+      .eq('source_type', 'grooming_session')
+      .in('source_id', sessionIds)
+      .is('deleted_at', null)
+      .neq('status', 'cancelled');
+    for (const r of sessRecs ?? []) {
+      const apptId = sessionToAppt.get(r.source_id as string);
+      if (apptId) billed.add(apptId);
+    }
+
+    const { data: sessComandas } = await supabaseAdmin
+      .from('hub_comandas')
+      .select('id, origin_id, status')
+      .eq('clinic_id', clinicId)
+      .eq('origin_type', 'grooming_session')
+      .in('origin_id', sessionIds)
+      .neq('status', 'cancelada')
+      .is('deleted_at', null);
+    const sessComandaIds = (sessComandas ?? []).map((c) => c.id as string);
+    const billedSessComandaIds = new Set<string>();
+    if (sessComandaIds.length) {
+      const { data: linked } = await supabaseAdmin
+        .from('hub_receivables')
+        .select('comanda_id')
+        .eq('clinic_id', clinicId)
+        .in('comanda_id', sessComandaIds)
+        .is('deleted_at', null)
+        .neq('status', 'cancelled');
+      for (const r of linked ?? []) {
+        if (r.comanda_id) billedSessComandaIds.add(r.comanda_id as string);
+      }
+    }
+    for (const c of sessComandas ?? []) {
+      if (billedSessComandaIds.has(c.id as string) || String(c.status) === 'fechada') {
+        const apptId = sessionToAppt.get(c.origin_id as string);
+        if (apptId) billed.add(apptId);
+      }
+    }
+  }
+
+  return billed;
+}
+
 type SeriesRow = {
   id: string;
   clinic_id: string;
@@ -157,6 +359,7 @@ type SeriesRow = {
   invoice_due_rule: string | null;
   invoice_due_day: number | null;
   invoice_due_plus_days: number | null;
+  invoice_discount_percent?: number | null;
 };
 
 /**
@@ -171,6 +374,8 @@ export async function issueSeriesInvoiceForPeriod(input: {
   actorUserId?: string | null;
   /** Se true, emite mesmo que issue_date > hoje (manual). */
   force?: boolean;
+  /** Override absoluto (R$) do desconto de cabeçalho para este mês; senão usa % da série. */
+  discountAmount?: number | null;
 }): Promise<{
   series_invoice_id: string;
   comanda_id: string;
@@ -178,21 +383,44 @@ export async function issueSeriesInvoiceForPeriod(input: {
   total_amount: number;
   occurrence_count: number;
   already_issued?: boolean;
+  skipped_already_billed?: number;
 }> {
   const ref = input.refYmd ?? new Date().toISOString().slice(0, 10);
   const { period_start, period_end } = calendarMonthBounds(ref);
 
-  const { data: series, error: sErr } = await supabaseAdmin
-    .from('hub_appointment_series')
-    .select(
-      'id, clinic_id, billing_mode, invoice_cycle, invoice_issue_rule, invoice_issue_day, invoice_due_rule, invoice_due_day, invoice_due_plus_days'
-    )
-    .eq('id', input.seriesId)
-    .eq('clinic_id', input.clinicId)
-    .maybeSingle();
-  if (sErr) throw new Error(sErr.message);
+  const selectWithDiscount =
+    'id, clinic_id, billing_mode, invoice_cycle, invoice_issue_rule, invoice_issue_day, invoice_due_rule, invoice_due_day, invoice_due_plus_days, invoice_discount_percent';
+  const selectLegacy =
+    'id, clinic_id, billing_mode, invoice_cycle, invoice_issue_rule, invoice_issue_day, invoice_due_rule, invoice_due_day, invoice_due_plus_days';
+
+  let series: Record<string, unknown> | null = null;
+  {
+    const first = await supabaseAdmin
+      .from('hub_appointment_series')
+      .select(selectWithDiscount)
+      .eq('id', input.seriesId)
+      .eq('clinic_id', input.clinicId)
+      .maybeSingle();
+    if (!first.error && first.data) {
+      series = first.data as Record<string, unknown>;
+    } else if (
+      first.error &&
+      String(first.error.message ?? '').includes('invoice_discount_percent')
+    ) {
+      const legacy = await supabaseAdmin
+        .from('hub_appointment_series')
+        .select(selectLegacy)
+        .eq('id', input.seriesId)
+        .eq('clinic_id', input.clinicId)
+        .maybeSingle();
+      if (legacy.error) throw new Error(legacy.error.message);
+      series = (legacy.data as Record<string, unknown> | null) ?? null;
+    } else if (first.error) {
+      throw new Error(first.error.message);
+    }
+  }
   if (!series) throw new Error('SERIES_NOT_FOUND');
-  const row = series as SeriesRow;
+  const row = series as unknown as SeriesRow;
   if (row.billing_mode !== 'periodic_invoice') throw new Error('SERIES_NOT_PERIODIC');
 
   const cfg: SeriesBillingConfig = {
@@ -244,7 +472,15 @@ export async function issueSeriesInvoiceForPeriod(input: {
     .order('starts_at', { ascending: true });
   if (aErr) throw new Error(aErr.message);
 
-  const occurrences = appts ?? [];
+  const allOccurrences = appts ?? [];
+  if (!allOccurrences.length) throw new Error('NO_OCCURRENCES');
+
+  const alreadyBilledIds = await findAlreadyBilledSeriesOccurrenceIds(
+    input.clinicId,
+    allOccurrences.map((a) => a.id as string),
+  );
+  const occurrences = allOccurrences.filter((a) => !alreadyBilledIds.has(a.id as string));
+  const skipped_already_billed = allOccurrences.length - occurrences.length;
   if (!occurrences.length) throw new Error('NO_OCCURRENCES');
 
   const guardianId = occurrences[0]?.guardian_id as string | null;
@@ -308,7 +544,12 @@ export async function issueSeriesInvoiceForPeriod(input: {
     }
   }
 
-  const total = roundMoney2(lines.reduce((s, l) => s + l.sale_amount, 0));
+  const subtotal = roundMoney2(lines.reduce((s, l) => s + l.sale_amount, 0));
+  const { discount, net } = resolveSeriesInvoiceDiscount({
+    subtotal,
+    percent: row.invoice_discount_percent ?? 0,
+    overrideAmount: input.discountAmount,
+  });
 
   let invoiceId = existing?.id as string | undefined;
   if (!invoiceId) {
@@ -322,7 +563,7 @@ export async function issueSeriesInvoiceForPeriod(input: {
         issue_date,
         due_date,
         status: 'pending_issue',
-        total_amount: total,
+        total_amount: net,
       })
       .select('id')
       .single();
@@ -331,7 +572,7 @@ export async function issueSeriesInvoiceForPeriod(input: {
   } else {
     await supabaseAdmin
       .from('hub_series_invoices')
-      .update({ issue_date, due_date, total_amount: total, status: 'pending_issue' })
+      .update({ issue_date, due_date, total_amount: net, status: 'pending_issue' })
       .eq('id', invoiceId);
   }
 
@@ -346,9 +587,9 @@ export async function issueSeriesInvoiceForPeriod(input: {
       origin_id: invoiceId,
       status: 'aberta',
       financial_status: 'open',
-      subtotal_amount: total,
-      discount_amount: 0,
-      total_amount: total,
+      subtotal_amount: subtotal,
+      discount_amount: discount,
+      total_amount: net,
       notes: `Fatura da série — ${period_start.slice(0, 7)}`,
     })
     .select('id')
@@ -404,8 +645,8 @@ export async function issueSeriesInvoiceForPeriod(input: {
       comanda_id: comandaId,
       source_type: 'manual',
       source_id: invoiceId,
-      original_amount: total,
-      final_amount: total,
+      original_amount: net,
+      final_amount: net,
       status: 'pending',
       due_date,
       notes: `Fatura série ${period_start.slice(0, 7)}`,
@@ -426,8 +667,8 @@ export async function issueSeriesInvoiceForPeriod(input: {
     const commissionByItem = await buildCommissionInsertFieldsForItems({
       clinicId: input.clinicId,
       items,
-      originalAmount: total,
-      netAmountAtSale: total,
+      originalAmount: net,
+      netAmountAtSale: net,
       allowActingUserAsSaleAuthor: false,
     });
     let sort = 0;
@@ -457,7 +698,7 @@ export async function issueSeriesInvoiceForPeriod(input: {
     .update({
       status: 'issued',
       comanda_id: comandaId,
-      total_amount: total,
+      total_amount: net,
     })
     .eq('id', invoiceId);
 
@@ -473,8 +714,9 @@ export async function issueSeriesInvoiceForPeriod(input: {
     series_invoice_id: invoiceId,
     comanda_id: comandaId,
     receivable_id: (receivable?.id as string | null) ?? null,
-    total_amount: total,
+    total_amount: net,
     occurrence_count: occurrences.length,
+    skipped_already_billed: skipped_already_billed > 0 ? skipped_already_billed : undefined,
   };
 }
 

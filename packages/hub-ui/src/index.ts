@@ -65,6 +65,7 @@ export { hubClinicSettingsApi } from './api/hubClinicSettingsApi';
 export type {
   HubClinicSettings,
   HubCupomWidthMm,
+  HubMultipetPickupBilling,
   PatchHubClinicSettingsPayload,
 } from './api/hubClinicSettingsApi';
 export { hubPartnerClinicsApi } from './api/hubPartnerClinicsApi';

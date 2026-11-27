@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { AlertCircle, ArrowRight, CheckCircle, Coins, X } from 'lucide-react';
 import type { HubCashSession, HubCashSessionSummary, HubFinanceDayBoardItem } from '../../api/hubFinancialApi';
 import { hubFinancialApi } from '../../api/hubFinancialApi';
@@ -49,6 +49,15 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [handoffDone, setHandoffDone] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, busy, onClose]);
 
   if (!open) return null;
 

@@ -367,4 +367,156 @@ export async function buildCommissionInsertFieldsForItems(opts: {
   });
 }
 
+export type MissingServiceExecutor = {
+  origin_id: string;
+  description?: string | null;
+};
+
+/**
+ * Garante que linhas `appointment_service` que não são pernas de L&T
+ * tenham `executed_by_staff_id` antes da cobrança.
+ */
+export async function assertServiceLinesHaveExecutor(
+  clinicId: string,
+  items: Array<{
+    origin_type?: string | null;
+    origin_id?: string | null;
+    source_line_id?: string | null;
+    line_kind?: string | null;
+    description?: string | null;
+  }>,
+): Promise<{ ok: true } | { ok: false; missing: MissingServiceExecutor[]; message: string }> {
+  const serviceIds = [
+    ...new Set(
+      items
+        .filter((it) => {
+          const originType = String(it.origin_type ?? '');
+          const lineKind = String(it.line_kind ?? '');
+          const isApptSvc =
+            originType === 'appointment_service' || lineKind === 'appointment_service';
+          const id = it.origin_id ?? it.source_line_id ?? null;
+          return isApptSvc && Boolean(id);
+        })
+        .map((it) => String(it.origin_id ?? it.source_line_id)),
+    ),
+  ];
+  if (serviceIds.length === 0) return { ok: true };
+
+  const { data: svcRows, error: svcErr } = await supabaseAdmin
+    .from('hub_appointment_services')
+    .select('id, executed_by_staff_id, appointment_id')
+    .in('id', serviceIds);
+  if (svcErr) throw new Error(svcErr.message);
+
+  const byId = new Map(
+    (svcRows ?? []).map((r) => [
+      r.id as string,
+      {
+        executed_by_staff_id: (r.executed_by_staff_id as string | null) ?? null,
+        appointment_id: (r.appointment_id as string | null) ?? null,
+      },
+    ]),
+  );
+
+  const appointmentIds = [
+    ...new Set(
+      [...byId.values()]
+        .map((r) => r.appointment_id)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  const kindByAppt = new Map<string, string>();
+  if (appointmentIds.length > 0) {
+    const { data: appts, error: apptErr } = await supabaseAdmin
+      .from('hub_appointments')
+      .select('id, appointment_kind')
+      .eq('clinic_id', clinicId)
+      .in('id', appointmentIds);
+    if (apptErr) throw new Error(apptErr.message);
+    for (const a of appts ?? []) {
+      kindByAppt.set(a.id as string, String(a.appointment_kind ?? ''));
+    }
+  }
+
+  const descByOrigin = new Map<string, string | null>();
+  for (const it of items) {
+    const id = String(it.origin_id ?? it.source_line_id ?? '');
+    if (id) descByOrigin.set(id, (it.description as string | null) ?? null);
+  }
+
+  const missing: MissingServiceExecutor[] = [];
+  for (const sid of serviceIds) {
+    const row = byId.get(sid);
+    if (!row?.appointment_id) continue;
+    if (kindByAppt.get(row.appointment_id) === 'pickup_route') continue;
+    if (row.executed_by_staff_id) continue;
+    missing.push({ origin_id: sid, description: descByOrigin.get(sid) ?? null });
+  }
+
+  if (missing.length === 0) return { ok: true };
+  return {
+    ok: false,
+    missing,
+    message: 'Marque a execução do serviço antes de cobrar.',
+  };
+}
+
+/**
+ * Preenche `commission_staff_member_id` em linhas de L&T já cobradas sem profissional,
+ * quando a rota ganha (ou já tem) motorista. Não altera valor/regra congelados nem staff existente.
+ */
+export async function backfillPickupLegCommissionStaff(
+  clinicId: string,
+  routeId: string,
+): Promise<{ updated: number }> {
+  const { data: route, error: routeErr } = await supabaseAdmin
+    .from('hub_pickup_routes')
+    .select('id, driver_staff_id')
+    .eq('id', routeId)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (routeErr) throw new Error(routeErr.message);
+  const driverId = (route?.driver_staff_id as string | null) ?? null;
+  if (!driverId) return { updated: 0 };
+  if (!(await assertStaffInClinic(clinicId, driverId))) return { updated: 0 };
+
+  const { data: stops, error: stopsErr } = await supabaseAdmin
+    .from('hub_pickup_stops')
+    .select('hub_appointment_id')
+    .eq('hub_pickup_route_id', routeId);
+  if (stopsErr) throw new Error(stopsErr.message);
+  const appointmentIds = [
+    ...new Set(
+      (stops ?? [])
+        .map((s) => s.hub_appointment_id as string | null)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  if (appointmentIds.length === 0) return { updated: 0 };
+
+  const { data: svcRows, error: svcErr } = await supabaseAdmin
+    .from('hub_appointment_services')
+    .select('id')
+    .in('appointment_id', appointmentIds);
+  if (svcErr) throw new Error(svcErr.message);
+  const serviceIds = (svcRows ?? []).map((r) => r.id as string);
+  if (serviceIds.length === 0) return { updated: 0 };
+
+  const now = new Date().toISOString();
+  const { data: updatedRows, error: updErr } = await supabaseAdmin
+    .from('hub_receivable_lines')
+    .update({
+      commission_staff_member_id: driverId,
+      commission_staff_source: 'service_executor',
+      commission_attributed_at: now,
+    })
+    .eq('clinic_id', clinicId)
+    .in('source_line_id', serviceIds)
+    .is('commission_staff_member_id', null)
+    .select('id');
+  if (updErr) throw new Error(updErr.message);
+  return { updated: (updatedRows ?? []).length };
+}
+
 export { commissionAdjustmentForReturn };

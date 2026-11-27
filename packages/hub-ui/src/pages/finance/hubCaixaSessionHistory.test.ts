@@ -14,9 +14,10 @@ function dayBoardItem(
     estimated_amount?: number;
     origin_id?: string;
     has_receivable?: boolean;
+    coverage_kind?: HubFinanceDayBoardItem['coverage_kind'];
   } = {},
 ): HubFinanceDayBoardItem {
-  const { estimated_amount, origin_id, has_receivable, ...billing } = partial;
+  const { estimated_amount, origin_id, has_receivable, coverage_kind, ...billing } = partial;
   return {
     origin_type: 'appointment',
     origin_id: origin_id ?? 'appt-1',
@@ -29,6 +30,7 @@ function dayBoardItem(
     operational_status: 'done',
     estimated_amount: estimated_amount ?? 100,
     services: [],
+    coverage_kind,
     billing: {
       comanda_id: 'c1',
       comanda_status: 'aberta',
@@ -45,6 +47,22 @@ describe('sumDayBoardPendingAmount', () => {
     expect(
       sumDayBoardPendingAmount([
         dayBoardItem({ finance_handoff_at: '2026-09-04T20:00:00.000Z', estimated_amount: 90 }),
+        dayBoardItem({ finance_handoff_at: null, estimated_amount: 40 }),
+      ]),
+    ).toBe(40);
+  });
+
+  it('ignora ocorrência com fatura mensal pendente (series_pending)', () => {
+    expect(
+      sumDayBoardPendingAmount([
+        dayBoardItem({
+          coverage_kind: 'series_pending',
+          estimated_amount: 0,
+          finance_handoff_at: null,
+          has_receivable: false,
+          comanda_id: null,
+          receivable_status: null,
+        }),
         dayBoardItem({ finance_handoff_at: null, estimated_amount: 40 }),
       ]),
     ).toBe(40);
@@ -348,6 +366,54 @@ describe('buildCaixaSessionHistoryItems', () => {
     expect(row?.sale_channel).toBe('quick_sale');
     expect(row?.composition).toBe('product');
     expect(row?.chips?.map((c) => c.label)).toEqual(['Venda rápida', 'Produto']);
+  });
+
+  it('trata item com hub_inventory_item_id como produto mesmo se item_kind vier errado', () => {
+    const items = buildCaixaSessionHistoryItems(
+      null,
+      [],
+      [
+        {
+          id: 'c-inv',
+          status: 'aberta',
+          origin_type: 'manual',
+          opened_at: '2026-09-04T11:00:00.000Z',
+          total_amount: 50,
+          items: [{ item_kind: 'service', hub_inventory_item_id: 'inv-1' }],
+          guardian: { full_name: 'Beatriz' },
+        },
+      ],
+    );
+    const row = items.find((i) => i.comanda_id === 'c-inv');
+    expect(row?.composition).toBe('product');
+    expect(row?.chips?.map((c) => c.label)).toEqual(['Venda rápida', 'Produto']);
+  });
+
+  it('dayboard sem serviços não força chip Serviço', () => {
+    const items = buildCaixaSessionHistoryItems(
+      null,
+      [
+        {
+          origin_type: 'appointment',
+          origin_id: 'ap-1',
+          origin_label: 'Consulta',
+          estimated_amount: 100,
+          services: [],
+          billing: {
+            comanda_id: 'com-db',
+            receivable_status: 'pending',
+            finance_handoff_at: null,
+            active_receivable_id: null,
+          },
+          guardian: { full_name: 'Ana' },
+          pet: { name: 'Rex' },
+        } as never,
+      ],
+      [],
+    );
+    const row = items.find((i) => i.id.startsWith('billing:dayboard:'));
+    expect(row?.chips?.map((c) => c.label)).toEqual(['Agenda']);
+    expect(row?.composition).toBeNull();
   });
 });
 

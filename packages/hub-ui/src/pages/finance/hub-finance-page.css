@@ -3642,6 +3642,11 @@
   background: #fff;
 }
 
+.hub-quick-sale-cart__qty-input--warn {
+  color: #b42318;
+  background: #fef3f2;
+}
+
 .hub-quick-sale-cart__money,
 .hub-quick-sale-cart__money-display {
   display: inline-flex;

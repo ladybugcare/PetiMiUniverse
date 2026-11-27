@@ -162,6 +162,10 @@ function DayBoardDescriptiveCell({
         <span className="hub-clientes__pill hub-dayboard__pill--open" style={{ marginRight: 6 }}>
           Fatura
         </span>
+      ) : item.coverage_kind === 'series_pending' ? (
+        <span className="hub-clientes__pill hub-dayboard__pill--open" style={{ marginRight: 6 }}>
+          Fatura mensal
+        </span>
       ) : item.has_package_balance || item.coverage_kind === 'package' ? (
         <span className="hub-clientes__pill hub-dayboard__pill--open" style={{ marginRight: 6 }}>
           Pacote
@@ -182,6 +186,11 @@ function DayBoardDescriptiveCell({
       {item.coverage_kind === 'series_invoice' ? (
         <span className="hub-clientes__muted" style={{ display: 'block', fontSize: 12, marginTop: 2 }}>
           Coberto por fatura
+        </span>
+      ) : null}
+      {item.coverage_kind === 'series_pending' ? (
+        <span className="hub-clientes__muted" style={{ display: 'block', fontSize: 12, marginTop: 2 }}>
+          Aguarda emissão da fatura mensal
         </span>
       ) : null}
     </div>
@@ -369,7 +378,11 @@ export function FinanceDayBoardTable({
                 )}
                 <td className="hub-clientes__td-actions" onClick={(e) => e.stopPropagation()}>
                   <div className="hub-clientes__td-actions-inner hub-dayboard__actions">
-                    {isCaixa && !hasComanda && canCreateReceivable && onOpenComanda && (
+                    {isCaixa &&
+                      !hasComanda &&
+                      canCreateReceivable &&
+                      onOpenComanda &&
+                      item.coverage_kind !== 'series_pending' && (
                       <button
                         type="button"
                         className="hub-dayboard__action-btn"

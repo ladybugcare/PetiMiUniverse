@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { resolveStaffIdForUser } from './hubStaffResolve';
 import { resolveReportUnitScope } from './hubReportUnitScope';
+import { mergeExplicitAndImpliedAppointmentIds } from './hubNoShowUtils';
 import type { HubReportUnitMode } from './reportsContract';
 
 const uuidStr = z.string().uuid();
@@ -230,7 +231,20 @@ export const getHubNoShowsReport = async (req: Request, res: Response) => {
     const { data: boardingRows, error: bErr } = await boardQ;
     if (bErr) return res.status(500).json({ error: bErr.message });
 
-    let apptQ = supabaseAdmin
+    let explicitApptQ = supabaseAdmin
+      .from('hub_appointments')
+      .select('id, status, starts_at, ends_at, guardian_id, pet_id, unit_id, title, hub_staff_member_id')
+      .eq('clinic_id', clinic_id)
+      .eq('status', 'no_show')
+      .gte('starts_at', fromIso)
+      .lte('starts_at', toIso)
+      .order('starts_at', { ascending: false })
+      .limit(500);
+    if (unit_id) explicitApptQ = explicitApptQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+    const { data: explicitApptRows, error: eErr } = await explicitApptQ;
+    if (eErr) return res.status(500).json({ error: eErr.message });
+
+    let impliedApptQ = supabaseAdmin
       .from('hub_appointments')
       .select('id, status, starts_at, ends_at, guardian_id, pet_id, unit_id, title, hub_staff_member_id')
       .eq('clinic_id', clinic_id)
@@ -240,15 +254,23 @@ export const getHubNoShowsReport = async (req: Request, res: Response) => {
       .lt('ends_at', nowIso)
       .order('starts_at', { ascending: false })
       .limit(500);
-    if (unit_id) apptQ = apptQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
-    const { data: apptRows, error: aErr } = await apptQ;
+    if (unit_id) impliedApptQ = impliedApptQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+    const { data: impliedApptRows, error: aErr } = await impliedApptQ;
     if (aErr) return res.status(500).json({ error: aErr.message });
+
+    const mergedApptIds = mergeExplicitAndImpliedAppointmentIds(
+      (explicitApptRows ?? []).map((r) => r.id as string),
+      (impliedApptRows ?? []).map((r) => r.id as string),
+    );
+    const impliedOnlyIdSet = new Set(mergedApptIds.impliedOnly);
+    const impliedOnly = (impliedApptRows ?? []).filter((r) => impliedOnlyIdSet.has(r.id as string));
 
     const guIds = [
       ...new Set(
         [
           ...(boardingRows ?? []).map((r) => r.guardian_id as string | null),
-          ...(apptRows ?? []).map((r) => r.guardian_id as string | null),
+          ...(explicitApptRows ?? []).map((r) => r.guardian_id as string | null),
+          ...impliedOnly.map((r) => r.guardian_id as string | null),
         ].filter(Boolean) as string[]
       ),
     ];
@@ -256,7 +278,8 @@ export const getHubNoShowsReport = async (req: Request, res: Response) => {
       ...new Set(
         [
           ...(boardingRows ?? []).map((r) => r.pet_id as string | null),
-          ...(apptRows ?? []).map((r) => r.pet_id as string | null),
+          ...(explicitApptRows ?? []).map((r) => r.pet_id as string | null),
+          ...impliedOnly.map((r) => r.pet_id as string | null),
         ].filter(Boolean) as string[]
       ),
     ];
@@ -330,7 +353,20 @@ export const getHubNoShowsReport = async (req: Request, res: Response) => {
         status: 'no_show',
       });
     }
-    for (const r of apptRows ?? []) {
+    for (const r of explicitApptRows ?? []) {
+      const g = r.guardian_id ? guardianMap.get(r.guardian_id as string) : null;
+      items.push({
+        id: r.id as string,
+        source: 'appointment',
+        kind_label: (r.title as string | null)?.trim() || 'Agendamento',
+        when_at: r.starts_at as string,
+        guardian_name: g?.full_name ?? null,
+        phone: g?.phone ?? null,
+        pet_name: r.pet_id ? petMap.get(r.pet_id as string) ?? null : null,
+        status: 'no_show',
+      });
+    }
+    for (const r of impliedOnly) {
       const g = r.guardian_id ? guardianMap.get(r.guardian_id as string) : null;
       items.push({
         id: r.id as string,
@@ -346,8 +382,9 @@ export const getHubNoShowsReport = async (req: Request, res: Response) => {
     items.sort((a, b) => b.when_at.localeCompare(a.when_at));
 
     const boardingNoShows = (boardingRows ?? []).length;
-    const appointmentNoShows = (apptRows ?? []).length;
-    const totalNoShows = boardingNoShows + appointmentNoShows;
+    const appointmentExplicitNoShows = (explicitApptRows ?? []).length;
+    const appointmentImpliedNoShows = impliedOnly.length;
+    const totalNoShows = boardingNoShows + appointmentExplicitNoShows + appointmentImpliedNoShows;
     const attended = (attendedCount ?? 0) + (boardingAttendedCount ?? 0);
     const denom = attended + totalNoShows;
     const rate_pct = denom > 0 ? Math.round((totalNoShows / denom) * 1000) / 10 : 0;
@@ -358,7 +395,8 @@ export const getHubNoShowsReport = async (req: Request, res: Response) => {
       summary: {
         total_no_shows: totalNoShows,
         boarding_no_shows: boardingNoShows,
-        appointment_implied_no_shows: appointmentNoShows,
+        appointment_no_shows: appointmentExplicitNoShows,
+        appointment_implied_no_shows: appointmentImpliedNoShows,
         attended_count: attended,
         rate_pct,
       },
@@ -1229,7 +1267,21 @@ export const getHubMyNoShowsReport = async (req: Request, res: Response) => {
       });
     }
 
-    let apptQ = supabaseAdmin
+    let explicitQ = supabaseAdmin
+      .from('hub_appointments')
+      .select('id, status, starts_at, ends_at, guardian_id, pet_id, unit_id, title, hub_staff_member_id')
+      .eq('clinic_id', clinic_id)
+      .eq('hub_staff_member_id', myStaffId)
+      .eq('status', 'no_show')
+      .gte('starts_at', fromIso)
+      .lte('starts_at', toIso)
+      .order('starts_at', { ascending: false })
+      .limit(500);
+    if (unit_id) explicitQ = explicitQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+    const { data: explicitRows, error: eErr } = await explicitQ;
+    if (eErr) return res.status(500).json({ error: eErr.message });
+
+    let impliedQ = supabaseAdmin
       .from('hub_appointments')
       .select('id, status, starts_at, ends_at, guardian_id, pet_id, unit_id, title, hub_staff_member_id')
       .eq('clinic_id', clinic_id)
@@ -1240,9 +1292,17 @@ export const getHubMyNoShowsReport = async (req: Request, res: Response) => {
       .lt('ends_at', nowIso)
       .order('starts_at', { ascending: false })
       .limit(500);
-    if (unit_id) apptQ = apptQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
-    const { data: apptRows, error: aErr } = await apptQ;
+    if (unit_id) impliedQ = impliedQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+    const { data: impliedRows, error: aErr } = await impliedQ;
     if (aErr) return res.status(500).json({ error: aErr.message });
+
+    const mergedMine = mergeExplicitAndImpliedAppointmentIds(
+      (explicitRows ?? []).map((r) => r.id as string),
+      (impliedRows ?? []).map((r) => r.id as string),
+    );
+    const impliedOnlyIdSet = new Set(mergedMine.impliedOnly);
+    const impliedOnly = (impliedRows ?? []).filter((r) => impliedOnlyIdSet.has(r.id as string));
+    const apptRows = [...(explicitRows ?? []), ...impliedOnly];
 
     let doneQ = supabaseAdmin
       .from('hub_appointments')
@@ -1256,10 +1316,10 @@ export const getHubMyNoShowsReport = async (req: Request, res: Response) => {
     const { count: attendedCount } = await doneQ;
 
     const guIds = [
-      ...new Set((apptRows ?? []).map((r) => r.guardian_id as string | null).filter(Boolean) as string[]),
+      ...new Set(apptRows.map((r) => r.guardian_id as string | null).filter(Boolean) as string[]),
     ];
     const petIds = [
-      ...new Set((apptRows ?? []).map((r) => r.pet_id as string | null).filter(Boolean) as string[]),
+      ...new Set(apptRows.map((r) => r.pet_id as string | null).filter(Boolean) as string[]),
     ];
     const guardianMap = new Map<string, { full_name: string; phone: string | null }>();
     const petMap = new Map<string, string>();
@@ -1280,21 +1340,25 @@ export const getHubMyNoShowsReport = async (req: Request, res: Response) => {
       for (const p of pets ?? []) petMap.set(p.id as string, String(p.name ?? ''));
     }
 
-    const items = (apptRows ?? []).map((r) => {
-      const g = r.guardian_id ? guardianMap.get(r.guardian_id as string) : null;
-      return {
-        id: r.id as string,
-        source: 'appointment' as const,
-        kind_label: (r.title as string | null)?.trim() || 'Agendamento',
-        when_at: r.starts_at as string,
-        guardian_name: g?.full_name ?? null,
-        phone: g?.phone ?? null,
-        pet_name: r.pet_id ? petMap.get(r.pet_id as string) ?? null : null,
-        status: String(r.status),
-      };
-    });
+    const items = apptRows
+      .map((r) => {
+        const g = r.guardian_id ? guardianMap.get(r.guardian_id as string) : null;
+        return {
+          id: r.id as string,
+          source: 'appointment' as const,
+          kind_label: (r.title as string | null)?.trim() || 'Agendamento',
+          when_at: r.starts_at as string,
+          guardian_name: g?.full_name ?? null,
+          phone: g?.phone ?? null,
+          pet_name: r.pet_id ? petMap.get(r.pet_id as string) ?? null : null,
+          status: String(r.status),
+        };
+      })
+      .sort((a, b) => b.when_at.localeCompare(a.when_at));
 
-    const totalNoShows = items.length;
+    const appointmentExplicit = (explicitRows ?? []).length;
+    const appointmentImplied = impliedOnly.length;
+    const totalNoShows = appointmentExplicit + appointmentImplied;
     const attended = attendedCount ?? 0;
     const denom = attended + totalNoShows;
     const rate_pct = denom > 0 ? Math.round((totalNoShows / denom) * 1000) / 10 : 0;
@@ -1305,7 +1369,8 @@ export const getHubMyNoShowsReport = async (req: Request, res: Response) => {
       staff_id: myStaffId,
       summary: {
         total_no_shows: totalNoShows,
-        appointment_implied_no_shows: totalNoShows,
+        appointment_no_shows: appointmentExplicit,
+        appointment_implied_no_shows: appointmentImplied,
         attended_count: attended,
         rate_pct,
       },

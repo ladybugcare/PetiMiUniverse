@@ -619,6 +619,22 @@ export const listHubInventoryItems = async (req: Request, res: Response) => {
     const search = (req.query.search as string | undefined)?.trim().toLowerCase();
     const salePurpose = parseSalePurposeFilter(req.query.sale_purpose);
 
+    let canViewCost = false;
+    const userId = req.user?.id;
+    if (userId) {
+      const { loadClinicUserMembership } = await import('./hubReportUnitScope');
+      const { hasEffectivePermission } = await import('../../utils/permissions');
+      const membership = await loadClinicUserMembership(userId, clinic_id);
+      if (membership) {
+        const areas = (membership.operational_areas as string[] | null) ?? [];
+        canViewCost = hasEffectivePermission(
+          membership.role as import('../../utils/permissions').Role,
+          'hub.inventory.write',
+          areas,
+        );
+      }
+    }
+
     let q = supabaseAdmin
       .from('hub_inventory_items')
       .select(ITEM_SELECT)
@@ -649,10 +665,16 @@ export const listHubInventoryItems = async (req: Request, res: Response) => {
       : list;
 
     const { byItem } = await computeBalances(clinic_id);
-    const enriched = filtered.map((it) => ({
-      ...it,
-      qty_on_hand: Math.round(((byItem.get(it.id as string) ?? 0) + Number.EPSILON) * 10000) / 10000,
-    }));
+    const enriched = filtered.map((it) => {
+      const row = {
+        ...it,
+        qty_on_hand: Math.round(((byItem.get(it.id as string) ?? 0) + Number.EPSILON) * 10000) / 10000,
+      };
+      if (!canViewCost) {
+        return { ...row, cost_amount: null };
+      }
+      return row;
+    });
     return res.json({ items: enriched });
   } catch (e) {
     console.error('[hub_inventory] list items', e);

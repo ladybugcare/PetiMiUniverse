@@ -34,6 +34,7 @@ interface ClientesToolbarProps {
   careLocationFilter: 'all' | 'own_unit' | 'partner_clinic';
   onCareLocationFilterChange: (v: 'all' | 'own_unit' | 'partner_clinic') => void;
   onNewClient: () => void;
+  canWrite?: boolean;
 }
 
 export const ClientesToolbar: React.FC<ClientesToolbarProps> = ({
@@ -47,6 +48,7 @@ export const ClientesToolbar: React.FC<ClientesToolbarProps> = ({
   careLocationFilter,
   onCareLocationFilterChange,
   onNewClient,
+  canWrite = true,
 }) => {
   const isCompanyTab = mainTab === 'empresas';
 
@@ -69,12 +71,14 @@ export const ClientesToolbar: React.FC<ClientesToolbarProps> = ({
             aria-label={isCompanyTab ? 'Buscar empresas' : 'Buscar tutores'}
           />
         </div>
-        <div className="hub-clientes-new-btn-group">
-          <button type="button" className="hub-clientes__new-btn" onClick={onNewClient}>
-            <Plus size={18} strokeWidth={2.5} aria-hidden />
-            {isCompanyTab ? 'Nova empresa' : 'Novo tutor'}
-          </button>
-        </div>
+        {canWrite ? (
+          <div className="hub-clientes-new-btn-group">
+            <button type="button" className="hub-clientes__new-btn" onClick={onNewClient}>
+              <Plus size={18} strokeWidth={2.5} aria-hidden />
+              {isCompanyTab ? 'Nova empresa' : 'Novo tutor'}
+            </button>
+          </div>
+        ) : null}
       </div>
       <div className="hub-clientes-toolbar-row hub-clientes-toolbar-row--filters">
         {!isCompanyTab ? (

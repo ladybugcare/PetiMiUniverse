@@ -619,6 +619,12 @@ const HubCaixaPage: React.FC = () => {
       navigate(`/hub/caixa/comanda/${item.series_invoice_comanda_id}`);
       return;
     }
+    if (item.coverage_kind === 'series_pending') {
+      showError(
+        'Esta ocorrência faz parte de uma série com fatura mensal. A cobrança será lançada na fatura da série, não no caixa do dia.',
+      );
+      return;
+    }
     const origin = resolveDayBoardComandaOrigin(item);
     if (!origin) {
       showError('Não foi possível determinar a origem da comanda para esta internação.');
@@ -1666,7 +1672,8 @@ const HubCaixaPage: React.FC = () => {
             !selectedCashItem?.comanda_id &&
             selectedCashItem?.origin_type &&
             selectedCashItem?.origin_id &&
-            canCreateReceivable ? (
+            canCreateReceivable &&
+            findDayBoardItemForHistory(selectedCashItem)?.coverage_kind !== 'series_pending' ? (
               <button
                 type="button"
                 className="hub-clientes__btn hub-clientes__btn--primary"

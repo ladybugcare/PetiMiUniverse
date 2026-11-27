@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import { backfillPickupLegCommissionStaff } from './hubCommissionAccrual';
 import { fetchHubPetsMapByIds, resolvePrimaryPetIdsByGuardians } from './hubDayBoardPets';
 import { syncOpenComandasAfterAppointmentOperationalComplete } from './hubComandasController';
 import { notifyHubPetOnTheWay } from './hubNotifyEvents';
@@ -870,7 +871,7 @@ export const addHubPickupStops = async (req: Request, res: Response) => {
     // Verificar rota existe e pertence à clínica
     const { data: route, error: routeErr } = await supabaseAdmin
       .from('hub_pickup_routes')
-      .select('id, status, vehicle_id')
+      .select('id, status, vehicle_id, driver_staff_id')
       .eq('id', id)
       .eq('clinic_id', clinic_id)
       .is('deleted_at', null)
@@ -1174,6 +1175,14 @@ export const addHubPickupStops = async (req: Request, res: Response) => {
       if (detachErr) return res.status(500).json({ error: detachErr.message });
     }
 
+    if ((route as { driver_staff_id?: string | null }).driver_staff_id) {
+      try {
+        await backfillPickupLegCommissionStaff(clinic_id, id);
+      } catch (bfErr) {
+        console.error('[hubPickupController] backfillPickupLegCommissionStaff after addStops', bfErr);
+      }
+    }
+
     return res.status(201).json({ stops: created });
   } catch (e) {
     console.error('[hubPickupController] addHubPickupStops', e);
@@ -1306,6 +1315,15 @@ export const patchHubPickupRoute = async (req: Request, res: Response) => {
           .eq('hub_pickup_route_id', id),
       );
       await Promise.all(sequenceUpdates);
+    }
+
+    const patchedDriver = (updated as { driver_staff_id?: string | null } | null)?.driver_staff_id;
+    if (patchedDriver && parsed.data.driver_staff_id !== undefined) {
+      try {
+        await backfillPickupLegCommissionStaff(clinic_id, id);
+      } catch (bfErr) {
+        console.error('[hubPickupController] backfillPickupLegCommissionStaff after patchRoute', bfErr);
+      }
     }
 
     return res.json({ route: updated });
@@ -2527,6 +2545,12 @@ export const claimHubPickupRoute = async (req: Request, res: Response) => {
     if (claimErr) return res.status(500).json({ error: claimErr.message });
     if (!claimed) {
       return res.status(409).json({ error: 'Esta rota acabou de ser atribuída a outro motorista.' });
+    }
+
+    try {
+      await backfillPickupLegCommissionStaff(clinic_id, id);
+    } catch (bfErr) {
+      console.error('[hubPickupController] backfillPickupLegCommissionStaff after claim', bfErr);
     }
 
     return res.json({ route: claimed, already_claimed: false });

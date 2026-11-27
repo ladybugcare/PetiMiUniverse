@@ -52,3 +52,67 @@ export function formatBrTaxIdDisplay(
 ): string {
   return formatBrTaxIdFromApi(raw, mode) || fallback;
 }
+
+function allSameDigit(digits: string): boolean {
+  return /^(\d)\1+$/.test(digits);
+}
+
+export function isValidBrCpf(raw: string | null | undefined): boolean {
+  const cpf = digitsOnlyBrTaxId(raw ?? '').slice(0, 11);
+  if (cpf.length !== 11) return false;
+  if (allSameDigit(cpf)) return false;
+
+  let sum = 0;
+  for (let i = 1; i <= 9; i++) {
+    sum += parseInt(cpf.substring(i - 1, i), 10) * (11 - i);
+  }
+  let remainder = (sum * 10) % 11;
+  if (remainder === 10 || remainder === 11) remainder = 0;
+  if (remainder !== parseInt(cpf.substring(9, 10), 10)) return false;
+
+  sum = 0;
+  for (let i = 1; i <= 10; i++) {
+    sum += parseInt(cpf.substring(i - 1, i), 10) * (12 - i);
+  }
+  remainder = (sum * 10) % 11;
+  if (remainder === 10 || remainder === 11) remainder = 0;
+  return remainder === parseInt(cpf.substring(10, 11), 10);
+}
+
+export function isValidBrCnpj(raw: string | null | undefined): boolean {
+  const cnpj = digitsOnlyBrTaxId(raw ?? '');
+  if (cnpj.length !== 14) return false;
+  if (allSameDigit(cnpj)) return false;
+
+  let length = cnpj.length - 2;
+  let numbers = cnpj.substring(0, length);
+  const digits = cnpj.substring(length);
+  let sum = 0;
+  let pos = length - 7;
+
+  for (let i = length; i >= 1; i--) {
+    sum += parseInt(numbers.charAt(length - i), 10) * pos--;
+    if (pos < 2) pos = 9;
+  }
+  let result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+  if (result !== parseInt(digits.charAt(0), 10)) return false;
+
+  length += 1;
+  numbers = cnpj.substring(0, length);
+  sum = 0;
+  pos = length - 7;
+  for (let i = length; i >= 1; i--) {
+    sum += parseInt(numbers.charAt(length - i), 10) * pos--;
+    if (pos < 2) pos = 9;
+  }
+  result = sum % 11 < 2 ? 0 : 11 - (sum % 11);
+  return result === parseInt(digits.charAt(1), 10);
+}
+
+/** CPF (11) ou CNPJ (14) com dígitos verificadores. */
+export function isValidBrTaxId(raw: string | null | undefined): boolean {
+  const d = digitsOnlyBrTaxId(raw ?? '');
+  if (d.length === 11) return isValidBrCpf(d);
+  if (d.length === 14) return isValidBrCnpj(d);
+  return false;
+}

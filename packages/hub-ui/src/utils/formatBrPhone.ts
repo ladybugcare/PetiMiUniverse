@@ -3,6 +3,13 @@ export function digitsOnlyBrPhone(raw: string): string {
   return raw.replace(/\D/g, '').slice(0, 11);
 }
 
+/** Telefone BR com DDD: 10 (fixixo) ou 11 (celular) dígitos. */
+export function isValidBrPhone(raw: string | null | undefined): boolean {
+  if (!raw) return false;
+  const d = String(raw).replace(/\D/g, '');
+  return d.length === 10 || d.length === 11;
+}
+
 /** Formata para exibição: (11) 98888-8888 ou (11) 3456-7890 */
 export function formatBrPhoneInput(raw: string): string {
   const d = digitsOnlyBrPhone(raw);

@@ -350,3 +350,9 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 175. **`175_alter_hub_commission_basis_per_unit.sql`** — adiciona `fixed_per_unit` ao CHECK de `hub_commission_rules.basis` e `hub_receivable_lines.commission_rule_basis` (valor fixo × quantidade da linha, com teto na base líquida). Executar depois dos itens 038 e 171.
 
 176. **`176_alter_hub_report_email_schedules_auth.sql`** — coluna `suspension_reason` e status `suspended` em `hub_report_email_schedules` (revalidação de auth de agendamentos). Executar depois de `096_create_hub_report_email_schedules.sql`.
+
+177. **`177_alter_hub_clinic_settings_multipet_pickup_billing.sql`** — `multipet_pickup_billing` (`per_visit` | `per_pet`, default `per_visit`) em `hub_clinic_settings` para cobrança de L&T em lote multi-pet. Executar depois do item 16.
+
+178. **`178_alter_hub_appointment_series_invoice_discount.sql`** — `invoice_discount_percent` (0–100, default 0) em `hub_appointment_series` para desconto de cabeçalho na fatura mensal. Executar depois do item 100.
+
+179. **`179_alter_hub_appointments_no_show_status.sql`** — inclui `no_show` (falta) no CHECK de `hub_appointments.status`. Executar depois do item 48.

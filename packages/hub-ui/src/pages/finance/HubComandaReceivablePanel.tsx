@@ -376,6 +376,12 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
       hasPermission('hub.financial.write') &&
       !['cancelled', 'refunded'].includes(detail.status),
   );
+  /** Remoção de linha de produto no recebível exige inventory.write (mesma regra da API). */
+  const canRemoveProductLine = Boolean(
+    detail &&
+      hasPermission('hub.inventory.write') &&
+      !['cancelled', 'refunded'].includes(detail.status),
+  );
   const canHistoricalCash = Boolean(
     detail &&
       hasPermission('hub.financial.adjust') &&
@@ -1270,7 +1276,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
                 <strong>{formatBrl(Number(line.line_total ?? 0))}</strong>
               </td>
               <td className="hub-clientes__td-actions">
-                {line.line_kind === 'product' ? (
+                {line.line_kind === 'product' && canRemoveProductLine ? (
                   <div className="hub-clientes__td-actions-inner hub-checkout-drawer__row-actions">
                     <button
                       type="button"

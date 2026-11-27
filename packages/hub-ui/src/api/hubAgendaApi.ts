@@ -9,7 +9,8 @@ export type HubAppointmentStatus =
   | 'in_progress'
   | 'done'
   | 'cancelled'
-  | 'paid';
+  | 'paid'
+  | 'no_show';
 
 export type HubAppointmentKind =
   | 'standard'
@@ -155,6 +156,8 @@ export type HubAppointmentRecurrenceRule = {
   invoice_due_rule?: 'same_day' | 'plus_days' | 'fixed_day' | null;
   invoice_due_day?: number | null;
   invoice_due_plus_days?: number | null;
+  /** Desconto de cabeçalho (%) na fatura mensal (0–100). */
+  invoice_discount_percent?: number | null;
 };
 
 export type HubAppointmentPricingVariant = {

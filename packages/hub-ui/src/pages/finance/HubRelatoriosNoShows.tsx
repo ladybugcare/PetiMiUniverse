@@ -49,19 +49,29 @@ export const HubRelatoriosNoShows: React.FC<Props> = ({ clinicId, unitId, period
   const total = data?.summary.total_no_shows ?? 0;
   const rate = data?.summary.rate_pct ?? 0;
   const boarding = data?.summary.boarding_no_shows ?? 0;
-  const appointment = data?.summary.appointment_implied_no_shows ?? 0;
+  const appointmentExplicit = data?.summary.appointment_no_shows ?? 0;
+  const appointmentImplied = data?.summary.appointment_implied_no_shows ?? 0;
+  const appointmentTotal = appointmentExplicit + appointmentImplied;
+
+  const statusLabel = (status: string) => {
+    if (status === 'no_show') return 'Falta';
+    if (status === 'confirmed') return 'Confirmado (implícito)';
+    if (status === 'pending_confirm') return 'A confirmar (implícito)';
+    return status;
+  };
 
   const sourceBars = useMemo(() => {
     const rows = [
       { key: 'boarding', label: 'Hotel/Creche', count: boarding, tone: 'risk' as const },
-      { key: 'agenda', label: 'Agenda (implícito)', count: appointment, tone: 'ok' as const },
+      { key: 'agenda-explicit', label: 'Agenda (falta)', count: appointmentExplicit, tone: 'warn' as const },
+      { key: 'agenda-implied', label: 'Agenda (implícito)', count: appointmentImplied, tone: 'ok' as const },
     ].filter((r) => r.count > 0);
     const max = Math.max(0, ...rows.map((r) => r.count));
     return rows.map((r) => ({
       ...r,
       widthPct: max > 0 ? (r.count / max) * 100 : 0,
     }));
-  }, [boarding, appointment]);
+  }, [boarding, appointmentExplicit, appointmentImplied]);
 
   const { onCsv: onExport, onPdf } = makeReportExporters({
     clinicId,
@@ -78,7 +88,7 @@ export const HubRelatoriosNoShows: React.FC<Props> = ({ clinicId, unitId, period
       i.guardian_name,
       i.phone,
       i.pet_name,
-      i.status,
+      statusLabel(i.status),
     ]),
     showError,
   });
@@ -143,12 +153,15 @@ export const HubRelatoriosNoShows: React.FC<Props> = ({ clinicId, unitId, period
         </div>
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Agenda (implícito)</div>
-            <div className="hub-servicos__metric-value">{appointment.toLocaleString('pt-BR')}</div>
-            <div className="hub-servicos__metric-sub">Horário passado sem baixa</div>
+            <div className="hub-servicos__metric-label">Agenda</div>
+            <div className="hub-servicos__metric-value">{appointmentTotal.toLocaleString('pt-BR')}</div>
+            <div className="hub-servicos__metric-sub">
+              {appointmentExplicit.toLocaleString('pt-BR')} faltas ·{' '}
+              {appointmentImplied.toLocaleString('pt-BR')} implícitas
+            </div>
           </div>
           <div
-            className={`hub-servicos__metric-icon${appointment > 0 ? '' : ' hub-servicos__metric-icon--muted'}`}
+            className={`hub-servicos__metric-icon${appointmentTotal > 0 ? '' : ' hub-servicos__metric-icon--muted'}`}
             aria-hidden
           >
             <CalendarClock size={20} strokeWidth={2} />
@@ -164,8 +177,8 @@ export const HubRelatoriosNoShows: React.FC<Props> = ({ clinicId, unitId, period
                 Origem das faltas
               </h2>
               <p className="hub-relatorios__panel-sub">
-                Inclui reservas marcadas como não compareceu e agendamentos ainda confirmados/pendentes
-                cujo horário já passou
+                Inclui hotel/creche, faltas marcadas na agenda e horários passados ainda confirmados
+                sem baixa
               </p>
             </div>
           </div>
@@ -223,6 +236,7 @@ export const HubRelatoriosNoShows: React.FC<Props> = ({ clinicId, unitId, period
                   <th>Cliente</th>
                   <th>Pet</th>
                   <th>Telefone</th>
+                  <th>Status</th>
                 </tr>
               </thead>
               <tbody>
@@ -251,6 +265,7 @@ export const HubRelatoriosNoShows: React.FC<Props> = ({ clinicId, unitId, period
                     <td>{row.guardian_name ?? '—'}</td>
                     <td>{row.pet_name ?? '—'}</td>
                     <td>{row.phone ?? '—'}</td>
+                    <td>{statusLabel(row.status)}</td>
                   </tr>
                 ))}
               </tbody>

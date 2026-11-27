@@ -58,6 +58,15 @@ export const IniciarTurnoDrawer: React.FC<IniciarTurnoDrawerProps> = ({
     };
   }, [open, clinicId, unitId]);
 
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !busy) onClose();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open, busy, onClose]);
+
   if (!open) return null;
 
   const openingNum = (() => {
