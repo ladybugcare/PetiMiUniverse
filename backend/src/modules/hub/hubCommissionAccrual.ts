@@ -286,16 +286,22 @@ export async function accrueCommissionSnapshots(
     netAmountAtSale: opts.netAmountAtSale,
   });
 
+  const staffByLine = await Promise.all(
+    opts.lines.map((line) =>
+      resolveLineStaff({
+        clinicId: opts.clinicId,
+        line,
+        actingUserId: opts.actingUserId,
+        allowActingUserAsSaleAuthor: opts.allowActingUserAsSaleAuthor ?? false,
+      }),
+    ),
+  );
+
   const out = new Map<string, CommissionSnapshotFields>();
   for (let i = 0; i < opts.lines.length; i++) {
     const line = opts.lines[i]!;
     const liquidBase = liquids[i] ?? 0;
-    const staff = await resolveLineStaff({
-      clinicId: opts.clinicId,
-      line,
-      actingUserId: opts.actingUserId,
-      allowActingUserAsSaleAuthor: opts.allowActingUserAsSaleAuthor ?? false,
-    });
+    const staff = staffByLine[i]!;
     const rule = matchRuleForLine(rules, line);
     const commission = computeCommissionAmount(
       rule,

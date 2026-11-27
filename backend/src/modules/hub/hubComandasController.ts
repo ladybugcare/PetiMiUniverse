@@ -257,7 +257,7 @@ import {
 } from './boardingBilling';
 import { isBoardingStatusReadyForComanda } from './boardingOperational';
 import { isGroomingServiceOperationallyDone } from './groomingStages';
-import { classifyComandaOperationalComplete } from './comandaOperationalStatus';
+import { classifyComandaOperationalComplete, isComandaOriginCancelled } from './comandaOperationalStatus';
 import {
   dropAppointmentLinesReplacedByHospitalization,
   loadHospitalizationComandaItems,
@@ -1040,7 +1040,7 @@ async function computeComandaBalancePayload(
 async function applyFinanceHandoffOnly(
   comandaId: string,
   clinicId: string,
-  detail: Awaited<ReturnType<typeof getHubComandaDetailPayload>>,
+  detail: Pick<ComandaHandoffSnapshot, 'comanda' | 'active_receivable_ids' | 'open_item_ids' | 'balance_due'>,
   dueDate?: string | null
 ): Promise<string[]> {
   const comanda = detail.comanda as Record<string, unknown>;
@@ -3264,6 +3264,88 @@ async function listAllowedGuardiansForPetIds(petIds: string[]): Promise<AllowedG
   });
 }
 
+/** Subconjunto do detalhe usado pelo checkout / leave_pending (sem enriquecimento de UI). */
+type ComandaHandoffSnapshot = {
+  comanda: Record<string, unknown>;
+  items: Record<string, unknown>[];
+  open_item_ids: string[];
+  active_receivable_ids: string[];
+  balance_due: number;
+  operational_complete: boolean;
+};
+
+/**
+ * Versão enxuta de getHubComandaDetailPayload para checkout/handoff: pula eventos, timeline,
+ * tutor/pet, saldos de pacote por item, taxas de cartão e aprovações pendentes.
+ */
+async function getHubComandaHandoffSnapshot(
+  comandaId: string,
+  clinicId: string,
+): Promise<ComandaHandoffSnapshot> {
+  const [comandaRes, itemsRes, linesRes] = await Promise.all([
+    supabaseAdmin.from('hub_comandas').select('*').eq('id', comandaId).eq('clinic_id', clinicId).maybeSingle(),
+    supabaseAdmin
+      .from('hub_comanda_items')
+      .select('*')
+      .eq('comanda_id', comandaId)
+      .order('sort_order', { ascending: true }),
+    supabaseAdmin
+      .from('hub_receivable_lines')
+      .select('comanda_item_id, receivable_id')
+      .eq('comanda_id', comandaId)
+      .not('comanda_item_id', 'is', null),
+  ]);
+  const comanda = comandaRes.data as Record<string, unknown> | null;
+  if (comandaRes.error || !comanda) throw new Error('NOT_FOUND');
+  if (itemsRes.error) throw new Error(itemsRes.error.message);
+  const items = (itemsRes.data ?? []) as Record<string, unknown>[];
+  const lineRows = linesRes.data ?? [];
+
+  const recIds = [...new Set(lineRows.map((r) => r.receivable_id as string))];
+  const billsItemByRecId = new Map<string, boolean>();
+  const listableRecById = new Map<string, boolean>();
+  if (recIds.length) {
+    const { data: recs, error: covErr } = await supabaseAdmin
+      .from('hub_receivables')
+      .select('id, status, returned_amount, cancel_rebill')
+      .in('id', recIds);
+    const coverageRows =
+      covErr && String(covErr.message || '').includes('cancel_rebill')
+        ? (
+            await supabaseAdmin
+              .from('hub_receivables')
+              .select('id, status, returned_amount')
+              .in('id', recIds)
+          ).data
+        : recs;
+    for (const r of coverageRows ?? []) {
+      const id = r.id as string;
+      billsItemByRecId.set(id, receivableBillsComandaItem(r));
+      listableRecById.set(id, receivableListableOnComanda(r));
+    }
+  }
+
+  const invoicedItemIds = new Set<string>();
+  for (const row of lineRows) {
+    const cid = row.comanda_item_id as string;
+    if (cid && billsItemByRecId.get(row.receivable_id as string)) invoicedItemIds.add(cid);
+  }
+
+  const [balancePayload, operational_complete] = await Promise.all([
+    computeComandaBalancePayload(comandaId, clinicId),
+    isOperationalCompleteForComanda(comanda),
+  ]);
+
+  return {
+    comanda,
+    items,
+    open_item_ids: items.map((it) => it.id as string).filter((id) => !invoicedItemIds.has(id)),
+    active_receivable_ids: recIds.filter((id) => listableRecById.get(id)),
+    balance_due: balancePayload.balance_due,
+    operational_complete,
+  };
+}
+
 async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
   const { data: comanda, error: cErr } = await supabaseAdmin
     .from('hub_comandas')
@@ -4032,8 +4114,8 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
       payment_timing,
     } = parsed.data;
 
-    let detail = await getHubComandaDetailPayload(comandaId, clinic_id);
-    let comanda = detail.comanda as Record<string, unknown>;
+    let detail = await getHubComandaHandoffSnapshot(comandaId, clinic_id);
+    let comanda = detail.comanda;
     if (String(comanda.status) !== 'aberta') {
       return res.status(409).json({ error: 'Comanda não está aberta' });
     }
@@ -4292,14 +4374,13 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
         // Checkout: só usa sold_by já gravado; não promove o caixa a vendedor.
         allowActingUserAsSaleAuthor: false,
       });
-      let sort = 0;
-      for (const it of groupItems) {
+      const lineRows = groupItems.map((it, sort) => {
         const lineKind =
           String(it.item_kind ?? '') === 'product'
             ? 'product'
             : mapItemToReceivableLineKind((it.origin_type as string | null) ?? null);
         const snap = commissionByItem.get(String(it.id));
-        const { error: lnErr } = await supabaseAdmin.from('hub_receivable_lines').insert({
+        return {
           clinic_id,
           receivable_id: receivableId,
           comanda_id: comandaId,
@@ -4315,13 +4396,14 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
           unit_sale_amount: Number(it.unit_amount ?? 0),
           unit_cost_amount: productUnitCostSnapshot(costByItem, it as Record<string, unknown>),
           line_total: Number(it.line_total ?? 0),
-          sort_order: sort++,
+          sort_order: sort,
           ...snapshotToInsertFields(snap),
-        });
-        if (lnErr) {
-          await rollbackReceivables();
-          return res.status(500).json({ error: lnErr.message });
-        }
+        };
+      });
+      const { error: lnErr } = await supabaseAdmin.from('hub_receivable_lines').insert(lineRows);
+      if (lnErr) {
+        await rollbackReceivables();
+        return res.status(500).json({ error: lnErr.message });
       }
     }
 
@@ -4627,7 +4709,7 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
 };
 
 type SyncEmptyHandoffOutcome = {
-  detail: Awaited<ReturnType<typeof getHubComandaDetailPayload>>;
+  detail: ComandaHandoffSnapshot;
   syncCode?: LeavePendingHandoffCode;
   syncError?: string;
 };
@@ -4636,7 +4718,7 @@ type SyncEmptyHandoffOutcome = {
 async function maybeSyncEmptyComandaForHandoff(
   comandaId: string,
   clinicId: string,
-  detail: Awaited<ReturnType<typeof getHubComandaDetailPayload>>,
+  detail: ComandaHandoffSnapshot,
   actorUserId: string | null,
 ): Promise<SyncEmptyHandoffOutcome> {
   const originType = String((detail.comanda as Record<string, unknown>).origin_type ?? '');
@@ -4710,8 +4792,8 @@ export async function leavePendingHandoffComanda(
   };
 
   try {
-    let detail = await getHubComandaDetailPayload(comandaId, clinicId);
-    let comanda = detail.comanda as Record<string, unknown>;
+    let detail = await getHubComandaHandoffSnapshot(comandaId, clinicId);
+    let comanda = detail.comanda;
     if (String(comanda.status) !== 'aberta') {
       return {
         comanda_id: comandaId,
@@ -4861,14 +4943,13 @@ export async function leavePendingHandoffComanda(
       // leave_pending / auto-close: nunca inventar vendedor pelo ator do handoff.
       allowActingUserAsSaleAuthor: false,
     });
-    let sort = 0;
-    for (const it of items) {
+    const lineRows = items.map((it, sort) => {
       const lineKind =
         String(it.item_kind ?? '') === 'product'
           ? 'product'
           : mapItemToReceivableLineKind((it.origin_type as string | null) ?? null);
       const snap = commissionByItem.get(String(it.id));
-      const { error: lnErr } = await supabaseAdmin.from('hub_receivable_lines').insert({
+      return {
         clinic_id: clinicId,
         receivable_id: receivableId,
         comanda_id: comandaId,
@@ -4884,13 +4965,14 @@ export async function leavePendingHandoffComanda(
         unit_sale_amount: Number(it.unit_amount ?? 0),
         unit_cost_amount: productUnitCostSnapshot(handoffCostByItem, it as Record<string, unknown>),
         line_total: Number(it.line_total ?? 0),
-        sort_order: sort++,
+        sort_order: sort,
         ...snapshotToInsertFields(snap),
-      });
-      if (lnErr) {
-        await rollback();
-        return { comanda_id: comandaId, receivable_ids: [], error: lnErr.message };
-      }
+      };
+    });
+    const { error: lnErr } = await supabaseAdmin.from('hub_receivable_lines').insert(lineRows);
+    if (lnErr) {
+      await rollback();
+      return { comanda_id: comandaId, receivable_ids: [], error: lnErr.message };
     }
 
     for (const it of items) {
@@ -5851,6 +5933,13 @@ async function reverseAllComandaPayments(
  * Enrich leve do caixa: operacional + saldo aproximado + bloqueio de executor em lote
  * (sem cura N+1). Usado por listComandas?enrich=light.
  */
+type LightOriginContext = {
+  starts_at: string | null;
+  ends_at: string | null;
+  staff_id: string | null;
+  staff_name: string | null;
+};
+
 async function batchLightComandaConference(
   clinicId: string,
   rows: Record<string, unknown>[],
@@ -5866,6 +5955,7 @@ async function batchLightComandaConference(
       edit_scopes: ReturnType<typeof computeComandaEditScopes> | null;
       /** Status/estágio da origem (appointment.status, grooming stage, etc.). */
       origin_status: string | null;
+      origin_context: LightOriginContext | null;
     }
   >
 > {
@@ -5878,6 +5968,7 @@ async function batchLightComandaConference(
       handoff_block_code: string | null;
       edit_scopes: ReturnType<typeof computeComandaEditScopes> | null;
       origin_status: string | null;
+      origin_context: LightOriginContext | null;
     }
   >();
   if (!rows.length) return out;
@@ -5902,10 +5993,10 @@ async function batchLightComandaConference(
     unique(apptIds).length
       ? supabaseAdmin
           .from('hub_appointments')
-          .select('id, status')
+          .select('id, status, starts_at, ends_at, hub_staff_member_id, staff:hub_staff_members(id, full_name)')
           .eq('clinic_id', clinicId)
           .in('id', unique(apptIds))
-      : Promise.resolve({ data: [] as Array<{ id: string; status: string }> }),
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
     unique(groomIds).length
       ? supabaseAdmin
           .from('hub_grooming_sessions')
@@ -5953,7 +6044,23 @@ async function batchLightComandaConference(
       : Promise.resolve({ data: [] as Array<{ id: string; comanda_id: string; status: string }> }),
   ]);
 
-  const apptStatus = new Map((apptRes.data ?? []).map((r) => [String(r.id), String(r.status ?? '')]));
+  const apptRows = (apptRes.data ?? []) as Array<Record<string, unknown>>;
+  const apptStatus = new Map(apptRows.map((r) => [String(r.id), String(r.status ?? '')]));
+  const apptContext = new Map(
+    apptRows.map((r) => {
+      const staffRaw = r.staff as { id?: string; full_name?: string } | Array<{ id?: string; full_name?: string }> | null;
+      const staff = Array.isArray(staffRaw) ? staffRaw[0] ?? null : staffRaw;
+      return [
+        String(r.id),
+        {
+          starts_at: (r.starts_at as string | null) ?? null,
+          ends_at: (r.ends_at as string | null) ?? null,
+          staff_id: (r.hub_staff_member_id as string | null) ?? staff?.id ?? null,
+          staff_name: staff?.full_name ?? null,
+        },
+      ];
+    }),
+  );
   const groomStage = new Map(
     (groomRes.data ?? []).map((r) => [String(r.id), String(r.grooming_stage ?? '')]),
   );
@@ -6022,7 +6129,7 @@ async function batchLightComandaConference(
     const cid = r.id as string;
     const ot = String(r.origin_type ?? '');
     const oid = (r.origin_id as string | null) ?? null;
-    const operational_complete = classifyComandaOperationalComplete({
+    const originSnapshot = {
       originType: ot,
       originId: oid,
       appointmentStatus: oid ? apptStatus.get(oid) ?? null : null,
@@ -6030,14 +6137,20 @@ async function batchLightComandaConference(
       groomingStage: oid ? groomStage.get(oid) ?? null : null,
       encounterStatus: oid ? encStatus.get(oid) ?? null : null,
       boardingStatus: oid ? boardStatus.get(oid) ?? null : null,
-    });
+    };
+    const operational_complete = classifyComandaOperationalComplete(originSnapshot);
+    const origin_cancelled = isComandaOriginCancelled(originSnapshot);
     const paid_total = paidByComanda.get(cid) ?? 0;
     const total_amount = Number(r.total_amount ?? 0);
     const balance_due = round2(Math.max(0, total_amount - paid_total));
-    const handoff_block_code =
-      operational_complete && executorBlocked.has(cid) ? 'COMMISSION_EXECUTOR_REQUIRED' : null;
+    const handoff_block_code = origin_cancelled
+      ? 'ORIGIN_CANCELLED'
+      : operational_complete && executorBlocked.has(cid)
+        ? 'COMMISSION_EXECUTOR_REQUIRED'
+        : null;
     const edit_scopes = computeComandaEditScopes(r, operational_complete, balance_due);
     let origin_status: string | null = null;
+    const origin_context = ot === 'appointment' && oid ? apptContext.get(oid) ?? null : null;
     if (oid) {
       if (ot === 'appointment') origin_status = apptStatus.get(oid) ?? null;
       else if (ot === 'grooming_session') origin_status = groomStage.get(oid) ?? null;
@@ -6051,6 +6164,7 @@ async function batchLightComandaConference(
       handoff_block_code,
       edit_scopes,
       origin_status,
+      origin_context,
     });
   }
   return out;
@@ -6088,6 +6202,7 @@ async function enrichCancellationQueueRows(
     handoff_block_code: string | null;
     edit_scopes: ReturnType<typeof computeComandaEditScopes> | null;
     origin_status?: string | null;
+    origin_context?: LightOriginContext | null;
   };
 
   let enrichedByComanda: Array<[string, ComandaEnrichment]>;
@@ -6167,6 +6282,7 @@ async function enrichCancellationQueueRows(
             handoff_block_code,
             edit_scopes,
             origin_status: null,
+            origin_context: null,
           },
         ] as [string, ComandaEnrichment];
       }),
@@ -6238,6 +6354,7 @@ async function enrichCancellationQueueRows(
       handoff_block_code: extra?.handoff_block_code ?? null,
       edit_scopes: extra?.edit_scopes ?? null,
       origin_status: extra?.origin_status ?? null,
+      origin_context: extra?.origin_context ?? null,
     };
   });
 }

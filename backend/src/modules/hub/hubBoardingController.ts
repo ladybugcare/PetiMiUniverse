@@ -1,6 +1,7 @@
 import type { Request, Response } from 'express';
 import { supabaseAdmin } from '../../config/supabase';
 import { syncOpenComandasAfterBoardingCheckedOut } from './hubComandasController';
+import { handleComandaAfterBoardingCancel } from './hubComandaOperationalCancel';
 import { notifyHubBoardingCheckin, notifyHubBoardingCheckout } from './hubNotifyEvents';
 import { buildGroomingDisplayTags } from './groomingPetTags';
 import {
@@ -679,6 +680,14 @@ export const patchHubBoardingReservation = async (req: Request, res: Response) =
       if (apptStatus) {
         await supabaseAdmin.from('hub_appointments').update({ status: apptStatus }).eq('id', apptId).eq('clinic_id', clinic_id);
       }
+    }
+    if ((newStatus === 'cancelled' || newStatus === 'no_show') && newStatus !== previousStatus) {
+      await handleComandaAfterBoardingCancel(clinic_id, id, apptId ?? null, {
+        waiveReason:
+          newStatus === 'no_show'
+            ? 'Falta registrada na reserva de Hotel/Creche'
+            : 'Cancelamento da reserva de Hotel/Creche',
+      });
     }
 
     // Tarefas acompanham a estadia: datas mudaram → refaz pendentes; cancelou → remove o que ficou.

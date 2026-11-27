@@ -316,6 +316,16 @@ describe('resolveCaixaCarryoverConferenceKind', () => {
     expect(caixaCarryoverConferenceLabel('ready')).toBe('Pronta para cobrança');
   });
 
+  it('origem cancelada tem prioridade sobre operação incompleta', () => {
+    expect(
+      resolveCaixaCarryoverConferenceKind({
+        operational_complete: false,
+        handoff_block_code: 'ORIGIN_CANCELLED',
+      }),
+    ).toBe('origin_cancelled');
+    expect(caixaCarryoverConferenceLabel('origin_cancelled')).toBe('Atendimento cancelado');
+  });
+
   it('monta deep link operacional', () => {
     expect(resolveComandaOperationalHref({ origin_type: 'encounter', origin_id: 'enc-1' })).toBe(
       '/hub/clinica/atendimentos/enc-1',

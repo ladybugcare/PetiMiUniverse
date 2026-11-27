@@ -34,6 +34,43 @@ describe('supportsMarkExecutionOrigin', () => {
   });
 });
 
+describe('resolveCaixaConferenceActionPlan — origem cancelada', () => {
+  it('sem pagamento: anular; sem cobrar/enviar/executor', () => {
+    const plan = resolveCaixaConferenceActionPlan({
+      originType: 'appointment',
+      conferenceKind: 'origin_cancelled',
+      permissions: allPerms,
+      moduleHref: null,
+      paidTotal: 0,
+    });
+    expect(plan.operationalAction).toBe('void_comanda');
+    expect(plan.showCharge).toBe(false);
+    expect(plan.showHandoff).toBe(false);
+    expect(plan.showMarkExecution).toBe(false);
+  });
+
+  it('com pagamento: resolver ajuste', () => {
+    const plan = resolveCaixaConferenceActionPlan({
+      originType: 'appointment',
+      conferenceKind: 'origin_cancelled',
+      permissions: allPerms,
+      moduleHref: null,
+      paidTotal: 50,
+    });
+    expect(plan.operationalAction).toBe('resolve_cancellation');
+  });
+
+  it('sem permissão de recebível: nenhuma ação', () => {
+    const plan = resolveCaixaConferenceActionPlan({
+      originType: 'appointment',
+      conferenceKind: 'origin_cancelled',
+      permissions: { ...allPerms, canCreateReceivable: false },
+      moduleHref: null,
+    });
+    expect(plan.operationalAction).toBe('none');
+  });
+});
+
 describe('resolveCaixaConferenceActionPlan', () => {
   it('pronta: sem ação operacional; permite handoff e executor', () => {
     const plan = resolveCaixaConferenceActionPlan({

@@ -17,6 +17,19 @@ export type ComandaOperationalOriginSnapshot = {
   boardingStatus?: string | null;
 };
 
+const CANCELLED_ORIGIN_STATUSES = new Set(['cancelled', 'no_show']);
+
+/** Origem operacional cancelada ou com falta: a comanda não deveria seguir para cobrança. */
+export function isComandaOriginCancelled(input: ComandaOperationalOriginSnapshot): boolean {
+  const ot = String(input.originType ?? '');
+  if (!input.originId) return false;
+  if (ot === 'appointment') return CANCELLED_ORIGIN_STATUSES.has(String(input.appointmentStatus ?? ''));
+  if (ot === 'encounter') return CANCELLED_ORIGIN_STATUSES.has(String(input.encounterStatus ?? ''));
+  if (ot === 'boarding_reservation') return CANCELLED_ORIGIN_STATUSES.has(String(input.boardingStatus ?? ''));
+  if (ot === 'grooming_session') return CANCELLED_ORIGIN_STATUSES.has(String(input.groomingStage ?? ''));
+  return false;
+}
+
 export function classifyComandaOperationalComplete(
   input: ComandaOperationalOriginSnapshot,
 ): boolean {

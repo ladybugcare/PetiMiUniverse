@@ -1,5 +1,15 @@
 import React from 'react';
-import { Ban, CheckCircle2, Coins, FilePlus2, MessageCircle, Pencil, Receipt, SendHorizonal } from 'lucide-react';
+import {
+  Ban,
+  CheckCircle2,
+  Coins,
+  FilePlus2,
+  Loader2,
+  MessageCircle,
+  Pencil,
+  Receipt,
+  SendHorizonal,
+} from 'lucide-react';
 import type { HubFinanceDayBoardItem } from '../../api/hubFinancialApi';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import { serviceGroupLabel } from '../../utils/serviceTypeSlug';
@@ -116,6 +126,8 @@ export type FinanceDayBoardTableProps = {
   onViewComanda: (item: HubFinanceDayBoardItem) => void;
   onCheckout: (item: HubFinanceDayBoardItem) => void;
   onSendToFinanceiro?: (item: HubFinanceDayBoardItem) => void;
+  /** `origin_type:origin_id` do item sendo enviado ao financeiro (spinner no botão). */
+  sendingKey?: string | null;
   onWaive?: (item: HubFinanceDayBoardItem) => void;
   /** Abre fluxo de marcar execução (Banho & Tosa) para destravar cobrança/handoff. */
   onMarkExecution?: (item: HubFinanceDayBoardItem) => void;
@@ -222,6 +234,7 @@ export function FinanceDayBoardTable({
   onViewComanda,
   onCheckout,
   onSendToFinanceiro,
+  sendingKey = null,
   onWaive,
   onMarkExecution,
   onCancelReceivable,
@@ -422,12 +435,17 @@ export function FinanceDayBoardTable({
                       <button
                         type="button"
                         className="hub-dayboard__action-btn"
-                        title="Enviar ao financeiro"
+                        title={sendingKey === itemKey(item) ? 'Enviando ao financeiro…' : 'Enviar ao financeiro'}
                         aria-label="Enviar ao financeiro"
+                        aria-busy={sendingKey === itemKey(item)}
                         disabled={busy}
                         onClick={() => onSendToFinanceiro(item)}
                       >
-                        <SendHorizonal size={15} strokeWidth={2} />
+                        {sendingKey === itemKey(item) ? (
+                          <Loader2 size={15} strokeWidth={2} className="hub-finance-page__spin" />
+                        ) : (
+                          <SendHorizonal size={15} strokeWidth={2} />
+                        )}
                       </button>
                     )}
                     {hasComanda && !hasReceivable && canCreateReceivable && canCheckout && checkoutLabel && (

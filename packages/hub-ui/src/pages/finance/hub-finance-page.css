@@ -1127,6 +1127,16 @@
   margin: 0 0 12px;
 }
 
+.hub-finance-page__spin {
+  animation: hub-finance-spin 0.8s linear infinite;
+}
+
+@keyframes hub-finance-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 @keyframes hub-finance-panel-highlight {
   0%,
   15% {

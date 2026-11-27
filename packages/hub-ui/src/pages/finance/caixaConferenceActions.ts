@@ -18,6 +18,10 @@ export type CaixaConferenceOperationalAction =
   | 'advance_grooming'
   | 'complete_encounter'
   | 'open_module'
+  /** Origem cancelada/falta sem pagamento: anular a comanda (checkout cancel). */
+  | 'void_comanda'
+  /** Origem cancelada com pagamento: resolver o ajuste na comanda. */
+  | 'resolve_cancellation'
   | 'none';
 
 export type CaixaConferenceActionPlan = {
@@ -50,9 +54,29 @@ export function resolveCaixaConferenceActionPlan(input: {
   conferenceKind: CaixaCarryoverConferenceKind;
   permissions: CaixaConferencePermissions;
   moduleHref: string | null;
+  /** Valor já pago na comanda (para origem cancelada). */
+  paidTotal?: number;
 }): CaixaConferenceActionPlan {
   const ot = String(input.originType ?? '');
   const { conferenceKind, permissions, moduleHref } = input;
+
+  if (conferenceKind === 'origin_cancelled') {
+    const hasPayment = Number(input.paidTotal ?? 0) > 0.009;
+    const canAct = permissions.canCreateReceivable;
+    return {
+      operationalAction: canAct ? (hasPayment ? 'resolve_cancellation' : 'void_comanda') : 'none',
+      operationalLabel: canAct ? (hasPayment ? 'Resolver ajuste na comanda' : 'Anular comanda') : null,
+      operationalHint: hasPayment
+        ? 'O atendimento foi cancelado, mas já há pagamento nesta comanda. Resolva o ajuste (estorno, crédito ou manter).'
+        : 'O atendimento foi cancelado ou teve falta. Esta comanda não deve ser cobrada — anule para tirá-la da conferência.',
+      showMarkExecution: false,
+      showCharge: false,
+      showHandoff: false,
+      handoffEnabled: false,
+      handoffDisabledReason: 'Atendimento cancelado — não segue para cobrança.',
+      moduleHref,
+    };
+  }
   const showMarkExecution =
     permissions.canMarkExecution &&
     supportsMarkExecutionOrigin(ot) &&

@@ -7,6 +7,7 @@ import {
   ChevronUp,
   Coins,
   ExternalLink,
+  Loader2,
   Lock,
   Unlock,
   Package,
@@ -173,6 +174,8 @@ const HubCaixaPage: React.FC = () => {
     MarkExecutionTarget | HubFinanceDayBoardItem | null
   >(null);
   const [conferenceComanda, setConferenceComanda] = useState<Record<string, unknown> | null>(null);
+  const [sendingComandaId, setSendingComandaId] = useState<string | null>(null);
+  const [sendingDayBoardKey, setSendingDayBoardKey] = useState<string | null>(null);
 
   // Sessão de dia anterior aberta (dia civil America/Sao_Paulo)
   const isPreviousDaySession = isPreviousDaySaoPaulo(cashOpen?.opened_at);
@@ -923,6 +926,7 @@ const HubCaixaPage: React.FC = () => {
   const onSendToFinanceiro = async (item: HubFinanceDayBoardItem) => {
     if (!canCreateReceivable) { showError('Sem permissão para enviar ao financeiro.'); return; }
     setDayBoardBusy(true);
+    setSendingDayBoardKey(`${item.origin_type}:${item.origin_id}`);
     try {
       let comandaId = item.billing.comanda_id;
       if (!comandaId) {
@@ -953,15 +957,17 @@ const HubCaixaPage: React.FC = () => {
       showError((e as Error)?.message || 'Erro ao enviar ao financeiro');
     } finally {
       setDayBoardBusy(false);
+      setSendingDayBoardKey(null);
     }
   };
 
-  const onSendCarryoverToFinanceiro = async (comandaId: string) => {
+  const onSendCarryoverToFinanceiro = async (comandaId: string): Promise<boolean> => {
     if (!canCreateReceivable) {
       showError('Sem permissão para enviar ao financeiro.');
-      return;
+      return false;
     }
     setDayBoardBusy(true);
+    setSendingComandaId(comandaId);
     try {
       await hubComandaApi.checkoutBulk({
         clinic_id: clinicId,
@@ -971,13 +977,51 @@ const HubCaixaPage: React.FC = () => {
         due_date: ymdToday(),
       });
       showSuccess('Enviado ao financeiro como pendente.');
-      await loadOpenComandas();
-      await loadDayBoard();
+      await refreshAfterConference();
+      return true;
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao enviar ao financeiro');
+      return false;
     } finally {
       setDayBoardBusy(false);
+      setSendingComandaId(null);
     }
+  };
+
+  const conferenceIndex = conferenceComanda
+    ? extraComandas.findIndex((c) => String(c.id) === String(conferenceComanda.id))
+    : -1;
+
+  const goToConferenceOffset = (delta: number) => {
+    if (extraComandas.length === 0) return;
+    const base = conferenceIndex >= 0 ? conferenceIndex : 0;
+    const next = (base + delta + extraComandas.length) % extraComandas.length;
+    setConferenceComanda(extraComandas[next] ?? null);
+  };
+
+  const advanceConferenceAfter = (
+    comandaId: string,
+    snapshot: Record<string, unknown>[],
+    doneMessage: string,
+  ) => {
+    const idx = snapshot.findIndex((c) => String(c.id) === comandaId);
+    const remaining =
+      idx >= 0
+        ? [...snapshot.slice(idx + 1), ...snapshot.slice(0, idx)]
+        : snapshot.filter((c) => String(c.id) !== comandaId);
+    if (remaining.length === 0) {
+      setConferenceComanda(null);
+      showSuccess(`${doneMessage} Todas as pendências da conferência foram resolvidas.`);
+      return;
+    }
+    setConferenceComanda(remaining[0]);
+  };
+
+  const onSendFromConference = async (comandaId: string) => {
+    const snapshot = extraComandas;
+    const ok = await onSendCarryoverToFinanceiro(comandaId);
+    if (!ok) return;
+    advanceConferenceAfter(comandaId, snapshot, 'Enviado ao financeiro.');
   };
 
   const onHandoffReadyCarryoverBatch = () => {
@@ -1321,6 +1365,7 @@ const HubCaixaPage: React.FC = () => {
                   onViewComanda={onViewComanda}
                   onCheckout={onCheckoutFromBoard}
                   onSendToFinanceiro={onSendToFinanceiro}
+                  sendingKey={sendingDayBoardKey}
                   onWaive={onWaiveFromBoard}
                   onMarkExecution={onMarkExecutionFromBoard}
                   onShareComanda={onShareComanda}
@@ -1402,11 +1447,13 @@ const HubCaixaPage: React.FC = () => {
                                 ? 'hub-dayboard__badge hub-dayboard__badge--warn'
                                 : 'hub-dayboard__badge hub-dayboard__badge--pending';
                           const conferenceLabel =
-                            kind === 'needs_executor'
-                              ? 'Conferir executor'
-                              : kind === 'operational_incomplete'
-                                ? 'Conferir operação'
-                                : 'Conferir';
+                            kind === 'origin_cancelled'
+                              ? 'Conferir cancelamento'
+                              : kind === 'needs_executor'
+                                ? 'Conferir executor'
+                                : kind === 'operational_incomplete'
+                                  ? 'Conferir operação'
+                                  : 'Conferir';
                           return (
                             <tr key={String(c.id)}>
                               <td>
@@ -1417,7 +1464,16 @@ const HubCaixaPage: React.FC = () => {
                               </td>
                               <td><span className="hub-clientes__muted">{originLabel}</span></td>
                               <td>
-                                <span className={badgeClass}>{caixaCarryoverConferenceLabel(kind)}</span>
+                                <span
+                                  className={badgeClass}
+                                  style={
+                                    kind === 'origin_cancelled'
+                                      ? { background: '#fee2e2', color: '#b91c1c', borderColor: '#fca5a5' }
+                                      : undefined
+                                  }
+                                >
+                                  {caixaCarryoverConferenceLabel(kind)}
+                                </span>
                               </td>
                               <td className="hub-finance-page__td-num">{formatBrl(amount)}</td>
                               <td>
@@ -1434,7 +1490,9 @@ const HubCaixaPage: React.FC = () => {
                                   className="hub-dayboard__item-actions"
                                   style={{ flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}
                                 >
-                                  {kind === 'operational_incomplete' || kind === 'needs_executor' ? (
+                                  {kind === 'operational_incomplete' ||
+                                  kind === 'needs_executor' ||
+                                  kind === 'origin_cancelled' ? (
                                     <button
                                       type="button"
                                       className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
@@ -1452,11 +1510,21 @@ const HubCaixaPage: React.FC = () => {
                                       className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
                                       title="Enviar ao financeiro"
                                       aria-label="Enviar ao financeiro"
+                                      aria-busy={sendingComandaId === String(c.id)}
                                       disabled={dayBoardBusy}
                                       onClick={() => void onSendCarryoverToFinanceiro(String(c.id))}
                                     >
-                                      <SendHorizonal size={14} strokeWidth={2} aria-hidden />
-                                      Financeiro
+                                      {sendingComandaId === String(c.id) ? (
+                                        <Loader2
+                                          size={14}
+                                          strokeWidth={2}
+                                          className="hub-finance-page__spin"
+                                          aria-hidden
+                                        />
+                                      ) : (
+                                        <SendHorizonal size={14} strokeWidth={2} aria-hidden />
+                                      )}
+                                      {sendingComandaId === String(c.id) ? 'Enviando…' : 'Financeiro'}
                                     </button>
                                   ) : null}
                                   {canCreateReceivable && (
@@ -2173,7 +2241,15 @@ const HubCaixaPage: React.FC = () => {
         onRefresh={refreshAfterConference}
         onCheckout={(id) => setCheckoutComandaId(id)}
         onEditComanda={(id) => navigate(`/hub/caixa/comanda/${id}`)}
-        onSendToFinanceiro={(id) => void onSendCarryoverToFinanceiro(id)}
+        onSendToFinanceiro={(id) => void onSendFromConference(id)}
+        queuePosition={conferenceIndex >= 0 ? conferenceIndex + 1 : null}
+        queueTotal={extraComandas.length}
+        onPrev={() => goToConferenceOffset(-1)}
+        onNext={() => goToConferenceOffset(1)}
+        onResolved={(id) => advanceConferenceAfter(id, extraComandas, 'Comanda anulada.')}
+        sendingToFinanceiro={
+          !!conferenceComanda && sendingComandaId === String(conferenceComanda.id)
+        }
         showError={showError}
         showSuccess={showSuccess}
         busy={dayBoardBusy || openComandasBusy}

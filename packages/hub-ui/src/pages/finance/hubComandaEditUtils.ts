@@ -181,11 +181,16 @@ export function isCaixaCarryoverPendingComanda(
 }
 
 /** Classificação da conferência de carryover (duas filas + executor). */
-export type CaixaCarryoverConferenceKind = 'operational_incomplete' | 'needs_executor' | 'ready';
+export type CaixaCarryoverConferenceKind =
+  | 'origin_cancelled'
+  | 'operational_incomplete'
+  | 'needs_executor'
+  | 'ready';
 
 export function resolveCaixaCarryoverConferenceKind(
   comanda: Record<string, unknown>,
 ): CaixaCarryoverConferenceKind {
+  if (comanda.handoff_block_code === 'ORIGIN_CANCELLED') return 'origin_cancelled';
   if (comanda.operational_complete === false) return 'operational_incomplete';
   if (comanda.handoff_block_code === 'COMMISSION_EXECUTOR_REQUIRED') return 'needs_executor';
   return 'ready';
@@ -193,6 +198,8 @@ export function resolveCaixaCarryoverConferenceKind(
 
 export function caixaCarryoverConferenceLabel(kind: CaixaCarryoverConferenceKind): string {
   switch (kind) {
+    case 'origin_cancelled':
+      return 'Atendimento cancelado';
     case 'operational_incomplete':
       return 'Operação incompleta';
     case 'needs_executor':

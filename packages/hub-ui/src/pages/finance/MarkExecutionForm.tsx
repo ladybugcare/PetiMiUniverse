@@ -22,6 +22,7 @@ export type MarkExecutionSavedResult = {
   staffId: string;
   staffLabel: string;
   lineCount: number;
+  lineIds: string[];
 };
 
 export type MarkExecutionFormProps = {
@@ -40,6 +41,10 @@ export type MarkExecutionFormProps = {
    * confirmação visual em vez de só disparar onDone e sumir.
    */
   keepOpenAfterSave?: boolean;
+  /** Pré-seleciona o profissional (ex.: responsável do agendamento). */
+  defaultStaffId?: string | null;
+  /** Pré-seleciona só esta linha (ex.: "Alterar" numa linha específica). */
+  focusLineId?: string | null;
 };
 
 /**
@@ -56,6 +61,8 @@ export const MarkExecutionForm: React.FC<MarkExecutionFormProps> = ({
   idPrefix = 'mark-execution',
   variant = 'panel',
   keepOpenAfterSave,
+  defaultStaffId,
+  focusLineId,
 }) => {
   const clinicId = getStoredClinicId();
   const { myStaffMember, staffList, loading: staffLoading } = useMyStaffMember();
@@ -89,7 +96,7 @@ export const MarkExecutionForm: React.FC<MarkExecutionFormProps> = ({
     );
     const next = res.lines ?? [];
     setLines(next);
-    setSelectedIds(new Set(next.filter((l) => l.commission_requires_executor && !l.executed_by_staff_id).map((l) => l.id)));
+    setSelectedIds(new Set(next.filter((l) => !l.executed_by_staff_id).map((l) => l.id)));
   };
 
   useEffect(() => {
@@ -114,9 +121,13 @@ export const MarkExecutionForm: React.FC<MarkExecutionFormProps> = ({
         if (cancelled) return;
         const next = res.lines ?? [];
         setLines(next);
-        setSelectedIds(
-          new Set(next.filter((l) => l.commission_requires_executor).map((l) => l.id)),
-        );
+        const pending = next.filter((l) => !l.executed_by_staff_id);
+        // Tudo já executado: pré-seleciona tudo para facilitar a troca de executor.
+        if (focusLineId && next.some((l) => l.id === focusLineId)) {
+          setSelectedIds(new Set([focusLineId]));
+        } else {
+          setSelectedIds(new Set((pending.length > 0 ? pending : next).map((l) => l.id)));
+        }
       } catch (e) {
         if (cancelled) return;
         setLines([]);
@@ -128,16 +139,23 @@ export const MarkExecutionForm: React.FC<MarkExecutionFormProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [open, item, clinicId]);
+  }, [open, item, clinicId, focusLineId]);
 
   useEffect(() => {
     if (!open) return;
-    if (myStaffMember?.id) setStaffId(myStaffMember.id);
-  }, [open, myStaffMember?.id]);
+    const preferred =
+      defaultStaffId && staffList.some((s) => s.id === defaultStaffId && s.active !== false)
+        ? defaultStaffId
+        : myStaffMember?.id;
+    if (preferred) setStaffId(preferred);
+  }, [open, myStaffMember?.id, defaultStaffId, staffList]);
 
-  const pendingRequired = lines.filter((l) => l.commission_requires_executor && !l.executed_by_staff_id);
   const alreadyDone = lines.filter((l) => l.executed_by_staff_id);
   const allDone = lines.length > 0 && alreadyDone.length === lines.length;
+  const staffNameById = useMemo(
+    () => new Map(staffList.map((s) => [s.id, s.full_name || s.display_name || 'Profissional'] as const)),
+    [staffList],
+  );
 
   const toggleLine = (id: string) => {
     setSelectedIds((prev) => {
@@ -173,6 +191,7 @@ export const MarkExecutionForm: React.FC<MarkExecutionFormProps> = ({
         staffId,
         staffLabel,
         lineCount: selectedIds.size,
+        lineIds: [...selectedIds],
       };
       showSuccess(
         selectedIds.size === 1
@@ -227,7 +246,7 @@ export const MarkExecutionForm: React.FC<MarkExecutionFormProps> = ({
           : undefined
       }
     >
-      {savedResult || allDone ? (
+      {savedResult ? (
         <div
           role="status"
           style={{
@@ -246,81 +265,98 @@ export const MarkExecutionForm: React.FC<MarkExecutionFormProps> = ({
         >
           <CheckCircle2 size={16} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} aria-hidden />
           <div>
-            <div style={{ fontWeight: 600 }}>
-              {savedResult
-                ? `Execução salva · ${savedResult.staffLabel}`
-                : 'Execução já registrada'}
-            </div>
+            <div style={{ fontWeight: 600 }}>Execução salva · {savedResult.staffLabel}</div>
             <div style={{ opacity: 0.9, marginTop: 2 }}>
-              {savedResult
-                ? `${savedResult.lineCount} serviço(s) marcado(s).`
-                : `${alreadyDone.length} linha(s) com executor.`}
+              {savedResult.lineCount === 1
+                ? '1 serviço marcado.'
+                : `${savedResult.lineCount} serviços marcados.`}
             </div>
           </div>
         </div>
       ) : null}
 
-      {pendingRequired.length === 0 && !savedResult ? (
-        <p className="hub-clientes__muted" style={{ marginTop: 0, marginBottom: 12, fontSize: 13 }}>
-          {allDone
-            ? 'Todas as linhas já têm execução marcada.'
-            : 'Nenhuma linha exige executor para comissão agora. Você ainda pode marcar execução para registro operacional.'}
-        </p>
-      ) : null}
+      <label
+        className="hub-clientes__label"
+        htmlFor={`${idPrefix}-staff`}
+        style={{ display: 'block', marginBottom: 6, fontSize: 13 }}
+      >
+        {allDone ? 'Trocar executor para' : 'Quem executou'}
+      </label>
+      <HubSearchableCombobox
+        id={`${idPrefix}-staff`}
+        value={staffId}
+        options={staffOptions}
+        onChange={setStaffId}
+        placeholder="Selecione o profissional"
+        disabled={saving}
+        ariaLabel="Profissional executor"
+      />
 
-      {!allDone ? (
-        <>
-          <label className="hub-clientes__label" style={{ display: 'block', marginBottom: 8 }}>
-            Profissional executor
-          </label>
-          <HubSearchableCombobox
-            id={`${idPrefix}-staff`}
-            value={staffId}
-            options={staffOptions}
-            onChange={setStaffId}
-            placeholder="Selecione o profissional"
-            disabled={saving}
-            ariaLabel="Profissional executor"
-          />
-        </>
-      ) : null}
-
-      <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div
+        style={{
+          marginTop: 12,
+          marginBottom: 6,
+          fontSize: 12,
+          fontWeight: 600,
+          color: 'var(--hub-text-muted, #8a7f76)',
+        }}
+      >
+        {lines.length > 1 ? 'Serviços' : 'Serviço'}
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {lines.map((line) => {
-          const done = Boolean(line.executed_by_staff_id);
-          const selectable = !done;
+          const doneBy = line.executed_by_staff_id
+            ? staffNameById.get(line.executed_by_staff_id) ?? 'Profissional'
+            : null;
+          const checked = selectedIds.has(line.id);
           return (
             <label
               key={line.id}
               style={{
                 display: 'flex',
-                alignItems: 'flex-start',
+                alignItems: 'center',
                 gap: 10,
-                opacity: done ? 0.75 : 1,
-                cursor: selectable ? 'pointer' : 'default',
+                padding: '8px 10px',
+                borderRadius: 8,
+                border: `1px solid ${checked ? 'var(--hub-primary, #e07a3f)' : 'var(--hub-border, #e5e7eb)'}`,
+                background: 'var(--hub-surface, #fff)',
+                cursor: saving ? 'default' : 'pointer',
               }}
             >
               <HubCheckbox
-                checked={done || selectedIds.has(line.id)}
-                onChange={() => {
-                  if (selectable) toggleLine(line.id);
-                }}
-                disabled={done || saving}
+                checked={checked}
+                onChange={() => toggleLine(line.id)}
+                disabled={saving}
                 ariaLabel={line.name}
               />
-              <span style={{ flex: 1 }}>
-                <span style={{ fontWeight: 600 }}>{line.name}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span style={{ fontWeight: 600, fontSize: 14 }}>{line.name}</span>
                 {line.commission_requires_executor ? (
-                  <span className="hub-clientes__pill" style={{ marginLeft: 8 }}>
-                    Exige para comissão
+                  <span className="hub-clientes__muted" style={{ marginLeft: 6, fontSize: 11 }}>
+                    · comissão
                   </span>
                 ) : null}
-                {done ? (
-                  <div className="hub-clientes__muted" style={{ fontSize: 12, color: '#065f46' }}>
-                    ✓ Já executado
-                  </div>
-                ) : null}
               </span>
+              {doneBy ? (
+                <span
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 4,
+                    fontSize: 12,
+                    fontWeight: 600,
+                    color: '#047857',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  <CheckCircle2 size={13} aria-hidden />
+                  {doneBy}
+                </span>
+              ) : (
+                <span style={{ fontSize: 12, fontWeight: 600, color: '#c2410c', whiteSpace: 'nowrap' }}>
+                  Sem executor
+                </span>
+              )}
             </label>
           );
         })}
@@ -342,19 +378,17 @@ export const MarkExecutionForm: React.FC<MarkExecutionFormProps> = ({
             onClick={onCancel}
             disabled={saving}
           >
-            {savedResult || allDone ? 'Fechar' : 'Cancelar'}
+            {savedResult ? 'Fechar' : 'Cancelar'}
           </button>
         ) : null}
-        {!allDone ? (
-          <button
-            type="button"
-            className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
-            onClick={() => void handleSave()}
-            disabled={saving || selectedIds.size === 0}
-          >
-            {saving ? 'Salvando…' : savedResult ? 'Salvar mais' : 'Confirmar execução'}
-          </button>
-        ) : null}
+        <button
+          type="button"
+          className="hub-clientes__btn hub-clientes__btn--primary hub-clientes__btn--sm"
+          onClick={() => void handleSave()}
+          disabled={saving || selectedIds.size === 0 || !staffId}
+        >
+          {saving ? 'Salvando…' : allDone ? 'Salvar alteração' : 'Confirmar execução'}
+        </button>
       </div>
     </div>
   );

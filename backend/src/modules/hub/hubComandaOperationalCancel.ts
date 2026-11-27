@@ -49,7 +49,8 @@ async function findOpenGroomingComandaIdForAppointment(
   return null;
 }
 
-async function findAnyBoardingReservationForAppointment(
+/** Inclui reservas já canceladas: o cancelamento costuma chegar depois da reserva mudar de status. */
+async function findOpenBoardingComandaIdForAppointment(
   clinicId: string,
   appointmentId: string,
 ): Promise<string | null> {
@@ -59,12 +60,13 @@ async function findAnyBoardingReservationForAppointment(
     .eq('clinic_id', clinicId)
     .eq('hub_appointment_id', appointmentId)
     .is('deleted_at', null)
-    .not('status', 'in', '("cancelled")')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .order('created_at', { ascending: false });
   if (error) throw new Error(error.message);
-  return (data?.id as string) ?? null;
+  for (const row of data ?? []) {
+    const byBoard = await findOpenComandaIdByOrigin(clinicId, 'boarding_reservation', row.id as string);
+    if (byBoard) return byBoard;
+  }
+  return null;
 }
 
 async function findOpenEncounterComandaIdForAppointment(
@@ -95,11 +97,8 @@ async function resolveOpenComandaIdForAppointment(
   if (byAppt) return byAppt;
   const byGroom = await findOpenGroomingComandaIdForAppointment(clinicId, appointmentId);
   if (byGroom) return byGroom;
-  const boardingId = await findAnyBoardingReservationForAppointment(clinicId, appointmentId);
-  if (boardingId) {
-    const byBoard = await findOpenComandaIdByOrigin(clinicId, 'boarding_reservation', boardingId);
-    if (byBoard) return byBoard;
-  }
+  const byBoard = await findOpenBoardingComandaIdForAppointment(clinicId, appointmentId);
+  if (byBoard) return byBoard;
   return findOpenEncounterComandaIdForAppointment(clinicId, appointmentId);
 }
 
@@ -315,9 +314,70 @@ export async function handleComandaAfterOperationalCancel(
   try {
     const comandaId = await resolveOpenComandaIdForCancellation(clinicId, operationalType, operationalId);
     if (!comandaId) return { kind: 'none' };
+    return await applyOperationalCancelToComanda({
+      clinicId,
+      comandaId,
+      flagTarget: { operationalType, operationalId },
+      waiveReason:
+        opts?.waiveReason?.trim() ||
+        (operationalType === 'appointment'
+          ? 'Cancelamento operacional do agendamento'
+          : 'Cancelamento operacional'),
+    });
+  } catch (e: unknown) {
+    console.error('handleComandaAfterOperationalCancel', e);
+    return { kind: 'none' };
+  }
+}
 
+/**
+ * Cancelamento/falta da reserva de Hotel/Creche.
+ * Com agendamento vinculado, segue o fluxo de appointment (que encontra a comanda da reserva).
+ * Sem agendamento, anula comanda sem pagamento; com pagamento não há tipo operacional válido
+ * para marcar pendência — fica para a conferência do caixa (origem cancelada).
+ */
+export async function handleComandaAfterBoardingCancel(
+  clinicId: string,
+  reservationId: string,
+  appointmentId: string | null,
+  opts?: { waiveReason?: string },
+): Promise<ComandaOperationalCancelEffect> {
+  const waiveReason = opts?.waiveReason?.trim() || 'Cancelamento da reserva de Hotel/Creche';
+  try {
+    const direct = await findOpenComandaIdByOrigin(clinicId, 'boarding_reservation', reservationId);
+    if (direct) {
+      return await applyOperationalCancelToComanda({
+        clinicId,
+        comandaId: direct,
+        flagTarget: appointmentId ? { operationalType: 'appointment', operationalId: appointmentId } : null,
+        waiveReason,
+      });
+    }
+    if (appointmentId) {
+      return await handleComandaAfterOperationalCancel(clinicId, 'appointment', appointmentId, { waiveReason });
+    }
+    return { kind: 'none' };
+  } catch (e: unknown) {
+    console.error('handleComandaAfterBoardingCancel', e);
+    return { kind: 'none' };
+  }
+}
+
+async function applyOperationalCancelToComanda(opts: {
+  clinicId: string;
+  comandaId: string;
+  flagTarget: { operationalType: CancellationOperationalType; operationalId: string } | null;
+  waiveReason: string;
+}): Promise<ComandaOperationalCancelEffect> {
+  const { clinicId, comandaId, flagTarget, waiveReason } = opts;
+  {
     const paidTotal = await computePaidTotalForComanda(clinicId, comandaId);
     if (paidTotal > 0.009) {
+      if (!flagTarget) {
+        console.warn('applyOperationalCancelToComanda: comanda paga sem tipo operacional', comandaId);
+        return { kind: 'none' };
+      }
+      const { operationalType, operationalId } = flagTarget;
       await flagKnownComandaCancellationPending({
         clinicId,
         comandaId,
@@ -338,12 +398,6 @@ export async function handleComandaAfterOperationalCancel(
     if (cErr || !comandaRow || String(comandaRow.status) !== 'aberta') {
       return { kind: 'none' };
     }
-
-    const waiveReason =
-      opts?.waiveReason?.trim() ||
-      (operationalType === 'appointment'
-        ? 'Cancelamento operacional do agendamento'
-        : 'Cancelamento operacional');
 
     const unpaidCancel = await cancelUnpaidReceivablesForComanda(clinicId, comandaId, waiveReason);
     if (unpaidCancel.blockedByPayment) {
@@ -375,8 +429,5 @@ export async function handleComandaAfterOperationalCancel(
       waiveReason,
     });
     return { kind: 'cancelled', comandaId };
-  } catch (e: unknown) {
-    console.error('handleComandaAfterOperationalCancel', e);
-    return { kind: 'none' };
   }
 }

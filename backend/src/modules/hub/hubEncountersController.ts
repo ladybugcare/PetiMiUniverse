@@ -10,10 +10,10 @@ import {
 import { recordTimelineEvent } from './hubClinicalTimelineController';
 import {
   syncOpenComandasAfterEncounterCompleted,
-  maybeFlagComandaCancellationPending,
   financialAdjustmentFlagsForEncounters,
   financialAdjustmentFlagsForAppointments,
 } from './hubComandasController';
+import { handleComandaAfterOperationalCancel } from './hubComandaOperationalCancel';
 import { fetchHubPetsMapByIds, resolvePrimaryPetIdsByGuardians } from './hubDayBoardPets';
 import {
   attachEncounterToAppointmentSurgery,
@@ -1881,14 +1881,18 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
     }
     if (!data) return res.status(404).json({ error: 'Atendimento não encontrado' });
     if (patch.status === 'cancelled') {
-      void maybeFlagComandaCancellationPending(b.clinic_id, 'encounter', id.data);
       const linkedApptId =
         (data as { hub_appointment_id?: string | null }).hub_appointment_id ?? existing.hub_appointment_id;
-      void setLinkedAppointmentStatus({
+      const waiveReason = 'Cancelamento do atendimento clínico';
+      await handleComandaAfterOperationalCancel(b.clinic_id, 'encounter', id.data, { waiveReason });
+      await setLinkedAppointmentStatus({
         clinicId: b.clinic_id,
         appointmentId: linkedApptId,
         status: 'cancelled',
       });
+      if (linkedApptId) {
+        await handleComandaAfterOperationalCancel(b.clinic_id, 'appointment', linkedApptId, { waiveReason });
+      }
     }
     if (b.chief_complaint !== undefined) {
       void maybePromoteGenericCaseTitle({
