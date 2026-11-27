@@ -1416,4 +1416,77 @@ describe('Matriz Caixa — open → checkout por origem', () => {
       expect(pay.status).toBe(201);
     });
   });
+
+  describe('vaccination sem lote', () => {
+    const VAX_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0099';
+    const VAX_ITEM_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddd0099';
+
+    it('checkout recusa linha de vacina com item e sem lote', async () => {
+      configureSupabaseMock({
+        tables: baseFinanceTables({
+          hub_encounters: [
+            {
+              id: ENCOUNTER_ID,
+              clinic_id: TEST_CLINIC_ID,
+              unit_id: TEST_UNIT_ID,
+              guardian_id: TEST_GUARDIAN_ID,
+              pet_id: TEST_PET_ID,
+              status: 'completed',
+              billing_waived_at: null,
+              hub_appointment_id: null,
+              hub_case_id: null,
+              deleted_at: null,
+            },
+          ],
+          hub_inventory_items: [
+            {
+              id: VAX_ITEM_ID,
+              clinic_id: TEST_CLINIC_ID,
+              name: 'Vacina Raiva',
+              sale_amount: 120,
+              cost_amount: 16,
+              deleted_at: null,
+              active: true,
+            },
+          ],
+          hub_vaccination_records: [
+            {
+              id: VAX_ID,
+              clinic_id: TEST_CLINIC_ID,
+              hub_encounter_id: ENCOUNTER_ID,
+              vaccine_name: 'Vacina Raiva',
+              source: 'in_clinic',
+              hub_inventory_item_id: VAX_ITEM_ID,
+              hub_inventory_lot_id: null,
+              price: 120,
+              stock_movement_id: null,
+              deleted_at: null,
+            },
+          ],
+        }),
+      });
+
+      const open = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'encounter',
+        origin_id: ENCOUNTER_ID,
+      });
+      expect(open.status).toBe(201);
+      const comandaId = open.body.comanda.id as string;
+
+      const items = getMockSupabaseClient()._state.tables.hub_comanda_items ?? [];
+      const vaxLine = items.find((it) => it.origin_type === 'vaccination');
+      expect(vaxLine).toBeTruthy();
+      expect(vaxLine?.hub_inventory_lot_id ?? null).toBeNull();
+
+      const pay = await checkoutReceiveNow(comandaId, 120);
+      expect(pay.status).toBe(400);
+      expect(String(pay.body.error)).toMatch(/lote/i);
+
+      const saleOuts = (getMockSupabaseClient()._state.tables.hub_stock_movements ?? []).filter(
+        (m) => m.movement_type === 'sale_out',
+      );
+      expect(saleOuts).toHaveLength(0);
+    });
+  });
 });

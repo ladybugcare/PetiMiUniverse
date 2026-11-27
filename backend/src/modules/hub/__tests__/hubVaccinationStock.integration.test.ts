@@ -4,6 +4,22 @@ jest.mock('../../../config/supabase', () =>
 jest.mock('../../../middleware/authMiddleware', () =>
   require('../../../__tests__/helpers/authTestDouble').getAuthMiddlewareModule(),
 );
+jest.mock('../hubSubscriptionService', () => {
+  const actual = jest.requireActual('../hubSubscriptionService');
+  return {
+    ...actual,
+    getClinicEntitlementSnapshot: jest.fn().mockResolvedValue({
+      status: 'active',
+      is_beta: true,
+      base_plan_slug: 'beta',
+      enabled_modules: ['hub_core', 'clinic', 'grooming', 'boarding'],
+      disabled_operational_areas: [],
+      max_units: null,
+      max_users: null,
+      access_mode: 'full',
+    }),
+  };
+});
 
 import request from 'supertest';
 import app from '../../../app';
@@ -15,9 +31,28 @@ const ENCOUNTER_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccc0003';
 const ITEM_ID = 'dddddddd-dddd-4ddd-8ddd-dddddddd0004';
 const LOT_ID = 'eeeeeeee-eeee-4eee-8eee-eeeeeeee0005';
 
-function vaccinationFixture(stockQty: number) {
+function vaccinationFixture(stockQty: number, expiryDate = '2027-06-01') {
   configureSupabaseMock({
     tables: {
+      hub_pets: [
+        {
+          id: PET_ID,
+          clinic_id: CLINIC_ID,
+          name: 'Rex',
+          deleted_at: null,
+          deceased_at: null,
+          death_invalidated_at: null,
+        },
+      ],
+      hub_encounters: [
+        {
+          id: ENCOUNTER_ID,
+          clinic_id: CLINIC_ID,
+          pet_id: PET_ID,
+          status: 'in_progress',
+          deleted_at: null,
+        },
+      ],
       hub_inventory_items: [
         {
           id: ITEM_ID,
@@ -35,7 +70,7 @@ function vaccinationFixture(stockQty: number) {
           clinic_id: CLINIC_ID,
           item_id: ITEM_ID,
           lot_code: 'L001',
-          expiry_date: '2027-06-01',
+          expiry_date: expiryDate,
           received_at: '2026-01-01',
         },
       ],
@@ -84,7 +119,7 @@ describe('API clínica — vacinação com estoque', () => {
     expect(movements.some((m) => m.movement_type === 'encounter_out')).toBe(true);
   });
 
-  it('POST /clinical/vaccinations permite vacina na clínica sem lote', async () => {
+  it('POST /clinical/vaccinations retorna 400 sem lote quando há item de estoque', async () => {
     vaccinationFixture(3);
     const res = await request(app)
       .post('/api/hub/clinical/vaccinations')
@@ -98,11 +133,33 @@ describe('API clínica — vacinação com estoque', () => {
         hub_inventory_item_id: ITEM_ID,
       });
 
-    expect(res.status).toBe(201);
-    expect(res.body.vaccination.hub_inventory_item_id).toBe(ITEM_ID);
-    expect(res.body.vaccination.hub_inventory_lot_id).toBeNull();
-    expect(res.body.vaccination.stock_movement_id).toBeNull();
-    expect(res.body.vaccination.price).toBe(120);
+    expect(res.status).toBe(400);
+    expect(String(res.body.error)).toMatch(/lote/i);
+
+    const client = getMockSupabaseClient();
+    expect(client._state.tables.hub_vaccination_records ?? []).toHaveLength(0);
+  });
+
+  it('POST /clinical/vaccinations retorna 400 com lote vencido', async () => {
+    vaccinationFixture(3, '2020-01-01');
+    const res = await request(app)
+      .post('/api/hub/clinical/vaccinations')
+      .send({
+        clinic_id: CLINIC_ID,
+        pet_id: PET_ID,
+        hub_encounter_id: ENCOUNTER_ID,
+        vaccine_name: 'Vacina Raiva',
+        administered_at: '2026-09-01',
+        source: 'in_clinic',
+        hub_inventory_item_id: ITEM_ID,
+        hub_inventory_lot_id: LOT_ID,
+      });
+
+    expect(res.status).toBe(400);
+    expect(String(res.body.error)).toMatch(/vencido/i);
+
+    const client = getMockSupabaseClient();
+    expect(client._state.tables.hub_vaccination_records ?? []).toHaveLength(0);
   });
 
   it('POST /clinical/vaccinations retorna 400 sem saldo e não mantém registro', async () => {

@@ -36,7 +36,10 @@ import {
 export { isSkippableLeavePendingHandoffError } from './comandaFinanceHandoff';
 import { notifyHubCancellationPending } from './hubNotifyEvents';
 import { isMissingPostgrestRelation } from '../../utils/supabaseSchemaErrors.js';
-import { comandaProductOriginAlreadyStockedOut } from './comandaStockOut';
+import {
+  comandaProductOriginAlreadyStockedOut,
+  vaccinationComandaLineMissingLot,
+} from './comandaStockOut';
 import {
   assertCaseInClinic,
   assertEncounterInClinic,
@@ -57,7 +60,11 @@ import {
   autoApplyEligiblePackagesToItems,
   pricingVariantsEqual,
 } from './hubPackagesService';
-import { createSaleStockOut, validateLotStockForOut } from './hubInventoryStockUtils';
+import {
+  createEncounterStockOut,
+  createSaleStockOut,
+  validateLotStockForOut,
+} from './hubInventoryStockUtils';
 import { validateProductSalePricing } from './productSalePriceRules';
 import {
   markHubAppointmentPaidFromReceivable,
@@ -4264,6 +4271,11 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
     const checkoutCostByItem = await loadInventoryCostByItemId(clinic_id, items as Record<string, unknown>[]);
     for (const it of items) {
       if (String(it.item_kind ?? '') !== 'product') continue;
+      const missingLotErr = vaccinationComandaLineMissingLot(it as Record<string, unknown>);
+      if (missingLotErr) {
+        await rollbackReceivables();
+        return res.status(400).json({ error: missingLotErr });
+      }
       // Já baixados no atendimento (encounter_out) — não repetir sale_out no checkout
       if (comandaProductOriginAlreadyStockedOut((it.origin_type as string | null) ?? null)) continue;
       const invItemId = (it.hub_inventory_item_id as string | null) ?? null;
@@ -4771,6 +4783,11 @@ export async function leavePendingHandoffComanda(
 
     for (const it of items) {
       if (String(it.item_kind ?? '') !== 'product') continue;
+      const missingLotErr = vaccinationComandaLineMissingLot(it as Record<string, unknown>);
+      if (missingLotErr) {
+        await rollback();
+        return { comanda_id: comandaId, receivable_ids: [], error: missingLotErr };
+      }
       if (comandaProductOriginAlreadyStockedOut((it.origin_type as string | null) ?? null)) continue;
       const invItemId = (it.hub_inventory_item_id as string | null) ?? null;
       const invLotId = (it.hub_inventory_lot_id as string | null) ?? null;
@@ -6428,7 +6445,7 @@ export const patchHubComandaItem = async (req: Request, res: Response) => {
     const { data: item, error: iErr } = await supabaseAdmin
       .from('hub_comanda_items')
       .select(
-        'id, comanda_id, origin_type, description, item_kind, quantity, unit_amount, discount_amount, line_total, hub_inventory_item_id, hub_inventory_lot_id',
+        'id, comanda_id, origin_type, origin_id, description, item_kind, quantity, unit_amount, discount_amount, line_total, hub_inventory_item_id, hub_inventory_lot_id',
       )
       .eq('id', itemId)
       .eq('comanda_id', comandaId)
@@ -6436,14 +6453,17 @@ export const patchHubComandaItem = async (req: Request, res: Response) => {
     if (iErr) return res.status(500).json({ error: iErr.message });
     if (!item) return res.status(404).json({ error: 'Item não encontrado' });
 
+    const originType = String(item.origin_type ?? '');
+    const lotEditableOrigin = originType === 'manual' || originType === 'vaccination';
+
     // Permitir edição de qualquer item não faturado (manual ou operacional).
     // 'description' só pode ser alterada em itens manuais.
-    if ((item.origin_type as string) !== 'manual' && updates.description !== undefined) {
+    if (originType !== 'manual' && updates.description !== undefined) {
       return res.status(409).json({ error: 'Descrição só pode ser editada em itens adicionados manualmente' });
     }
     if (updates.hub_inventory_lot_id !== undefined) {
-      if ((item.origin_type as string) !== 'manual') {
-        return res.status(409).json({ error: 'Lote só pode ser alterado em itens adicionados manualmente' });
+      if (!lotEditableOrigin) {
+        return res.status(409).json({ error: 'Lote só pode ser alterado em itens manuais ou de vacina' });
       }
       if (String(item.item_kind) !== 'product' || !item.hub_inventory_item_id) {
         return res.status(400).json({ error: 'Lote só se aplica a produtos de estoque' });
@@ -6511,6 +6531,51 @@ export const patchHubComandaItem = async (req: Request, res: Response) => {
       .update({ ...updates, line_total })
       .eq('id', itemId);
     if (upErr) return res.status(500).json({ error: upErr.message });
+
+    // Legado: vacina na comanda sem lote — ao atribuir lote, baixa estoque no registro clínico se ainda faltar.
+    if (
+      originType === 'vaccination' &&
+      updates.hub_inventory_lot_id &&
+      item.hub_inventory_item_id &&
+      (item.origin_id as string | null)
+    ) {
+      const vaccinationId = item.origin_id as string;
+      const { data: vax } = await supabaseAdmin
+        .from('hub_vaccination_records')
+        .select('id, stock_movement_id, vaccine_name')
+        .eq('id', vaccinationId)
+        .eq('clinic_id', clinic_id)
+        .maybeSingle();
+      if (vax && !(vax.stock_movement_id as string | null)) {
+        const movement = await createEncounterStockOut({
+          clinicId: clinic_id,
+          itemId: item.hub_inventory_item_id as string,
+          lotId: updates.hub_inventory_lot_id,
+          qty: 1,
+          notes: `Vacina aplicada: ${String(vax.vaccine_name ?? 'Vacina')}`,
+          referenceType: 'vaccination',
+          referenceId: vaccinationId,
+          createdBy: req.user?.id ?? null,
+        });
+        if ('error' in movement) {
+          return res.status(400).json({ error: movement.error });
+        }
+        await supabaseAdmin
+          .from('hub_vaccination_records')
+          .update({
+            hub_inventory_lot_id: updates.hub_inventory_lot_id,
+            stock_movement_id: movement.id,
+          })
+          .eq('id', vaccinationId)
+          .eq('clinic_id', clinic_id);
+      } else if (vax) {
+        await supabaseAdmin
+          .from('hub_vaccination_records')
+          .update({ hub_inventory_lot_id: updates.hub_inventory_lot_id })
+          .eq('id', vaccinationId)
+          .eq('clinic_id', clinic_id);
+      }
+    }
 
     const changes: string[] = [];
     if (updates.description !== undefined && updates.description !== String(item.description ?? '')) {
