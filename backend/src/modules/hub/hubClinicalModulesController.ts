@@ -871,24 +871,25 @@ export const createHubVaccination = async (req: Request, res: Response) => {
   let priceSnapshot: number | null = null;
 
   if (b.source === 'in_clinic' && b.hub_inventory_item_id) {
+    if (!b.hub_inventory_lot_id) {
+      return res.status(400).json({ error: 'Selecione o lote da vacina no estoque.' });
+    }
     inventoryItem = await assertClinicInventoryItem(b.clinic_id, b.hub_inventory_item_id);
     if (!inventoryItem || !inventoryItem.active) {
       return res.status(400).json({ error: 'Item de estoque de vacina inválido ou inativo.' });
     }
     priceSnapshot = Number(inventoryItem.sale_amount);
-    if (b.hub_inventory_lot_id) {
-      inventoryLot = await assertClinicInventoryLot(b.clinic_id, b.hub_inventory_lot_id);
-      if (!inventoryLot || inventoryLot.item_id !== b.hub_inventory_item_id) {
-        return res.status(400).json({ error: 'Lote inválido para o item de vacina selecionado.' });
-      }
-      const stockErr = await validateLotStockForOut(
-        b.clinic_id,
-        b.hub_inventory_item_id,
-        b.hub_inventory_lot_id,
-        1,
-      );
-      if (stockErr) return res.status(400).json({ error: stockErr });
+    inventoryLot = await assertClinicInventoryLot(b.clinic_id, b.hub_inventory_lot_id);
+    if (!inventoryLot || inventoryLot.item_id !== b.hub_inventory_item_id) {
+      return res.status(400).json({ error: 'Lote inválido para o item de vacina selecionado.' });
     }
+    const stockErr = await validateLotStockForOut(
+      b.clinic_id,
+      b.hub_inventory_item_id,
+      b.hub_inventory_lot_id,
+      1,
+    );
+    if (stockErr) return res.status(400).json({ error: stockErr });
   }
 
   const batchNumber =

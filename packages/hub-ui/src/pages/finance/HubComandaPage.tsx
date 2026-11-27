@@ -368,8 +368,10 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
       (it) => it.id && !it.id.startsWith(NEW_ITEM_KEY_PREFIX) && !it.isNew && !it.invoiced,
     );
     for (const it of existingEdited) {
-      const isManualProduct =
-        it.origin_type === 'manual' && it.item_kind === 'product' && Boolean(it.hub_inventory_item_id);
+      const canPatchLot =
+        it.item_kind === 'product' &&
+        Boolean(it.hub_inventory_item_id) &&
+        (it.origin_type === 'manual' || it.origin_type === 'vaccination');
       await hubComandaApi.patchItem(comandaId, it.id!, {
         clinic_id: clinicId,
         edit_context: editContext,
@@ -377,7 +379,7 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
         unit_amount: parseMoney(it.unit_amount),
         discount_amount: parseMoney(it.discount_amount),
         ...(it.origin_type === 'manual' ? { description: it.description } : {}),
-        ...(isManualProduct ? { hub_inventory_lot_id: it.hub_inventory_lot_id ?? null } : {}),
+        ...(canPatchLot ? { hub_inventory_lot_id: it.hub_inventory_lot_id ?? null } : {}),
       });
     }
 

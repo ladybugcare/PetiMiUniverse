@@ -50,6 +50,10 @@ export function HubWorkspaceVaccinations({
       showError('Selecione a vacina do estoque.');
       return;
     }
+    if (!draft.hub_inventory_lot_id) {
+      showError('Selecione o lote da vacina.');
+      return;
+    }
     if (!draft.vaccine_name.trim()) {
       showError('Informe o nome da vacina.');
       return;
@@ -69,12 +73,11 @@ export function HubWorkspaceVaccinations({
         notes: draft.notes.trim() || undefined,
         source: 'in_clinic',
         hub_inventory_item_id: draft.hub_inventory_item_id,
-        hub_inventory_lot_id: draft.hub_inventory_lot_id || undefined,
+        hub_inventory_lot_id: draft.hub_inventory_lot_id,
       });
-      const withLot = Boolean(draft.hub_inventory_lot_id);
       setDraft(emptyVaccinationFormDraft());
       await reload();
-      showSuccess(withLot ? 'Vacina registrada e estoque atualizado.' : 'Vacina registrada.');
+      showSuccess('Vacina registrada e estoque atualizado.');
       onClinicalRefresh?.();
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao registrar vacina');

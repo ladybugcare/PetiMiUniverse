@@ -100,7 +100,9 @@ export function HubVaccinationForm({
   );
 
   const canSubmit =
-    !disabled && !submitting && Boolean(draft.hub_inventory_item_id && draft.vaccine_name.trim());
+    !disabled &&
+    !submitting &&
+    Boolean(draft.hub_inventory_item_id && draft.hub_inventory_lot_id && draft.vaccine_name.trim());
 
   const onSelectVaccine = (itemId: string) => {
     const item = vaccineItems.find((v) => v.id === itemId);
@@ -154,7 +156,7 @@ export function HubVaccinationForm({
                 ? 'Selecione a vacina primeiro'
                 : loadingLots
                   ? 'Carregando lotes…'
-                  : 'Opcional'
+                  : 'Selecione o lote'
             }
             searchPlaceholder="Código do lote…"
             disabled={disabled || !draft.hub_inventory_item_id || loadingLots}
@@ -163,7 +165,7 @@ export function HubVaccinationForm({
           />
           {draft.hub_inventory_item_id && !loadingLots && lotsForItem.length === 0 ? (
             <p className="hub-cws-exam-form__hint">
-              Nenhum lote com saldo. Pode registrar sem baixa — o item entra na comanda do mesmo jeito.
+              Nenhum lote com saldo. Dê entrada no estoque antes de registrar a vacina.
             </p>
           ) : null}
         </div>

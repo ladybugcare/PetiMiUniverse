@@ -542,7 +542,9 @@ export const ComandaItemsSection: React.FC<Props> = ({
     isManual: boolean,
     idPrefix: string,
   ) => {
-    if (editable && (it.isNew || isManual)) {
+    const isVaccination = it.origin_type === 'vaccination';
+    const canEditLot = editable && (it.isNew || isManual || (isVaccination && !it.hub_inventory_lot_id));
+    if (canEditLot) {
       return (
         <HubSearchableCombobox
           id={`${idPrefix}-lot-${idx}`}
