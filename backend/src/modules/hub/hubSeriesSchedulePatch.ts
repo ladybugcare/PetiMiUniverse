@@ -4,12 +4,38 @@
  * a agenda num único dia. Preservar a data de cada row e aplicar o novo horário.
  */
 
-/** Mantém a hora de `originalTs` e aplica o calendário `newDate` (YYYY-MM-DD), em UTC. */
+/** Fuso operacional do Hub (Brasil sem horário de verão desde 2019 → UTC−3 fixo). */
+export const SERIES_SCHEDULE_TZ = 'America/Sao_Paulo';
+
+const wallClockFormatter = new Intl.DateTimeFormat('en-CA', {
+  timeZone: SERIES_SCHEDULE_TZ,
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
+/**
+ * Mantém o wall-clock de `originalTs` em America/Sao_Paulo e aplica o calendário
+ * civil `newDate` (YYYY-MM-DD). Evita gravar a perna/banho no dia civil anterior
+ * quando o instante UTC cai após a meia-noite Z.
+ */
 export function shiftTimestampToDate(originalTs: string, newDate: string): string {
   const orig = new Date(originalTs);
-  const [y, m, d] = newDate.split('-').map(Number);
-  orig.setUTCFullYear(y!, m! - 1, d!);
-  return orig.toISOString();
+  if (Number.isNaN(orig.getTime())) {
+    throw new Error(`Timestamp inválido: ${originalTs}`);
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+    throw new Error(`Data de ocorrência inválida: ${newDate}`);
+  }
+  const parts = Object.fromEntries(
+    wallClockFormatter.formatToParts(orig).map((p) => [p.type, p.value]),
+  );
+  const hour = parts.hour ?? '00';
+  const minute = parts.minute ?? '00';
+  const second = parts.second ?? '00';
+  // America/Sao_Paulo é UTC−3 permanente (sem DST).
+  return new Date(`${newDate}T${hour}:${minute}:${second}-03:00`).toISOString();
 }
 
 function occurrenceDateOf(rowStartsAt: string, rowOccurrenceDate?: string | null): string {

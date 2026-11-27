@@ -6,16 +6,20 @@ import { ensureDefaultHubServiceGroups } from './hubServiceGroupsController';
 import { getOrCreateHubClinicSettings } from './hubClinicSettingsController';
 import { COAT_TYPE_VALUES, PORTE_VALUES, parsePricingMatrixJson, roundMoney2 } from './hubServiceTypesPricingMatrix';
 import {
+  classifySeriesPatchTarget,
   normalizePickupPriceScope,
   resolvePickupLegAmounts,
   shouldAttachPickupInMultipetBatch,
-  shouldRewriteAppointmentServicesOnPatch,
+  shouldRewriteAppointmentServicesOnSeriesPatch,
   type PickupPriceScope,
 } from './hubPickupPricing';
 import {
+  addMsToIso,
   resolveSeriesScopedSchedulePatch,
+  scheduleDeltaMs,
   shiftTimestampToDate,
 } from './hubSeriesSchedulePatch';
+import { replaceAppointmentServices } from './hubReplaceAppointmentServices';
 import { canTransitionToNoShow } from './hubNoShowUtils';
 import { manualAppointmentStatusError } from './hubAppointmentManualStatus';
 import {
@@ -1390,14 +1394,19 @@ async function syncExtraBlocksForParent(
 ): Promise<{ error?: string; status?: number; code?: string }> {
   const { data: existingChildren, error: childErr } = await supabaseAdmin
     .from('hub_appointments')
-    .select('id, status')
+    .select('id, status, appointment_kind')
     .eq('clinic_id', clinicId)
     .eq('parent_appointment_id', parentId)
     .is('deleted_at', null);
   if (childErr) return { error: childErr.message, status: 500 };
 
   const LOCKED_EXTRA_BLOCK_STATUSES = new Set(['done', 'paid', 'cancelled', 'no_show']);
-  const existingChildRows = (existingChildren ?? []) as Array<{ id: string; status: string | null }>;
+  // Pernas L&T também usam parent_appointment_id — não entram no sync de blocos extras.
+  const existingChildRows = ((existingChildren ?? []) as Array<{
+    id: string;
+    status: string | null;
+    appointment_kind: string | null;
+  }>).filter((r) => String(r.appointment_kind ?? '') !== 'pickup_route');
   const existingChildIds = existingChildRows.map((r) => r.id);
   const lockedChildIds = new Set(
     existingChildRows.filter((r) => LOCKED_EXTRA_BLOCK_STATUSES.has(String(r.status ?? ''))).map((r) => r.id),
@@ -3292,6 +3301,7 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       ends_at: string;
       series_occurrence_date: string | null;
       appointment_kind: string | null;
+      parent_appointment_id: string | null;
     };
     let targetRows: SeriesTargetRow[] = [
       {
@@ -3302,13 +3312,15 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
           ((existing as Record<string, unknown>).series_occurrence_date as string | null) ?? null,
         appointment_kind:
           ((existing as Record<string, unknown>).appointment_kind as string | null) ?? null,
+        parent_appointment_id:
+          ((existing as Record<string, unknown>).parent_appointment_id as string | null) ?? null,
       },
     ];
     const seriesId = (existing as Record<string, unknown>).series_id as string | null;
     if (seriesId && scope !== 'this') {
       let q = supabaseAdmin
         .from('hub_appointments')
-        .select('id, starts_at, ends_at, series_occurrence_date, appointment_kind')
+        .select('id, starts_at, ends_at, series_occurrence_date, appointment_kind, parent_appointment_id')
         .eq('clinic_id', b.clinic_id)
         .eq('series_id', seriesId)
         .is('deleted_at', null);
@@ -3322,10 +3334,24 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
         ends_at: r.ends_at as string,
         series_occurrence_date: (r.series_occurrence_date as string | null) ?? null,
         appointment_kind: (r.appointment_kind as string | null) ?? null,
+        parent_appointment_id: (r.parent_appointment_id as string | null) ?? null,
       }));
     }
     const targetIds = targetRows.map((r) => r.id);
-    const targetRowById = new Map(targetRows.map((r) => [r.id, r]));
+    const mainTargetRows = targetRows.filter(
+      (r) =>
+        classifySeriesPatchTarget({
+          appointmentKind: r.appointment_kind,
+          parentAppointmentId: r.parent_appointment_id,
+        }) === 'main',
+    );
+    const extraTargetRows = targetRows.filter(
+      (r) =>
+        classifySeriesPatchTarget({
+          appointmentKind: r.appointment_kind,
+          parentAppointmentId: r.parent_appointment_id,
+        }) === 'extra',
+    );
     const anchorOldStartsAt = (existing as Record<string, unknown>).starts_at as string;
     const anchorOldEndsAt = (existing as Record<string, unknown>).ends_at as string;
 
@@ -3418,11 +3444,104 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       }
     }
 
-    for (const tid of targetIds) {
-      const targetMeta = targetRowById.get(tid);
-      if (!targetMeta) continue;
+    const shouldRefreshSnapshotsWithoutRewrite =
+      b.pet_id !== undefined ||
+      b.starts_at !== undefined ||
+      b.pricing_porte_tier !== undefined ||
+      b.pricing_coat_type !== undefined;
+
+    /** Realinha pernas L&T filhas pelo deslocamento do pai (preserva IDs / stops). */
+    const realignPickupLegsForParent = async (opts: {
+      parentId: string;
+      oldStartsAt: string;
+      newStartsAt: string;
+    }): Promise<string | null> => {
+      const delta = scheduleDeltaMs(opts.oldStartsAt, opts.newStartsAt);
+      if (delta === 0 && patch.status === undefined) return null;
+      const { data: legs, error: legsErr } = await supabaseAdmin
+        .from('hub_appointments')
+        .select('id, starts_at, ends_at')
+        .eq('clinic_id', b.clinic_id)
+        .eq('parent_appointment_id', opts.parentId)
+        .eq('appointment_kind', 'pickup_route')
+        .is('deleted_at', null);
+      if (legsErr) return legsErr.message;
+      for (const leg of (legs ?? []) as Array<{ id: string; starts_at: string; ends_at: string }>) {
+        const legPatch: Record<string, unknown> = {};
+        if (delta !== 0) {
+          legPatch.starts_at = addMsToIso(leg.starts_at, delta);
+          legPatch.ends_at = addMsToIso(leg.ends_at, delta);
+        }
+        if (patch.status !== undefined) legPatch.status = patch.status;
+        if (Object.keys(legPatch).length === 0) continue;
+        const { error: legUpdErr } = await supabaseAdmin
+          .from('hub_appointments')
+          .update(legPatch)
+          .eq('id', leg.id)
+          .eq('clinic_id', b.clinic_id);
+        if (legUpdErr) return legUpdErr.message;
+      }
+      return null;
+    };
+
+    // Edição direta de uma perna (scope=this no próprio pickup_route): só status/horário.
+    if (mainTargetRows.length === 0 && extraTargetRows.length === 0) {
+      for (const targetMeta of targetRows) {
+        if (
+          classifySeriesPatchTarget({
+            appointmentKind: targetMeta.appointment_kind,
+            parentAppointmentId: targetMeta.parent_appointment_id,
+          }) !== 'pickup_leg'
+        ) {
+          continue;
+        }
+        const schedulePatch =
+          b.starts_at !== undefined || b.ends_at !== undefined
+            ? resolveSeriesScopedSchedulePatch({
+                scope: scope as 'this' | 'future' | 'all',
+                targetId: targetMeta.id,
+                anchorId: id,
+                appointmentKind: targetMeta.appointment_kind,
+                rowStartsAt: targetMeta.starts_at,
+                rowEndsAt: targetMeta.ends_at,
+                rowOccurrenceDate: targetMeta.series_occurrence_date,
+                patchStartsAt: b.starts_at,
+                patchEndsAt: b.ends_at,
+                anchorOldStartsAt,
+                anchorOldEndsAt,
+              })
+            : null;
+        const legPatch: Record<string, unknown> = {};
+        if (patch.status !== undefined) legPatch.status = patch.status;
+        if (schedulePatch) {
+          legPatch.starts_at = schedulePatch.starts_at;
+          legPatch.ends_at = schedulePatch.ends_at;
+        }
+        if (Object.keys(legPatch).length > 0) {
+          const { error: pErr } = await supabaseAdmin
+            .from('hub_appointments')
+            .update(legPatch)
+            .eq('id', targetMeta.id)
+            .eq('clinic_id', b.clinic_id);
+          if (pErr) return res.status(500).json({ error: pErr.message });
+        }
+      }
+    }
+
+    // Mains e extras: pernas L&T são realinhadas pelo parent (não regravar serviços nelas).
+    for (const targetMeta of [...mainTargetRows, ...extraTargetRows]) {
+      const tid = targetMeta.id;
       const appointmentKind = targetMeta.appointment_kind;
-      const isPickupRouteLeg = !shouldRewriteAppointmentServicesOnPatch(appointmentKind);
+      const role = classifySeriesPatchTarget({
+        appointmentKind,
+        parentAppointmentId: targetMeta.parent_appointment_id,
+      });
+      const rewriteServices =
+        role === 'main' &&
+        shouldRewriteAppointmentServicesOnSeriesPatch({
+          appointmentKind,
+          parentAppointmentId: targetMeta.parent_appointment_id,
+        });
 
       const schedulePatch =
         b.starts_at !== undefined || b.ends_at !== undefined
@@ -3441,25 +3560,6 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
             })
           : null;
 
-      // Pernas de L&T: status + horário relativo; nunca regravar serviços do banho.
-      if (isPickupRouteLeg) {
-        const legPatch: Record<string, unknown> = {};
-        if (patch.status !== undefined) legPatch.status = patch.status;
-        if (schedulePatch) {
-          legPatch.starts_at = schedulePatch.starts_at;
-          legPatch.ends_at = schedulePatch.ends_at;
-        }
-        if (Object.keys(legPatch).length > 0) {
-          const { error: pErr } = await supabaseAdmin
-            .from('hub_appointments')
-            .update(legPatch)
-            .eq('id', tid)
-            .eq('clinic_id', b.clinic_id);
-          if (pErr) return res.status(500).json({ error: pErr.message });
-        }
-        continue;
-      }
-
       const rowPatch: Record<string, unknown> = { ...patch };
       if (schedulePatch) {
         rowPatch.starts_at = schedulePatch.starts_at;
@@ -3475,15 +3575,30 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
         if (pErr) return res.status(500).json({ error: pErr.message });
       }
 
-      if (patchServicePayload) {
-        await supabaseAdmin.from('hub_appointment_services').delete().eq('appointment_id', tid);
+      if (role === 'main' && schedulePatch) {
+        const legErr = await realignPickupLegsForParent({
+          parentId: tid,
+          oldStartsAt: targetMeta.starts_at,
+          newStartsAt: schedulePatch.starts_at,
+        });
+        if (legErr) return res.status(500).json({ error: legErr });
+      }
+
+      if (rewriteServices && patchServicePayload) {
         const { data: apRow, error: apErr } = await supabaseAdmin
           .from('hub_appointments')
           .select('pet_id, starts_at, pricing_porte_tier, pricing_coat_type')
           .eq('id', tid)
           .single();
-        if (apErr || !apRow) return res.status(500).json({ error: apErr?.message || 'Erro ao recarregar agendamento' });
-        const ar = apRow as { pet_id: string | null; starts_at: string; pricing_porte_tier: string | null; pricing_coat_type: string | null };
+        if (apErr || !apRow) {
+          return res.status(500).json({ error: apErr?.message || 'Erro ao recarregar agendamento' });
+        }
+        const ar = apRow as {
+          pet_id: string | null;
+          starts_at: string;
+          pricing_porte_tier: string | null;
+          pricing_coat_type: string | null;
+        };
         const pet = await fetchPetPricingFields(b.clinic_id, ar.pet_id);
         const puppy = await getOrCreateHubClinicSettings(b.clinic_id);
         let snaps: ReturnType<typeof buildServiceLineSnapshots>;
@@ -3511,21 +3626,21 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
           sale_amount_applied: row.sale_amount_applied,
           pricing_variant: row.pricing_variant as unknown as Record<string, unknown> | null,
         }));
-        const { error: svcErr } = await supabaseAdmin.from('hub_appointment_services').insert(svcInsert);
-        if (svcErr) return res.status(500).json({ error: svcErr.message });
-      } else if (
-        b.pet_id !== undefined ||
-        b.starts_at !== undefined ||
-        b.pricing_porte_tier !== undefined ||
-        b.pricing_coat_type !== undefined
-      ) {
+        const { error: svcErr } = await replaceAppointmentServices(tid, svcInsert);
+        if (svcErr) return res.status(500).json({ error: svcErr });
+      } else if (shouldRefreshSnapshotsWithoutRewrite) {
         const { data: apRow } = await supabaseAdmin
           .from('hub_appointments')
           .select('pet_id, starts_at, pricing_porte_tier, pricing_coat_type')
           .eq('id', tid)
           .single();
         if (apRow) {
-          const ar = apRow as { pet_id: string | null; starts_at: string; pricing_porte_tier: string | null; pricing_coat_type: string | null };
+          const ar = apRow as {
+            pet_id: string | null;
+            starts_at: string;
+            pricing_porte_tier: string | null;
+            pricing_coat_type: string | null;
+          };
           await refreshSnapshotsForAppointment(
             b.clinic_id,
             tid,
@@ -3535,6 +3650,18 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
             ar.pricing_coat_type ?? null,
           );
         }
+      }
+    }
+
+    // Status-only: pernas não entram no loop (só mains/extras); propaga status aos filhos L&T.
+    if (b.starts_at === undefined && b.ends_at === undefined && patch.status !== undefined) {
+      for (const main of mainTargetRows) {
+        const legErr = await realignPickupLegsForParent({
+          parentId: main.id,
+          oldStartsAt: main.starts_at,
+          newStartsAt: main.starts_at,
+        });
+        if (legErr) return res.status(500).json({ error: legErr });
       }
     }
 
@@ -3695,9 +3822,15 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
           e.kind === 'pending_adjustment',
       )
       .map((e) => e.comandaId);
+    const updatedCount =
+      mainTargetRows.length > 0
+        ? mainTargetRows.length
+        : // Edição direta de perna/extra sem main no escopo: conta 1 ocorrência tocada.
+          Math.max(extraTargetRows.length, targetRows.length > 0 ? 1 : 0);
+
     return res.json({
       appointment: enriched,
-      updated_count: targetIds.length,
+      updated_count: updatedCount,
       ...(comandaEffects.length > 0
         ? {
             comanda_effects: {
