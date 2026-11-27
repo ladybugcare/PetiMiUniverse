@@ -11,9 +11,12 @@ const authenticateUser = async (req, res, next) => {
             return res.status(401).json({ error: 'Token de autenticação não fornecido' });
         }
         const token = authHeader.split(' ')[1];
-        // Verify token with Supabase
-        const { data: { user }, error, } = await supabase_1.supabase.auth.getUser(token);
+        // Validar JWT via service role — o client anon compartilha sessão em memória
+        // com signInWithPassword (/auth/login) e pode devolver "Auth session missing!"
+        // / 401 em requests concorrentes, o que faz o Hub deslogar o browser.
+        const { data: { user }, error, } = await supabase_1.supabaseAdmin.auth.getUser(token);
         if (error || !user) {
+            const errMsg = String(error?.message || '');
             // Log detalhado para debug (apenas em desenvolvimento)
             if (process.env.NODE_ENV === 'development') {
                 console.error('Token validation error:', {
@@ -21,6 +24,15 @@ const authenticateUser = async (req, res, next) => {
                     errorCode: error?.status,
                     supabaseUrl: process.env.SUPABASE_URL?.substring(0, 30) + '...',
                     tokenPreview: token.substring(0, 20) + '...',
+                });
+            }
+            // Falha de rede com o Auth NÃO é sessão inválida — 503 evita o Hub deslogar.
+            const isTransientAuthNetwork = /fetch failed|network|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket|aborted|timeout/i.test(errMsg);
+            if (isTransientAuthNetwork) {
+                return res.status(503).json({
+                    error: 'Serviço de autenticação temporariamente indisponível. Tente novamente.',
+                    code: 'AUTH_UPSTREAM_UNAVAILABLE',
+                    details: process.env.NODE_ENV === 'development' ? errMsg : undefined,
                 });
             }
             // Mensagem mais detalhada se for erro de configuração

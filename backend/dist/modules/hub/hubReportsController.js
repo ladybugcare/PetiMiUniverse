@@ -1,9 +1,65 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getHubVaccinesDueReport = exports.getHubGroomingProductivityReport = exports.getHubBirthdaysReport = exports.getHubClientCohortsReport = exports.getHubBoardingOccupancySeriesReport = exports.getHubNoShowsReport = exports.getHubAbsentClientsReport = void 0;
+exports.getHubMyNoShowsReport = exports.getHubMyAttendancesReport = exports.getHubVaccinesDueReport = exports.getHubGroomingProductivityReport = exports.getHubBirthdaysReport = exports.getHubClientCohortsReport = exports.getHubBoardingOccupancySeriesReport = exports.getHubNoShowsReport = exports.getHubAbsentClientsReport = void 0;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
+const hubStaffResolve_1 = require("./hubStaffResolve");
+const hubReportUnitScope_1 = require("./hubReportUnitScope");
+const hubNoShowUtils_1 = require("./hubNoShowUtils");
 const uuidStr = zod_1.z.string().uuid();
+async function resolveUnitFromReportQuery(req, clinicId, unitMode) {
+    const userId = req.user?.id;
+    if (!userId)
+        return { ok: false, status: 401, error: 'Usuário não autenticado' };
+    const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
+    if (unitRaw) {
+        const unitParsed = uuidStr.safeParse(unitRaw);
+        if (!unitParsed.success)
+            return { ok: false, status: 400, error: 'unit_id inválido' };
+    }
+    const scope = await (0, hubReportUnitScope_1.resolveReportUnitScope)({
+        userId,
+        clinicId,
+        requestedUnitId: unitRaw || null,
+        unitMode,
+    });
+    if (!scope.ok)
+        return { ok: false, status: scope.status, error: scope.error };
+    return { ok: true, unit_id: scope.unitId };
+}
 function ymdTodayUtc() {
     const dt = new Date();
     const yy = dt.getUTCFullYear();
@@ -34,11 +90,10 @@ const getHubAbsentClientsReport = async (req, res) => {
         if (!clinic.success)
             return res.status(400).json({ error: 'clinic_id inválido' });
         const clinic_id = clinic.data;
-        const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
-        const unitParsed = unitRaw ? uuidStr.safeParse(unitRaw) : null;
-        if (unitRaw && !unitParsed?.success)
-            return res.status(400).json({ error: 'unit_id inválido' });
-        const unit_id = unitParsed?.success ? unitParsed.data : null;
+        const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'clinic_aggregate_if_allowed');
+        if (!unitRes.ok)
+            return res.status(unitRes.status).json({ error: unitRes.error });
+        const unit_id = unitRes.unit_id;
         const daysParsed = zod_1.z.coerce.number().int().min(7).max(730).safeParse(req.query.days);
         const days = daysParsed.success ? daysParsed.data : 60;
         const asOf = ymdTodayUtc();
@@ -167,11 +222,10 @@ const getHubNoShowsReport = async (req, res) => {
         if (!clinic.success)
             return res.status(400).json({ error: 'clinic_id inválido' });
         const clinic_id = clinic.data;
-        const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
-        const unitParsed = unitRaw ? uuidStr.safeParse(unitRaw) : null;
-        if (unitRaw && !unitParsed?.success)
-            return res.status(400).json({ error: 'unit_id inválido' });
-        const unit_id = unitParsed?.success ? unitParsed.data : null;
+        const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'clinic_aggregate_if_allowed');
+        if (!unitRes.ok)
+            return res.status(unitRes.status).json({ error: unitRes.error });
+        const unit_id = unitRes.unit_id;
         const period = parseReportPeriod(req.query);
         if (!period.ok)
             return res.status(400).json({ error: period.error });
@@ -195,7 +249,21 @@ const getHubNoShowsReport = async (req, res) => {
         const { data: boardingRows, error: bErr } = await boardQ;
         if (bErr)
             return res.status(500).json({ error: bErr.message });
-        let apptQ = supabase_1.supabaseAdmin
+        let explicitApptQ = supabase_1.supabaseAdmin
+            .from('hub_appointments')
+            .select('id, status, starts_at, ends_at, guardian_id, pet_id, unit_id, title, hub_staff_member_id')
+            .eq('clinic_id', clinic_id)
+            .eq('status', 'no_show')
+            .gte('starts_at', fromIso)
+            .lte('starts_at', toIso)
+            .order('starts_at', { ascending: false })
+            .limit(500);
+        if (unit_id)
+            explicitApptQ = explicitApptQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+        const { data: explicitApptRows, error: eErr } = await explicitApptQ;
+        if (eErr)
+            return res.status(500).json({ error: eErr.message });
+        let impliedApptQ = supabase_1.supabaseAdmin
             .from('hub_appointments')
             .select('id, status, starts_at, ends_at, guardian_id, pet_id, unit_id, title, hub_staff_member_id')
             .eq('clinic_id', clinic_id)
@@ -206,20 +274,25 @@ const getHubNoShowsReport = async (req, res) => {
             .order('starts_at', { ascending: false })
             .limit(500);
         if (unit_id)
-            apptQ = apptQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
-        const { data: apptRows, error: aErr } = await apptQ;
+            impliedApptQ = impliedApptQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+        const { data: impliedApptRows, error: aErr } = await impliedApptQ;
         if (aErr)
             return res.status(500).json({ error: aErr.message });
+        const mergedApptIds = (0, hubNoShowUtils_1.mergeExplicitAndImpliedAppointmentIds)((explicitApptRows ?? []).map((r) => r.id), (impliedApptRows ?? []).map((r) => r.id));
+        const impliedOnlyIdSet = new Set(mergedApptIds.impliedOnly);
+        const impliedOnly = (impliedApptRows ?? []).filter((r) => impliedOnlyIdSet.has(r.id));
         const guIds = [
             ...new Set([
                 ...(boardingRows ?? []).map((r) => r.guardian_id),
-                ...(apptRows ?? []).map((r) => r.guardian_id),
+                ...(explicitApptRows ?? []).map((r) => r.guardian_id),
+                ...impliedOnly.map((r) => r.guardian_id),
             ].filter(Boolean)),
         ];
         const petIds = [
             ...new Set([
                 ...(boardingRows ?? []).map((r) => r.pet_id),
-                ...(apptRows ?? []).map((r) => r.pet_id),
+                ...(explicitApptRows ?? []).map((r) => r.pet_id),
+                ...impliedOnly.map((r) => r.pet_id),
             ].filter(Boolean)),
         ];
         const guardianMap = new Map();
@@ -281,7 +354,20 @@ const getHubNoShowsReport = async (req, res) => {
                 status: 'no_show',
             });
         }
-        for (const r of apptRows ?? []) {
+        for (const r of explicitApptRows ?? []) {
+            const g = r.guardian_id ? guardianMap.get(r.guardian_id) : null;
+            items.push({
+                id: r.id,
+                source: 'appointment',
+                kind_label: r.title?.trim() || 'Agendamento',
+                when_at: r.starts_at,
+                guardian_name: g?.full_name ?? null,
+                phone: g?.phone ?? null,
+                pet_name: r.pet_id ? petMap.get(r.pet_id) ?? null : null,
+                status: 'no_show',
+            });
+        }
+        for (const r of impliedOnly) {
             const g = r.guardian_id ? guardianMap.get(r.guardian_id) : null;
             items.push({
                 id: r.id,
@@ -296,8 +382,9 @@ const getHubNoShowsReport = async (req, res) => {
         }
         items.sort((a, b) => b.when_at.localeCompare(a.when_at));
         const boardingNoShows = (boardingRows ?? []).length;
-        const appointmentNoShows = (apptRows ?? []).length;
-        const totalNoShows = boardingNoShows + appointmentNoShows;
+        const appointmentExplicitNoShows = (explicitApptRows ?? []).length;
+        const appointmentImpliedNoShows = impliedOnly.length;
+        const totalNoShows = boardingNoShows + appointmentExplicitNoShows + appointmentImpliedNoShows;
         const attended = (attendedCount ?? 0) + (boardingAttendedCount ?? 0);
         const denom = attended + totalNoShows;
         const rate_pct = denom > 0 ? Math.round((totalNoShows / denom) * 1000) / 10 : 0;
@@ -307,7 +394,8 @@ const getHubNoShowsReport = async (req, res) => {
             summary: {
                 total_no_shows: totalNoShows,
                 boarding_no_shows: boardingNoShows,
-                appointment_implied_no_shows: appointmentNoShows,
+                appointment_no_shows: appointmentExplicitNoShows,
+                appointment_implied_no_shows: appointmentImpliedNoShows,
                 attended_count: attended,
                 rate_pct,
             },
@@ -327,11 +415,10 @@ const getHubBoardingOccupancySeriesReport = async (req, res) => {
         if (!clinic.success)
             return res.status(400).json({ error: 'clinic_id inválido' });
         const clinic_id = clinic.data;
-        const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
-        const unitParsed = unitRaw ? uuidStr.safeParse(unitRaw) : null;
-        if (unitRaw && !unitParsed?.success)
-            return res.status(400).json({ error: 'unit_id inválido' });
-        const unit_id = unitParsed?.success ? unitParsed.data : null;
+        const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'clinic_aggregate_if_allowed');
+        if (!unitRes.ok)
+            return res.status(unitRes.status).json({ error: unitRes.error });
+        const unit_id = unitRes.unit_id;
         const period = parseReportPeriod(req.query);
         if (!period.ok)
             return res.status(400).json({ error: period.error });
@@ -443,11 +530,10 @@ const getHubClientCohortsReport = async (req, res) => {
         if (!clinic.success)
             return res.status(400).json({ error: 'clinic_id inválido' });
         const clinic_id = clinic.data;
-        const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
-        const unitParsed = unitRaw ? uuidStr.safeParse(unitRaw) : null;
-        if (unitRaw && !unitParsed?.success)
-            return res.status(400).json({ error: 'unit_id inválido' });
-        const unit_id = unitParsed?.success ? unitParsed.data : null;
+        const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'clinic_aggregate_if_allowed');
+        if (!unitRes.ok)
+            return res.status(unitRes.status).json({ error: unitRes.error });
+        const unit_id = unitRes.unit_id;
         const period = parseReportPeriod(req.query);
         if (!period.ok)
             return res.status(400).json({ error: period.error });
@@ -591,6 +677,9 @@ const getHubBirthdaysReport = async (req, res) => {
         if (!clinic.success)
             return res.status(400).json({ error: 'clinic_id inválido' });
         const clinic_id = clinic.data;
+        const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'none');
+        if (!unitRes.ok)
+            return res.status(unitRes.status).json({ error: unitRes.error });
         const daysParsed = zod_1.z.coerce.number().int().min(1).max(90).safeParse(req.query.days);
         const days = daysParsed.success ? daysParsed.data : 30;
         const asOf = ymdTodayUtc();
@@ -712,11 +801,10 @@ const getHubGroomingProductivityReport = async (req, res) => {
         if (!clinic.success)
             return res.status(400).json({ error: 'clinic_id inválido' });
         const clinic_id = clinic.data;
-        const unitRaw = typeof req.query.unit_id === 'string' ? req.query.unit_id.trim() : '';
-        const unitParsed = unitRaw ? uuidStr.safeParse(unitRaw) : null;
-        if (unitRaw && !unitParsed?.success)
-            return res.status(400).json({ error: 'unit_id inválido' });
-        const unit_id = unitParsed?.success ? unitParsed.data : null;
+        const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'clinic_aggregate_if_allowed');
+        if (!unitRes.ok)
+            return res.status(unitRes.status).json({ error: unitRes.error });
+        const unit_id = unitRes.unit_id;
         const period = parseReportPeriod(req.query);
         if (!period.ok)
             return res.status(400).json({ error: period.error });
@@ -836,13 +924,16 @@ const getHubVaccinesDueReport = async (req, res) => {
         if (!clinic.success)
             return res.status(400).json({ error: 'clinic_id inválido' });
         const clinic_id = clinic.data;
+        const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'none');
+        if (!unitRes.ok)
+            return res.status(unitRes.status).json({ error: unitRes.error });
         const daysParsed = zod_1.z.coerce.number().int().min(1).max(180).safeParse(req.query.days);
         const days = daysParsed.success ? daysParsed.data : 30;
         const asOf = ymdTodayUtc();
         const until = addDaysYmd(asOf, days);
         const { data: rows, error } = await supabase_1.supabaseAdmin
             .from('hub_vaccination_records')
-            .select('id, pet_id, vaccine_name, administered_at, next_dose_at, batch_number, source, hub_pets(id, name, species)')
+            .select('id, pet_id, vaccine_name, administered_at, next_dose_at, batch_number, source, hub_pets(id, name, species, deleted_at, deceased_at, death_invalidated_at)')
             .eq('clinic_id', clinic_id)
             .is('deleted_at', null)
             .not('next_dose_at', 'is', null)
@@ -851,7 +942,17 @@ const getHubVaccinesDueReport = async (req, res) => {
             .limit(1000);
         if (error)
             return res.status(500).json({ error: error.message });
-        const petIds = [...new Set((rows ?? []).map((r) => r.pet_id))];
+        const { hasValidPetDeath } = await Promise.resolve().then(() => __importStar(require('./petDeathService')));
+        const activeRows = (rows ?? []).filter((r) => {
+            const petEmb = r.hub_pets;
+            const pet = Array.isArray(petEmb) ? petEmb[0] : petEmb;
+            if (!pet)
+                return true;
+            if (pet.deleted_at)
+                return false;
+            return !hasValidPetDeath(pet);
+        });
+        const petIds = [...new Set(activeRows.map((r) => r.pet_id))];
         const petGuardian = new Map();
         if (petIds.length > 0) {
             const { data: links, error: lErr } = await supabase_1.supabaseAdmin
@@ -875,7 +976,7 @@ const getHubVaccinesDueReport = async (req, res) => {
                 });
             }
         }
-        const items = (rows ?? []).map((r) => {
+        const items = activeRows.map((r) => {
             const petEmb = r.hub_pets;
             const pet = Array.isArray(petEmb) ? petEmb[0] : petEmb;
             const next = String(r.next_dose_at);
@@ -916,3 +1017,311 @@ const getHubVaccinesDueReport = async (req, res) => {
     }
 };
 exports.getHubVaccinesDueReport = getHubVaccinesDueReport;
+/**
+ * Produtividade do profissional logado (agendamentos + encounters).
+ * Sempre filtra pelo staff do usuário — ignora staff_id da query.
+ */
+const getHubMyAttendancesReport = async (req, res) => {
+    try {
+        const clinic = uuidStr.safeParse(req.query.clinic_id);
+        if (!clinic.success)
+            return res.status(400).json({ error: 'clinic_id inválido' });
+        const clinic_id = clinic.data;
+        const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'optional_single');
+        if (!unitRes.ok)
+            return res.status(unitRes.status).json({ error: unitRes.error });
+        const unit_id = unitRes.unit_id;
+        const period = parseReportPeriod(req.query);
+        if (!period.ok)
+            return res.status(400).json({ error: period.error });
+        const { fromYmd, toYmd } = period;
+        const fromIso = `${fromYmd}T00:00:00.000Z`;
+        const toIso = `${toYmd}T23:59:59.999Z`;
+        const myStaffId = await (0, hubStaffResolve_1.resolveStaffIdForUser)(clinic_id, req.user?.id);
+        if (!myStaffId) {
+            return res.status(403).json({
+                error: 'Seu usuário não está vinculado a um profissional da equipe nesta clínica.',
+            });
+        }
+        let apptQ = supabase_1.supabaseAdmin
+            .from('hub_appointments')
+            .select('id, status, starts_at, ends_at, title, hub_service_type_id, pet_id, guardian_id, unit_id')
+            .eq('clinic_id', clinic_id)
+            .eq('hub_staff_member_id', myStaffId)
+            .gte('starts_at', fromIso)
+            .lte('starts_at', toIso)
+            .not('status', 'eq', 'cancelled')
+            .order('starts_at', { ascending: false })
+            .limit(500);
+        if (unit_id)
+            apptQ = apptQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+        const { data: appts, error: aErr } = await apptQ;
+        if (aErr)
+            return res.status(500).json({ error: aErr.message });
+        let encQ = supabase_1.supabaseAdmin
+            .from('hub_encounters')
+            .select('id, status, started_at, completed_at, hub_appointment_id, pet_id, guardian_id, unit_id, created_at')
+            .eq('clinic_id', clinic_id)
+            .eq('hub_staff_member_id', myStaffId)
+            .is('deleted_at', null)
+            .gte('created_at', fromIso)
+            .lte('created_at', toIso)
+            .order('created_at', { ascending: false })
+            .limit(500);
+        if (unit_id)
+            encQ = encQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+        const { data: encs, error: eErr } = await encQ;
+        if (eErr)
+            return res.status(500).json({ error: eErr.message });
+        const serviceIds = [
+            ...new Set((appts ?? [])
+                .map((a) => a.hub_service_type_id)
+                .filter(Boolean)),
+        ];
+        const serviceNames = new Map();
+        if (serviceIds.length > 0) {
+            const { data: svcs } = await supabase_1.supabaseAdmin
+                .from('hub_service_types')
+                .select('id, name')
+                .in('id', serviceIds);
+            for (const s of svcs ?? [])
+                serviceNames.set(s.id, String(s.name ?? s.id));
+        }
+        const byStatus = new Map();
+        const byService = new Map();
+        for (const a of appts ?? []) {
+            const st = String(a.status ?? 'unknown');
+            byStatus.set(st, (byStatus.get(st) ?? 0) + 1);
+            const sid = a.hub_service_type_id ?? null;
+            if (sid) {
+                const cur = byService.get(sid) ?? {
+                    service_id: sid,
+                    name: serviceNames.get(sid) ?? 'Serviço',
+                    count: 0,
+                };
+                cur.count += 1;
+                byService.set(sid, cur);
+            }
+        }
+        const encByStatus = new Map();
+        for (const e of encs ?? []) {
+            const st = String(e.status ?? 'unknown');
+            encByStatus.set(st, (encByStatus.get(st) ?? 0) + 1);
+        }
+        const petIds = [
+            ...new Set([
+                ...(appts ?? []).map((a) => a.pet_id),
+                ...(encs ?? []).map((e) => e.pet_id),
+            ].filter(Boolean)),
+        ];
+        const guIds = [
+            ...new Set([
+                ...(appts ?? []).map((a) => a.guardian_id),
+                ...(encs ?? []).map((e) => e.guardian_id),
+            ].filter(Boolean)),
+        ];
+        const petMap = new Map();
+        const guardianMap = new Map();
+        if (petIds.length > 0) {
+            const { data: pets } = await supabase_1.supabaseAdmin.from('hub_pets').select('id, name').in('id', petIds);
+            for (const p of pets ?? [])
+                petMap.set(p.id, String(p.name ?? ''));
+        }
+        if (guIds.length > 0) {
+            const { data: gus } = await supabase_1.supabaseAdmin
+                .from('hub_guardians')
+                .select('id, full_name')
+                .in('id', guIds);
+            for (const g of gus ?? [])
+                guardianMap.set(g.id, String(g.full_name ?? ''));
+        }
+        const items = [
+            ...(appts ?? []).map((a) => ({
+                id: a.id,
+                kind: 'appointment',
+                when_at: a.starts_at,
+                status: String(a.status ?? ''),
+                title: a.title?.trim() || 'Agendamento',
+                service_name: a.hub_service_type_id
+                    ? serviceNames.get(a.hub_service_type_id) ?? null
+                    : null,
+                pet_name: a.pet_id ? petMap.get(a.pet_id) ?? null : null,
+                guardian_name: a.guardian_id ? guardianMap.get(a.guardian_id) ?? null : null,
+            })),
+            ...(encs ?? []).map((e) => ({
+                id: e.id,
+                kind: 'encounter',
+                when_at: e.started_at || e.completed_at || e.created_at,
+                status: String(e.status ?? ''),
+                title: 'Atendimento clínico',
+                service_name: null,
+                pet_name: e.pet_id ? petMap.get(e.pet_id) ?? null : null,
+                guardian_name: e.guardian_id ? guardianMap.get(e.guardian_id) ?? null : null,
+            })),
+        ]
+            .sort((a, b) => b.when_at.localeCompare(a.when_at))
+            .slice(0, 400);
+        return res.json({
+            period: { from: fromYmd, to: toYmd },
+            unit_id,
+            staff_id: myStaffId,
+            summary: {
+                appointments_count: (appts ?? []).length,
+                encounters_count: (encs ?? []).length,
+                total_count: (appts ?? []).length + (encs ?? []).length,
+            },
+            by_appointment_status: [...byStatus.entries()]
+                .map(([status, count]) => ({ status, count }))
+                .sort((a, b) => b.count - a.count),
+            by_encounter_status: [...encByStatus.entries()]
+                .map(([status, count]) => ({ status, count }))
+                .sort((a, b) => b.count - a.count),
+            by_service: [...byService.values()].sort((a, b) => b.count - a.count),
+            items,
+        });
+    }
+    catch (e) {
+        console.error('getHubMyAttendancesReport', e);
+        return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+};
+exports.getHubMyAttendancesReport = getHubMyAttendancesReport;
+/**
+ * No-shows dos agendamentos do profissional logado (sem hotel/boarding).
+ * Sempre filtra pelo staff do usuário — ignora staff_id da query.
+ */
+const getHubMyNoShowsReport = async (req, res) => {
+    try {
+        const clinic = uuidStr.safeParse(req.query.clinic_id);
+        if (!clinic.success)
+            return res.status(400).json({ error: 'clinic_id inválido' });
+        const clinic_id = clinic.data;
+        const unitRes = await resolveUnitFromReportQuery(req, clinic_id, 'optional_single');
+        if (!unitRes.ok)
+            return res.status(unitRes.status).json({ error: unitRes.error });
+        const unit_id = unitRes.unit_id;
+        const period = parseReportPeriod(req.query);
+        if (!period.ok)
+            return res.status(400).json({ error: period.error });
+        const { fromYmd, toYmd } = period;
+        const fromIso = `${fromYmd}T00:00:00.000Z`;
+        const toIso = `${toYmd}T23:59:59.999Z`;
+        const nowIso = new Date().toISOString();
+        const myStaffId = await (0, hubStaffResolve_1.resolveStaffIdForUser)(clinic_id, req.user?.id);
+        if (!myStaffId) {
+            return res.status(403).json({
+                error: 'Seu usuário não está vinculado a um profissional da equipe nesta clínica.',
+            });
+        }
+        let explicitQ = supabase_1.supabaseAdmin
+            .from('hub_appointments')
+            .select('id, status, starts_at, ends_at, guardian_id, pet_id, unit_id, title, hub_staff_member_id')
+            .eq('clinic_id', clinic_id)
+            .eq('hub_staff_member_id', myStaffId)
+            .eq('status', 'no_show')
+            .gte('starts_at', fromIso)
+            .lte('starts_at', toIso)
+            .order('starts_at', { ascending: false })
+            .limit(500);
+        if (unit_id)
+            explicitQ = explicitQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+        const { data: explicitRows, error: eErr } = await explicitQ;
+        if (eErr)
+            return res.status(500).json({ error: eErr.message });
+        let impliedQ = supabase_1.supabaseAdmin
+            .from('hub_appointments')
+            .select('id, status, starts_at, ends_at, guardian_id, pet_id, unit_id, title, hub_staff_member_id')
+            .eq('clinic_id', clinic_id)
+            .eq('hub_staff_member_id', myStaffId)
+            .in('status', ['confirmed', 'pending_confirm'])
+            .gte('starts_at', fromIso)
+            .lte('starts_at', toIso)
+            .lt('ends_at', nowIso)
+            .order('starts_at', { ascending: false })
+            .limit(500);
+        if (unit_id)
+            impliedQ = impliedQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+        const { data: impliedRows, error: aErr } = await impliedQ;
+        if (aErr)
+            return res.status(500).json({ error: aErr.message });
+        const mergedMine = (0, hubNoShowUtils_1.mergeExplicitAndImpliedAppointmentIds)((explicitRows ?? []).map((r) => r.id), (impliedRows ?? []).map((r) => r.id));
+        const impliedOnlyIdSet = new Set(mergedMine.impliedOnly);
+        const impliedOnly = (impliedRows ?? []).filter((r) => impliedOnlyIdSet.has(r.id));
+        const apptRows = [...(explicitRows ?? []), ...impliedOnly];
+        let doneQ = supabase_1.supabaseAdmin
+            .from('hub_appointments')
+            .select('id', { count: 'exact', head: true })
+            .eq('clinic_id', clinic_id)
+            .eq('hub_staff_member_id', myStaffId)
+            .in('status', ['done', 'paid', 'in_progress', 'checked_in'])
+            .gte('starts_at', fromIso)
+            .lte('starts_at', toIso);
+        if (unit_id)
+            doneQ = doneQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+        const { count: attendedCount } = await doneQ;
+        const guIds = [
+            ...new Set(apptRows.map((r) => r.guardian_id).filter(Boolean)),
+        ];
+        const petIds = [
+            ...new Set(apptRows.map((r) => r.pet_id).filter(Boolean)),
+        ];
+        const guardianMap = new Map();
+        const petMap = new Map();
+        if (guIds.length > 0) {
+            const { data: gus } = await supabase_1.supabaseAdmin
+                .from('hub_guardians')
+                .select('id, full_name, phone')
+                .in('id', guIds);
+            for (const g of gus ?? []) {
+                guardianMap.set(g.id, {
+                    full_name: String(g.full_name ?? ''),
+                    phone: g.phone ?? null,
+                });
+            }
+        }
+        if (petIds.length > 0) {
+            const { data: pets } = await supabase_1.supabaseAdmin.from('hub_pets').select('id, name').in('id', petIds);
+            for (const p of pets ?? [])
+                petMap.set(p.id, String(p.name ?? ''));
+        }
+        const items = apptRows
+            .map((r) => {
+            const g = r.guardian_id ? guardianMap.get(r.guardian_id) : null;
+            return {
+                id: r.id,
+                source: 'appointment',
+                kind_label: r.title?.trim() || 'Agendamento',
+                when_at: r.starts_at,
+                guardian_name: g?.full_name ?? null,
+                phone: g?.phone ?? null,
+                pet_name: r.pet_id ? petMap.get(r.pet_id) ?? null : null,
+                status: String(r.status),
+            };
+        })
+            .sort((a, b) => b.when_at.localeCompare(a.when_at));
+        const appointmentExplicit = (explicitRows ?? []).length;
+        const appointmentImplied = impliedOnly.length;
+        const totalNoShows = appointmentExplicit + appointmentImplied;
+        const attended = attendedCount ?? 0;
+        const denom = attended + totalNoShows;
+        const rate_pct = denom > 0 ? Math.round((totalNoShows / denom) * 1000) / 10 : 0;
+        return res.json({
+            period: { from: fromYmd, to: toYmd },
+            unit_id,
+            staff_id: myStaffId,
+            summary: {
+                total_no_shows: totalNoShows,
+                appointment_no_shows: appointmentExplicit,
+                appointment_implied_no_shows: appointmentImplied,
+                attended_count: attended,
+                rate_pct,
+            },
+            items: items.slice(0, 400),
+        });
+    }
+    catch (e) {
+        console.error('getHubMyNoShowsReport', e);
+        return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+};
+exports.getHubMyNoShowsReport = getHubMyNoShowsReport;

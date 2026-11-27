@@ -12,6 +12,7 @@ const errorHandler_js_1 = require("../../middleware/errorHandler.js");
 const auditLog_js_1 = require("../../utils/auditLog.js");
 const errors_js_1 = require("../../utils/errors.js");
 const permissions_js_1 = require("../../utils/permissions.js");
+const hubEntitlements_js_1 = require("./hubEntitlements.js");
 const hubInvitationUtils_js_1 = require("./hubInvitationUtils.js");
 Object.defineProperty(exports, "buildInvitationShareMessage", { enumerable: true, get: function () { return hubInvitationUtils_js_1.buildInvitationShareMessage; } });
 Object.defineProperty(exports, "buildInvitationUrl", { enumerable: true, get: function () { return hubInvitationUtils_js_1.buildInvitationUrl; } });
@@ -294,6 +295,18 @@ exports.acceptHubInvitation = (0, errorHandler_js_1.asyncHandler)(async (req, re
     }
     const rows = memberships || [];
     const sameClinic = rows.find((r) => r.clinic_id != null && String(r.clinic_id) === String(clinicId));
+    const alreadyActiveHere = sameClinic && String(sameClinic.status || '').toLowerCase() === 'active';
+    if (!alreadyActiveHere) {
+        try {
+            await (0, hubEntitlements_js_1.assertCanInviteUser)(clinicId);
+        }
+        catch (e) {
+            if (e instanceof errors_js_1.PlanEntitlementError) {
+                return res.status(403).json({ error: e.message, code: e.code, details: e.details });
+            }
+            throw e;
+        }
+    }
     const pendingOwner = rows.find((r) => (r.clinic_id == null || String(r.clinic_id).trim() === '') &&
         String(r.status || '').toLowerCase() === 'pending_clinic');
     const otherActive = rows.find((r) => r.clinic_id != null &&

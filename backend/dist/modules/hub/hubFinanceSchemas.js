@@ -8,6 +8,7 @@ exports.financeSourceTypeSchema = zod_1.z.enum([
     'quote',
     'appointment',
     'boarding_reservation',
+    'hospitalization',
 ]);
 exports.receivableSourceTypeSchema = zod_1.z.enum([
     'grooming_session',

@@ -125,7 +125,7 @@ exports.getHubSessionContext = (0, errorHandler_js_1.asyncHandler)(async (req, r
     if (resolvedClinicId && !needsOnboarding) {
         try {
             const sub = await (0, hubSubscriptionService_js_1.getClinicSubscription)(resolvedClinicId);
-            subscription = (0, hubSubscriptionService_js_1.toSessionSubscriptionPayload)(sub);
+            subscription = await (0, hubSubscriptionService_js_1.toSessionSubscriptionPayloadAsync)(sub);
         }
         catch (subErr) {
             console.warn('[hub_session] subscription', subErr);

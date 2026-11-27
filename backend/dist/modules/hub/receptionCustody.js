@@ -9,6 +9,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.RECEPTION_HANDOFF_KINDS = void 0;
 exports.ymdInSaoPaulo = ymdInSaoPaulo;
 exports.todayYmdSaoPaulo = todayYmdSaoPaulo;
+exports.linkedAppointmentIds = linkedAppointmentIds;
+exports.deliveryOutcome = deliveryOutcome;
 exports.arrivalPendingAppointmentIds = arrivalPendingAppointmentIds;
 exports.planCustody = planCustody;
 exports.reconcileHandoffRows = reconcileHandoffRows;
@@ -20,8 +22,11 @@ exports.RECEPTION_HANDOFF_KINDS = [
     'embarque',
     'lt_falha',
     'saida_prevista',
+    'no_consultorio',
 ];
 const ARRIVAL_GROUPS = new Set(['banho_tosa', 'clinica', 'internacao', 'cirurgia']);
+const CLINICAL_OPS_GROUPS = new Set(['clinica', 'internacao', 'cirurgia']);
+const CLINICAL_WALK_IN_KINDS = new Set(['clinical_walk_in', 'clinical_emergency']);
 const TERMINAL_APPT = new Set(['done', 'cancelled', 'paid']);
 const OPEN_GROOMING = new Set(['scheduled', 'checked_in', 'queued', 'in_service', 'finishing']);
 function ymdInSaoPaulo(iso) {
@@ -48,20 +53,84 @@ function hasActiveStay(snap, unitId) {
 function boardingLabel(mode) {
     return mode === 'daycare' ? 'Creche' : 'Hotel';
 }
-function exitBlocked(snap, exceptAppointmentId) {
+/** Agendamentos da mesma visita (visit_group / parent) a partir dos IDs de liberação. */
+function linkedAppointmentIds(snap, releaseAppointmentIds) {
+    const linked = new Set(releaseAppointmentIds.filter(Boolean));
+    const groups = new Set();
+    for (const id of linked) {
+        const appt = snap.appointments.find((a) => a.id === id);
+        if (appt?.visit_group_id)
+            groups.add(appt.visit_group_id);
+        if (appt?.parent_appointment_id)
+            linked.add(appt.parent_appointment_id);
+    }
+    let changed = true;
+    while (changed) {
+        changed = false;
+        for (const a of snap.appointments) {
+            if (a.deleted_at)
+                continue;
+            const byParent = (a.parent_appointment_id && linked.has(a.parent_appointment_id)) ||
+                (a.id && [...linked].some((id) => {
+                    const other = snap.appointments.find((x) => x.id === id);
+                    return other?.parent_appointment_id === a.id;
+                }));
+            const byGroup = a.visit_group_id != null && groups.has(a.visit_group_id);
+            if ((byParent || byGroup) && !linked.has(a.id)) {
+                linked.add(a.id);
+                if (a.visit_group_id)
+                    groups.add(a.visit_group_id);
+                changed = true;
+            }
+        }
+    }
+    return linked;
+}
+/**
+ * Bloqueios duros (clínico) sempre; serviços/agenda só se vinculados à visita de liberação.
+ * Agendamentos independentes no mesmo dia não bloqueiam.
+ */
+function exitBlocked(snap, releaseAppointmentIds) {
     if (snap.hospitalizations.some((h) => h.status === 'active'))
         return true;
-    if (snap.surgeries.some((s) => s.status === 'in_progress'))
+    // Soft-deleted não bloqueia saída (histórico permanece para auditoria).
+    if (snap.surgeries.some((s) => !s.deleted_at && s.status === 'in_progress'))
         return true;
-    if (snap.encounters.some((e) => e.status === 'in_progress' || e.status === 'waiting'))
+    const linked = linkedAppointmentIds(snap, releaseAppointmentIds);
+    // Encounters abertos só bloqueiam se forem da mesma visita de liberação (ou sem agenda).
+    // Encounters órfãos de internação cancelada / consultas abandonadas não prendem a saída.
+    const cancelledHospAppointmentIds = new Set(snap.hospitalizations
+        .filter((h) => h.status === 'cancelled' && h.hub_appointment_id)
+        .map((h) => h.hub_appointment_id));
+    if (snap.encounters.some((e) => {
+        if (e.status !== 'in_progress' && e.status !== 'waiting')
+            return false;
+        if (e.hub_appointment_id && cancelledHospAppointmentIds.has(e.hub_appointment_id)) {
+            return false;
+        }
+        if (!e.hub_appointment_id)
+            return true;
+        return linked.has(e.hub_appointment_id);
+    })) {
         return true;
-    if (snap.groomingSessions.some((s) => !s.deleted_at && OPEN_GROOMING.has(s.grooming_stage))) {
+    }
+    if (snap.groomingSessions.some((s) => {
+        if (s.deleted_at || !OPEN_GROOMING.has(s.grooming_stage))
+            return false;
+        if (!s.hub_appointment_id)
+            return true;
+        if (releaseAppointmentIds.includes(s.hub_appointment_id))
+            return false;
+        return linked.has(s.hub_appointment_id);
+    })) {
         return true;
     }
     return snap.appointments.some((a) => {
         if (a.deleted_at)
             return false;
-        if (exceptAppointmentId && a.id === exceptAppointmentId)
+        if (releaseAppointmentIds.includes(a.id))
+            return false;
+        if (!linked.has(a.id))
             return false;
         if (a.appointment_kind === 'pickup_route')
             return false;
@@ -86,8 +155,8 @@ function deliveryOutcome(legs) {
     const live = deliveries.filter((l) => l.stop_status !== 'failed');
     if (live.length === 0)
         return 'failed';
-    if (live.some((l) => l.route_id && l.driver_id))
-        return 'wait_driver';
+    if (live.some((l) => l.boarded_at))
+        return 'boarded';
     return 'needs_boarding';
 }
 function legsFor(snap, parentId) {
@@ -98,8 +167,8 @@ function legsFor(snap, parentId) {
 function strictestOutcome(outcomes) {
     if (outcomes.includes('delivered'))
         return 'delivered';
-    if (outcomes.includes('wait_driver'))
-        return 'wait_driver';
+    if (outcomes.includes('boarded'))
+        return 'boarded';
     if (outcomes.includes('needs_boarding'))
         return 'needs_boarding';
     if (outcomes.includes('failed'))
@@ -124,6 +193,22 @@ function isArrivalCandidate(snap, appt) {
         return false;
     return true;
 }
+/** Pet clínico já no consultório (encaixe / em atendimento) — sinal informativo. */
+function isInConsultorioCandidate(snap, appt) {
+    if (appt.deleted_at)
+        return false;
+    if (appt.appointment_kind === 'pickup_route')
+        return false;
+    if (appt.status !== 'checked_in' && appt.status !== 'in_progress')
+        return false;
+    const isClinicalGroup = !!appt.service_group && CLINICAL_OPS_GROUPS.has(appt.service_group);
+    const isWalkInKind = !!appt.appointment_kind && CLINICAL_WALK_IN_KINDS.has(appt.appointment_kind);
+    if (!isClinicalGroup && !isWalkInKind)
+        return false;
+    if (!appt.starts_at || ymdInSaoPaulo(appt.starts_at) !== snap.dayYmd)
+        return false;
+    return true;
+}
 /** IDs de agendamento que ainda devem manter handoff `chegada` aberto. */
 function arrivalPendingAppointmentIds(snap) {
     const ids = new Set();
@@ -143,6 +228,10 @@ function tutorBrings(snap, appointmentId) {
     return incoming.every((l) => l.stop_status === 'failed' && l.failure_outcome !== 'return_to_clinic');
 }
 function pushExit(handoffs, snap, kind, sourceType, sourceId, unitId, guardianId, openedAt, label, appointmentId, sessionId) {
+    const deliveryLegs = appointmentId
+        ? legsFor(snap, appointmentId).filter((l) => l.direction === 'delivery' && l.stop_status !== 'failed')
+        : [];
+    const withDriver = deliveryLegs.find((l) => l.route_id && l.driver_id) ?? deliveryLegs[0];
     handoffs.push({
         kind,
         source_type: sourceType,
@@ -156,6 +245,11 @@ function pushExit(handoffs, snap, kind, sourceType, sourceId, unitId, guardianId
             ready_at: openedAt,
             appointment_id: appointmentId,
             session_id: sessionId,
+            ...(kind === 'embarque' && withDriver
+                ? {
+                    route_id: withDriver.route_id,
+                }
+                : {}),
         },
     });
 }
@@ -188,15 +282,41 @@ function planBoardingExits(snap, handoffs, completeBoardingReservationIds) {
         }
         if (stay.status !== 'ready_for_handoff')
             continue;
-        const outcome = deliveryOutcome(legsFor(snap, appointmentId));
+        const legs = legsFor(snap, appointmentId);
+        const outcome = deliveryOutcome(legs);
         if (outcome === 'delivered') {
             completeBoardingReservationIds.push(stay.id);
             continue;
         }
-        if (outcome === 'wait_driver')
+        // Pet já com o motorista: sem tarefa de embarque; checkout só após entrega.
+        if (outcome === 'boarded')
             continue;
-        const kind = outcome === 'needs_boarding' ? 'embarque' : 'retirada_balcao';
         const openedAt = stay.handoff_ready_at || snap.nowIso;
+        const liveLegs = legs.filter((l) => l.appointment_status !== 'cancelled');
+        // Volta contratada (há perna L&T do pai) sem devolução identificável:
+        // não abrir balcão — manter pendente até configurar a devolução.
+        if (outcome === 'none' && liveLegs.length > 0) {
+            handoffs.push({
+                kind: 'saida_prevista',
+                source_type: 'boarding_reservation',
+                source_id: stay.id,
+                pet_id: snap.petId,
+                guardian_id: stay.guardian_id ?? null,
+                unit_id: stay.unit_id,
+                opened_at: openedAt,
+                context: {
+                    label,
+                    starts_at: expected,
+                    appointment_id: appointmentId,
+                    preparing: true,
+                    boarding_mode: stay.mode ?? null,
+                    boarding_reservation_id: stay.id,
+                    needs_return_config: true,
+                },
+            });
+            continue;
+        }
+        const kind = outcome === 'needs_boarding' ? 'embarque' : 'retirada_balcao';
         pushExit(handoffs, snap, kind, 'boarding_reservation', stay.id, stay.unit_id, stay.guardian_id ?? null, openedAt, label, appointmentId, null);
         const last = handoffs[handoffs.length - 1];
         if (last) {
@@ -225,6 +345,24 @@ function planCustody(snap) {
             opened_at: appt.starts_at,
             context: {
                 label: appt.service_name || 'Chegada',
+                starts_at: appt.starts_at,
+                appointment_id: appt.id,
+            },
+        });
+    }
+    for (const appt of snap.appointments) {
+        if (!isInConsultorioCandidate(snap, appt))
+            continue;
+        handoffs.push({
+            kind: 'no_consultorio',
+            source_type: 'appointment',
+            source_id: appt.id,
+            pet_id: snap.petId,
+            guardian_id: appt.guardian_id,
+            unit_id: appt.unit_id,
+            opened_at: appt.starts_at || snap.nowIso,
+            context: {
+                label: appt.service_name || 'Consultório',
                 starts_at: appt.starts_at,
                 appointment_id: appt.id,
             },
@@ -292,6 +430,10 @@ function planCustody(snap) {
     const unitForStay = readyLive[0]?.unit_id ?? snap.boarding[0]?.unit_id ?? null;
     const stay = hasActiveStay(snap, unitForStay);
     const dischargedToday = snap.hospitalizations.filter((h) => h.status === 'discharged' && h.discharged_at && ymdInSaoPaulo(h.discharged_at) === snap.dayYmd);
+    // Alta ambulatorial da cirurgia (discharge_at) — distinto de concluir o procedimento.
+    const surgeryDischargedToday = snap.surgeries.filter((s) => !s.deleted_at &&
+        s.discharge_at &&
+        ymdInSaoPaulo(s.discharge_at) === snap.dayYmd);
     const encountersToday = snap.encounters.filter((e) => e.status === 'completed' && e.completed_at && ymdInSaoPaulo(e.completed_at) === snap.dayYmd);
     if (stay) {
         for (const s of readyLive)
@@ -306,29 +448,9 @@ function planCustody(snap) {
         ...readyLive.map((s) => s.hub_appointment_id),
         ...encountersToday.map((e) => e.hub_appointment_id),
         ...dischargedToday.map((h) => h.hub_appointment_id),
+        ...surgeryDischargedToday.map((s) => s.hub_appointment_id),
     ].filter((id) => Boolean(id));
-    const blocked = exitBlocked(snap, releaseAppointmentIds.length === 1 ? releaseAppointmentIds[0] : null) &&
-        releaseAppointmentIds.length <= 1
-        ? exitBlocked(snap, releaseAppointmentIds[0] ?? null)
-        : snap.hospitalizations.some((h) => h.status === 'active') ||
-            snap.surgeries.some((s) => s.status === 'in_progress') ||
-            snap.encounters.some((e) => e.status === 'in_progress' || e.status === 'waiting') ||
-            snap.groomingSessions.some((s) => !s.deleted_at && OPEN_GROOMING.has(s.grooming_stage)) ||
-            snap.appointments.some((a) => {
-                if (a.deleted_at)
-                    return false;
-                if (releaseAppointmentIds.includes(a.id))
-                    return false;
-                if (a.appointment_kind === 'pickup_route')
-                    return false;
-                if (a.appointment_kind === 'hotel_stay' || a.appointment_kind === 'daycare_block')
-                    return false;
-                if (TERMINAL_APPT.has(a.status))
-                    return false;
-                if (!a.starts_at || ymdInSaoPaulo(a.starts_at) !== snap.dayYmd)
-                    return false;
-                return true;
-            });
+    const blocked = exitBlocked(snap, releaseAppointmentIds);
     if (blocked) {
         return { handoffs, closeGroomingSessionIds, completeBoardingReservationIds };
     }
@@ -339,13 +461,22 @@ function planCustody(snap) {
             closeGroomingSessionIds.push(s.id);
         return { handoffs, closeGroomingSessionIds, completeBoardingReservationIds };
     }
-    if (outcome === 'wait_driver') {
+    // Já embarcado: fecha banho e não abre tarefa (motorista segue com o pet).
+    if (outcome === 'boarded') {
+        for (const s of readyLive)
+            closeGroomingSessionIds.push(s.id);
         return { handoffs, closeGroomingSessionIds, completeBoardingReservationIds };
     }
     const latestReady = [...readyLive].sort((a, b) => String(b.ready_at).localeCompare(String(a.ready_at)))[0];
-    const discharge = dischargedToday[0];
-    const encounter = dischargedToday.length > 0 ? undefined : encountersToday[0];
-    if (!latestReady && !discharge && !encounter) {
+    // Uma saída por pet: usa a alta mais recente do dia (evita órfão quando há retries/QA).
+    const discharge = [...dischargedToday].sort((a, b) => String(b.discharged_at ?? '').localeCompare(String(a.discharged_at ?? '')))[0];
+    const surgeryDischarge = dischargedToday.length > 0
+        ? undefined
+        : [...surgeryDischargedToday].sort((a, b) => String(b.discharge_at ?? '').localeCompare(String(a.discharge_at ?? '')))[0];
+    const encounter = dischargedToday.length > 0 || surgeryDischargedToday.length > 0
+        ? undefined
+        : encountersToday[0];
+    if (!latestReady && !discharge && !surgeryDischarge && !encounter) {
         return { handoffs, closeGroomingSessionIds, completeBoardingReservationIds };
     }
     const kind = outcome === 'needs_boarding' ? 'embarque' : 'retirada_balcao';
@@ -354,6 +485,9 @@ function planCustody(snap) {
     }
     else if (discharge) {
         pushExit(handoffs, snap, kind, 'hospitalization', discharge.id, discharge.unit_id, discharge.guardian_id, discharge.discharged_at || snap.nowIso, 'Alta', discharge.hub_appointment_id, null);
+    }
+    else if (surgeryDischarge) {
+        pushExit(handoffs, snap, kind, 'surgery', surgeryDischarge.id, surgeryDischarge.unit_id ?? null, surgeryDischarge.guardian_id ?? null, surgeryDischarge.discharge_at || snap.nowIso, 'Alta cirúrgica', surgeryDischarge.hub_appointment_id ?? null, null);
     }
     else if (encounter) {
         pushExit(handoffs, snap, kind, 'encounter', encounter.id, encounter.unit_id, encounter.guardian_id, encounter.completed_at || snap.nowIso, 'Consulta', encounter.hub_appointment_id, null);

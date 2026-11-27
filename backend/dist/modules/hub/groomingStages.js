@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.GROOMING_EVENT_TITLES = exports.GROOMING_NEXT_STAGE = exports.GROOMING_STAGE_LABELS = exports.GROOMING_STAGES = void 0;
 exports.canTransitionGroomingStage = canTransitionGroomingStage;
 exports.appointmentStatusForGroomingStage = appointmentStatusForGroomingStage;
+exports.isGroomingServiceOperationallyDone = isGroomingServiceOperationallyDone;
 exports.boardStageFromAppointmentStatus = boardStageFromAppointmentStatus;
 exports.GROOMING_STAGES = [
     'scheduled',
@@ -71,6 +72,13 @@ function appointmentStatusForGroomingStage(stage) {
         default:
             return null;
     }
+}
+/**
+ * Serviço do salão concluído (Pronto / legado entregue / encerrado).
+ * Distinto da custódia: pet pode ficar em `ready` aguardando retirada.
+ */
+function isGroomingServiceOperationallyDone(stage) {
+    return stage === 'ready' || stage === 'delivered' || stage === 'closed';
 }
 function boardStageFromAppointmentStatus(status, appointmentKind) {
     // Encaixe já fez check-in na agenda; na fila entra em Aguardando até existir sessão.

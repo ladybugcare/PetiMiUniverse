@@ -23,7 +23,7 @@ import {
   type CaixaSessionHistoryItem,
 } from './hubCaixaSessionHistory';
 
-const INITIAL_VISIBLE = 6;
+const INITIAL_VISIBLE = 4;
 
 function HistoryIcon({ kind, tone }: { kind: CaixaHistoryIconKind; tone: CaixaHistoryIconTone }) {
   const iconProps = { size: 12, strokeWidth: 2.25, 'aria-hidden': true as const };

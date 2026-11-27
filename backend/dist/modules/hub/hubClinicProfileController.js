@@ -6,6 +6,7 @@ const supabase_js_1 = require("../../config/supabase.js");
 const authMiddleware_js_1 = require("../../middleware/authMiddleware.js");
 const errorHandler_js_1 = require("../../middleware/errorHandler.js");
 const errors_js_1 = require("../../utils/errors.js");
+const hubEntitlements_js_1 = require("./hubEntitlements.js");
 const uuidStr = zod_1.z.string().uuid();
 const CLINIC_EDIT_ROLES = new Set(['CADMIN', 'CMANAGER']);
 async function userCanEditClinicProfile(userId, clinicId) {
@@ -72,6 +73,15 @@ exports.postHubUnit = (0, errorHandler_js_1.asyncHandler)(async (req, res) => {
     const canCreate = await userCanCreateClinicUnit(userId, clinicId);
     if (!canCreate) {
         return res.status(403).json({ error: 'Sem permissão para criar unidades.' });
+    }
+    try {
+        await (0, hubEntitlements_js_1.assertCanCreateUnit)(clinicId);
+    }
+    catch (e) {
+        if (e instanceof errors_js_1.PlanEntitlementError) {
+            return res.status(403).json({ error: e.message, code: e.code, details: e.details });
+        }
+        throw e;
     }
     const payload = bodyParsed.data;
     const nickname = payload.nickname.trim();

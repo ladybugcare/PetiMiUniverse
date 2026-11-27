@@ -27,6 +27,11 @@ import { getSelectedUnitId } from '../../../utils/useSelectedUnitId';
 import { dayRangeIsoLocal } from '../../agenda/agendaFilters';
 import type { NewAppointmentInitial } from '../../agenda/NewAppointmentModal';
 import type { CareLocationValue } from '../../../components/CareLocationFields';
+import {
+  isPetOpenClinicalPresenceError,
+  PET_OPEN_CLINICAL_CONFIRM_MESSAGE,
+  PET_OPEN_CLINICAL_CONFIRM_TITLE,
+} from '../../../utils/petOpenClinicalPresence';
 import StartEncounterModal from '../StartEncounterModal';
 import ClinicWalkInPanel from '../ClinicWalkInPanel';
 import HubClinicHospitalPage from '../HubClinicHospitalPage';
@@ -65,7 +70,7 @@ const COCKPIT_TABS: Array<{ id: CockpitTab; label: string }> = [
 const HubVetCockpitPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
-  const { showError, showSuccess } = useAlert();
+  const { showError, showSuccess, showConfirm } = useAlert();
   const { role: authRole } = useAuth();
   const { hasPermission, loading: permLoading } = usePermissions();
   const { clinicId, myStaffMember, loading: staffLoading, linked } = useMyStaffMember();
@@ -431,16 +436,19 @@ const HubVetCockpitPage: React.FC = () => {
     [navigate],
   );
 
-  const createWalkIn = async (payload: {
-    petId?: string | null;
-    guardianId?: string | null;
-    staffId?: string | null;
-    complaint: string;
-    hubServiceTypeId: string;
-    entryKind: 'routine' | 'emergency';
-    durationMinutes: number;
-    careLocation?: CareLocationValue;
-  }) => {
+  const createWalkIn = async (
+    payload: {
+      petId?: string | null;
+      guardianId?: string | null;
+      staffId?: string | null;
+      complaint: string;
+      hubServiceTypeId: string;
+      entryKind: 'routine' | 'emergency';
+      durationMinutes: number;
+      careLocation?: CareLocationValue;
+    },
+    opts?: { allowDuplicateOpen?: boolean },
+  ) => {
     if (!clinicId) return;
     setCreatingWalkIn(true);
     try {
@@ -458,11 +466,22 @@ const HubVetCockpitPage: React.FC = () => {
           payload.careLocation?.care_location_kind === 'partner_clinic'
             ? payload.careLocation.hub_partner_clinic_id
             : null,
+        allow_duplicate_open: opts?.allowDuplicateOpen === true ? true : undefined,
       });
       setWalkInOpen(false);
       showSuccess('Encaixe registrado na agenda e na fila');
       await loadQueue();
     } catch (e: unknown) {
+      if (!opts?.allowDuplicateOpen && isPetOpenClinicalPresenceError(e)) {
+        showConfirm(
+          PET_OPEN_CLINICAL_CONFIRM_MESSAGE,
+          () => {
+            void createWalkIn(payload, { allowDuplicateOpen: true });
+          },
+          PET_OPEN_CLINICAL_CONFIRM_TITLE,
+        );
+        return;
+      }
       showError((e as Error)?.message || 'Erro ao registrar entrada na fila');
       throw e;
     } finally {

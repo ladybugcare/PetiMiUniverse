@@ -9,9 +9,16 @@ const hubServiceGroupsController_1 = require("./hubServiceGroupsController");
 const serviceGroupChecklistDefaults_1 = require("./serviceGroupChecklistDefaults");
 const uuidStr = zod_1.z.string().uuid();
 const slugParamSchema = zod_1.z.string().trim().regex(/^[a-z0-9_]{1,64}$/);
+const checklistItemKeySchema = zod_1.z
+    .string()
+    .trim()
+    .transform((v) => (v === '' ? undefined : v))
+    .pipe(zod_1.z.union([zod_1.z.undefined(), zod_1.z.string().regex(/^[a-z0-9_]{1,64}$/)]))
+    .optional();
 const checklistItemInputSchema = zod_1.z
     .object({
-    key: zod_1.z.string().trim().regex(/^[a-z0-9_]{1,64}$/).optional(),
+    /** Vazio/`""` = omitir; o normalize gera a chave a partir do label. */
+    key: checklistItemKeySchema,
     label: zod_1.z.string().trim().min(1).max(200),
     default_checked: zod_1.z.boolean().optional(),
 })

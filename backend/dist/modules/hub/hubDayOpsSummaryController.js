@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.getHubDayOpsSummary = void 0;
 const zod_1 = require("zod");
@@ -7,6 +40,8 @@ const authMiddleware_1 = require("../../middleware/authMiddleware");
 const boardingOperational_1 = require("./boardingOperational");
 const hubInventoryController_1 = require("./hubInventoryController");
 const hubPayablesService_1 = require("./hubPayablesService");
+const hubSeriesEndingSoonQuery_1 = require("./hubSeriesEndingSoonQuery");
+const hubNotifyEvents_1 = require("./hubNotifyEvents");
 const uuidStr = zod_1.z.string().uuid();
 const dateYmdStr = zod_1.z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 const SERVICE_GROUP_LABELS = {
@@ -121,6 +156,25 @@ const getHubDayOpsSummary = async (req, res) => {
                     total: by_group.reduce((a, g) => a + g.count, 0),
                     by_group,
                 };
+            })());
+            tasks.push((async () => {
+                try {
+                    const series = await (0, hubSeriesEndingSoonQuery_1.loadClinicSeriesEndingSoon)(clinic_id);
+                    const prev = out.alerts ?? {
+                        low_stock: 0,
+                        vaccines_due: 0,
+                        overdue_receivables_count: 0,
+                        overdue_receivables_total: 0,
+                        series_ending_soon: 0,
+                    };
+                    out.alerts = { ...prev, series_ending_soon: series.length };
+                    if (series.length > 0) {
+                        void (0, hubNotifyEvents_1.notifyHubSeriesEndingSoonBatch)({ clinicId: clinic_id, series });
+                    }
+                }
+                catch (e) {
+                    console.error('day-ops series_ending_soon', e);
+                }
             })());
         }
         if (canClinic) {
@@ -338,7 +392,7 @@ const getHubDayOpsSummary = async (req, res) => {
         }
         if (canFinance) {
             tasks.push((async () => {
-                const [{ data: cashSession }, { data: openComandas }, { data: openRecs }, { data: payPeriod }] = await Promise.all([
+                const [{ data: cashSession }, openComandasAgg, { data: openRecs }, { data: payPeriod }] = await Promise.all([
                     supabase_1.supabaseAdmin
                         .from('hub_cash_sessions')
                         .select('id, status, opened_at')
@@ -346,13 +400,13 @@ const getHubDayOpsSummary = async (req, res) => {
                         .eq('unit_id', unit_id)
                         .eq('status', 'open')
                         .maybeSingle(),
-                    supabase_1.supabaseAdmin
-                        .from('hub_comandas')
-                        .select('id')
-                        .eq('clinic_id', clinic_id)
-                        .eq('unit_id', unit_id)
-                        .eq('status', 'aberta')
-                        .is('finance_handoff_at', null),
+                    (async () => {
+                        const { countOpenComandasPendingCaixa } = await Promise.resolve().then(() => __importStar(require('./hubComandasController.js')));
+                        return countOpenComandasPendingCaixa(clinic_id, unit_id).catch(() => ({
+                            count: 0,
+                            total: 0,
+                        }));
+                    })(),
                     supabase_1.supabaseAdmin
                         .from('hub_receivables')
                         .select('id, final_amount, due_date')
@@ -364,6 +418,7 @@ const getHubDayOpsSummary = async (req, res) => {
                         .from('hub_payments')
                         .select('amount, payment_date, receivable_id')
                         .eq('clinic_id', clinic_id)
+                        .eq('status', 'posted')
                         .gte('payment_date', fromUtc)
                         .lte('payment_date', toUtc),
                 ]);
@@ -374,7 +429,8 @@ const getHubDayOpsSummary = async (req, res) => {
                     const { data: payRows } = await supabase_1.supabaseAdmin
                         .from('hub_payments')
                         .select('receivable_id, amount')
-                        .in('receivable_id', recIds);
+                        .in('receivable_id', recIds)
+                        .eq('status', 'posted');
                     const paidByRec = new Map();
                     for (const row of payRows ?? []) {
                         const id = row.receivable_id;
@@ -457,7 +513,7 @@ const getHubDayOpsSummary = async (req, res) => {
                     outstanding,
                     cash_open: cashSession?.status === 'open',
                     cash_opened_at: cashSession?.opened_at ?? null,
-                    pending_billing: (openComandas ?? []).length,
+                    pending_billing: openComandasAgg?.count ?? 0,
                 };
                 const prevAlerts = out.alerts ?? {
                     low_stock: 0,

@@ -111,7 +111,7 @@ const getPublicPrescriptionPdf = async (req, res) => {
             issued_at: payload.issued_at,
             expires_at: payload.expires_at,
             disclaimers: payload.disclaimers,
-        });
+        }, { contentDisposition: 'attachment' });
     }
     catch (e) {
         console.error('[public_prescriptions] pdf', e);

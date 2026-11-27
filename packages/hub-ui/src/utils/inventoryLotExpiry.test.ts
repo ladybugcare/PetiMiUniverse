@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   isLotExpired,
   LOT_EXPIRED_CREATE_MSG,
+  LOT_EXPIRED_SALE_MSG,
   inventoryTodayYmd,
 } from './inventoryLotExpiry';
 
@@ -24,8 +25,9 @@ describe('inventoryLotExpiry', () => {
     expect(isLotExpired(undefined, today)).toBe(false);
   });
 
-  it('mensagem de cadastro está em português', () => {
+  it('mensagens de bloqueio estão em português', () => {
     expect(LOT_EXPIRED_CREATE_MSG).toMatch(/validade vencida/i);
+    expect(LOT_EXPIRED_SALE_MSG).toMatch(/usar lote vencido/i);
   });
 
   it('inventoryTodayYmd retorna YYYY-MM-DD', () => {

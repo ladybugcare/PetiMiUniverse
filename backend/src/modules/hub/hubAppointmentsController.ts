@@ -23,6 +23,10 @@ import { replaceAppointmentServices } from './hubReplaceAppointmentServices';
 import { canTransitionToNoShow } from './hubNoShowUtils';
 import { manualAppointmentStatusError } from './hubAppointmentManualStatus';
 import {
+  findOpenClinicalPresenceForPet,
+  openClinicalPresenceConflictPayload,
+} from './hubClinicalOpenPresence';
+import {
   PET_BODY_SIZE_TIERS,
   requiresCoatPricing,
   resolveServiceLinePricing,
@@ -1196,6 +1200,8 @@ const createAppointmentSchema = z
     intake_new_case_title: optionalTrim(500).optional().nullable(),
     /** Permite sobrepor outro slot após confirmação explícita do usuário. */
     allow_schedule_overlap: z.boolean().optional(),
+    /** Confirma segundo encaixe clínico do mesmo pet com atendimento/encaixe em aberto. */
+    allow_duplicate_open: z.boolean().optional(),
     /** Agrupa vários agendamentos da mesma visita multi-pet. */
     visit_group_id: uuidStr.optional().nullable(),
     ...careLocationBodyFields,
@@ -1858,6 +1864,22 @@ export const createHubAppointment = async (req: Request, res: Response) => {
 
     const primarySt = stMap.get(b.hub_service_type_id);
     resolvedAppointmentKind = resolveAppointmentKindForCreate(b.appointment_kind, primarySt);
+
+    // Encaixe clínico: bloqueia segundo slot se o pet já tem atendimento/encaixe em aberto.
+    if (
+      (resolvedAppointmentKind === 'clinical_walk_in' ||
+        resolvedAppointmentKind === 'clinical_emergency') &&
+      b.pet_id &&
+      b.allow_duplicate_open !== true
+    ) {
+      const open = await findOpenClinicalPresenceForPet({
+        clinicId: b.clinic_id,
+        petId: b.pet_id,
+      });
+      if (open) {
+        return res.status(409).json(openClinicalPresenceConflictPayload(open));
+      }
+    }
 
     const mainGroupErr = validateHomogeneousServiceGroups(normLines, stMap);
     if (mainGroupErr) return res.status(400).json({ error: mainGroupErr });

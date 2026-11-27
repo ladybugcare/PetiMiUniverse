@@ -38,19 +38,21 @@ async function ensureHubStaffPhotosBucket() {
         'No Supabase (SQL Editor), execute `petimi_hub/011_create_hub_staff_photos_bucket.sql` ou crie manualmente o bucket «hub-staff-photos» (público, até 5 MB, JPEG/PNG/WEBP).');
 }
 /**
- * Envia imagem de perfil de membro da equipe para Storage (bucket `hub-staff-photos`).
- * Caminho: `{clinicId}/staff-{timestamp}-{rand}.{ext}` — upload apenas pelo backend (service role).
+ * Envia imagem de membro da equipe para Storage (bucket `hub-staff-photos`).
+ * Caminho: `{clinicId}/staff-{staffId?}/{kind}-{timestamp}-{rand}.{ext}` — upload apenas pelo backend (service role).
  */
-async function uploadHubStaffPhotoToStorage(file, clinicId) {
+async function uploadHubStaffPhotoToStorage(file, clinicId, opts) {
     (0, fileValidation_js_1.validateFile)(file.buffer, file.mimetype, file.originalname, {
         allowedTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'],
         maxSize: 5 * 1024 * 1024,
         requireSignature: true,
     });
+    const kind = opts?.kind ?? 'photo';
     const sanitized = (0, fileValidation_js_1.sanitizeFilename)(file.originalname);
     const extRaw = sanitized.split('.').pop()?.toLowerCase() || 'jpg';
     const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(extRaw) ? extRaw : 'jpg';
-    const fileName = `${clinicId}/staff-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${safeExt}`;
+    const staffSeg = opts?.staffId?.trim() ? `staff-${opts.staffId.trim()}` : 'staff';
+    const fileName = `${clinicId}/${staffSeg}/${kind}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${safeExt}`;
     const doUpload = () => supabase_1.supabaseAdmin.storage.from(HUB_STAFF_PHOTOS_BUCKET).upload(fileName, file.buffer, {
         contentType: file.mimetype,
         upsert: false,
@@ -69,6 +71,6 @@ async function uploadHubStaffPhotoToStorage(file, clinicId) {
         throw error;
     }
     const { data: { publicUrl }, } = supabase_1.supabaseAdmin.storage.from(HUB_STAFF_PHOTOS_BUCKET).getPublicUrl(fileName);
-    logger_js_1.logger.info('[hub_staff_photo] uploaded', { clinicId, fileName, bytes: file.buffer.length });
+    logger_js_1.logger.info('[hub_staff_photo] uploaded', { clinicId, kind, fileName, bytes: file.buffer.length });
     return { url: publicUrl, path: fileName };
 }

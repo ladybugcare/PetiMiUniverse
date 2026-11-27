@@ -14,6 +14,9 @@ router.get('/', notificationsController_1.getNotifications);
 // GET /api/notifications/unread-count - Contar notificações não lidas
 // Query params: user_id (required)
 router.get('/unread-count', notificationsController_1.getUnreadCount);
+// Preferências Hub (Meu perfil) — antes de /:id para não colidir
+router.get('/prefs', notificationsController_1.getNotificationPrefs);
+router.put('/prefs', notificationsController_1.updateNotificationPrefs);
 // PUT /api/notifications/:id/read - Marcar notificação como lida
 router.put('/:id/read', notificationsController_1.markAsRead);
 // PUT /api/notifications/read-all - Marcar todas como lidas

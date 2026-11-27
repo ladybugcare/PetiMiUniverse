@@ -128,6 +128,11 @@ import {
 import { ReceptionQuickRegisterPanel, type QuickRegisterSaveResult } from './ReceptionQuickRegisterPanel';
 import { resolveWalkInAppointmentKind } from './walkInUtils';
 import {
+  isPetOpenClinicalPresenceError,
+  PET_OPEN_CLINICAL_CONFIRM_MESSAGE,
+  PET_OPEN_CLINICAL_CONFIRM_TITLE,
+} from '../../utils/petOpenClinicalPresence';
+import {
   SCHEDULE_OVERLAP_ALL_DATES_MESSAGE,
   SCHEDULE_OVERLAP_CANCEL_TEXT,
   SCHEDULE_OVERLAP_CONFIRM_TEXT,
@@ -631,6 +636,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   const [seriesScopePickerOpen, setSeriesScopePickerOpen] = useState(false);
   const pendingPatchPayloadRef = useRef<Parameters<typeof hubAgendaApi.patch>[1] | null>(null);
   const confirmedOverlapRef = useRef(false);
+  const confirmedDuplicateOpenRef = useRef(false);
   /** Série: usuário pediu «Criar só as livres» — pula pré-check local e não força overlap. */
   const seriesPartialConfirmedRef = useRef(false);
   const handleSaveRef = useRef<() => Promise<void>>(async () => undefined);
@@ -2702,6 +2708,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
           };
         }),
         allow_schedule_overlap: confirmedOverlapRef.current || undefined,
+        allow_duplicate_open: confirmedDuplicateOpenRef.current || undefined,
         independent_extra_blocks: useIndependentExtraBlocks,
         create_boarding_reservation: mainIsBoardingGroup,
       };
@@ -2886,12 +2893,36 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       }
 
       confirmedOverlapRef.current = false;
+      confirmedDuplicateOpenRef.current = false;
       seriesPartialConfirmedRef.current = false;
       resetForm();
       onClose();
       onCreated(result);
     } catch (e: unknown) {
       const msg = (e as { message?: string })?.message ?? 'Erro ao criar agendamento';
+      if (
+        isWalkIn &&
+        !confirmedDuplicateOpenRef.current &&
+        isPetOpenClinicalPresenceError(e)
+      ) {
+        setSaving(false);
+        showAlert({
+          type: 'warning',
+          title: PET_OPEN_CLINICAL_CONFIRM_TITLE,
+          message: PET_OPEN_CLINICAL_CONFIRM_MESSAGE,
+          showCancel: true,
+          confirmText: 'Registrar mesmo assim',
+          cancelText: 'Cancelar',
+          onConfirm: () => {
+            confirmedDuplicateOpenRef.current = true;
+            void handleSaveRef.current();
+          },
+          onCancel: () => {
+            confirmedDuplicateOpenRef.current = false;
+          },
+        });
+        return;
+      }
       if (
         !confirmedOverlapRef.current &&
         !seriesPartialConfirmedRef.current &&
@@ -2915,6 +2946,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
   const resetForm = () => {
     confirmedOverlapRef.current = false;
+    confirmedDuplicateOpenRef.current = false;
     seriesPartialConfirmedRef.current = false;
     endsHmManualRef.current = false;
     setMobileStep('form');

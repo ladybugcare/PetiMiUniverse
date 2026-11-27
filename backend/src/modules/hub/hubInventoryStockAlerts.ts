@@ -1,6 +1,7 @@
 import { supabaseAdmin } from '../../config/supabase.js';
 import { notifyHubStockAlert, notifyHubStockExpiryAlert, notifyHubNearlyEmptyLot } from './hubNotifyEvents.js';
 import { crossedNearlyEmptyThreshold, roundStockQty } from './hubInventoryContentUtils.js';
+import { daysUntilYmd, inventoryTodayYmd } from './hubInventoryExpiryUtils.js';
 
 /**
  * Avisa o estoque quando uma saída derruba o item abaixo do mínimo.
@@ -136,12 +137,8 @@ export async function notifyExpiryAlertIfNeeded(opts: {
     const days = policyToDays(opts.expiryAlertPolicy);
     if (days == null || !opts.expiryDate) return;
 
-    const today = new Date().toISOString().slice(0, 10);
-    const t0 = Date.parse(`${today}T12:00:00Z`);
-    const t1 = Date.parse(`${opts.expiryDate}T12:00:00Z`);
-    if (!Number.isFinite(t0) || !Number.isFinite(t1)) return;
-    const daysUntil = Math.round((t1 - t0) / 86400000);
-    if (daysUntil < 0 || daysUntil > days) return;
+    const daysUntil = daysUntilYmd(opts.expiryDate, inventoryTodayYmd());
+    if (!Number.isFinite(daysUntil) || daysUntil < 0 || daysUntil > days) return;
 
     await notifyHubStockExpiryAlert({
       clinicId: opts.clinicId,

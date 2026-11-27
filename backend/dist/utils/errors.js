@@ -4,7 +4,7 @@
  * Baseado no plano de implementação do projeto
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.RateLimitError = exports.ExternalServiceError = exports.DatabaseError = exports.ConflictError = exports.NotFoundError = exports.ForbiddenError = exports.UnauthorizedError = exports.ValidationError = exports.AppError = void 0;
+exports.RateLimitError = exports.ExternalServiceError = exports.DatabaseError = exports.ConflictError = exports.NotFoundError = exports.PlanEntitlementError = exports.ForbiddenError = exports.UnauthorizedError = exports.ValidationError = exports.AppError = void 0;
 /**
  * Classe base para todos os erros da aplicação
  */
@@ -50,11 +50,18 @@ exports.UnauthorizedError = UnauthorizedError;
  * Usado quando o usuário não tem permissão para a ação
  */
 class ForbiddenError extends AppError {
-    constructor(message = 'Acesso negado', details) {
-        super(message, 403, true, 'FORBIDDEN', details);
+    constructor(message = 'Acesso negado', details, code = 'FORBIDDEN') {
+        super(message, 403, true, code, details);
     }
 }
 exports.ForbiddenError = ForbiddenError;
+/** Limites de plano, módulos desabilitados ou soft-lock de assinatura (403). */
+class PlanEntitlementError extends AppError {
+    constructor(message, code, details) {
+        super(message, 403, true, code, details);
+    }
+}
+exports.PlanEntitlementError = PlanEntitlementError;
 /**
  * Erro de recurso não encontrado (404)
  */

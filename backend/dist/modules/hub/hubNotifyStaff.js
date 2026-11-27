@@ -13,6 +13,7 @@ exports.hubNotifyStaff = hubNotifyStaff;
 const supabase_1 = require("../../config/supabase");
 const notificationsController_1 = require("../../controllers/notificationsController");
 const operationalAreas_1 = require("../../utils/operationalAreas");
+const hubNotificationPrefs_1 = require("./hubNotificationPrefs");
 /** Papéis de governança que acompanham tudo que é crítico na unidade. */
 exports.HUB_MANAGER_ROLES = ['CADMIN', 'CMANAGER'];
 /**
@@ -98,12 +99,17 @@ async function hubNotifyStaff(opts) {
         if (!opts.clinicId)
             return 0;
         const candidates = await fetchHubStaffCandidates(opts.clinicId, opts.unitId);
-        const targets = resolveNotificationTargets(candidates, {
+        const resolved = resolveNotificationTargets(candidates, {
             areas: opts.areas,
             roles: opts.roles,
             includeManagers: opts.includeManagers,
             excludeUserIds: opts.excludeUserIds,
         });
+        if (!resolved.length)
+            return 0;
+        const category = (0, hubNotificationPrefs_1.hubNotificationCategoryForType)(opts.type);
+        const disabled = await (0, hubNotificationPrefs_1.loadDisabledPrefUserIds)(opts.clinicId, category, resolved);
+        const targets = (0, hubNotificationPrefs_1.filterTargetsByPrefOptOut)(resolved, category, disabled);
         if (!targets.length)
             return 0;
         await Promise.all(targets.map((userId) => (0, notificationsController_1.createNotification)({

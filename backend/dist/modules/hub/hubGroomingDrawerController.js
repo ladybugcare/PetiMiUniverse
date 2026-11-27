@@ -8,6 +8,8 @@ const groomingChecklistDefaults_1 = require("./groomingChecklistDefaults");
 const hubServiceGroupChecklistController_1 = require("./hubServiceGroupChecklistController");
 const groomingPetTags_1 = require("./groomingPetTags");
 const hubDayBoardPets_1 = require("./hubDayBoardPets");
+const groomingStages_1 = require("./groomingStages");
+const groomingExecution_1 = require("./groomingExecution");
 const uuidStr = zod_1.z.string().uuid();
 const GROOMING_SERVICE_GROUP = 'banho_tosa';
 const SESSION_SELECT = `
@@ -215,6 +217,19 @@ const getHubGroomingSessionDrawer = async (req, res) => {
         let parentIds = [];
         const apptId = session.hub_appointment_id;
         if (apptId) {
+            // Sessões já em Pronto com linhas sem executed_at (legado): cura ao abrir o drawer.
+            if ((0, groomingStages_1.isGroomingServiceOperationallyDone)(String(session.grooming_stage ?? ''))) {
+                try {
+                    await (0, groomingExecution_1.ensureGroomingAppointmentLinesExecuted)({
+                        clinicId: clinic_id.data,
+                        appointmentId: apptId,
+                        executedByStaffId: session.hub_staff_member_id ?? null,
+                    });
+                }
+                catch (healErr) {
+                    console.error('ensureGroomingAppointmentLinesExecuted drawer heal', id.data, healErr);
+                }
+            }
             parentIds = await groomingParentTypeIdsForAppointment(clinic_id.data, apptId, groomingSet);
             const { data: lineRows, error: lErr } = await supabase_1.supabaseAdmin
                 .from('hub_appointment_services')

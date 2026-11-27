@@ -6,6 +6,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 // backend/src/server.ts
 const http_1 = __importDefault(require("http"));
 const app_1 = __importDefault(require("./app"));
+const sentry_js_1 = require("./utils/sentry.js");
 const explicitPort = process.env.PORT;
 const isProd = process.env.NODE_ENV === 'production';
 /** Em dev, 3001 costuma ser o React; tentamos 3000 e depois 3002+ */
@@ -55,4 +56,6 @@ function start(attemptIndex) {
         start(next);
     });
 }
-start(0);
+void (0, sentry_js_1.initSentry)().finally(() => {
+    start(0);
+});

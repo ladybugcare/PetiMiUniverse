@@ -1,12 +1,18 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.HubPlanError = exports.ALL_HUB_MODULES = exports.BETA_PLAN_ID = exports.BETA_PLAN_SLUG = void 0;
+exports.HubPlanError = exports.BETA_PLAN_ID = exports.BETA_PLAN_SLUG = exports.VET_SOLO_PLAN_ID = exports.VET_SOLO_PLAN_SLUG = exports.ALL_HUB_MODULES = void 0;
 exports.getHubSubscriptionMode = getHubSubscriptionMode;
+exports.resolvePlanConfig = resolvePlanConfig;
+exports.computeAccessMode = computeAccessMode;
+exports.countClinicUnits = countClinicUnits;
+exports.countClinicActiveUsers = countClinicActiveUsers;
 exports.getClinicSubscription = getClinicSubscription;
 exports.createBetaSubscription = createBetaSubscription;
 exports.getEnabledModules = getEnabledModules;
 exports.organizationHasModule = organizationHasModule;
 exports.isSubscriptionActive = isSubscriptionActive;
+exports.getClinicEntitlementSnapshot = getClinicEntitlementSnapshot;
+exports.toSessionSubscriptionPayloadAsync = toSessionSubscriptionPayloadAsync;
 exports.toSessionSubscriptionPayload = toSessionSubscriptionPayload;
 exports.listPaidLaunchPlans = listPaidLaunchPlans;
 exports.listPublicPlansAndModules = listPublicPlansAndModules;
@@ -17,19 +23,27 @@ exports.savePreapprovalId = savePreapprovalId;
 exports.applyMercadoPagoPreapproval = applyMercadoPagoPreapproval;
 exports.patchClinicSubscription = patchClinicSubscription;
 const supabase_js_1 = require("../../config/supabase.js");
+const hubPlanDefaults_js_1 = require("./hubPlanDefaults.js");
+Object.defineProperty(exports, "ALL_HUB_MODULES", { enumerable: true, get: function () { return hubPlanDefaults_js_1.ALL_HUB_MODULES; } });
+var hubPlanDefaults_js_2 = require("./hubPlanDefaults.js");
+Object.defineProperty(exports, "VET_SOLO_PLAN_SLUG", { enumerable: true, get: function () { return hubPlanDefaults_js_2.VET_SOLO_PLAN_SLUG; } });
+Object.defineProperty(exports, "VET_SOLO_PLAN_ID", { enumerable: true, get: function () { return hubPlanDefaults_js_2.VET_SOLO_PLAN_ID; } });
 exports.BETA_PLAN_SLUG = 'beta';
 exports.BETA_PLAN_ID = 'a1000000-0000-4000-8000-000000000001';
-exports.ALL_HUB_MODULES = ['hub_core', 'clinic', 'grooming', 'boarding'];
 const ACTIVE_STATUSES = new Set(['beta', 'trialing', 'active']);
 const PLAN_EMBED = 'hub_platform_plans!clinic_hub_subscriptions_base_plan_id_fkey';
 const LEGACY_SUBSCRIPTION_SELECT = `id, clinic_id, base_plan_id, status, is_beta, beta_free_until, beta_discount_percent, override_monthly_cents, beta_notes, enabled_modules, started_at, canceled_at, created_at, updated_at, ${PLAN_EMBED}(slug, name, max_units, max_users)`;
-const SUBSCRIPTION_SELECT = `id, clinic_id, base_plan_id, status, is_beta, beta_free_until, beta_discount_percent, override_monthly_cents, beta_notes, enabled_modules, started_at, canceled_at, created_at, updated_at, mp_preapproval_id, pending_plan_id, current_period_end, ${PLAN_EMBED}(slug, name, max_units, max_users, monthly_price_cents)`;
+const SUBSCRIPTION_SELECT = `id, clinic_id, base_plan_id, status, is_beta, beta_free_until, beta_discount_percent, override_monthly_cents, beta_notes, enabled_modules, started_at, canceled_at, created_at, updated_at, mp_preapproval_id, pending_plan_id, current_period_end, ${PLAN_EMBED}(slug, name, max_units, max_users, monthly_price_cents, plan_config)`;
 function missingMercadoPagoColumns(error) {
     const msg = error?.message || '';
     return (msg.includes('mp_preapproval_id') ||
         msg.includes('pending_plan_id') ||
         msg.includes('current_period_end') ||
         msg.includes('pending_payment'));
+}
+function missingPlanConfigColumn(error) {
+    const msg = error?.message || '';
+    return msg.includes('plan_config');
 }
 class HubPlanError extends Error {
     constructor(message) {
@@ -63,13 +77,59 @@ function mapSubscriptionRow(data) {
         hub_platform_plans: normalizePlanJoin(row.hub_platform_plans),
     };
 }
+function resolvePlanConfig(sub) {
+    const slug = sub?.hub_platform_plans?.slug ?? null;
+    return (0, hubPlanDefaults_js_1.parsePlanConfig)(slug, sub?.hub_platform_plans?.plan_config);
+}
+function computeAccessMode(sub) {
+    if (sub.is_beta || ACTIVE_STATUSES.has(sub.status))
+        return 'full';
+    if (sub.status === 'pending_payment')
+        return 'soft_lock';
+    if (sub.status === 'canceled')
+        return 'read_history';
+    if (sub.status === 'past_due') {
+        const anchor = sub.current_period_end || sub.updated_at;
+        const start = new Date(anchor).getTime();
+        if (Number.isNaN(start))
+            return 'soft_lock';
+        const graceMs = hubPlanDefaults_js_1.PAST_DUE_GRACE_DAYS * 24 * 60 * 60 * 1000;
+        if (Date.now() <= start + graceMs)
+            return 'soft_lock';
+        return 'read_history';
+    }
+    return 'soft_lock';
+}
+async function countClinicUnits(clinicId) {
+    const { count, error } = await supabase_js_1.supabaseAdmin
+        .from('units')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', clinicId);
+    if (error) {
+        console.error('[hubSubscription] countClinicUnits', error);
+        throw error;
+    }
+    return count ?? 0;
+}
+async function countClinicActiveUsers(clinicId) {
+    const { count, error } = await supabase_js_1.supabaseAdmin
+        .from('clinic_users')
+        .select('id', { count: 'exact', head: true })
+        .eq('clinic_id', clinicId)
+        .eq('status', 'active');
+    if (error) {
+        console.error('[hubSubscription] countClinicActiveUsers', error);
+        throw error;
+    }
+    return count ?? 0;
+}
 async function getClinicSubscription(clinicId) {
     let { data, error } = await supabase_js_1.supabaseAdmin
         .from('clinic_hub_subscriptions')
         .select(SUBSCRIPTION_SELECT)
         .eq('clinic_id', clinicId)
         .maybeSingle();
-    if (error && missingMercadoPagoColumns(error)) {
+    if (error && (missingMercadoPagoColumns(error) || missingPlanConfigColumn(error))) {
         const legacy = await supabase_js_1.supabaseAdmin
             .from('clinic_hub_subscriptions')
             .select(LEGACY_SUBSCRIPTION_SELECT)
@@ -100,7 +160,7 @@ async function createBetaSubscription(clinicId, options) {
         is_beta: true,
         beta_free_until: null,
         beta_notes: options?.notes ?? 'Programa Beta (pré-MVP)',
-        enabled_modules: [...exports.ALL_HUB_MODULES],
+        enabled_modules: [...hubPlanDefaults_js_1.ALL_HUB_MODULES],
         started_at: now,
         created_at: now,
         updated_at: now,
@@ -108,7 +168,6 @@ async function createBetaSubscription(clinicId, options) {
         .select(LEGACY_SUBSCRIPTION_SELECT)
         .single();
     if (error) {
-        // Corrida: outra requisição criou no meio
         if (error.code === '23505') {
             const again = await getClinicSubscription(clinicId);
             if (again)
@@ -121,8 +180,12 @@ async function createBetaSubscription(clinicId, options) {
 }
 async function getEnabledModules(clinicId) {
     const sub = await getClinicSubscription(clinicId);
-    if (!sub || !ACTIVE_STATUSES.has(sub.status))
+    if (!sub || !ACTIVE_STATUSES.has(sub.status)) {
+        if (sub && (sub.status === 'past_due' || sub.status === 'pending_payment')) {
+            return normalizeModules(sub.enabled_modules);
+        }
         return ['hub_core'];
+    }
     return normalizeModules(sub.enabled_modules);
 }
 async function organizationHasModule(clinicId, moduleSlug) {
@@ -133,38 +196,137 @@ async function isSubscriptionActive(clinicId) {
     const sub = await getClinicSubscription(clinicId);
     return Boolean(sub && ACTIVE_STATUSES.has(sub.status));
 }
-function toSessionSubscriptionPayload(sub) {
-    if (!sub)
-        return null;
+async function getClinicEntitlementSnapshot(clinicId) {
+    const sub = await getClinicSubscription(clinicId);
+    if (!sub) {
+        return {
+            status: 'canceled',
+            is_beta: false,
+            base_plan_slug: null,
+            enabled_modules: ['hub_core'],
+            disabled_operational_areas: [],
+            max_units: null,
+            max_users: null,
+            access_mode: 'read_history',
+        };
+    }
+    const cfg = resolvePlanConfig(sub);
     const plan = sub.hub_platform_plans;
     return {
         status: sub.status,
         is_beta: sub.is_beta,
         base_plan_slug: plan?.slug ?? null,
         enabled_modules: normalizeModules(sub.enabled_modules),
+        disabled_operational_areas: cfg.disabled_operational_areas,
+        max_units: sub.is_beta ? null : (plan?.max_units ?? null),
+        max_users: sub.is_beta ? null : (plan?.max_users ?? null),
+        access_mode: computeAccessMode(sub),
+    };
+}
+async function toSessionSubscriptionPayloadAsync(sub) {
+    if (!sub)
+        return null;
+    const plan = sub.hub_platform_plans;
+    const cfg = resolvePlanConfig(sub);
+    const max_units = sub.is_beta ? null : (plan?.max_units ?? null);
+    const max_users = sub.is_beta ? null : (plan?.max_users ?? null);
+    const [units, users] = await Promise.all([
+        countClinicUnits(sub.clinic_id),
+        countClinicActiveUsers(sub.clinic_id),
+    ]);
+    return {
+        status: sub.status,
+        is_beta: sub.is_beta,
+        base_plan_slug: plan?.slug ?? null,
+        enabled_modules: normalizeModules(sub.enabled_modules),
         beta_free_until: sub.beta_free_until,
+        disabled_operational_areas: cfg.disabled_operational_areas,
+        max_units,
+        max_users,
+        usage: { units, users },
+        limits_exceeded: {
+            units: max_units != null && units > max_units,
+            users: max_users != null && users > max_users,
+        },
+        access_mode: computeAccessMode(sub),
+        plan_config: cfg,
+    };
+}
+/** @deprecated Prefer toSessionSubscriptionPayloadAsync for usage counts. */
+function toSessionSubscriptionPayload(sub) {
+    if (!sub)
+        return null;
+    const plan = sub.hub_platform_plans;
+    const cfg = resolvePlanConfig(sub);
+    return {
+        status: sub.status,
+        is_beta: sub.is_beta,
+        base_plan_slug: plan?.slug ?? null,
+        enabled_modules: normalizeModules(sub.enabled_modules),
+        beta_free_until: sub.beta_free_until,
+        disabled_operational_areas: cfg.disabled_operational_areas,
+        max_units: sub.is_beta ? null : (plan?.max_units ?? null),
+        max_users: sub.is_beta ? null : (plan?.max_users ?? null),
+        access_mode: computeAccessMode(sub),
+        plan_config: cfg,
+    };
+}
+function mapPublicPlan(row) {
+    const slug = String(row.slug || '');
+    return {
+        slug,
+        name: String(row.name || ''),
+        description: row.description ?? null,
+        max_units: row.max_units ?? null,
+        max_users: row.max_users ?? null,
+        monthly_price_cents: row.monthly_price_cents ?? null,
+        sort_order: Number(row.sort_order || 0),
+        plan_config: (0, hubPlanDefaults_js_1.parsePlanConfig)(slug, row.plan_config),
     };
 }
 async function listPaidLaunchPlans() {
-    const { data, error } = await supabase_js_1.supabaseAdmin
+    let { data, error } = await supabase_js_1.supabaseAdmin
         .from('hub_platform_plans')
-        .select('slug, name, description, max_units, max_users, monthly_price_cents, sort_order')
+        .select('slug, name, description, max_units, max_users, monthly_price_cents, sort_order, plan_config')
         .eq('active', true)
         .eq('is_public', true)
         .neq('slug', exports.BETA_PLAN_SLUG)
         .not('monthly_price_cents', 'is', null)
         .order('sort_order', { ascending: true });
+    if (error && missingPlanConfigColumn(error)) {
+        const legacy = await supabase_js_1.supabaseAdmin
+            .from('hub_platform_plans')
+            .select('slug, name, description, max_units, max_users, monthly_price_cents, sort_order')
+            .eq('active', true)
+            .eq('is_public', true)
+            .neq('slug', exports.BETA_PLAN_SLUG)
+            .not('monthly_price_cents', 'is', null)
+            .order('sort_order', { ascending: true });
+        data = legacy.data;
+        error = legacy.error;
+    }
     if (error) {
         console.error('[hubSubscription] listPaidLaunchPlans', error);
         throw error;
     }
-    return (data || []);
+    const fromDb = (data || []).map((r) => mapPublicPlan(r));
+    return (0, hubPlanDefaults_js_1.mergePaidLaunchCatalog)(fromDb).map((p) => ({
+        slug: p.slug,
+        name: p.name,
+        description: p.description,
+        max_units: p.max_units,
+        max_users: p.max_users,
+        monthly_price_cents: p.monthly_price_cents,
+        sort_order: p.sort_order,
+        plan_config: (0, hubPlanDefaults_js_1.parsePlanConfig)(p.slug, p.plan_config),
+    }));
 }
 async function listPublicPlansAndModules() {
     const mode = getHubSubscriptionMode();
+    const selectCols = 'slug, name, description, max_units, max_users, monthly_price_cents, sort_order, plan_config';
     let plansQuery = supabase_js_1.supabaseAdmin
         .from('hub_platform_plans')
-        .select('slug, name, description, max_units, max_users, monthly_price_cents, sort_order')
+        .select(selectCols)
         .eq('active', true)
         .order('sort_order', { ascending: true });
     if (mode === 'beta_only') {
@@ -173,8 +335,28 @@ async function listPublicPlansAndModules() {
     else {
         plansQuery = plansQuery.eq('is_public', true).neq('slug', exports.BETA_PLAN_SLUG);
     }
-    const [{ data: plans, error: plansError }, { data: modules, error: modulesError }, paidPlans] = await Promise.all([
-        plansQuery,
+    let plansRows = null;
+    let plansError = null;
+    {
+        const first = await plansQuery;
+        plansError = first.error;
+        plansRows = first.data ?? null;
+        if (plansError && missingPlanConfigColumn(plansError)) {
+            let legacyQ = supabase_js_1.supabaseAdmin
+                .from('hub_platform_plans')
+                .select('slug, name, description, max_units, max_users, monthly_price_cents, sort_order')
+                .eq('active', true)
+                .order('sort_order', { ascending: true });
+            if (mode === 'beta_only')
+                legacyQ = legacyQ.eq('slug', exports.BETA_PLAN_SLUG);
+            else
+                legacyQ = legacyQ.eq('is_public', true).neq('slug', exports.BETA_PLAN_SLUG);
+            const legacy = await legacyQ;
+            plansError = legacy.error;
+            plansRows = legacy.data ?? null;
+        }
+    }
+    const [{ data: modules, error: modulesError }, paidPlans] = await Promise.all([
         mode === 'beta_only'
             ? Promise.resolve({ data: [], error: null })
             : supabase_js_1.supabaseAdmin
@@ -194,7 +376,7 @@ async function listPublicPlansAndModules() {
     }
     return {
         mode,
-        plans: (plans || []),
+        plans: (plansRows || []).map((r) => mapPublicPlan(r)),
         modules: (modules || []),
         paid_plans: paidPlans,
     };
@@ -233,7 +415,7 @@ async function createPendingPlanSubscription(clinicId, planSlug) {
         status: 'pending_payment',
         is_beta: false,
         beta_notes: `Aguardando Mercado Pago — ${plan.name}`,
-        enabled_modules: [...exports.ALL_HUB_MODULES],
+        enabled_modules: (0, hubPlanDefaults_js_1.defaultModulesForPlanSlug)(plan.slug),
         started_at: now,
         created_at: now,
         updated_at: now,
@@ -275,6 +457,7 @@ async function stagePlanCheckout(clinicId, planSlug) {
         updates.pending_plan_id = null;
         updates.status = 'pending_payment';
         updates.is_beta = false;
+        updates.enabled_modules = (0, hubPlanDefaults_js_1.defaultModulesForPlanSlug)(plan.slug);
     }
     const { error } = await supabase_js_1.supabaseAdmin
         .from('clinic_hub_subscriptions')
@@ -299,6 +482,16 @@ function addOneMonth(from) {
     const d = new Date(from.getTime());
     d.setMonth(d.getMonth() + 1);
     return d.toISOString();
+}
+async function planSlugById(planId) {
+    const { data, error } = await supabase_js_1.supabaseAdmin
+        .from('hub_platform_plans')
+        .select('slug')
+        .eq('id', planId)
+        .maybeSingle();
+    if (error)
+        throw error;
+    return data?.slug ?? null;
 }
 /** Aplica o estado vindo do Mercado Pago (webhook ou consulta na volta do checkout). */
 async function applyMercadoPagoPreapproval(input) {
@@ -327,15 +520,18 @@ async function applyMercadoPagoPreapproval(input) {
     const now = new Date().toISOString();
     const mpStatus = input.status.toLowerCase();
     if (mpStatus === 'authorized') {
+        const nextPlanId = row.pending_plan_id || row.base_plan_id;
+        const slug = await planSlugById(nextPlanId);
         const { error } = await supabase_js_1.supabaseAdmin
             .from('clinic_hub_subscriptions')
             .update({
             status: 'active',
             is_beta: false,
-            base_plan_id: row.pending_plan_id || row.base_plan_id,
+            base_plan_id: nextPlanId,
             pending_plan_id: null,
             mp_preapproval_id: input.preapprovalId,
             current_period_end: input.nextPaymentDate || addOneMonth(new Date()),
+            enabled_modules: (0, hubPlanDefaults_js_1.defaultModulesForPlanSlug)(slug),
             canceled_at: null,
             updated_at: now,
         })

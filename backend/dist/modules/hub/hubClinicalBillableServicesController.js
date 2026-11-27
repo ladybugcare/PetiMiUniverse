@@ -1,11 +1,24 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.approveHubHospitalizationChargePrice = exports.deleteHubHospitalizationCharge = exports.patchHubHospitalizationCharge = exports.createHubHospitalizationCharge = exports.listHubHospitalizationCharges = exports.approveHubSurgeryServicePrice = exports.deleteHubSurgeryService = exports.patchHubSurgeryService = exports.createHubSurgeryService = exports.listHubSurgeryServices = void 0;
+exports.approveHubEncounterServicePrice = exports.deleteHubEncounterService = exports.patchHubEncounterService = exports.createHubEncounterService = exports.listHubEncounterServices = exports.approveHubHospitalizationChargePrice = exports.deleteHubHospitalizationCharge = exports.patchHubHospitalizationCharge = exports.createHubHospitalizationCharge = exports.listHubHospitalizationCharges = exports.approveHubSurgeryServicePrice = exports.deleteHubSurgeryService = exports.patchHubSurgeryService = exports.createHubSurgeryService = exports.listHubSurgeryServices = void 0;
 exports.insertSurgeryServicesBatch = insertSurgeryServicesBatch;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const hubComandasController_1 = require("./hubComandasController");
 const hubVariablePrice_1 = require("./hubVariablePrice");
+const hubHospitalizationBilling_1 = require("./hubHospitalizationBilling");
+const HOSPITALIZATION_CHARGE_BLOCKED_STATUSES = new Set([
+    'discharged',
+    'death',
+    'transferred',
+    'cancelled',
+]);
+function hospitalizationChargeBlockedMessage(status) {
+    if (status === 'cancelled') {
+        return 'Não é possível lançar itens em internação cancelada.';
+    }
+    return 'Internação encerrada: não é possível lançar novos itens clínicos. Use o fluxo financeiro de ajuste, se necessário.';
+}
 const uuidStr = zod_1.z.string().uuid();
 const billingModeSchema = zod_1.z.enum(['charge', 'included']);
 const chargeKindSchema = zod_1.z.enum(['daily', 'medication', 'procedure', 'material', 'other']);
@@ -19,7 +32,7 @@ const pricingSourceSchema = zod_1.z.enum([
 async function loadServiceType(clinicId, serviceTypeId, expectedGroup) {
     const { data, error } = await supabase_1.supabaseAdmin
         .from('hub_service_types')
-        .select('id, name, sale_amount, price_mode, price_min, price_max, service_group, active, deleted_at')
+        .select('id, name, sale_amount, price_mode, price_min, price_max, service_group, active, deleted_at, is_encounter_application')
         .eq('id', serviceTypeId)
         .eq('clinic_id', clinicId)
         .maybeSingle();
@@ -366,7 +379,7 @@ const createHubHospitalizationCharge = async (req, res) => {
     const b = parsed.data;
     const { data: hosp, error: hospErr } = await supabase_1.supabaseAdmin
         .from('hub_hospitalizations')
-        .select('id, clinic_id, daily_includes_medication, hub_encounter_id')
+        .select('id, clinic_id, status, daily_includes_medication, hub_encounter_id')
         .eq('id', hospId.data)
         .eq('clinic_id', b.clinic_id)
         .is('deleted_at', null)
@@ -375,6 +388,14 @@ const createHubHospitalizationCharge = async (req, res) => {
         return res.status(500).json({ error: hospErr.message });
     if (!hosp)
         return res.status(404).json({ error: 'Internação não encontrada' });
+    const hospStatus = String(hosp.status ?? '');
+    if (HOSPITALIZATION_CHARGE_BLOCKED_STATUSES.has(hospStatus) || (0, hubHospitalizationBilling_1.isHospitalizationClosed)(hospStatus)) {
+        return res.status(409).json({
+            error: hospitalizationChargeBlockedMessage(hospStatus),
+            code: 'HOSPITALIZATION_CLOSED',
+            status: hospStatus,
+        });
+    }
     let service = null;
     if (b.hub_service_type_id) {
         try {
@@ -384,14 +405,36 @@ const createHubHospitalizationCharge = async (req, res) => {
             return res.status(400).json({ error: e.message });
         }
     }
+    let inventoryName = null;
+    let inventorySale = null;
+    if (b.hub_inventory_item_id) {
+        const { data: inv, error: invErr } = await supabase_1.supabaseAdmin
+            .from('hub_inventory_items')
+            .select('id, name, sale_amount, active, deleted_at')
+            .eq('id', b.hub_inventory_item_id)
+            .eq('clinic_id', b.clinic_id)
+            .maybeSingle();
+        if (invErr)
+            return res.status(500).json({ error: invErr.message });
+        if (!inv || inv.deleted_at || inv.active === false) {
+            return res.status(400).json({ error: 'Item de estoque não encontrado' });
+        }
+        inventoryName = String(inv.name ?? '') || null;
+        inventorySale = inv.sale_amount == null ? null : (0, hubVariablePrice_1.roundMoney2)(Number(inv.sale_amount));
+    }
     const serviceName = b.service_name?.trim() ||
         service?.name ||
-        (b.charge_kind === 'medication' ? 'Medicação' : 'Item de internação');
+        inventoryName ||
+        (b.charge_kind === 'medication'
+            ? 'Medicação'
+            : b.charge_kind === 'material'
+                ? 'Material'
+                : 'Item de internação');
     const defaultBilling = b.billing_mode ??
         (b.charge_kind === 'medication' && hosp.daily_includes_medication
             ? 'included'
             : 'charge');
-    let unit_amount = (0, hubVariablePrice_1.roundMoney2)(Number(b.unit_amount ?? service?.sale_amount ?? 0));
+    let unit_amount = (0, hubVariablePrice_1.roundMoney2)(Number(b.unit_amount ?? service?.sale_amount ?? inventorySale ?? 0));
     let pricing_source = 'catalog';
     let price_status = 'confirmed';
     if (service) {
@@ -405,10 +448,20 @@ const createHubHospitalizationCharge = async (req, res) => {
         pricing_source = resolved.pricing_source;
         price_status = resolved.price_status;
     }
+    else if (b.hub_inventory_item_id && inventorySale != null && b.unit_amount == null) {
+        // Material/medicamento do estoque ao preço de catálogo — cobrável sem aprovação extra.
+        unit_amount = inventorySale;
+        pricing_source = 'catalog';
+        price_status = 'confirmed';
+    }
     else if (b.unit_amount != null) {
         const canApprove = await (0, hubVariablePrice_1.canAutoApproveFinancial)(req.user?.id, b.clinic_id);
-        pricing_source = 'manual';
-        price_status = canApprove ? 'confirmed' : 'pending_approval';
+        const catalog = inventorySale;
+        pricing_source =
+            catalog != null && (0, hubVariablePrice_1.roundMoney2)(b.unit_amount) === catalog ? 'catalog' : 'manual';
+        // Preço manual explícito exige hub.financial.write; preço de catálogo confirma.
+        price_status =
+            pricing_source === 'catalog' || canApprove ? 'confirmed' : 'pending_approval';
     }
     // Itens inclusos não precisam de aprovação financeira
     if (defaultBilling === 'included')
@@ -461,6 +514,25 @@ const patchHubHospitalizationCharge = async (req, res) => {
         return res.status(400).json({ error: 'Dados inválidos' });
     }
     const b = parsed.data;
+    const { data: hospRow, error: hospStatusErr } = await supabase_1.supabaseAdmin
+        .from('hub_hospitalizations')
+        .select('id, status')
+        .eq('id', hospId.data)
+        .eq('clinic_id', b.clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+    if (hospStatusErr)
+        return res.status(500).json({ error: hospStatusErr.message });
+    if (!hospRow)
+        return res.status(404).json({ error: 'Internação não encontrada' });
+    const patchHospStatus = String(hospRow.status ?? '');
+    if (HOSPITALIZATION_CHARGE_BLOCKED_STATUSES.has(patchHospStatus) || (0, hubHospitalizationBilling_1.isHospitalizationClosed)(patchHospStatus)) {
+        return res.status(409).json({
+            error: hospitalizationChargeBlockedMessage(patchHospStatus),
+            code: 'HOSPITALIZATION_CLOSED',
+            status: patchHospStatus,
+        });
+    }
     const { data: existing, error: getErr } = await supabase_1.supabaseAdmin
         .from('hub_hospitalization_charges')
         .select('*')
@@ -626,3 +698,247 @@ async function insertSurgeryServicesBatch(opts) {
         });
     }
 }
+// ── Encounter services (consulta / grupo clinica) ─────────────────────────────
+const encounterServiceBodySchema = zod_1.z.object({
+    clinic_id: uuidStr,
+    hub_service_type_id: uuidStr,
+    unit_amount: zod_1.z.number().min(0).optional().nullable(),
+    quantity: zod_1.z.number().positive().optional().default(1),
+    billing_mode: billingModeSchema.optional().default('charge'),
+    notes: zod_1.z.string().trim().max(2000).optional().nullable(),
+    sort_order: zod_1.z.number().int().optional(),
+});
+const listHubEncounterServices = async (req, res) => {
+    const encounterId = uuidStr.safeParse(req.params.id);
+    const clinic_id = uuidStr.safeParse(req.query.clinic_id);
+    if (!encounterId.success || !clinic_id.success) {
+        return res.status(400).json({ error: 'id e clinic_id obrigatórios' });
+    }
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_encounter_services')
+        .select('*')
+        .eq('hub_encounter_id', encounterId.data)
+        .eq('clinic_id', clinic_id.data)
+        .is('deleted_at', null)
+        .order('sort_order', { ascending: true });
+    if (error) {
+        if (String(error.message).includes('hub_encounter_services') || error.code === '42P01') {
+            return res.json({ services: [] });
+        }
+        return res.status(500).json({ error: error.message });
+    }
+    return res.json({ services: data ?? [] });
+};
+exports.listHubEncounterServices = listHubEncounterServices;
+const createHubEncounterService = async (req, res) => {
+    const encounterId = uuidStr.safeParse(req.params.id);
+    const parsed = encounterServiceBodySchema.safeParse(req.body);
+    if (!encounterId.success || !parsed.success) {
+        return res.status(400).json({
+            error: 'Dados inválidos',
+            details: parsed.success ? undefined : parsed.error.flatten(),
+        });
+    }
+    const b = parsed.data;
+    const { data: enc, error: encErr } = await supabase_1.supabaseAdmin
+        .from('hub_encounters')
+        .select('id, clinic_id, hub_appointment_id, status, deleted_at')
+        .eq('id', encounterId.data)
+        .eq('clinic_id', b.clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+    if (encErr)
+        return res.status(500).json({ error: encErr.message });
+    if (!enc)
+        return res.status(404).json({ error: 'Atendimento não encontrado' });
+    if (String(enc.status) === 'cancelled') {
+        return res.status(400).json({ error: 'Não é possível lançar serviços em atendimento cancelado' });
+    }
+    let service;
+    try {
+        service = await loadServiceType(b.clinic_id, b.hub_service_type_id, 'clinica');
+    }
+    catch (e) {
+        return res.status(400).json({ error: e.message });
+    }
+    if (service.is_encounter_application) {
+        return res.status(400).json({
+            error: 'Serviço de aplicação na consulta: use o fluxo Medicação (Aplicado agora).',
+        });
+    }
+    let hub_appointment_service_id = null;
+    let unitOverride = b.unit_amount;
+    const apptId = enc.hub_appointment_id ?? null;
+    if (apptId) {
+        const dedupe = await findAppointmentServiceDedupe(apptId, b.hub_service_type_id);
+        if (dedupe) {
+            hub_appointment_service_id = dedupe.id;
+            if (unitOverride == null && dedupe.sale_amount_applied != null) {
+                unitOverride = dedupe.sale_amount_applied;
+            }
+        }
+    }
+    const resolved = await resolveUnitAndStatus({
+        clinicId: b.clinic_id,
+        userId: req.user?.id,
+        service,
+        unitAmountOverride: unitOverride,
+    });
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_encounter_services')
+        .insert({
+        clinic_id: b.clinic_id,
+        hub_encounter_id: encounterId.data,
+        hub_service_type_id: b.hub_service_type_id,
+        hub_appointment_service_id,
+        service_name: service.name,
+        quantity: b.quantity,
+        unit_amount: resolved.unit_amount,
+        pricing_source: resolved.pricing_source,
+        price_status: hub_appointment_service_id ? 'confirmed' : resolved.price_status,
+        proposed_by_user_id: req.user?.id ?? null,
+        approved_by_user_id: (hub_appointment_service_id || resolved.price_status === 'confirmed') && req.user?.id
+            ? req.user.id
+            : null,
+        approved_at: hub_appointment_service_id || resolved.price_status === 'confirmed'
+            ? new Date().toISOString()
+            : null,
+        billing_mode: b.billing_mode,
+        notes: b.notes ?? null,
+        sort_order: b.sort_order ?? 0,
+    })
+        .select('*')
+        .single();
+    if (error)
+        return res.status(500).json({ error: error.message });
+    await (0, hubComandasController_1.syncOpenComandasAfterEncounterChargeableChange)(b.clinic_id, encounterId.data);
+    return res.status(201).json({ service: data });
+};
+exports.createHubEncounterService = createHubEncounterService;
+const patchHubEncounterService = async (req, res) => {
+    const encounterId = uuidStr.safeParse(req.params.id);
+    const serviceId = uuidStr.safeParse(req.params.serviceId);
+    const parsed = zod_1.z
+        .object({
+        clinic_id: uuidStr,
+        unit_amount: zod_1.z.number().min(0).optional(),
+        quantity: zod_1.z.number().positive().optional(),
+        billing_mode: billingModeSchema.optional(),
+        notes: zod_1.z.string().trim().max(2000).optional().nullable(),
+        sort_order: zod_1.z.number().int().optional(),
+    })
+        .safeParse(req.body);
+    if (!encounterId.success || !serviceId.success || !parsed.success) {
+        return res.status(400).json({ error: 'Dados inválidos' });
+    }
+    const b = parsed.data;
+    const { data: existing, error: getErr } = await supabase_1.supabaseAdmin
+        .from('hub_encounter_services')
+        .select('*')
+        .eq('id', serviceId.data)
+        .eq('hub_encounter_id', encounterId.data)
+        .eq('clinic_id', b.clinic_id)
+        .is('deleted_at', null)
+        .maybeSingle();
+    if (getErr)
+        return res.status(500).json({ error: getErr.message });
+    if (!existing)
+        return res.status(404).json({ error: 'Serviço do atendimento não encontrado' });
+    const update = {};
+    if (b.quantity !== undefined)
+        update.quantity = b.quantity;
+    if (b.billing_mode !== undefined)
+        update.billing_mode = b.billing_mode;
+    if (b.notes !== undefined)
+        update.notes = b.notes;
+    if (b.sort_order !== undefined)
+        update.sort_order = b.sort_order;
+    if (b.unit_amount !== undefined) {
+        let service;
+        try {
+            service = await loadServiceType(b.clinic_id, existing.hub_service_type_id);
+        }
+        catch (e) {
+            return res.status(400).json({ error: e.message });
+        }
+        const resolved = await resolveUnitAndStatus({
+            clinicId: b.clinic_id,
+            userId: req.user?.id,
+            service,
+            unitAmountOverride: b.unit_amount,
+        });
+        update.unit_amount = resolved.unit_amount;
+        update.pricing_source = resolved.pricing_source;
+        update.price_status = resolved.price_status;
+        update.proposed_by_user_id = req.user?.id ?? null;
+        if (resolved.price_status === 'confirmed') {
+            update.approved_by_user_id = req.user?.id ?? null;
+            update.approved_at = new Date().toISOString();
+        }
+        else {
+            update.approved_by_user_id = null;
+            update.approved_at = null;
+        }
+    }
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_encounter_services')
+        .update(update)
+        .eq('id', serviceId.data)
+        .eq('clinic_id', b.clinic_id)
+        .select('*')
+        .maybeSingle();
+    if (error)
+        return res.status(500).json({ error: error.message });
+    await (0, hubComandasController_1.syncOpenComandasAfterEncounterChargeableChange)(b.clinic_id, encounterId.data);
+    return res.json({ service: data });
+};
+exports.patchHubEncounterService = patchHubEncounterService;
+const deleteHubEncounterService = async (req, res) => {
+    const encounterId = uuidStr.safeParse(req.params.id);
+    const serviceId = uuidStr.safeParse(req.params.serviceId);
+    const clinic_id = uuidStr.safeParse(req.query.clinic_id);
+    if (!encounterId.success || !serviceId.success || !clinic_id.success) {
+        return res.status(400).json({ error: 'id, serviceId e clinic_id obrigatórios' });
+    }
+    const { error } = await supabase_1.supabaseAdmin
+        .from('hub_encounter_services')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', serviceId.data)
+        .eq('hub_encounter_id', encounterId.data)
+        .eq('clinic_id', clinic_id.data)
+        .is('deleted_at', null);
+    if (error)
+        return res.status(500).json({ error: error.message });
+    await (0, hubComandasController_1.syncOpenComandasAfterEncounterChargeableChange)(clinic_id.data, encounterId.data);
+    return res.status(204).send();
+};
+exports.deleteHubEncounterService = deleteHubEncounterService;
+const approveHubEncounterServicePrice = async (req, res) => {
+    const encounterId = uuidStr.safeParse(req.params.id);
+    const serviceId = uuidStr.safeParse(req.params.serviceId);
+    const parsed = zod_1.z.object({ clinic_id: uuidStr }).safeParse(req.body);
+    if (!encounterId.success || !serviceId.success || !parsed.success) {
+        return res.status(400).json({ error: 'Dados inválidos' });
+    }
+    const { clinic_id } = parsed.data;
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_encounter_services')
+        .update({
+        price_status: 'confirmed',
+        approved_by_user_id: req.user?.id ?? null,
+        approved_at: new Date().toISOString(),
+    })
+        .eq('id', serviceId.data)
+        .eq('hub_encounter_id', encounterId.data)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .select('*')
+        .maybeSingle();
+    if (error)
+        return res.status(500).json({ error: error.message });
+    if (!data)
+        return res.status(404).json({ error: 'Serviço do atendimento não encontrado' });
+    await (0, hubComandasController_1.syncOpenComandasAfterEncounterChargeableChange)(clinic_id, encounterId.data);
+    return res.json({ service: data });
+};
+exports.approveHubEncounterServicePrice = approveHubEncounterServicePrice;

@@ -4,6 +4,9 @@ import { supabaseAdmin } from '../../config/supabase';
 import { notifyLowStockIfCrossed, notifyExpiryAlertIfNeeded } from './hubInventoryStockAlerts';
 import { parseOptionalEan } from './inventoryEan';
 import {
+  addDaysYmd,
+  daysUntilYmd,
+  includeLotInExpiryAlert,
   inventoryTodayYmd,
   isLotExpired,
   LOT_EXPIRED_CREATE_MSG,
@@ -1362,20 +1365,16 @@ export const listHubExpiringLots = async (req: Request, res: Response) => {
       String(req.query.by_policy || '') === '1' ||
       String(req.query.by_policy || '').toLowerCase() === 'true';
     const within = Math.min(365, Math.max(1, parseInt(String(req.query.within_days || '30'), 10) || 30));
-    const today = new Date();
-    const end = new Date(today);
-    // Para by_policy, busca até 90 dias (máximo das policies d30/d60/d90) e filtra por item.
-    end.setDate(end.getDate() + (byPolicy ? 90 : within));
-    const isoToday = today.toISOString().slice(0, 10);
-    const isoEnd = end.toISOString().slice(0, 10);
+    // Data local (não UTC): inclui lotes já vencidos com saldo + janela à frente.
+    const todayYmd = inventoryTodayYmd();
+    const endYmd = addDaysYmd(todayYmd, byPolicy ? 90 : within);
 
     const { data: lots, error } = await supabaseAdmin
       .from('hub_inventory_lots')
       .select('id, item_id, lot_code, expiry_date, received_at')
       .eq('clinic_id', clinic_id)
       .not('expiry_date', 'is', null)
-      .gte('expiry_date', isoToday)
-      .lte('expiry_date', isoEnd)
+      .lte('expiry_date', endYmd)
       .order('expiry_date', { ascending: true });
 
     if (error) {
@@ -1404,19 +1403,6 @@ export const listHubExpiringLots = async (req: Request, res: Response) => {
       }
     }
 
-    const policyDays = (p: string): number | null => {
-      if (p === 'd30') return 30;
-      if (p === 'd60') return 60;
-      if (p === 'd90') return 90;
-      return null;
-    };
-
-    const daysUntil = (ymd: string): number => {
-      const t0 = Date.parse(`${isoToday}T12:00:00Z`);
-      const t1 = Date.parse(`${ymd}T12:00:00Z`);
-      return Math.round((t1 - t0) / 86400000);
-    };
-
     const enriched = (lots ?? [])
       .map((l) => {
         const qty = byLot.get(l.id as string) ?? 0;
@@ -1426,9 +1412,14 @@ export const listHubExpiringLots = async (req: Request, res: Response) => {
           expiry_alert_policy: 'none',
           sale_purpose: null as string | null,
         };
+        const expiry = (l.expiry_date as string | null) ?? null;
+        const expired = isLotExpired(expiry, todayYmd);
+        const daysUntil = expiry ? daysUntilYmd(expiry, todayYmd) : null;
         return {
           ...l,
           qty_on_hand: qty,
+          expired,
+          days_until: daysUntil,
           item: {
             name: meta.name,
             item_kind: meta.item_kind,
@@ -1441,11 +1432,12 @@ export const listHubExpiringLots = async (req: Request, res: Response) => {
       .filter((l) => {
         if (l.qty_on_hand <= 0) return false;
         if (!matchesSalePurpose(l.sale_purpose, salePurpose)) return false;
-        if (!byPolicy) return true;
-        const days = policyDays(l.expiry_alert_policy);
-        if (days == null) return false;
-        if (!l.expiry_date) return false;
-        return daysUntil(l.expiry_date as string) <= days;
+        return includeLotInExpiryAlert({
+          byPolicy,
+          expiryDate: l.expiry_date as string | null,
+          expiryAlertPolicy: l.expiry_alert_policy,
+          todayYmd,
+        });
       });
 
     return res.json({ lots: enriched });

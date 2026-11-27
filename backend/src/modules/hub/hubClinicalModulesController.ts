@@ -879,6 +879,7 @@ export const createHubVaccination = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Item de estoque de vacina inválido ou inativo.' });
     }
     priceSnapshot = Number(inventoryItem.sale_amount);
+    // Item do estoque exige lote: baixa 1 un. e evita faturar sem movimento de estoque.
     inventoryLot = await assertClinicInventoryLot(b.clinic_id, b.hub_inventory_lot_id);
     if (!inventoryLot || inventoryLot.item_id !== b.hub_inventory_item_id) {
       return res.status(400).json({ error: 'Lote inválido para o item de vacina selecionado.' });

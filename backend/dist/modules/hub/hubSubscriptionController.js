@@ -40,20 +40,19 @@ exports.getHubSubscriptionMe = (0, errorHandler_js_1.asyncHandler)(async (req, r
         throw new errors_js_1.ValidationError('Nenhuma clínica vinculada a esta conta.');
     const sub = await (0, hubSubscriptionService_js_1.getClinicSubscription)(clinic.clinicId);
     const catalog = await (0, hubSubscriptionService_js_1.listPublicPlansAndModules)();
+    const sessionSub = await (0, hubSubscriptionService_js_1.toSessionSubscriptionPayloadAsync)(sub);
     res.json({
         mercado_pago_configured: (0, hubMercadoPago_js_1.mercadoPagoConfigured)(),
         can_checkout: clinic.role === 'CADMIN',
         mode: catalog.mode,
         paid_plans: catalog.paid_plans,
-        subscription: sub
+        subscription: sessionSub
             ? {
-                ...(0, hubSubscriptionService_js_1.toSessionSubscriptionPayload)(sub),
-                plan_name: sub.hub_platform_plans?.name ?? null,
-                monthly_price_cents: sub.hub_platform_plans?.monthly_price_cents ?? null,
-                max_units: sub.hub_platform_plans?.max_units ?? null,
-                max_users: sub.hub_platform_plans?.max_users ?? null,
-                current_period_end: sub.current_period_end ?? null,
-                mp_preapproval_id: sub.mp_preapproval_id ?? null,
+                ...sessionSub,
+                plan_name: sub?.hub_platform_plans?.name ?? null,
+                monthly_price_cents: sub?.hub_platform_plans?.monthly_price_cents ?? null,
+                current_period_end: sub?.current_period_end ?? null,
+                mp_preapproval_id: sub?.mp_preapproval_id ?? null,
             }
             : null,
     });
@@ -116,13 +115,13 @@ exports.postHubSubscriptionSync = (0, errorHandler_js_1.asyncHandler)(async (req
     const sub = await (0, hubSubscriptionService_js_1.getClinicSubscription)(clinic.clinicId);
     if (!sub?.mp_preapproval_id) {
         res.json({
-            subscription: sub ? (0, hubSubscriptionService_js_1.toSessionSubscriptionPayload)(sub) : null,
+            subscription: await (0, hubSubscriptionService_js_1.toSessionSubscriptionPayloadAsync)(sub),
             synced: false,
         });
         return;
     }
     if (!(0, hubMercadoPago_js_1.mercadoPagoConfigured)()) {
-        res.json({ subscription: (0, hubSubscriptionService_js_1.toSessionSubscriptionPayload)(sub), synced: false });
+        res.json({ subscription: await (0, hubSubscriptionService_js_1.toSessionSubscriptionPayloadAsync)(sub), synced: false });
         return;
     }
     try {
@@ -139,7 +138,7 @@ exports.postHubSubscriptionSync = (0, errorHandler_js_1.asyncHandler)(async (req
     }
     const fresh = await (0, hubSubscriptionService_js_1.getClinicSubscription)(clinic.clinicId);
     res.json({
-        subscription: fresh ? (0, hubSubscriptionService_js_1.toSessionSubscriptionPayload)(fresh) : null,
+        subscription: await (0, hubSubscriptionService_js_1.toSessionSubscriptionPayloadAsync)(fresh),
         synced: true,
     });
 });

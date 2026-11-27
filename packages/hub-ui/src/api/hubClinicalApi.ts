@@ -546,6 +546,7 @@ export const hubEncountersApi = {
     encounter_type?: 'consultation' | 'emergency';
     care_location_kind?: 'own_unit' | 'partner_clinic';
     hub_partner_clinic_id?: string | null;
+    allow_duplicate_open?: boolean;
   }) {
     return apiRequest(`${encBase}/check-in`, {
       method: 'POST',

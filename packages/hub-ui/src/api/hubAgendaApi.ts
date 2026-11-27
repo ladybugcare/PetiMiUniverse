@@ -311,6 +311,8 @@ export type PatchHubAppointmentPayload = {
   extra_blocks?: CreateExtraBlock[];
   /** Permite sobrepor outro slot após confirmação explícita do usuário. */
   allow_schedule_overlap?: boolean;
+  /** Confirma segundo encaixe clínico do mesmo pet com atendimento/encaixe em aberto. */
+  allow_duplicate_open?: boolean;
 };
 
 function listAppointmentsUrl(p: ListHubAppointmentsParams): string {

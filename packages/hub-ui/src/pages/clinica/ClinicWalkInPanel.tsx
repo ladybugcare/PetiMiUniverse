@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { User, Dog, Loader2, Stethoscope, Calendar, Siren, Info, Zap } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { User, Dog, Loader2, Stethoscope, Calendar, Siren, Info, Zap, Plus } from 'lucide-react';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
@@ -9,6 +9,10 @@ import { hubGuardiansApi, type HubGuardianPet } from '../../api/hubGuardiansApi'
 import { hubServiceTypesApi, type HubServiceType } from '../../api/hubServiceTypesApi';
 import { isOperationalClinicalGroup, normalizeServiceGroupSlug, serviceGroupLabel } from '../../utils/serviceTypeSlug';
 import type { NewAppointmentInitial } from '../agenda/NewAppointmentModal';
+import {
+  ReceptionQuickRegisterPanel,
+  type QuickRegisterSaveResult,
+} from '../agenda/ReceptionQuickRegisterPanel';
 import {
   CareLocationFields,
   type CareLocationValue,
@@ -71,6 +75,29 @@ const ClinicWalkInPanel: React.FC<Props> = ({
     care_location_kind: 'own_unit',
     hub_partner_clinic_id: null,
   });
+  const [quickRegisterOpen, setQuickRegisterOpen] = useState(false);
+  const [quickRegisterPetsOnly, setQuickRegisterPetsOnly] = useState(false);
+  /** Pet recém-criado no cadastro rápido — aplicado após o reload da lista. */
+  const pendingPetIdRef = useRef<string | null>(null);
+
+  const reloadGuardianOptions = useCallback(async () => {
+    if (!clinicId) return;
+    setGuardiansLoading(true);
+    try {
+      const { guardians } = await hubGuardiansApi.list(clinicId, false, { status: 'active' });
+      setGuardianOptions(
+        guardians.map((g) => ({
+          value: g.id,
+          label: g.full_name,
+          icon: <User size={18} strokeWidth={2} aria-hidden />,
+        })),
+      );
+    } catch {
+      setGuardianOptions([]);
+    } finally {
+      setGuardiansLoading(false);
+    }
+  }, [clinicId]);
 
   useEffect(() => {
     if (!open) {
@@ -84,6 +111,9 @@ const ClinicWalkInPanel: React.FC<Props> = ({
       setRoutineAgendaMode('immediate');
       setClinicalServiceRows([]);
       setCareLocation({ care_location_kind: 'own_unit', hub_partner_clinic_id: null });
+      setQuickRegisterOpen(false);
+      setQuickRegisterPetsOnly(false);
+      pendingPetIdRef.current = null;
       return;
     }
     if (!clinicId) return;
@@ -95,21 +125,8 @@ const ClinicWalkInPanel: React.FC<Props> = ({
 
   useEffect(() => {
     if (!open || !clinicId) return;
-    setGuardiansLoading(true);
-    void hubGuardiansApi
-      .list(clinicId, false, { status: 'active' })
-      .then(({ guardians }) => {
-        setGuardianOptions(
-          guardians.map((g) => ({
-            value: g.id,
-            label: g.full_name,
-            icon: <User size={18} strokeWidth={2} aria-hidden />,
-          })),
-        );
-      })
-      .catch(() => setGuardianOptions([]))
-      .finally(() => setGuardiansLoading(false));
-  }, [open, clinicId]);
+    void reloadGuardianOptions();
+  }, [open, clinicId, reloadGuardianOptions]);
 
   useEffect(() => {
     if (!open || !clinicId) return;
@@ -137,14 +154,63 @@ const ClinicWalkInPanel: React.FC<Props> = ({
       return;
     }
     void hubGuardiansApi.getById(guardianId, clinicId).then(({ pets }) => {
-      setGuardianPets(pets ?? []);
+      const list = pets ?? [];
+      setGuardianPets(list);
+      const pending = pendingPetIdRef.current;
+      if (pending && list.some((p) => p.id === pending)) {
+        pendingPetIdRef.current = null;
+        setPetId(pending);
+        return;
+      }
       setPetId((prev) => {
-        if (prev && pets.some((p) => p.id === prev)) return prev;
-        if (pets.length === 1) return pets[0]!.id;
+        if (prev && list.some((p) => p.id === prev)) return prev;
+        if (list.length === 1) return list[0]!.id;
         return '';
       });
     });
   }, [guardianId, clinicId]);
+
+  const applyQuickRegisterResult = useCallback(
+    async (result: QuickRegisterSaveResult) => {
+      await reloadGuardianOptions();
+      const focusPetId =
+        result.pets.length > 0 ? result.pets[result.pets.length - 1]!.id : null;
+      pendingPetIdRef.current = focusPetId;
+
+      if (result.guardian.id === guardianId) {
+        if (!clinicId) return;
+        const { pets } = await hubGuardiansApi.getById(result.guardian.id, clinicId);
+        const list = pets ?? [];
+        setGuardianPets(list);
+        if (focusPetId && list.some((p) => p.id === focusPetId)) {
+          pendingPetIdRef.current = null;
+          setPetId(focusPetId);
+        } else if (list.length === 1) {
+          pendingPetIdRef.current = null;
+          setPetId(list[0]!.id);
+        }
+        return;
+      }
+
+      setGuardianId(result.guardian.id);
+    },
+    [clinicId, guardianId, reloadGuardianOptions],
+  );
+
+  const openQuickRegisterFull = useCallback(() => {
+    setQuickRegisterPetsOnly(false);
+    setQuickRegisterOpen(true);
+  }, []);
+
+  const openQuickRegisterPetsOnly = useCallback(() => {
+    setQuickRegisterPetsOnly(true);
+    setQuickRegisterOpen(true);
+  }, []);
+
+  const guardianName = useMemo(
+    () => guardianOptions.find((g) => g.value === guardianId)?.label ?? '',
+    [guardianOptions, guardianId],
+  );
 
   const staffOptions: HubComboboxOption[] = useMemo(
     () => staff.filter((s) => s.active !== false).map((s) => ({ value: s.id, label: s.full_name })),
@@ -283,6 +349,7 @@ const ClinicWalkInPanel: React.FC<Props> = ({
   );
 
   return (
+    <>
     <HubSidePanel
       open={open}
       onClose={onClose}
@@ -354,6 +421,17 @@ const ClinicWalkInPanel: React.FC<Props> = ({
                   </div>
                 )}
               </div>
+            </div>
+
+            <div className="nam-row">
+              <button
+                type="button"
+                className="nam-quick-register-btn"
+                onClick={guardianId ? openQuickRegisterPetsOnly : openQuickRegisterFull}
+              >
+                <Plus size={16} strokeWidth={2} aria-hidden />
+                {guardianId ? 'Cadastrar outros pets' : 'Cadastrar tutor e pets'}
+              </button>
             </div>
 
             <div className="nam-intake-walkin-entry-compact">
@@ -514,6 +592,19 @@ const ClinicWalkInPanel: React.FC<Props> = ({
         </div>
       </div>
     </HubSidePanel>
+    <ReceptionQuickRegisterPanel
+      open={quickRegisterOpen}
+      clinicId={clinicId}
+      petsOnly={quickRegisterPetsOnly}
+      existingGuardianId={guardianId || undefined}
+      existingGuardianName={guardianName || undefined}
+      onClose={() => {
+        setQuickRegisterOpen(false);
+        setQuickRegisterPetsOnly(false);
+      }}
+      onSaved={applyQuickRegisterResult}
+    />
+    </>
   );
 };
 

@@ -6,16 +6,22 @@ exports.pickActiveReceivableId = pickActiveReceivableId;
 exports.matchesFinanceiroDayBoardScope = matchesFinanceiroDayBoardScope;
 exports.hasFinanceiroChargeableAmount = hasFinanceiroChargeableAmount;
 exports.aggregateReceivableStatus = aggregateReceivableStatus;
+const groomingStages_1 = require("./groomingStages");
 function isDayBoardOperationallyComplete(originType, operationalStatus) {
     switch (originType) {
         case 'appointment':
             return operationalStatus === 'done' || operationalStatus === 'paid';
         case 'grooming_session':
-            return operationalStatus === 'closed';
+            // Alinhado à comanda: Pronto (e legado entregue/encerrado) = serviço concluído.
+            return (0, groomingStages_1.isGroomingServiceOperationallyDone)(operationalStatus);
         case 'encounter':
             return operationalStatus === 'completed';
         case 'boarding_reservation':
             return operationalStatus === 'checked_out';
+        case 'hospitalization':
+            return (operationalStatus === 'discharged' ||
+                operationalStatus === 'death' ||
+                operationalStatus === 'transferred');
         case 'quote':
         case 'manual':
             return true;
@@ -24,6 +30,9 @@ function isDayBoardOperationallyComplete(originType, operationalStatus) {
     }
 }
 function isDayBoardPaidAndComplete(originType, operationalStatus, receivableStatus) {
+    if (receivableStatus === 'refunded' || receivableStatus === 'cancelled') {
+        return isDayBoardOperationallyComplete(originType, operationalStatus);
+    }
     return receivableStatus === 'paid' && isDayBoardOperationallyComplete(originType, operationalStatus);
 }
 function pickActiveReceivableId(statusesWithIds) {
@@ -34,9 +43,19 @@ function pickActiveReceivableId(statusesWithIds) {
     if (partial)
         return partial.id;
     const paid = statusesWithIds.find((r) => r.status === 'paid');
-    return paid?.id ?? null;
+    if (paid)
+        return paid.id;
+    const refunded = statusesWithIds.find((r) => r.status === 'refunded');
+    if (refunded)
+        return refunded.id;
+    const cancelled = statusesWithIds.find((r) => r.status === 'cancelled');
+    return cancelled?.id ?? null;
 }
 function matchesFinanceiroDayBoardScope(billing) {
+    // Reembolso/cancelamento não é conta a receber — mesmo com handoff da comanda.
+    if (billing.receivable_status === 'refunded' || billing.receivable_status === 'cancelled') {
+        return false;
+    }
     if (billing.finance_handoff_at)
         return true;
     if (billing.receivable_status === 'pending' || billing.receivable_status === 'partially_paid')
@@ -59,7 +78,11 @@ function aggregateReceivableStatus(statuses) {
         return 'pending';
     if (statuses.some((s) => s === 'partially_paid'))
         return 'partially_paid';
-    if (statuses.every((s) => s === 'paid'))
+    if (statuses.some((s) => s === 'paid'))
         return 'paid';
+    if (statuses.some((s) => s === 'refunded'))
+        return 'refunded';
+    if (statuses.every((s) => s === 'cancelled'))
+        return 'cancelled';
     return null;
 }

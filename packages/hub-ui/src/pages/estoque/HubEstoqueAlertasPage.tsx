@@ -18,6 +18,7 @@ import {
 } from './estoqueShared';
 import { formatStockQty } from './inventoryContentUtils';
 import { filterItemsBySalePurpose, isClinicalSalePurpose } from '../../utils/inventorySalePurpose';
+import { isLotExpired } from '../../utils/inventoryLotExpiry';
 import { usesClinicalStockScope } from '../finance/hubRelatoriosConfig';
 import '../clientes/clientes.css';
 import '../servicos/servicos-page.css';
@@ -30,6 +31,22 @@ const VIEW_FILTERS: { id: EstoqueAlertasView; label: string }[] = [
 
 function formatExpiry(date: string | null | undefined): string {
   return date ? new Date(`${date}T12:00:00`).toLocaleDateString('pt-BR') : '—';
+}
+
+function lotIsExpired(lot: HubInventoryLotRow): boolean {
+  if (lot.expired === true) return true;
+  return isLotExpired(lot.expiry_date);
+}
+
+function ExpiryCell({ lot }: { lot: HubInventoryLotRow }) {
+  const dateLabel = formatExpiry(lot.expiry_date);
+  if (!lotIsExpired(lot)) return <>{dateLabel}</>;
+  return (
+    <span className="hub-estoque__expiry-cell">
+      {dateLabel}{' '}
+      <span className="hub-clientes__pill hub-clientes__pill--inactive-alert">Vencido</span>
+    </span>
+  );
 }
 
 const HubEstoqueAlertasPage: React.FC = () => {
@@ -190,11 +207,11 @@ const HubEstoqueAlertasPage: React.FC = () => {
               <p className="hub-clientes__muted hub-servicos-config__lead">
                 {clinicalStock
                   ? view === 'validade'
-                    ? 'Lotes de uso clínico a vencer no período escolhido.'
+                    ? 'Lotes de uso clínico vencidos com saldo e a vencer no período escolhido.'
                     : 'Alertas só de itens de uso clínico — sem produtos de venda ou consumo interno.'
                   : view === 'validade'
-                    ? 'Consulta livre de lotes a vencer no período escolhido, independente da política do item.'
-                    : 'Estoque abaixo do mínimo, embalagens quase vazias e lotes dentro da política de validade de cada item.'}
+                    ? 'Consulta livre: lotes vencidos com saldo e a vencer no período, independente da política do item.'
+                    : 'Estoque abaixo do mínimo, embalagens quase vazias, lotes vencidos com saldo e validade na política de cada item.'}
               </p>
             </div>
           </div>
@@ -249,11 +266,11 @@ const HubEstoqueAlertasPage: React.FC = () => {
               </div>
               <div className="hub-servicos__metric-card">
                 <div className="hub-servicos__metric-card__text">
-                  <div className="hub-servicos__metric-label">Validade na política</div>
+                  <div className="hub-servicos__metric-label">Validade / vencidos</div>
                   <div className="hub-servicos__metric-value">
                     {loading ? '—' : expiringPolicy.length.toLocaleString('pt-BR')}
                   </div>
-                  <div className="hub-servicos__metric-sub">Lotes no prazo do item</div>
+                  <div className="hub-servicos__metric-sub">Na política ou já vencidos</div>
                 </div>
                 <div
                   className={`hub-servicos__metric-icon${expiringPolicy.length > 0 ? '' : ' hub-servicos__metric-icon--muted'}`}
@@ -267,11 +284,13 @@ const HubEstoqueAlertasPage: React.FC = () => {
             <div className="hub-servicos__metrics hub-estoque__metrics" aria-live="polite">
               <div className="hub-servicos__metric-card">
                 <div className="hub-servicos__metric-card__text">
-                  <div className="hub-servicos__metric-label">Lotes a vencer</div>
+                  <div className="hub-servicos__metric-label">Validade / vencidos</div>
                   <div className="hub-servicos__metric-value">
                     {loading ? '—' : expiringPeriod.length.toLocaleString('pt-BR')}
                   </div>
-                  <div className="hub-servicos__metric-sub">Nos próximos {within} dias</div>
+                  <div className="hub-servicos__metric-sub">
+                    Vencidos com saldo + próximos {within} dias
+                  </div>
                 </div>
                 <div
                   className={`hub-servicos__metric-icon${expiringPeriod.length > 0 ? '' : ' hub-servicos__metric-icon--muted'}`}
@@ -303,7 +322,7 @@ const HubEstoqueAlertasPage: React.FC = () => {
                     {validadeEmpty ? (
                       <tr>
                         <td colSpan={5} className="hub-clientes__muted" style={{ textAlign: 'center', padding: 24 }}>
-                          Nenhum lote a vencer neste período com estoque positivo.
+                          Nenhum lote vencido ou a vencer neste período com estoque positivo.
                         </td>
                       </tr>
                     ) : (
@@ -318,7 +337,9 @@ const HubEstoqueAlertasPage: React.FC = () => {
                             </span>
                           </td>
                           <td>{l.lot_code || '—'}</td>
-                          <td>{formatExpiry(l.expiry_date)}</td>
+                          <td>
+                            <ExpiryCell lot={l} />
+                          </td>
                           <td>{l.qty_on_hand}</td>
                         </tr>
                       ))
@@ -326,10 +347,10 @@ const HubEstoqueAlertasPage: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-              <div className="hub-clientes__mobile-list" aria-label="Lotes a vencer">
+              <div className="hub-clientes__mobile-list" aria-label="Lotes vencidos ou a vencer">
                 {validadeEmpty ? (
                   <p className="hub-clientes__muted" style={{ textAlign: 'center', padding: 16 }}>
-                    Nenhum lote a vencer neste período com estoque positivo.
+                    Nenhum lote vencido ou a vencer neste período com estoque positivo.
                   </p>
                 ) : (
                   expiringPeriod.map((l) => (
@@ -347,7 +368,9 @@ const HubEstoqueAlertasPage: React.FC = () => {
                         <span className={`hub-estoque__kind hub-estoque__kind--${l.item?.item_kind || 'product'}`}>
                           {kindLabel(l.item?.item_kind)}
                         </span>
-                        <span className="hub-clientes__muted">Validade {formatExpiry(l.expiry_date)}</span>
+                        <span className="hub-clientes__muted">
+                          Validade <ExpiryCell lot={l} />
+                        </span>
                       </div>
                     </div>
                   ))
@@ -563,7 +586,7 @@ const HubEstoqueAlertasPage: React.FC = () => {
               </section>
 
               <section className="hub-estoque__alert-panel">
-                <h2 className="hub-estoque__alert-title">Validade na política do item</h2>
+                <h2 className="hub-estoque__alert-title">Validade na política e lotes vencidos</h2>
                 <div className="hub-servicos__table-wrap hub-clientes__table-wrap--desktop">
                   <table className="hub-clientes__table">
                     <thead>
@@ -578,7 +601,7 @@ const HubEstoqueAlertasPage: React.FC = () => {
                       {expiringPolicy.length === 0 ? (
                         <tr>
                           <td colSpan={4} className="hub-clientes__muted" style={{ textAlign: 'center', padding: 16 }}>
-                            Nenhum lote na janela da política.
+                            Nenhum lote vencido nem na janela da política.
                           </td>
                         </tr>
                       ) : (
@@ -593,7 +616,9 @@ const HubEstoqueAlertasPage: React.FC = () => {
                               </div>
                             </td>
                             <td className="hub-clientes__muted">{l.lot_code || '—'}</td>
-                            <td>{formatExpiry(l.expiry_date)}</td>
+                            <td>
+                              <ExpiryCell lot={l} />
+                            </td>
                             <td>{l.qty_on_hand}</td>
                           </tr>
                         ))
@@ -601,10 +626,10 @@ const HubEstoqueAlertasPage: React.FC = () => {
                     </tbody>
                   </table>
                 </div>
-                <div className="hub-clientes__mobile-list" aria-label="Validade na política">
+                <div className="hub-clientes__mobile-list" aria-label="Validade na política e lotes vencidos">
                   {expiringPolicy.length === 0 ? (
                     <p className="hub-clientes__muted" style={{ textAlign: 'center', padding: 12 }}>
-                      Nenhum lote na janela da política.
+                      Nenhum lote vencido nem na janela da política.
                     </p>
                   ) : (
                     expiringPolicy.map((l) => (
@@ -622,7 +647,9 @@ const HubEstoqueAlertasPage: React.FC = () => {
                           <span className={`hub-estoque__kind hub-estoque__kind--${l.item?.item_kind || 'product'}`}>
                             {kindLabel(l.item?.item_kind)}
                           </span>
-                          <span className="hub-clientes__muted">Validade {formatExpiry(l.expiry_date)}</span>
+                          <span className="hub-clientes__muted">
+                            Validade <ExpiryCell lot={l} />
+                          </span>
                         </div>
                       </div>
                     ))

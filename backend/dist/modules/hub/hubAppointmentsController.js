@@ -41,16 +41,24 @@ const hubServiceGroupsController_1 = require("./hubServiceGroupsController");
 const hubClinicSettingsController_1 = require("./hubClinicSettingsController");
 const hubServiceTypesPricingMatrix_1 = require("./hubServiceTypesPricingMatrix");
 const hubPickupPricing_1 = require("./hubPickupPricing");
+const hubSeriesSchedulePatch_1 = require("./hubSeriesSchedulePatch");
+const hubNoShowUtils_1 = require("./hubNoShowUtils");
+const hubAppointmentManualStatus_1 = require("./hubAppointmentManualStatus");
 const hubPricingResolve_1 = require("./hubPricingResolve");
 const hubComandasController_1 = require("./hubComandasController");
+const hubComandaOperationalCancel_1 = require("./hubComandaOperationalCancel");
 const hubPackagesService_1 = require("./hubPackagesService");
 const hubSeriesBillingService_1 = require("./hubSeriesBillingService");
 const hubRecurrenceService_1 = require("./hubRecurrenceService");
 const hubSeriesEndingSoonService_1 = require("./hubSeriesEndingSoonService");
+const hubSeriesEndingSoonQuery_1 = require("./hubSeriesEndingSoonQuery");
+const hubNotifyEvents_1 = require("./hubNotifyEvents");
 const hubCareLocation_1 = require("./hubCareLocation");
+const boardingPricing_1 = require("./boardingPricing");
 const hubSpecialPrices_1 = require("./hubSpecialPrices");
 const hubSpecialPricesController_1 = require("./hubSpecialPricesController");
 const hubSurgeryFromAppointment_1 = require("./hubSurgeryFromAppointment");
+const hubClinicalAppointmentMirror_1 = require("./hubClinicalAppointmentMirror");
 const hubResourceConflict_1 = require("./hubResourceConflict");
 const hubResourcesService_1 = require("./hubResourcesService");
 const appointmentBlockRules_1 = require("./appointmentBlockRules");
@@ -100,6 +108,7 @@ const appointmentStatusSchema = zod_1.z.enum([
     'done',
     'cancelled',
     'paid',
+    'no_show',
 ]);
 const appointmentKindSchema = zod_1.z.enum([
     'standard',
@@ -152,7 +161,7 @@ function isResourceConflict(resourceLabel, resourceId, unitId, other) {
     });
 }
 function rowConflictsWith(row, staffId, resourceLabel, resourceId, unitId, startsAt, endsAt) {
-    if (row.status === 'cancelled')
+    if (row.status === 'cancelled' || row.status === 'no_show')
         return false;
     if (!intervalsOverlap(startsAt, endsAt, row.starts_at, row.ends_at))
         return false;
@@ -188,7 +197,7 @@ async function assertNoScheduleConflict(clinicId, excludeIds, staffId, resourceL
     return { conflict: false, reason: '' };
 }
 function buildOccurrenceConflictWindows(b, occDate, useShift, standalonePickupMode) {
-    const shift = (ts) => (useShift ? shiftTimestampToDate(ts, occDate) : ts);
+    const shift = (ts) => (useShift ? (0, hubSeriesSchedulePatch_1.shiftTimestampToDate)(ts, occDate) : ts);
     const windows = [];
     if (b.with_pickup_route_before) {
         const pb = b.with_pickup_route_before;
@@ -239,6 +248,26 @@ function buildOccurrenceConflictWindows(b, occDate, useShift, standalonePickupMo
         });
     }
     return windows;
+}
+/** Conflito entre janelas do mesmo create (principal × bloco extra, L&T, etc.). */
+function findMutualOccurrenceWindowConflict(windows) {
+    for (let i = 0; i < windows.length; i++) {
+        const a = windows[i];
+        for (let j = i + 1; j < windows.length; j++) {
+            const b = windows[j];
+            if (!intervalsOverlap(a.starts, a.ends, b.starts, b.ends))
+                continue;
+            const staffConflict = Boolean(a.staff && b.staff && a.staff === b.staff);
+            const resourceConflict = (0, hubResourceConflict_1.isResourceScheduleConflict)({ hubResourceId: a.resourceId ?? null, resourceLabel: a.resource, unitId: null }, { hubResourceId: b.resourceId ?? null, resourceLabel: b.resource, unitId: null, releasedAt: null });
+            if (!staffConflict && !resourceConflict)
+                continue;
+            const reason = staffConflict
+                ? 'Horário em conflito com outro atendimento do mesmo profissional.'
+                : 'Horário em conflito com outro atendimento no mesmo recurso/sala.';
+            return { reason: `${b.label}: ${reason}`, label: b.label };
+        }
+    }
+    return null;
 }
 function scheduleConflictJson(error, extra) {
     return {
@@ -614,13 +643,6 @@ async function refreshSnapshotsForAppointment(clinicId, appointmentId, startsAt,
     }
 }
 // ── Recurrence helpers ──────────────────────────────────────────────────────
-function shiftTimestampToDate(originalTs, newDate) {
-    // keep time portion from originalTs, apply to newDate
-    const orig = new Date(originalTs);
-    const [y, m, d] = newDate.split('-').map(Number);
-    orig.setUTCFullYear(y, m - 1, d);
-    return orig.toISOString();
-}
 /** UUID determinístico por data — agrupa irmãos multi-pet na mesma visita recorrente. */
 function visitGroupIdForOccurrence(baseGroupId, occDate) {
     const hash = (0, crypto_1.createHash)('sha256').update(`${baseGroupId}:${occDate}`).digest();
@@ -872,6 +894,7 @@ const recurrenceSchema = zod_1.z.object({
     invoice_due_rule: zod_1.z.enum(['same_day', 'plus_days', 'fixed_day']).optional().nullable(),
     invoice_due_day: zod_1.z.number().int().min(1).max(28).optional().nullable(),
     invoice_due_plus_days: zod_1.z.number().int().min(0).max(90).optional().nullable(),
+    invoice_discount_percent: zod_1.z.number().min(0).max(100).optional().nullable(),
 });
 const extraBlockSchema = extraBlockBaseSchema.extend({
     recurrence: recurrenceSchema.optional().nullable(),
@@ -1018,16 +1041,86 @@ function isStructuralAppointmentPatch(body) {
         (body.services !== undefined && body.services.length > 0) ||
         body.extra_blocks !== undefined);
 }
+/** Check-in/cancel/notas não devem travar por overlap já aceito na criação. */
+function isScheduleRelevantAppointmentPatch(body) {
+    return (body.hub_staff_member_id !== undefined ||
+        body.starts_at !== undefined ||
+        body.ends_at !== undefined ||
+        body.hub_resource_id !== undefined ||
+        body.resource_label !== undefined ||
+        body.unit_id !== undefined ||
+        body.care_location_kind !== undefined ||
+        body.hub_partner_clinic_id !== undefined);
+}
+/** Patch que reenvia horário/staff/recurso iguais ao atual — não reabre soft conflict (ex.: só nota). */
+function scheduleSlotUnchanged(existing, next) {
+    const sameMs = (a, b) => {
+        const ta = new Date(String(a ?? '')).getTime();
+        const tb = new Date(b).getTime();
+        return Number.isFinite(ta) && Number.isFinite(tb) && ta === tb;
+    };
+    const norm = (v) => {
+        if (v == null)
+            return null;
+        const t = String(v).trim();
+        return t && t !== '—' ? t : null;
+    };
+    return (sameMs(existing.starts_at, next.starts) &&
+        sameMs(existing.ends_at, next.ends) &&
+        (existing.hub_staff_member_id ?? null) === (next.staff ?? null) &&
+        (existing.hub_resource_id ?? null) === (next.resourceId ?? null) &&
+        norm(existing.resource_label) === norm(next.resourceLabel) &&
+        (existing.unit_id ?? null) === (next.unitId ?? null));
+}
+async function loadRelatedScheduleExcludeIds(clinicId, appointmentId, existing) {
+    const ids = new Set([appointmentId]);
+    const parentId = existing.parent_appointment_id;
+    if (parentId)
+        ids.add(parentId);
+    const visitGroupId = existing.visit_group_id;
+    const { data: children } = await supabase_1.supabaseAdmin
+        .from('hub_appointments')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .eq('parent_appointment_id', appointmentId)
+        .is('deleted_at', null);
+    for (const row of children ?? [])
+        ids.add(row.id);
+    if (parentId) {
+        const { data: siblings } = await supabase_1.supabaseAdmin
+            .from('hub_appointments')
+            .select('id')
+            .eq('clinic_id', clinicId)
+            .eq('parent_appointment_id', parentId)
+            .is('deleted_at', null);
+        for (const row of siblings ?? [])
+            ids.add(row.id);
+    }
+    if (visitGroupId) {
+        const { data: visitSiblings } = await supabase_1.supabaseAdmin
+            .from('hub_appointments')
+            .select('id')
+            .eq('clinic_id', clinicId)
+            .eq('visit_group_id', visitGroupId)
+            .is('deleted_at', null);
+        for (const row of visitSiblings ?? [])
+            ids.add(row.id);
+    }
+    return [...ids];
+}
 async function syncExtraBlocksForParent(clinicId, parentId, parentRow, blocks, excludeConflictIds, allowScheduleOverlap = false) {
     const { data: existingChildren, error: childErr } = await supabase_1.supabaseAdmin
         .from('hub_appointments')
-        .select('id')
+        .select('id, status')
         .eq('clinic_id', clinicId)
         .eq('parent_appointment_id', parentId)
         .is('deleted_at', null);
     if (childErr)
         return { error: childErr.message, status: 500 };
-    const existingChildIds = (existingChildren ?? []).map((r) => r.id);
+    const LOCKED_EXTRA_BLOCK_STATUSES = new Set(['done', 'paid', 'cancelled', 'no_show']);
+    const existingChildRows = (existingChildren ?? []);
+    const existingChildIds = existingChildRows.map((r) => r.id);
+    const lockedChildIds = new Set(existingChildRows.filter((r) => LOCKED_EXTRA_BLOCK_STATUSES.has(String(r.status ?? ''))).map((r) => r.id));
     const keepIds = new Set();
     const apptOverride = parentRow.pricing_porte_tier ?? null;
     const apptCoatOverride = parentRow.pricing_coat_type ?? null;
@@ -1179,6 +1272,9 @@ async function syncExtraBlocksForParent(clinicId, parentId, parentRow, blocks, e
     for (const childId of existingChildIds) {
         if (keepIds.has(childId))
             continue;
+        // Filtrado no UI de edição: não soft-deletar filhos já encerrados omitidos do payload.
+        if (lockedChildIds.has(childId))
+            continue;
         await supabase_1.supabaseAdmin
             .from('hub_appointments')
             .update({ deleted_at: now })
@@ -1280,7 +1376,7 @@ const getHubAppointmentsStatsByServiceGroup = async (req, res) => {
             .select('hub_service_type_id')
             .eq('clinic_id', clinic_id)
             .is('deleted_at', null)
-            .neq('status', 'cancelled')
+            .not('status', 'in', '("cancelled","no_show")')
             .lt('starts_at', toIso)
             .gt('ends_at', fromIso)
             .or(`unit_id.eq.${unit_id},unit_id.is.null`);
@@ -1339,61 +1435,15 @@ const listHubSeriesEndingSoon = async (req, res) => {
             return res.status(400).json({ error: parsed.error.flatten() });
         }
         const { clinic_id, max_remaining, within_days } = parsed.data;
-        const now = new Date();
-        const { data: rows, error } = await supabase_1.supabaseAdmin
-            .from('hub_appointments')
-            .select('id, series_id, starts_at, pet_id, guardian_id, title, status')
-            .eq('clinic_id', clinic_id)
-            .not('series_id', 'is', null)
-            .is('deleted_at', null)
-            .neq('status', 'cancelled')
-            .gte('starts_at', now.toISOString())
-            .order('starts_at', { ascending: true })
-            .limit(5000);
-        if (error)
-            return res.status(500).json({ error: error.message });
-        const future = (rows ?? [])
-            .filter((r) => typeof r.series_id === 'string')
-            .map((r) => ({
-            id: r.id,
-            series_id: r.series_id,
-            starts_at: r.starts_at,
-            pet_id: r.pet_id ?? null,
-            guardian_id: r.guardian_id ?? null,
-            title: r.title ?? null,
-        }));
-        const ending = (0, hubSeriesEndingSoonService_1.filterEndingSoonSeries)((0, hubSeriesEndingSoonService_1.groupFutureAppointmentsBySeries)(future), now, max_remaining, within_days);
-        if (ending.length === 0)
-            return res.json({ series: [] });
-        const seriesIds = ending.map((s) => s.series_id);
-        const { data: seriesRows, error: se } = await supabase_1.supabaseAdmin
-            .from('hub_appointment_series')
-            .select('id, kind, interval_value, days_of_week, day_of_month, until_date, occurrences')
-            .eq('clinic_id', clinic_id)
-            .in('id', seriesIds);
-        if (se)
-            return res.status(500).json({ error: se.message });
-        const seriesById = new Map((seriesRows ?? []).map((r) => [r.id, r]));
-        return res.json({
-            series: ending.map((s) => {
-                const meta = seriesById.get(s.series_id);
-                return {
-                    series_id: s.series_id,
-                    remaining_count: s.remaining_count,
-                    last_starts_at: s.last_starts_at,
-                    kind: meta?.kind ?? 'weekly',
-                    interval_value: Number(meta?.interval_value ?? 1) || 1,
-                    days_of_week: meta?.days_of_week ?? null,
-                    day_of_month: meta?.day_of_month ?? null,
-                    until_date: meta?.until_date ?? null,
-                    occurrences: meta?.occurrences ?? null,
-                    sample_appointment_id: s.sample_appointment_id,
-                    pet_id: s.pet_id,
-                    guardian_id: s.guardian_id,
-                    title: s.title,
-                };
-            }),
+        const series = await (0, hubSeriesEndingSoonQuery_1.loadClinicSeriesEndingSoon)(clinic_id, {
+            maxRemaining: max_remaining,
+            withinDays: within_days,
         });
+        // Aviso no sino (dedupe por série não lida) — não atrasa a resposta.
+        if (series.length > 0) {
+            void (0, hubNotifyEvents_1.notifyHubSeriesEndingSoonBatch)({ clinicId: clinic_id, series });
+        }
+        return res.json({ series });
     }
     catch (e) {
         console.error('listHubSeriesEndingSoon', e);
@@ -1411,9 +1461,16 @@ const createHubAppointment = async (req, res) => {
         if (new Date(b.ends_at) <= new Date(b.starts_at)) {
             return res.status(400).json({ error: 'ends_at deve ser posterior a starts_at' });
         }
+        const createStatusErr = (0, hubAppointmentManualStatus_1.manualAppointmentStatusError)(b.status ?? null, { mode: 'create' });
+        if (createStatusErr) {
+            return res.status(400).json({ error: createStatusErr });
+        }
         // Kind preliminar (walk-in etc.); pode virar pickup_route após carregar o serviço principal.
         let resolvedAppointmentKind = b.appointment_kind ?? 'standard';
-        const skipScheduleConflictCheck = isWalkInAppointmentKind(resolvedAppointmentKind) || b.allow_schedule_overlap === true;
+        /** Série: nunca ignora conflito por data — cria só livres (C11/C12). Overlap explícito vale só no pontual. */
+        const isSeriesCreate = Boolean(b.recurrence);
+        const skipScheduleConflictCheck = isWalkInAppointmentKind(resolvedAppointmentKind) ||
+            (b.allow_schedule_overlap === true && !isSeriesCreate);
         // validations
         if (!(await assertServiceTypeInClinic(b.clinic_id, b.hub_service_type_id))) {
             return res.status(400).json({ error: 'Tipo de serviço inválido ou não pertence à clínica' });
@@ -1789,6 +1846,11 @@ const createHubAppointment = async (req, res) => {
             const useShift = Boolean(b.recurrence);
             for (const occDate of occurrenceDates) {
                 const windows = buildOccurrenceConflictWindows(scheduleBody, occDate, useShift, standalonePickupMode);
+                const mutual = findMutualOccurrenceWindowConflict(windows);
+                if (mutual) {
+                    preConflicts.push({ date: occDate, reason: mutual.reason });
+                    continue;
+                }
                 for (const w of windows) {
                     const chk = await assertNoScheduleConflict(b.clinic_id, [], w.staff, w.resource, resolvedUnitId, w.starts, w.ends, w.resourceId ?? null);
                     if (chk.conflict) {
@@ -1801,11 +1863,13 @@ const createHubAppointment = async (req, res) => {
                     }
                 }
             }
-            if (preConflicts.length > 0) {
+            const allDatesConflict = preConflicts.length > 0 && preConflicts.length >= occurrenceDates.length;
+            // Pontual: 409. Série: 409 só se todas as datas conflitam; parcial segue e cria as livres.
+            if (preConflicts.length > 0 && (!isSeriesCreate || allDatesConflict)) {
                 const firstReason = preConflicts[0]?.reason.replace(/^[^:]+:\s*/, '') ?? preConflicts[0]?.reason;
-                return res.status(409).json(scheduleConflictJson(preConflicts.length === 1 && occurrenceDates.length === 1
-                    ? firstReason || 'Horário em conflito com outro atendimento.'
-                    : 'Alguns horários da série entram em conflito com outro atendimento.', { conflicts: preConflicts }));
+                return res.status(409).json(scheduleConflictJson(allDatesConflict && occurrenceDates.length > 1
+                    ? 'Todos os horários solicitados entram em conflito.'
+                    : firstReason || 'Horário em conflito com outro atendimento.', { conflicts: preConflicts }));
             }
         }
         if (b.recurrence) {
@@ -1813,13 +1877,15 @@ const createHubAppointment = async (req, res) => {
             const seriesStartDate = b.starts_at.slice(0, 10);
             // Persistir o dia da semana efetivo (mesmo fallback usado na geração das datas).
             const seriesDows = (0, hubRecurrenceService_1.seriesDaysOfWeek)(seriesStartDate, rule);
+            const ruleBilling = rule;
             const billingFields = (0, hubSeriesBillingService_1.normalizeSeriesBillingForInsert)({
-                billing_mode: rule.billing_mode ?? 'per_occurrence',
-                invoice_issue_rule: rule.invoice_issue_rule,
-                invoice_issue_day: rule.invoice_issue_day,
-                invoice_due_rule: rule.invoice_due_rule,
-                invoice_due_day: rule.invoice_due_day,
-                invoice_due_plus_days: rule.invoice_due_plus_days,
+                billing_mode: ruleBilling.billing_mode ?? 'per_occurrence',
+                invoice_issue_rule: ruleBilling.invoice_issue_rule,
+                invoice_issue_day: ruleBilling.invoice_issue_day,
+                invoice_due_rule: ruleBilling.invoice_due_rule,
+                invoice_due_day: ruleBilling.invoice_due_day,
+                invoice_due_plus_days: ruleBilling.invoice_due_plus_days,
+                invoice_discount_percent: ruleBilling.invoice_discount_percent,
             });
             if (billingFields.billing_mode === 'periodic_invoice') {
                 const svcIds = normLines.map((l) => l.hub_service_type_id);
@@ -1882,8 +1948,8 @@ const createHubAppointment = async (req, res) => {
         const conflicts = [];
         const createdIds = [];
         for (const occDate of occurrenceDates) {
-            const startsAt = seriesId ? shiftTimestampToDate(b.starts_at, occDate) : b.starts_at;
-            const endsAt = seriesId ? shiftTimestampToDate(b.ends_at, occDate) : b.ends_at;
+            const startsAt = seriesId ? (0, hubSeriesSchedulePatch_1.shiftTimestampToDate)(b.starts_at, occDate) : b.starts_at;
+            const endsAt = seriesId ? (0, hubSeriesSchedulePatch_1.shiftTimestampToDate)(b.ends_at, occDate) : b.ends_at;
             const conflictWindows = buildOccurrenceConflictWindows(scheduleBody, occDate, Boolean(seriesId), standalonePickupMode);
             let skipOcc = false;
             if (!skipScheduleConflictCheck) {
@@ -2009,8 +2075,8 @@ const createHubAppointment = async (req, res) => {
             ]) {
                 if (!pickupBlock || !ltCfg || !pickupPricingBase)
                     continue;
-                const pStarts = seriesId ? shiftTimestampToDate(pickupBlock.starts_at, occDate) : pickupBlock.starts_at;
-                const pEnds = seriesId ? shiftTimestampToDate(pickupBlock.ends_at, occDate) : pickupBlock.ends_at;
+                const pStarts = seriesId ? (0, hubSeriesSchedulePatch_1.shiftTimestampToDate)(pickupBlock.starts_at, occDate) : pickupBlock.starts_at;
+                const pEnds = seriesId ? (0, hubSeriesSchedulePatch_1.shiftTimestampToDate)(pickupBlock.ends_at, occDate) : pickupBlock.ends_at;
                 const legDur = pickupLegMinutes(pStarts, pEnds);
                 const { data: pRow, error: pInsErr } = await supabase_1.supabaseAdmin
                     .from('hub_appointments')
@@ -2080,8 +2146,8 @@ const createHubAppointment = async (req, res) => {
                 standalonePricingBase &&
                 standaloneLegAmounts) {
                 const rb = b.standalone_pickup_return;
-                const rStarts = seriesId ? shiftTimestampToDate(rb.starts_at, occDate) : rb.starts_at;
-                const rEnds = seriesId ? shiftTimestampToDate(rb.ends_at, occDate) : rb.ends_at;
+                const rStarts = seriesId ? (0, hubSeriesSchedulePatch_1.shiftTimestampToDate)(rb.starts_at, occDate) : rb.starts_at;
+                const rEnds = seriesId ? (0, hubSeriesSchedulePatch_1.shiftTimestampToDate)(rb.ends_at, occDate) : rb.ends_at;
                 const legDur = pickupLegMinutes(rStarts, rEnds);
                 const saleLeg = standaloneLegAmounts.saleLegs[1] ?? standaloneLegAmounts.saleLegs[0] ?? 0;
                 const costLeg = standaloneLegAmounts.costLegs[1] ?? standaloneLegAmounts.costLegs[0] ?? 0;
@@ -2155,8 +2221,8 @@ const createHubAppointment = async (req, res) => {
             if (!independentExtras) {
                 for (const [blockIndex, block] of (b.extra_blocks ?? []).entries()) {
                     const blockResource = extraSnaps[blockIndex];
-                    const bStarts = seriesId ? shiftTimestampToDate(block.starts_at, occDate) : block.starts_at;
-                    const bEnds = seriesId ? shiftTimestampToDate(block.ends_at, occDate) : block.ends_at;
+                    const bStarts = seriesId ? (0, hubSeriesSchedulePatch_1.shiftTimestampToDate)(block.starts_at, occDate) : block.starts_at;
+                    const bEnds = seriesId ? (0, hubSeriesSchedulePatch_1.shiftTimestampToDate)(block.ends_at, occDate) : block.ends_at;
                     const firstSvcType = block.services[0].hub_service_type_id;
                     const { data: blockRow, error: blockErr } = await supabase_1.supabaseAdmin
                         .from('hub_appointments')
@@ -2258,13 +2324,15 @@ const createHubAppointment = async (req, res) => {
                     const rule = (0, hubRecurrenceService_1.normalizeRecurrenceRule)(block.recurrence);
                     const seriesStartDate = block.starts_at.slice(0, 10);
                     const seriesDows = (0, hubRecurrenceService_1.seriesDaysOfWeek)(seriesStartDate, rule);
+                    const blockBilling = rule;
                     const billingFields = (0, hubSeriesBillingService_1.normalizeSeriesBillingForInsert)({
-                        billing_mode: rule.billing_mode ?? 'per_occurrence',
-                        invoice_issue_rule: rule.invoice_issue_rule,
-                        invoice_issue_day: rule.invoice_issue_day,
-                        invoice_due_rule: rule.invoice_due_rule,
-                        invoice_due_day: rule.invoice_due_day,
-                        invoice_due_plus_days: rule.invoice_due_plus_days,
+                        billing_mode: blockBilling.billing_mode ?? 'per_occurrence',
+                        invoice_issue_rule: blockBilling.invoice_issue_rule,
+                        invoice_issue_day: blockBilling.invoice_issue_day,
+                        invoice_due_rule: blockBilling.invoice_due_rule,
+                        invoice_due_day: blockBilling.invoice_due_day,
+                        invoice_due_plus_days: blockBilling.invoice_due_plus_days,
+                        invoice_discount_percent: blockBilling.invoice_discount_percent,
                     });
                     const { data: seriesRow, error: serErr } = await supabase_1.supabaseAdmin
                         .from('hub_appointment_series')
@@ -2312,23 +2380,57 @@ const createHubAppointment = async (req, res) => {
                 const blockHasPickup = Boolean(block.with_pickup_route_before ?? block.with_pickup_route_after);
                 let blockPickupPricingBase = null;
                 if (blockHasPickup && block.pickup_route_pricing) {
-                    const ltSt = stMap.get(block.pickup_route_pricing.hub_service_type_id);
+                    const ltId = block.pickup_route_pricing.hub_service_type_id;
+                    const ltSt = stMap.get(ltId);
                     const ge = validateLevaTrazServiceType(ltSt);
                     if (ge)
                         return res.status(400).json({ error: ge });
-                    const scope = (0, hubPickupPricing_1.normalizePickupPriceScope)(ltSt.pickup_price_scope);
-                    blockPickupPricingBase = {
-                        catalogSale: (0, hubServiceTypesPricingMatrix_1.roundMoney2)(Number(ltSt.sale_amount) || 0),
-                        catalogCost: (0, hubServiceTypesPricingMatrix_1.roundMoney2)(Number(ltSt.cost_amount) || 0),
-                        priceScope: scope,
-                        kmVariant: block.pickup_route_pricing.pricing_variant ?? null,
-                    };
+                    const ltMatrix = (0, hubServiceTypesPricingMatrix_1.parsePricingMatrixJson)(ltSt?.pricing_matrix);
+                    const matrixKind = ltMatrix != null && typeof ltMatrix === 'object' && 'kind' in ltMatrix
+                        ? ltMatrix.kind
+                        : null;
+                    let kmVariant = null;
+                    if (matrixKind === 'km_banda') {
+                        kmVariant = {
+                            km_tier_index: block.pickup_route_pricing.pricing_variant?.km_tier_index ?? 0,
+                        };
+                    }
+                    else if (matrixKind === 'personalizado') {
+                        kmVariant = {
+                            custom_tier_index: block.pickup_route_pricing.pricing_variant?.custom_tier_index ?? 0,
+                        };
+                    }
+                    try {
+                        const baseRows = buildServiceLineSnapshots({
+                            lines: [{ hub_service_type_id: ltId, duration_minutes: 1, pricing_variant: kmVariant }],
+                            stMap,
+                            pet,
+                            appointmentYmd: block.starts_at.slice(0, 10),
+                            puppyMaxMonths: puppy.pet_puppy_max_months,
+                            appointmentOverride: apptOverride,
+                            appointmentCoatOverride: apptCoatOverride,
+                        });
+                        const br = baseRows[0];
+                        if (!br)
+                            throw new Error('Preço Leva e Traz do bloco inválido');
+                        blockPickupPricingBase = {
+                            catalogSale: br.sale_amount_applied,
+                            catalogCost: br.cost_amount_applied,
+                            priceScope: (0, hubPickupPricing_1.normalizePickupPriceScope)(ltSt?.pickup_price_scope),
+                            kmVariant,
+                        };
+                    }
+                    catch (e) {
+                        return res
+                            .status(400)
+                            .json({ error: e.message || 'Erro ao precificar Leva e Traz do bloco' });
+                    }
                 }
                 for (const occDate of blockOccDates) {
                     const bStarts = blockSeriesId
-                        ? shiftTimestampToDate(block.starts_at, occDate)
+                        ? (0, hubSeriesSchedulePatch_1.shiftTimestampToDate)(block.starts_at, occDate)
                         : block.starts_at;
-                    const bEnds = blockSeriesId ? shiftTimestampToDate(block.ends_at, occDate) : block.ends_at;
+                    const bEnds = blockSeriesId ? (0, hubSeriesSchedulePatch_1.shiftTimestampToDate)(block.ends_at, occDate) : block.ends_at;
                     const { data: blockRow, error: blockErr } = await supabase_1.supabaseAdmin
                         .from('hub_appointments')
                         .insert({
@@ -2423,10 +2525,10 @@ const createHubAppointment = async (req, res) => {
                             if (!pickupBlock)
                                 continue;
                             const pStarts = blockSeriesId
-                                ? shiftTimestampToDate(pickupBlock.starts_at, occDate)
+                                ? (0, hubSeriesSchedulePatch_1.shiftTimestampToDate)(pickupBlock.starts_at, occDate)
                                 : pickupBlock.starts_at;
                             const pEnds = blockSeriesId
-                                ? shiftTimestampToDate(pickupBlock.ends_at, occDate)
+                                ? (0, hubSeriesSchedulePatch_1.shiftTimestampToDate)(pickupBlock.ends_at, occDate)
                                 : pickupBlock.ends_at;
                             const legDur = pickupLegMinutes(pStarts, pEnds);
                             const { data: pRow, error: pInsErr } = await supabase_1.supabaseAdmin
@@ -2510,6 +2612,11 @@ const createHubAppointment = async (req, res) => {
                 .is('deleted_at', null)
                 .maybeSingle();
             if (!existingRsv) {
+                const rate = await (0, boardingPricing_1.resolveBoardingRateFromAppointment)({
+                    clinicId: b.clinic_id,
+                    appointmentId: parentApptId,
+                    primaryServiceTypeId: b.hub_service_type_id ?? null,
+                });
                 const { error: rsvErr } = await supabase_1.supabaseAdmin.from('hub_boarding_reservations').insert({
                     clinic_id: b.clinic_id,
                     unit_id: resolvedUnitId,
@@ -2520,7 +2627,13 @@ const createHubAppointment = async (req, res) => {
                     status: 'reserved',
                     expected_check_in: b.starts_at,
                     expected_check_out: b.ends_at,
-                    hub_service_type_id: b.hub_service_type_id,
+                    hub_service_type_id: rate?.hub_service_type_id ?? b.hub_service_type_id,
+                    ...(rate
+                        ? {
+                            daily_rate_cents: rate.daily_rate_cents,
+                            rate_source: rate.rate_source,
+                        }
+                        : {}),
                 });
                 if (rsvErr) {
                     console.warn('create_boarding_reservation', rsvErr.message);
@@ -2577,6 +2690,23 @@ const patchHubAppointment = async (req, res) => {
             return res.status(500).json({ error: exErr.message });
         if (!existing)
             return res.status(404).json({ error: 'Agendamento não encontrado' });
+        if (b.status === 'no_show') {
+            const currentStatus = String(existing.status ?? '');
+            if (!(0, hubNoShowUtils_1.canTransitionToNoShow)(currentStatus)) {
+                return res.status(400).json({
+                    error: 'Só é possível marcar falta a partir de a confirmar, confirmado, aguardando ou em atendimento.',
+                });
+            }
+        }
+        if (b.status !== undefined) {
+            const statusErr = (0, hubAppointmentManualStatus_1.manualAppointmentStatusError)(b.status, {
+                mode: 'patch',
+                currentStatus: String(existing.status ?? ''),
+            });
+            if (statusErr) {
+                return res.status(400).json({ error: statusErr });
+            }
+        }
         if (isStructuralAppointmentPatch(b) && !isAppointmentStructurallyEditable(existing)) {
             return res.status(409).json({
                 error: 'Agendamento não pode ser editado após iniciado ou após o horário agendado.',
@@ -2672,10 +2802,21 @@ const patchHubAppointment = async (req, res) => {
             nextResourceId = snap.hub_resource_id;
             nextResource = snap.resource_label;
         }
-        if (b.allow_schedule_overlap !== true) {
-            const check = await assertNoScheduleConflict(b.clinic_id, [id], nextStaff, nextResource, careResolved.value.unit_id, starts, ends, nextResourceId);
-            if (check.conflict) {
-                return res.status(409).json(scheduleConflictJson(check.reason, { conflictingId: check.conflictingId }));
+        if (b.allow_schedule_overlap !== true && isScheduleRelevantAppointmentPatch(b)) {
+            const slotSame = scheduleSlotUnchanged(existing, {
+                staff: nextStaff,
+                resourceLabel: nextResource,
+                resourceId: nextResourceId,
+                unitId: careResolved.value.unit_id,
+                starts,
+                ends,
+            });
+            if (!slotSame) {
+                const excludeIds = await loadRelatedScheduleExcludeIds(b.clinic_id, id, existing);
+                const check = await assertNoScheduleConflict(b.clinic_id, excludeIds, nextStaff, nextResource, careResolved.value.unit_id, starts, ends, nextResourceId);
+                if (check.conflict) {
+                    return res.status(409).json(scheduleConflictJson(check.reason, { conflictingId: check.conflictingId }));
+                }
             }
         }
         const patch = {};
@@ -2692,10 +2833,14 @@ const patchHubAppointment = async (req, res) => {
             patch.pet_id = b.pet_id;
         if (b.guardian_id !== undefined)
             patch.guardian_id = b.guardian_id;
-        if (b.starts_at !== undefined)
-            patch.starts_at = b.starts_at;
-        if (b.ends_at !== undefined)
-            patch.ends_at = b.ends_at;
+        // Em future/all o horário é resolvido por ocorrência (não copiar timestamp absoluto).
+        const seriesScopedSchedule = scope !== 'this' && (b.starts_at !== undefined || b.ends_at !== undefined);
+        if (!seriesScopedSchedule) {
+            if (b.starts_at !== undefined)
+                patch.starts_at = b.starts_at;
+            if (b.ends_at !== undefined)
+                patch.ends_at = b.ends_at;
+        }
         if (b.status !== undefined)
             patch.status = b.status;
         if (resourceTouched) {
@@ -2733,13 +2878,20 @@ const patchHubAppointment = async (req, res) => {
         if (Object.keys(patch).length === 0 && !b.services && b.extra_blocks === undefined) {
             return res.status(400).json({ error: 'Nada para atualizar' });
         }
-        // determine IDs to update based on scope
-        let targetIds = [id];
+        let targetRows = [
+            {
+                id,
+                starts_at: existing.starts_at,
+                ends_at: existing.ends_at,
+                series_occurrence_date: existing.series_occurrence_date ?? null,
+                appointment_kind: existing.appointment_kind ?? null,
+            },
+        ];
         const seriesId = existing.series_id;
         if (seriesId && scope !== 'this') {
             let q = supabase_1.supabaseAdmin
                 .from('hub_appointments')
-                .select('id, starts_at')
+                .select('id, starts_at, ends_at, series_occurrence_date, appointment_kind')
                 .eq('clinic_id', b.clinic_id)
                 .eq('series_id', seriesId)
                 .is('deleted_at', null);
@@ -2747,8 +2899,18 @@ const patchHubAppointment = async (req, res) => {
                 q = q.gte('starts_at', existing.starts_at);
             }
             const { data: seriesRows } = await q;
-            targetIds = (seriesRows ?? []).map((r) => r.id);
+            targetRows = (seriesRows ?? []).map((r) => ({
+                id: r.id,
+                starts_at: r.starts_at,
+                ends_at: r.ends_at,
+                series_occurrence_date: r.series_occurrence_date ?? null,
+                appointment_kind: r.appointment_kind ?? null,
+            }));
         }
+        const targetIds = targetRows.map((r) => r.id);
+        const targetRowById = new Map(targetRows.map((r) => [r.id, r]));
+        const anchorOldStartsAt = existing.starts_at;
+        const anchorOldEndsAt = existing.ends_at;
         let patchServicePayload = null;
         if (b.services && b.services.length > 0) {
             const normPatchLines = b.services.map((s) => ({
@@ -2823,10 +2985,55 @@ const patchHubAppointment = async (req, res) => {
             }
         }
         for (const tid of targetIds) {
-            if (Object.keys(patch).length > 0) {
+            const targetMeta = targetRowById.get(tid);
+            if (!targetMeta)
+                continue;
+            const appointmentKind = targetMeta.appointment_kind;
+            const isPickupRouteLeg = !(0, hubPickupPricing_1.shouldRewriteAppointmentServicesOnPatch)(appointmentKind);
+            const schedulePatch = b.starts_at !== undefined || b.ends_at !== undefined
+                ? (0, hubSeriesSchedulePatch_1.resolveSeriesScopedSchedulePatch)({
+                    scope: scope,
+                    targetId: tid,
+                    anchorId: id,
+                    appointmentKind,
+                    rowStartsAt: targetMeta.starts_at,
+                    rowEndsAt: targetMeta.ends_at,
+                    rowOccurrenceDate: targetMeta.series_occurrence_date,
+                    patchStartsAt: b.starts_at,
+                    patchEndsAt: b.ends_at,
+                    anchorOldStartsAt,
+                    anchorOldEndsAt,
+                })
+                : null;
+            // Pernas de L&T: status + horário relativo; nunca regravar serviços do banho.
+            if (isPickupRouteLeg) {
+                const legPatch = {};
+                if (patch.status !== undefined)
+                    legPatch.status = patch.status;
+                if (schedulePatch) {
+                    legPatch.starts_at = schedulePatch.starts_at;
+                    legPatch.ends_at = schedulePatch.ends_at;
+                }
+                if (Object.keys(legPatch).length > 0) {
+                    const { error: pErr } = await supabase_1.supabaseAdmin
+                        .from('hub_appointments')
+                        .update(legPatch)
+                        .eq('id', tid)
+                        .eq('clinic_id', b.clinic_id);
+                    if (pErr)
+                        return res.status(500).json({ error: pErr.message });
+                }
+                continue;
+            }
+            const rowPatch = { ...patch };
+            if (schedulePatch) {
+                rowPatch.starts_at = schedulePatch.starts_at;
+                rowPatch.ends_at = schedulePatch.ends_at;
+            }
+            if (Object.keys(rowPatch).length > 0) {
                 const { error: pErr } = await supabase_1.supabaseAdmin
                     .from('hub_appointments')
-                    .update(patch)
+                    .update(rowPatch)
                     .eq('id', tid)
                     .eq('clinic_id', b.clinic_id);
                 if (pErr)
@@ -2892,9 +3099,99 @@ const patchHubAppointment = async (req, res) => {
         for (const tid of targetIds) {
             await (0, hubSurgeryFromAppointment_1.syncSurgeryForAppointmentSafe)({ clinicId: b.clinic_id, appointmentId: tid, userId: req.user?.id });
         }
-        if (patch.status === 'cancelled') {
+        // Hotel/Creche: espelha starts_at/ends_at na reserva vinculada (expected_check_in/out).
+        if (b.starts_at !== undefined || b.ends_at !== undefined) {
             for (const tid of targetIds) {
-                void (0, hubComandasController_1.maybeFlagComandaCancellationPending)(b.clinic_id, 'appointment', tid);
+                const { data: apRow } = await supabase_1.supabaseAdmin
+                    .from('hub_appointments')
+                    .select('starts_at, ends_at, appointment_kind')
+                    .eq('id', tid)
+                    .eq('clinic_id', b.clinic_id)
+                    .maybeSingle();
+                if (!apRow)
+                    continue;
+                const kind = String(apRow.appointment_kind ?? '');
+                if (kind !== 'hotel_stay' && kind !== 'daycare_block')
+                    continue;
+                const boardingPatch = {};
+                if (b.starts_at !== undefined) {
+                    boardingPatch.expected_check_in = apRow.starts_at;
+                }
+                if (b.ends_at !== undefined) {
+                    boardingPatch.expected_check_out = apRow.ends_at;
+                }
+                if (!Object.keys(boardingPatch).length)
+                    continue;
+                const { error: boardErr } = await supabase_1.supabaseAdmin
+                    .from('hub_boarding_reservations')
+                    .update(boardingPatch)
+                    .eq('clinic_id', b.clinic_id)
+                    .eq('hub_appointment_id', tid)
+                    .in('status', ['reserved', 'checked_in'])
+                    .is('deleted_at', null);
+                if (boardErr) {
+                    console.error('patchHubAppointment sync boarding expected check', tid, boardErr.message);
+                }
+            }
+        }
+        const comandaEffects = [];
+        if (patch.status === 'cancelled' || patch.status === 'no_show') {
+            const terminalStatus = patch.status;
+            const cascadedLegIds = [];
+            for (const tid of targetIds) {
+                const { data: parentKindRow } = await supabase_1.supabaseAdmin
+                    .from('hub_appointments')
+                    .select('appointment_kind')
+                    .eq('id', tid)
+                    .eq('clinic_id', b.clinic_id)
+                    .maybeSingle();
+                const parentKind = String(parentKindRow?.appointment_kind ?? '');
+                if (parentKind === 'pickup_route')
+                    continue;
+                const { data: childLegs } = await supabase_1.supabaseAdmin
+                    .from('hub_appointments')
+                    .select('id')
+                    .eq('clinic_id', b.clinic_id)
+                    .eq('parent_appointment_id', tid)
+                    .eq('appointment_kind', 'pickup_route')
+                    .is('deleted_at', null)
+                    .not('status', 'in', '("cancelled","no_show")');
+                const legIds = (childLegs ?? [])
+                    .map((r) => r.id)
+                    .filter((legId) => !targetIds.includes(legId));
+                if (legIds.length === 0)
+                    continue;
+                const { error: cascadeErr } = await supabase_1.supabaseAdmin
+                    .from('hub_appointments')
+                    .update({ status: terminalStatus })
+                    .in('id', legIds)
+                    .eq('clinic_id', b.clinic_id);
+                if (cascadeErr) {
+                    console.error(`patchHubAppointment cascade ${terminalStatus} pickup legs`, tid, cascadeErr.message);
+                }
+                else {
+                    cascadedLegIds.push(...legIds);
+                }
+            }
+            const waiveReason = terminalStatus === 'no_show'
+                ? 'Falta registrada no agendamento'
+                : 'Cancelamento operacional do agendamento';
+            const allApptIds = [...targetIds, ...cascadedLegIds];
+            const cancelledEncounterIds = await (0, hubClinicalAppointmentMirror_1.cancelLinkedOpenEncountersForAppointments)({
+                clinicId: b.clinic_id,
+                appointmentIds: allApptIds,
+            });
+            for (const tid of allApptIds) {
+                const effect = await (0, hubComandaOperationalCancel_1.handleComandaAfterOperationalCancel)(b.clinic_id, 'appointment', tid, {
+                    waiveReason,
+                });
+                comandaEffects.push(effect);
+            }
+            for (const encounterId of cancelledEncounterIds) {
+                const effect = await (0, hubComandaOperationalCancel_1.handleComandaAfterOperationalCancel)(b.clinic_id, 'encounter', encounterId, {
+                    waiveReason,
+                });
+                comandaEffects.push(effect);
             }
         }
         if (b.status === 'done' || b.status === 'paid') {
@@ -2931,7 +3228,24 @@ const patchHubAppointment = async (req, res) => {
             const { scheduleReceptionSync } = await Promise.resolve().then(() => __importStar(require('./receptionSync')));
             scheduleReceptionSync(b.clinic_id, petId);
         }
-        return res.json({ appointment: enriched, updated_count: targetIds.length });
+        const cancelledIds = comandaEffects
+            .filter((e) => e.kind === 'cancelled')
+            .map((e) => e.comandaId);
+        const pendingAdjustmentIds = comandaEffects
+            .filter((e) => e.kind === 'pending_adjustment')
+            .map((e) => e.comandaId);
+        return res.json({
+            appointment: enriched,
+            updated_count: targetIds.length,
+            ...(comandaEffects.length > 0
+                ? {
+                    comanda_effects: {
+                        cancelled_ids: cancelledIds,
+                        pending_adjustment_ids: pendingAdjustmentIds,
+                    },
+                }
+                : {}),
+        });
     }
     catch (e) {
         console.error('patchHubAppointment', e);
@@ -3081,6 +3395,13 @@ const createHubAppointmentBatch = async (req, res) => {
         }
         const visitGroupId = inputVisitGroupId ?? (0, crypto_1.randomUUID)();
         const createdIds = [];
+        let createdCount = 0;
+        const clinicSettings = await (0, hubClinicSettingsController_1.getOrCreateHubClinicSettings)(clinic_id);
+        const multipetPickupBilling = clinicSettings.multipet_pickup_billing;
+        const sharedHasPickup = Boolean(shared.with_pickup_route_before ??
+            shared.with_pickup_route_after);
+        /** Em `per_visit`, só o 1º pet de cada dia de calendário leva L&T. */
+        const pickupDayClaimed = new Set();
         const rollbackCreated = async () => {
             if (createdIds.length === 0)
                 return;
@@ -3094,10 +3415,18 @@ const createHubAppointmentBatch = async (req, res) => {
         try {
             for (const petEntry of pets) {
                 const petServices = petEntry.services ?? shared.services;
+                const startsAt = petEntry.starts_at ?? shared.starts_at;
+                const dayKey = String(startsAt).slice(0, 10);
+                const includePickup = (0, hubPickupPricing_1.shouldAttachPickupInMultipetBatch)({
+                    billing: multipetPickupBilling,
+                    sharedHasPickup,
+                    dayKey,
+                    claimedDays: pickupDayClaimed,
+                });
                 const body = {
                     ...shared,
                     pet_id: petEntry.pet_id,
-                    starts_at: petEntry.starts_at ?? shared.starts_at,
+                    starts_at: startsAt,
                     ends_at: petEntry.ends_at ?? shared.ends_at,
                     hub_staff_member_id: petEntry.hub_staff_member_id !== undefined
                         ? petEntry.hub_staff_member_id ?? null
@@ -3111,6 +3440,11 @@ const createHubAppointmentBatch = async (req, res) => {
                     allow_schedule_overlap: true,
                     visit_group_id: visitGroupId,
                 };
+                if (!includePickup) {
+                    body.with_pickup_route_before = null;
+                    body.with_pickup_route_after = null;
+                    body.pickup_route_pricing = null;
+                }
                 const fakeReq = { body, user: req.user };
                 let statusCode = 201;
                 let responseBody = {};
@@ -3132,6 +3466,8 @@ const createHubAppointmentBatch = async (req, res) => {
                 const appt = responseBody.appointment;
                 if (appt?.id)
                     createdIds.push(appt.id);
+                const n = responseBody.created_count;
+                createdCount += typeof n === 'number' && n > 0 ? n : appt?.id ? 1 : 0;
             }
         }
         catch (e) {
@@ -3146,7 +3482,7 @@ const createHubAppointmentBatch = async (req, res) => {
         return res.status(201).json({
             visit_group_id: visitGroupId,
             appointments,
-            created_count: appointments.length,
+            created_count: createdCount > 0 ? createdCount : appointments.length,
         });
     }
     catch (e) {

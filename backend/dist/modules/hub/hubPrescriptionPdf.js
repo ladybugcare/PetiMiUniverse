@@ -8,6 +8,7 @@ exports.streamValidatablePrescriptionPdf = streamValidatablePrescriptionPdf;
 const pdfkit_1 = __importDefault(require("pdfkit"));
 const qrcode_1 = __importDefault(require("qrcode"));
 const prescriptionValidation_1 = require("./prescriptionValidation");
+const hubVetStampPdf_1 = require("./hubVetStampPdf");
 const TEXT_DARK = '#222222';
 const TEXT_MUTED = '#666666';
 const BORDER = '#333333';
@@ -67,7 +68,7 @@ function groupItemsByRoute(items) {
         items: map.get(key),
     }));
 }
-function drawPrescriptionBody(doc, prescription, margin, pageW) {
+function drawPrescriptionBodyInner(doc, prescription, margin, pageW, stampBuffers) {
     const clinic = embedOne(prescription.clinic);
     const pet = embedOne(prescription.pet);
     const guardian = embedOne(prescription.guardian);
@@ -195,37 +196,44 @@ function drawPrescriptionBody(doc, prescription, margin, pageW) {
         doc.font('Helvetica').fontSize(10).fillColor(TEXT_DARK).text(prescription.notes.trim(), margin, y, { width: pageW });
         y = doc.y + 12;
     }
-    const signY = Math.max(y + 40, doc.page.height - 140);
-    doc.moveTo(margin + 140, signY).lineTo(doc.page.width - margin - 140, signY).strokeColor(BORDER).lineWidth(0.8).stroke();
-    doc
-        .font('Helvetica-Bold')
-        .fontSize(10)
-        .fillColor(TEXT_DARK)
-        .text(staff?.full_name || 'Veterinário responsável', margin, signY + 8, { width: pageW, align: 'center' });
-    const crmv = [staff?.crmv ? `CRMV ${staff.crmv}` : null, staff?.crmv_uf || null].filter(Boolean).join(' / ');
-    doc
-        .font('Helvetica')
-        .fontSize(9)
-        .fillColor(TEXT_MUTED)
-        .text(crmv || 'CRMV não informado', margin, doc.y + 2, { width: pageW, align: 'center' });
-    return doc.y;
+    y = Math.max(y + 24, Math.min(y + 40, doc.page.height - 160));
+    return (0, hubVetStampPdf_1.drawVetStampBlock)(doc, staff, {
+        margin,
+        pageW,
+        y,
+        signatureBuf: stampBuffers?.signature ?? null,
+        stampBuf: stampBuffers?.stamp ?? null,
+        showLineWhenEmpty: true,
+        textDark: TEXT_DARK,
+        textMuted: TEXT_MUTED,
+        border: BORDER,
+    });
 }
-function streamPrescriptionPdf(res, prescription) {
+function drawPrescriptionBody(doc, prescription, margin, pageW, stampBuffers) {
+    return drawPrescriptionBodyInner(doc, prescription, margin, pageW, stampBuffers);
+}
+async function drawPrescriptionBodyAsync(doc, prescription, margin, pageW) {
+    const staff = embedOne(prescription.staff);
+    const stampBuffers = await (0, hubVetStampPdf_1.loadVetStampBuffers)(staff);
+    return drawPrescriptionBodyInner(doc, prescription, margin, pageW, stampBuffers);
+}
+async function streamPrescriptionPdf(res, prescription) {
     const doc = new pdfkit_1.default({ size: 'A4', margin: 48, bufferPages: true });
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="receita-${prescription.id.slice(0, 8)}.pdf"`);
     doc.pipe(res);
-    drawPrescriptionBody(doc, prescription, 48, doc.page.width - 96);
+    await drawPrescriptionBodyAsync(doc, prescription, 48, doc.page.width - 96);
     doc.end();
 }
-async function streamValidatablePrescriptionPdf(res, prescription, validation) {
+async function streamValidatablePrescriptionPdf(res, prescription, validation, opts) {
+    const disposition = opts?.contentDisposition ?? 'inline';
     const doc = new pdfkit_1.default({ size: 'A4', margin: 48, bufferPages: true });
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename="receita-${validation.validation_code}.pdf"`);
+    res.setHeader('Content-Disposition', `${disposition}; filename="receita-${validation.validation_code}.pdf"`);
     doc.pipe(res);
     const margin = 48;
     const pageW = doc.page.width - margin * 2;
-    let y = drawPrescriptionBody(doc, prescription, margin, pageW);
+    let y = await drawPrescriptionBodyAsync(doc, prescription, margin, pageW);
     if (y > doc.page.height - 200) {
         doc.addPage();
         y = margin;

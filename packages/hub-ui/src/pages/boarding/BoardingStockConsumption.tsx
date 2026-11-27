@@ -17,7 +17,10 @@ const BoardingStockConsumption: React.FC<Props> = ({ clinicId, reservationId }) 
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    void Promise.all([hubInventoryApi.items.list(clinicId), hubInventoryApi.lots.list(clinicId)])
+    void Promise.all([
+      hubInventoryApi.items.list(clinicId),
+      hubInventoryApi.lots.list(clinicId, { forSale: true }),
+    ])
       .then(([itemsRes, lotsRes]) => {
         setItems(itemsRes.items ?? []);
         setLots(lotsRes.lots ?? []);
@@ -68,7 +71,7 @@ const BoardingStockConsumption: React.FC<Props> = ({ clinicId, reservationId }) 
       setLotId('');
       setQty('1');
       setNotes('');
-      const lotsRes = await hubInventoryApi.lots.list(clinicId);
+      const lotsRes = await hubInventoryApi.lots.list(clinicId, { forSale: true });
       setLots(lotsRes.lots ?? []);
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao registrar consumo');

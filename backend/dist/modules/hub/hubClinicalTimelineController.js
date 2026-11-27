@@ -4,6 +4,7 @@ exports.createHubClinicalTimelineNote = exports.listHubClinicalTimeline = void 0
 exports.recordTimelineEvent = recordTimelineEvent;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
+const hubTenantAsserts_1 = require("./hubTenantAsserts");
 const uuidStr = zod_1.z.string().uuid();
 const timelineEventTypeSchema = zod_1.z.enum([
     'encounter_created',
@@ -19,9 +20,14 @@ const timelineEventTypeSchema = zod_1.z.enum([
     'vaccination_applied',
     'hospitalization_started',
     'hospitalization_discharged',
+    'hospitalization_death',
+    'hospitalization_transferred',
     'surgery_performed',
     'return_scheduled',
     'note',
+    'pet_death_recorded',
+    'pet_death_corrected',
+    'pet_death_invalidated',
 ]);
 const TIMELINE_SELECT = `
   id, clinic_id, pet_id, hub_case_id, hub_encounter_id,
@@ -97,6 +103,15 @@ const createHubClinicalTimelineNote = async (req, res) => {
         if (!parsed.success)
             return res.status(400).json({ error: parsed.error.flatten() });
         const b = parsed.data;
+        if (!(await (0, hubTenantAsserts_1.assertPetInClinic)(b.clinic_id, b.pet_id))) {
+            return res.status(400).json({ error: 'Pet inválido' });
+        }
+        if (!(await (0, hubTenantAsserts_1.assertEncounterInClinic)(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+            return res.status(400).json({ error: 'Referência inválida' });
+        }
+        if (!(await (0, hubTenantAsserts_1.assertCaseInClinic)(b.clinic_id, b.hub_case_id, b.pet_id))) {
+            return res.status(400).json({ error: 'Caso clínico inválido' });
+        }
         const { data, error } = await supabase_1.supabaseAdmin
             .from('hub_clinical_timeline_events')
             .insert({

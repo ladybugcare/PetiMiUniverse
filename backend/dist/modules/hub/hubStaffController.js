@@ -12,8 +12,34 @@ const notificationsController_1 = require("../../controllers/notificationsContro
 const hubInvitationUtils_1 = require("./hubInvitationUtils");
 const hubStaffLinkUtils_1 = require("./hubStaffLinkUtils");
 const hubStaffSpecialties_1 = require("./hubStaffSpecialties");
+const errors_js_1 = require("../../utils/errors.js");
+const hubEntitlements_js_1 = require("./hubEntitlements.js");
+const hubStaffPatchAccess_js_1 = require("./hubStaffPatchAccess.js");
 const uuidStr = zod_1.z.string().uuid();
-const STAFF_SELECT = 'id, clinic_id, full_name, display_name, photo_url, phone, whatsapp_phone, email, birth_date, job_title, professional_kind, specialties, crmv, crmv_uf, internal_notes, active, affiliation, has_hub_access, hub_access_email, hub_access_role, operational_areas, accepts_appointments, available_days, work_hours, break_minutes, default_unit_id, agenda_color, clinic_user_id, created_at, updated_at, deleted_at';
+const STAFF_PRIVILEGE_FIELDS = [
+    'hub_access_role',
+    'has_hub_access',
+    'hub_access_email',
+    'operational_areas',
+];
+function bodyTouchesStaffPrivileges(body) {
+    return STAFF_PRIVILEGE_FIELDS.some((key) => body[key] !== undefined);
+}
+async function requireStaffRolesAssign(req, clinicId) {
+    const userId = req.user?.id;
+    if (!userId)
+        return { ok: false, status: 401, error: 'Não autenticado' };
+    const allowed = await (0, authMiddleware_1.checkPermission)(userId, clinicId, 'hub.staff.roles.assign');
+    if (!allowed) {
+        return {
+            ok: false,
+            status: 403,
+            error: 'Apenas administradores da clínica podem alterar papéis e permissões de acesso.',
+        };
+    }
+    return { ok: true };
+}
+const STAFF_SELECT = 'id, clinic_id, full_name, display_name, photo_url, signature_image_url, stamp_image_url, phone, whatsapp_phone, email, birth_date, job_title, professional_kind, specialties, crmv, crmv_uf, internal_notes, active, affiliation, has_hub_access, hub_access_email, hub_access_role, operational_areas, accepts_appointments, available_days, work_hours, break_minutes, default_unit_id, agenda_color, clinic_user_id, created_at, updated_at, deleted_at';
 const professionalKindSchema = zod_1.z.enum([
     'vet',
     'groomer',
@@ -75,6 +101,8 @@ const createStaffSchema = zod_1.z
     full_name: zod_1.z.string().trim().min(1, 'Nome completo é obrigatório').max(200),
     display_name: optionalTrim(200).optional(),
     photo_url: optionalTrim(2000).optional(),
+    signature_image_url: optionalTrim(2000).optional(),
+    stamp_image_url: optionalTrim(2000).optional(),
     phone: optionalTrim(64).optional(),
     whatsapp_phone: optionalTrim(64).optional(),
     email: zod_1.z.union([zod_1.z.string().email().max(254), zod_1.z.literal(''), zod_1.z.null()]).optional().nullable(),
@@ -276,6 +304,11 @@ const createHubStaff = async (req, res) => {
         if (!body.success)
             return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
         const d = body.data;
+        if (bodyTouchesStaffPrivileges(d)) {
+            const gate = await requireStaffRolesAssign(req, d.clinic_id);
+            if (!gate.ok)
+                return res.status(gate.status).json({ error: gate.error });
+        }
         const emailNorm = d.email === '' || d.email === undefined ? null : d.email;
         const hubEmailNorm = d.hub_access_email === '' || d.hub_access_email === undefined ? null : d.hub_access_email;
         if (d.default_unit_id) {
@@ -297,6 +330,8 @@ const createHubStaff = async (req, res) => {
             full_name: d.full_name,
             display_name: d.display_name ?? null,
             photo_url: d.photo_url ?? null,
+            signature_image_url: d.signature_image_url ?? null,
+            stamp_image_url: d.stamp_image_url ?? null,
             phone: d.phone ?? null,
             whatsapp_phone: d.whatsapp_phone ?? null,
             email: emailNorm,
@@ -360,6 +395,23 @@ const patchHubStaff = async (req, res) => {
         if (!staff)
             return res.status(404).json({ error: 'Profissional não encontrado' });
         const d = body.data;
+        if (bodyTouchesStaffPrivileges(d)) {
+            const gate = await requireStaffRolesAssign(req, clinic_id);
+            if (!gate.ok)
+                return res.status(gate.status).json({ error: gate.error });
+        }
+        try {
+            await (0, hubStaffPatchAccess_js_1.assertStaffPatchAllowedByAccessMode)(clinic_id, d);
+        }
+        catch (e) {
+            if (e instanceof errors_js_1.ValidationError) {
+                return res.status(400).json({ error: e.message, code: e.code, details: e.details });
+            }
+            if (e instanceof errors_js_1.PlanEntitlementError) {
+                return res.status(403).json({ error: e.message, code: e.code, details: e.details });
+            }
+            throw e;
+        }
         // Proteção contra auto-remoção de CADMIN: se o profissional sendo editado
         // é o próprio solicitante e tem role CADMIN, bloquear mudança de role/acesso.
         const isSensitiveChange = d.hub_access_role !== undefined || d.has_hub_access === false;
@@ -389,6 +441,10 @@ const patchHubStaff = async (req, res) => {
             patch.display_name = d.display_name;
         if (d.photo_url !== undefined)
             patch.photo_url = d.photo_url;
+        if (d.signature_image_url !== undefined)
+            patch.signature_image_url = d.signature_image_url;
+        if (d.stamp_image_url !== undefined)
+            patch.stamp_image_url = d.stamp_image_url;
         if (d.phone !== undefined)
             patch.phone = d.phone;
         if (d.whatsapp_phone !== undefined)
@@ -638,6 +694,9 @@ const linkHubStaffAccount = async (req, res) => {
         }
         const clinic_id = body.data.clinic_id;
         const staffId = idParsed.data;
+        const gate = await requireStaffRolesAssign(req, clinic_id);
+        if (!gate.ok)
+            return res.status(gate.status).json({ error: gate.error });
         const { data: row, error: loadErr } = await supabase_1.supabaseAdmin
             .from('hub_staff_members')
             .select(STAFF_SELECT)
@@ -653,6 +712,15 @@ const linkHubStaffAccount = async (req, res) => {
         const email = row.hub_access_email?.trim();
         if (!email) {
             return res.status(400).json({ error: 'Informe o e-mail de acesso antes de vincular.' });
+        }
+        try {
+            await (0, hubEntitlements_js_1.assertCanInviteUser)(clinic_id);
+        }
+        catch (e) {
+            if (e instanceof errors_js_1.PlanEntitlementError) {
+                return res.status(403).json({ error: e.message, code: e.code, details: e.details });
+            }
+            throw e;
         }
         const link = await applyStaffHubAccessLink(staffId, clinic_id, {
             has_hub_access: true,
@@ -689,6 +757,15 @@ const inviteHubStaff = async (req, res) => {
         const canUserInvite = await (0, authMiddleware_1.checkPermission)(invited_by, clinic_id, 'user.invite');
         if (!canStaff || !canUserInvite) {
             return res.status(403).json({ error: 'Sem permissão para enviar convite (requer convite de usuários e convite de equipe)' });
+        }
+        try {
+            await (0, hubEntitlements_js_1.assertCanInviteUser)(clinic_id);
+        }
+        catch (e) {
+            if (e instanceof errors_js_1.PlanEntitlementError) {
+                return res.status(403).json({ error: e.message, code: e.code, details: e.details });
+            }
+            throw e;
         }
         const { data: row, error: loadErr } = await supabase_1.supabaseAdmin
             .from('hub_staff_members')

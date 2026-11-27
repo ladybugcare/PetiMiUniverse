@@ -11,6 +11,7 @@ exports.ensureCaseAndAdmissionEncounter = ensureCaseAndAdmissionEncounter;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const hubClinicalTimelineController_1 = require("./hubClinicalTimelineController");
+const hubTenantAsserts_1 = require("./hubTenantAsserts");
 const uuidStr = zod_1.z.string().uuid();
 const caseStatusSchema = zod_1.z.enum(['active', 'monitoring', 'resolved', 'cancelled']);
 const createCaseSchema = zod_1.z
@@ -177,15 +178,19 @@ const createHubClinicalCase = async (req, res) => {
         if (!parsed.success)
             return res.status(400).json({ error: parsed.error.flatten() });
         const b = parsed.data;
-        const { data: pet } = await supabase_1.supabaseAdmin
-            .from('hub_pets')
-            .select('id')
-            .eq('id', b.pet_id)
-            .eq('clinic_id', b.clinic_id)
-            .is('deleted_at', null)
-            .maybeSingle();
-        if (!pet)
-            return res.status(400).json({ error: 'Pet inválido para esta clínica' });
+        if (!(await (0, hubTenantAsserts_1.assertPetInClinic)(b.clinic_id, b.pet_id))) {
+            return res.status(400).json({ error: 'Pet inválido' });
+        }
+        if (!(await (0, hubTenantAsserts_1.assertUnitInClinic)(b.clinic_id, b.unit_id))) {
+            return res.status(400).json({ error: 'Unidade inválida' });
+        }
+        if (!(await (0, hubTenantAsserts_1.assertGuardianInClinic)(b.clinic_id, b.guardian_id_snapshot))) {
+            return res.status(400).json({ error: 'Tutor inválido' });
+        }
+        if (b.guardian_id_snapshot &&
+            !(await (0, hubTenantAsserts_1.assertGuardianLinkedToPet)(b.pet_id, b.guardian_id_snapshot))) {
+            return res.status(400).json({ error: 'Tutor inválido' });
+        }
         const insert = {
             clinic_id: b.clinic_id,
             unit_id: b.unit_id ?? null,
@@ -602,6 +607,18 @@ async function ensureCaseAndAdmissionEncounter(opts) {
     return { case_id: finalCaseId, encounter_id: enc.id };
 }
 async function createAutoCase(opts) {
+    if (!(await (0, hubTenantAsserts_1.assertPetInClinic)(opts.clinic_id, opts.pet_id))) {
+        throw new Error('Pet inválido');
+    }
+    if (!(await (0, hubTenantAsserts_1.assertUnitInClinic)(opts.clinic_id, opts.unit_id))) {
+        throw new Error('Unidade inválida');
+    }
+    if (!(await (0, hubTenantAsserts_1.assertGuardianInClinic)(opts.clinic_id, opts.guardian_id))) {
+        throw new Error('Tutor inválido');
+    }
+    if (opts.guardian_id && !(await (0, hubTenantAsserts_1.assertGuardianLinkedToPet)(opts.pet_id, opts.guardian_id))) {
+        throw new Error('Tutor inválido');
+    }
     const title = resolveAutoCaseTitle({
         case_title: opts.case_title,
         chief_complaint: opts.chief_complaint,

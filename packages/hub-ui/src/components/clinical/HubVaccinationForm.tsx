@@ -58,7 +58,7 @@ export function HubVaccinationForm({
   useEffect(() => {
     setLoadingLots(true);
     void hubInventoryApi.lots
-      .list(clinicId)
+      .list(clinicId, { forSale: true })
       .then((r) => setLots(r.lots ?? []))
       .catch(() => setLots([]))
       .finally(() => setLoadingLots(false));
@@ -102,7 +102,11 @@ export function HubVaccinationForm({
   const canSubmit =
     !disabled &&
     !submitting &&
-    Boolean(draft.hub_inventory_item_id && draft.hub_inventory_lot_id && draft.vaccine_name.trim());
+    Boolean(
+      draft.hub_inventory_item_id &&
+        draft.hub_inventory_lot_id &&
+        draft.vaccine_name.trim(),
+    );
 
   const onSelectVaccine = (itemId: string) => {
     const item = vaccineItems.find((v) => v.id === itemId);
@@ -156,16 +160,16 @@ export function HubVaccinationForm({
                 ? 'Selecione a vacina primeiro'
                 : loadingLots
                   ? 'Carregando lotes…'
-                  : 'Selecione o lote'
+                  : 'Selecionar lote…'
             }
             searchPlaceholder="Código do lote…"
-            disabled={disabled || !draft.hub_inventory_item_id || loadingLots}
+            disabled={disabled || !draft.hub_inventory_item_id || loadingLots || lotsForItem.length === 0}
             ariaLabel="Lote"
-            clearable
           />
           {draft.hub_inventory_item_id && !loadingLots && lotsForItem.length === 0 ? (
             <p className="hub-cws-exam-form__hint">
-              Nenhum lote com saldo. Dê entrada no estoque antes de registrar a vacina.
+              Nenhum lote válido com saldo (vencidos ficam ocultos). Registre uma entrada em Estoque
+              antes de aplicar esta vacina.
             </p>
           ) : null}
         </div>

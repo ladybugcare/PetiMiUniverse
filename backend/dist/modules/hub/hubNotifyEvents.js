@@ -11,6 +11,7 @@ exports.notifyHubNearlyEmptyLot = notifyHubNearlyEmptyLot;
 exports.notifyHubStockExpiryAlert = notifyHubStockExpiryAlert;
 exports.notifyHubBoardingCheckin = notifyHubBoardingCheckin;
 exports.notifyHubBoardingCheckout = notifyHubBoardingCheckout;
+exports.notifyHubSeriesEndingSoonBatch = notifyHubSeriesEndingSoonBatch;
 /**
  * Emissores de notificação por evento operacional do Hub.
  *
@@ -261,4 +262,55 @@ async function notifyHubBoardingCheckout(opts) {
         entityType: 'boarding_reservation',
         entityId: opts.reservationId,
     });
+}
+/**
+ * Série recorrente perto de acabar — recepção / banho & tosa (e gestores).
+ * Dedupe: não recria se o usuário já tem aviso não lido para a mesma série.
+ */
+async function notifyHubSeriesEndingSoonBatch(opts) {
+    if (!opts.clinicId || !opts.series.length)
+        return;
+    try {
+        const seriesIds = [...new Set(opts.series.map((s) => s.series_id).filter(Boolean))];
+        if (!seriesIds.length)
+            return;
+        const { data: existing, error } = await supabase_1.supabaseAdmin
+            .from('notifications')
+            .select('user_id, entity_id')
+            .eq('type', 'hub_series_ending_soon')
+            .eq('read', false)
+            .in('entity_id', seriesIds);
+        if (error) {
+            console.error('notifyHubSeriesEndingSoonBatch existing', error);
+        }
+        const alreadyBySeries = new Map();
+        for (const row of existing ?? []) {
+            const entityId = String(row.entity_id ?? '').trim();
+            const userId = String(row.user_id ?? '').trim();
+            if (!entityId || !userId)
+                continue;
+            const set = alreadyBySeries.get(entityId) ?? new Set();
+            set.add(userId);
+            alreadyBySeries.set(entityId, set);
+        }
+        await Promise.all(opts.series.map(async (s) => {
+            const label = s.title?.trim() || 'agendamento';
+            const remaining = Math.max(0, Number(s.remaining_count) || 0);
+            const exclude = [...(alreadyBySeries.get(s.series_id) ?? [])];
+            await (0, hubNotifyStaff_1.hubNotifyStaff)({
+                clinicId: opts.clinicId,
+                areas: ['recepcao', 'banho_tosa'],
+                excludeUserIds: exclude,
+                type: 'hub_series_ending_soon',
+                title: 'Série recorrente a terminar',
+                message: `A série de ${label} termina em breve (${remaining} ${remaining === 1 ? 'restante' : 'restantes'}).`,
+                link: `/hub/appointments?renew_series=${encodeURIComponent(s.series_id)}`,
+                entityType: 'appointment_series',
+                entityId: s.series_id,
+            });
+        }));
+    }
+    catch (e) {
+        console.error('notifyHubSeriesEndingSoonBatch', e);
+    }
 }

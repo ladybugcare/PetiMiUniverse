@@ -88,7 +88,7 @@ export function HubInClinicMedicationForm({
   useEffect(() => {
     setLoadingLots(true);
     void hubInventoryApi.lots
-      .list(clinicId)
+      .list(clinicId, { forSale: true })
       .then((r) => setLots(r.lots ?? []))
       .catch(() => setLots([]))
       .finally(() => setLoadingLots(false));
@@ -236,7 +236,8 @@ export function HubInClinicMedicationForm({
             />
             {!loadingLots && lotsForItem.length === 0 ? (
               <p className="hub-cws-exam-form__hint">
-                Sem lotes com saldo. Registre uma entrada antes de baixar o estoque.
+                Sem lotes válidos com saldo (vencidos ficam ocultos). Registre uma entrada antes de
+                baixar o estoque.
               </p>
             ) : null}
           </div>

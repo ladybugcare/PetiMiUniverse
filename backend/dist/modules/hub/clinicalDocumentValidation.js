@@ -21,6 +21,7 @@ exports.fetchClinicJsonDefaults = fetchClinicJsonDefaults;
 const node_crypto_1 = require("node:crypto");
 const supabase_1 = require("../../config/supabase");
 const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+const GUARDIAN_SELECT = 'id, full_name, phone, tax_id, id_doc_number, street, street_number, district, city, state, postal_code';
 function embedOne(x) {
     if (x == null)
         return null;
@@ -148,10 +149,10 @@ async function loadEncounterIssueParties(clinicId, encounterId) {
         .from('hub_encounters')
         .select(`
       id, clinic_id, pet_id, hub_case_id, guardian_id, hub_staff_member_id,
-      clinic:clinics(id, name),
-      pet:hub_pets(id, name, species, breed),
-      guardian:hub_guardians(id, full_name),
-      staff:hub_staff_members(id, full_name, crmv, crmv_uf)
+      clinic:clinics(id, name, phone, email, address, city, state),
+      pet:hub_pets(id, name, species, breed, birth_date),
+      guardian:hub_guardians(${GUARDIAN_SELECT}),
+      staff:hub_staff_members(id, full_name, crmv, crmv_uf, signature_image_url, stamp_image_url)
     `)
         .eq('id', encounterId)
         .eq('clinic_id', clinicId)
@@ -170,7 +171,7 @@ async function loadEncounterIssueParties(clinicId, encounterId) {
     if (!guardianEmbed && row.guardian_id) {
         const { data: gRow } = await supabase_1.supabaseAdmin
             .from('hub_guardians')
-            .select('id, full_name')
+            .select(GUARDIAN_SELECT)
             .eq('id', row.guardian_id)
             .maybeSingle();
         guardianEmbed = gRow;
@@ -180,7 +181,7 @@ async function loadEncounterIssueParties(clinicId, encounterId) {
         if (gid) {
             const { data: gRow } = await supabase_1.supabaseAdmin
                 .from('hub_guardians')
-                .select('id, full_name')
+                .select(GUARDIAN_SELECT)
                 .eq('id', gid)
                 .maybeSingle();
             guardianEmbed = gRow;
@@ -199,22 +200,42 @@ async function loadEncounterIssueParties(clinicId, encounterId) {
             encounter_id: String(row.id),
             pet_id: String(row.pet_id),
             hub_case_id: row.hub_case_id ?? null,
-            clinic: { id: clinic.id, name: clinic.name },
+            clinic: {
+                id: clinic.id,
+                name: clinic.name,
+                phone: clinic.phone ?? null,
+                email: clinic.email ?? null,
+                address: clinic.address ?? null,
+                city: clinic.city ?? null,
+                state: clinic.state ?? null,
+            },
             pet: {
                 id: petRow?.id ?? String(row.pet_id),
                 name: petRow?.name ?? '—',
                 species: petRow?.species ?? null,
                 breed: petRow?.breed ?? null,
+                birth_date: petRow?.birth_date ?? null,
             },
             guardian: {
                 id: (guardianRow?.id ?? row.guardian_id ?? null),
                 full_name: guardianRow?.full_name ?? 'Tutor não informado',
+                phone: guardianRow?.phone ?? null,
+                tax_id: guardianRow?.tax_id ?? null,
+                id_doc_number: guardianRow?.id_doc_number ?? null,
+                street: guardianRow?.street ?? null,
+                street_number: guardianRow?.street_number ?? null,
+                district: guardianRow?.district ?? null,
+                city: guardianRow?.city ?? null,
+                state: guardianRow?.state ?? null,
+                postal_code: guardianRow?.postal_code ?? null,
             },
             veterinarian: {
                 id: (staffRow?.id ?? row.hub_staff_member_id ?? null),
                 full_name: staffRow?.full_name ?? 'Veterinário responsável',
                 crmv: staffRow?.crmv ?? null,
                 crmv_uf: staffRow?.crmv_uf ?? null,
+                signature_image_url: staffRow?.signature_image_url ?? null,
+                stamp_image_url: staffRow?.stamp_image_url ?? null,
             },
         },
     };

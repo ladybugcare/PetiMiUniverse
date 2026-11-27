@@ -122,15 +122,35 @@ function formatAgeFromBirthDate(birthDate, now = new Date()) {
         return years === 1 ? '1 ano' : `${years} anos`;
     return `${years} ano${years > 1 ? 's' : ''}, ${months} ${months === 1 ? 'mês' : 'meses'}`;
 }
+function formatPostalCodeBr(raw) {
+    const digits = String(raw ?? '').replace(/\D/g, '');
+    if (digits.length === 8)
+        return `${digits.slice(0, 5)}-${digits.slice(5)}`;
+    const trimmed = String(raw ?? '').trim();
+    return trimmed || null;
+}
+/** Mesmo padrão de endereço de tutores no Hub (rua, nº · bairro · cidade / UF · CEP). */
 function formatGuardianAddress(g) {
-    const line1 = [g.street, g.street_number].filter(Boolean).join(', ').trim();
-    const line2 = [g.district, g.city, g.state].filter(Boolean).join(', ').trim();
-    const parts = [line1, line2, g.postal_code?.trim()].filter(Boolean);
-    return parts.length ? parts.join(' — ') : 'Não informado';
+    const parts = [];
+    if (g.street) {
+        parts.push([g.street, g.street_number].filter(Boolean).join(', '));
+    }
+    if (g.district)
+        parts.push(g.district);
+    if (g.city || g.state)
+        parts.push([g.city, g.state].filter(Boolean).join(' / '));
+    const cep = formatPostalCodeBr(g.postal_code);
+    if (cep)
+        parts.push(`CEP ${cep}`);
+    return parts.length ? parts.join(' · ') : 'Não informado';
 }
 function formatClinicAddress(c) {
-    const parts = [c.address?.trim(), [c.city, c.state].filter(Boolean).join(' - ')].filter(Boolean);
-    return parts.join(', ') || '';
+    const parts = [];
+    if (c.address?.trim())
+        parts.push(c.address.trim());
+    if (c.city || c.state)
+        parts.push([c.city, c.state].filter(Boolean).join(' / '));
+    return parts.join(' · ') || '';
 }
 function formatTaxIdDisplay(taxId) {
     const digits = String(taxId ?? '').replace(/\D/g, '');
@@ -143,12 +163,11 @@ function formatTaxIdDisplay(taxId) {
     return taxId?.trim() || 'Não informado';
 }
 function formatMedicationQuantityLine(med) {
-    return [med.quantity, med.presentation].filter(Boolean).join(' ').trim();
+    return (med.presentation ?? '').trim();
 }
 function formatMedicationInstructions(med) {
     const bits = [
         med.posology,
-        med.duration ? `durante ${med.duration}` : null,
         med.concentration ? `(${med.concentration})` : null,
         med.instructions,
     ].filter(Boolean);
@@ -197,6 +216,8 @@ function buildPrescriptionSnapshot(input) {
             full_name: input.veterinarian.full_name,
             crmv: input.veterinarian.crmv ?? null,
             crmv_uf: input.veterinarian.crmv_uf ?? null,
+            signature_image_url: input.veterinarian.signature_image_url ?? null,
+            stamp_image_url: input.veterinarian.stamp_image_url ?? null,
         },
         medications: [...input.items]
             .sort((a, b) => Number(a.order_index ?? 0) - Number(b.order_index ?? 0))
@@ -234,6 +255,8 @@ function snapshotToPdfView(snapshot, opts) {
             full_name: snapshot.veterinarian.full_name,
             crmv: snapshot.veterinarian.crmv,
             crmv_uf: snapshot.veterinarian.crmv_uf,
+            signature_image_url: snapshot.veterinarian.signature_image_url,
+            stamp_image_url: snapshot.veterinarian.stamp_image_url,
         },
     };
 }
@@ -294,6 +317,8 @@ function mapLoadedIssueContext(rx, items, clinicEmbed, petEmbed, guardianEmbed, 
             full_name: staffRow?.full_name ?? 'Veterinário responsável',
             crmv: staffRow?.crmv ?? null,
             crmv_uf: staffRow?.crmv_uf ?? null,
+            signature_image_url: staffRow?.signature_image_url ?? null,
+            stamp_image_url: staffRow?.stamp_image_url ?? null,
         },
     };
 }

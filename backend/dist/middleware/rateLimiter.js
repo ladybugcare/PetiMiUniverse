@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.publicPrescriptionLimiter = exports.uploadLimiter = exports.userRateLimiter = exports.statsLimiter = exports.createLimiter = exports.authLimiter = exports.hubApiLimiter = exports.generalLimiter = void 0;
+exports.publicBillingLinkLimiter = exports.publicPrescriptionLimiter = exports.uploadLimiter = exports.userRateLimiter = exports.statsLimiter = exports.createLimiter = exports.authLimiter = exports.hubApiLimiter = exports.generalLimiter = void 0;
 exports.parseJwtSub = parseJwtSub;
 exports.isRateLimitDisabled = isRateLimitDisabled;
 exports.getRateLimitBypassUserIds = getRateLimitBypassUserIds;
@@ -331,6 +331,21 @@ exports.publicPrescriptionLimiter = (0, express_rate_limit_1.default)({
     keyGenerator: rateLimitKey,
     message: {
         error: 'Muitas tentativas de validação. Tente novamente em alguns minutos.',
+    },
+    standardHeaders: true,
+    legacyHeaders: false,
+    skip: (req) => isRateLimitDisabled() || isRateLimitBypassUser(req),
+});
+/**
+ * Rate limiter para links públicos de orçamento e comanda (token bearer na URL).
+ * Mesmos defaults da receita; overrides: PUBLIC_BILLING_RATE_LIMIT_*.
+ */
+exports.publicBillingLinkLimiter = (0, express_rate_limit_1.default)({
+    windowMs: parsePositiveInt(process.env.PUBLIC_BILLING_RATE_LIMIT_WINDOW_MS ?? process.env.PUBLIC_PRESCRIPTION_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000),
+    max: parsePositiveInt(process.env.PUBLIC_BILLING_RATE_LIMIT_MAX ?? process.env.PUBLIC_PRESCRIPTION_RATE_LIMIT_MAX, 60),
+    keyGenerator: rateLimitKey,
+    message: {
+        error: 'Muitas tentativas de acesso. Tente novamente em alguns minutos.',
     },
     standardHeaders: true,
     legacyHeaders: false,

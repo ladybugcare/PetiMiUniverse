@@ -238,14 +238,36 @@ async function pickupLegsForAppointment(clinicId, appointmentId) {
     const legIds = legs.map((l) => l.id);
     const { data: stops } = await supabase_1.supabaseAdmin
         .from('hub_pickup_stops')
-        .select('hub_appointment_id, direction, status, hub_pickup_route_id')
+        .select('hub_appointment_id, direction, status, hub_pickup_route_id, boarded_at, boarded_source, boarded_late')
         .eq('clinic_id', clinicId)
         .in('hub_appointment_id', legIds);
     return (stops ?? []).map((s) => ({
         direction: String(s.direction || ''),
         status: String(s.status || ''),
         route_id: s.hub_pickup_route_id ?? null,
+        boarded_at: s.boarded_at ?? null,
+        boarded_source: s.boarded_source ?? null,
+        boarded_late: Boolean(s.boarded_late),
     }));
+}
+async function driverNameForRoute(clinicId, routeId) {
+    const { data: route } = await supabase_1.supabaseAdmin
+        .from('hub_pickup_routes')
+        .select('id, driver_staff_id, label, vehicle_label')
+        .eq('id', routeId)
+        .eq('clinic_id', clinicId)
+        .maybeSingle();
+    if (!route)
+        return null;
+    const staffId = route.driver_staff_id;
+    if (!staffId)
+        return route.label || route.vehicle_label || null;
+    const { data: staff } = await supabase_1.supabaseAdmin
+        .from('hub_staff_members')
+        .select('id, full_name')
+        .eq('id', staffId)
+        .maybeSingle();
+    return staff?.full_name ?? null;
 }
 async function buildReceptionCues(opts) {
     const cues = [];
@@ -338,21 +360,32 @@ async function buildReceptionCues(opts) {
     }
     else if (opts.kind === 'embarque') {
         cues.push({
-            key: 'exit_board',
-            label: 'Embarque / Leva e Traz',
-            detail: 'Há devolução prevista, mas ainda sem motorista ou rota pronta.',
+            key: 'exit_ux',
+            label: 'Pronto para embarque',
+            detail: 'Serviço liberado. Entregue o pet ao motorista ou aguarde a confirmação dele.',
         });
-        nextStep = 'Prepare o pet para embarcar quando o motorista chegar ou liberar a rota.';
+        nextStep = 'Quando o pet estiver com o motorista, toque em «Entreguei ao motorista».';
         appointmentId =
             typeof opts.context.appointment_id === 'string' ? opts.context.appointment_id : appointmentId;
         if (appointmentId) {
             const legs = await pickupLegsForAppointment(opts.clinicId, appointmentId);
             const deliveries = legs.filter((l) => l.direction === 'delivery' && l.status !== 'failed');
-            if (deliveries.some((l) => l.route_id)) {
+            const withRoute = deliveries.find((l) => l.route_id);
+            if (withRoute?.route_id) {
+                const driverName = await driverNameForRoute(opts.clinicId, withRoute.route_id);
                 cues.push({
                     key: 'exit_wait_driver',
-                    label: 'Já tem rota',
-                    detail: 'Há entrega com rota — a recepção só acompanha se o pet ainda estiver aqui.',
+                    label: driverName ? `Motorista: ${driverName}` : 'Motorista na rota',
+                    detail: withRoute.boarded_at
+                        ? 'Embarque já registrado na parada de devolução.'
+                        : 'Há devolução com rota — confirme o embarque ou o motorista pode registrar depois.',
+                });
+            }
+            else {
+                cues.push({
+                    key: 'exit_no_driver',
+                    label: 'Sem motorista ainda',
+                    detail: 'Prepare o pet; a rota/motorista pode ser atribuídos a qualquer momento.',
                 });
             }
         }
@@ -395,16 +428,28 @@ async function buildReceptionCues(opts) {
     }
     else if (opts.kind === 'saida_prevista') {
         const preparing = opts.context.preparing === true;
-        cues.push({
-            key: preparing ? 'boarding_preparing' : 'boarding_planned',
-            label: preparing ? 'Preparando saída' : 'Saída prevista',
-            detail: preparing
-                ? 'O hotel/creche está conferindo pertences e pendências.'
-                : 'O pet ainda não foi liberado pelo hotel/creche.',
-        });
-        nextStep = preparing
-            ? 'Aguarde a liberação do setor. Não entregue o pet ainda.'
-            : 'Acompanhe o horário. A entrega só fica disponível depois que o setor liberar.';
+        const needsReturnConfig = opts.context.needs_return_config === true;
+        if (needsReturnConfig) {
+            cues.push({
+                key: 'lt_return_config',
+                label: 'Falta configurar a devolução',
+                detail: 'Há Leva e Traz contratado, mas a perna de volta ainda não está identificada como devolução (parada/rota).',
+            });
+            nextStep =
+                'Planeje a rota de devolução no L&T (direção entrega). A saída fica pendente de transporte — não use retirada no balcão.';
+        }
+        else {
+            cues.push({
+                key: preparing ? 'boarding_preparing' : 'boarding_planned',
+                label: preparing ? 'Aguardando liberação' : 'Aguardando serviço',
+                detail: preparing
+                    ? 'O hotel/creche está conferindo pertences e pendências.'
+                    : 'O pet ainda não foi liberado pelo hotel/creche.',
+            });
+            nextStep = preparing
+                ? 'Aguarde a liberação do setor. Não entregue o pet ainda.'
+                : 'Acompanhe o horário. A entrega só fica disponível depois que o setor liberar.';
+        }
         appointmentId =
             typeof opts.context.appointment_id === 'string' ? opts.context.appointment_id : appointmentId;
     }
@@ -543,6 +588,49 @@ const getHubReceptionHandoffDetail = async (req, res) => {
         const contextLabel = sourceType === 'boarding_reservation' && typeof context.label === 'string'
             ? context.label
             : ops.service_name || (typeof context.label === 'string' ? context.label : 'Operação');
+        let deliveryBoarding = null;
+        if (kind === 'embarque' || kind === 'retirada_balcao') {
+            const apptId = (typeof ops.appointment_id === 'string' && ops.appointment_id) ||
+                (typeof context.appointment_id === 'string' ? context.appointment_id : null);
+            if (apptId) {
+                const legs = await pickupLegsForAppointment(clinicId.data, apptId);
+                const delivery = legs.find((l) => l.direction === 'delivery' && l.status !== 'failed') ??
+                    legs.find((l) => l.direction === 'delivery') ??
+                    null;
+                if (delivery) {
+                    const driverName = delivery.route_id
+                        ? await driverNameForRoute(clinicId.data, delivery.route_id)
+                        : null;
+                    let exitUx = 'Pronto para embarque';
+                    if (delivery.boarded_at) {
+                        exitUx = delivery.status === 'completed' ? 'Entregue ao tutor' : 'Embarcado';
+                    }
+                    else if (kind === 'retirada_balcao') {
+                        exitUx = 'Aguardando liberação';
+                    }
+                    deliveryBoarding = {
+                        boarded_at: delivery.boarded_at,
+                        boarded_source: delivery.boarded_source,
+                        boarded_late: delivery.boarded_late,
+                        stop_status: delivery.status,
+                        route_id: delivery.route_id,
+                        driver_name: driverName,
+                        exit_ux_status: exitUx,
+                    };
+                }
+                else if (kind === 'embarque') {
+                    deliveryBoarding = {
+                        boarded_at: null,
+                        boarded_source: null,
+                        boarded_late: false,
+                        stop_status: null,
+                        route_id: typeof context.route_id === 'string' ? context.route_id : null,
+                        driver_name: null,
+                        exit_ux_status: 'Pronto para embarque',
+                    };
+                }
+            }
+        }
         return res.json({
             id: row.id,
             kind: row.kind,
@@ -586,6 +674,7 @@ const getHubReceptionHandoffDetail = async (req, res) => {
             is_late: ops.is_late,
             charge_pending: chargePending,
             boarding: boardingSummary,
+            delivery_boarding: deliveryBoarding,
         });
     }
     catch (e) {

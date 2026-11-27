@@ -165,13 +165,22 @@ function pricingMatrixKindMatchesGroup(group, matrix) {
     }
     return true;
 }
-/** Adicionais: apenas preço único (sem matriz) ou matriz `personalizado`. */
+/**
+ * Adicionais: preço único (sem matriz), `personalizado`, ou as mesmas matrizes de Banho & Tosa
+ * (`porte` / `pelagem` / `porte_pelagem`) para resolução automática pelo pet na agenda.
+ */
 function pricingMatrixAllowedForAddon(matrix) {
     if (!matrix)
         return true;
-    if (matrix.kind === 'personalizado')
+    if (matrix.kind === 'personalizado' ||
+        matrix.kind === 'porte' ||
+        matrix.kind === 'pelagem' ||
+        matrix.kind === 'porte_pelagem') {
         return true;
-    return { error: 'Adicionais só permitem preço único ou personalizado' };
+    }
+    return {
+        error: 'Adicionais só permitem preço único, personalizado, por porte, pelagem ou porte + pelagem',
+    };
 }
 function tierKeys(matrix) {
     switch (matrix.kind) {

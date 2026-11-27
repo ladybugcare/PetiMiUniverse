@@ -9,6 +9,7 @@ const supabase_1 = require("../../config/supabase");
 const hubNotifyEvents_1 = require("./hubNotifyEvents");
 const receptionSync_1 = require("./receptionSync");
 const groomingStages_1 = require("./groomingStages");
+const groomingExecution_1 = require("./groomingExecution");
 const hubResourcesService_1 = require("./hubResourcesService");
 const groomingPetTags_1 = require("./groomingPetTags");
 const hubComandasController_1 = require("./hubComandasController");
@@ -250,7 +251,7 @@ const getHubGroomingDayBoard = async (req, res) => {
             }
         }
         const appointments = apptRowsRaw.filter((a) => appointmentMatchesGroomingTypes(a, groomingTypeSet, lineTypeIdsByAppt));
-        const groomingApptIds = appointments.map((a) => a.id);
+        const groomingApptIds = appointments.map((a) => a.id); // mutado abaixo se sessão puxar appointment fora do range
         const parentIdsWithPickup = new Set();
         if (groomingApptIds.length > 0) {
             const { data: pickupLegs, error: pickupLegsErr } = await supabase_1.supabaseAdmin
@@ -288,7 +289,67 @@ const getHubGroomingDayBoard = async (req, res) => {
             }
             return res.status(500).json({ error: sessErr.message });
         }
-        const sessionsForDay = (sessionsRaw ?? []).filter((s) => {
+        let sessionsForDay = (sessionsRaw ?? []).filter((s) => {
+            const aid = s.hub_appointment_id;
+            if (aid && groomingApptIds.includes(aid))
+                return true;
+            const checkedIn = s.checked_in_at;
+            if (checkedIn && checkedIn >= from && checkedIn <= to)
+                return true;
+            const created = s.created_at;
+            return !aid && created >= from && created <= to;
+        });
+        // Sessão de hoje ligada a agendamento fora do range do board (ex.: antecipação falhou):
+        // puxa o appointment para não renderizar como «Avulso» sem serviço.
+        const missingLinkedApptIds = [
+            ...new Set(sessionsForDay
+                .map((s) => s.hub_appointment_id)
+                .filter((aid) => typeof aid === 'string' && aid.length > 0)
+                .filter((aid) => !groomingApptIds.includes(aid))),
+        ];
+        if (missingLinkedApptIds.length > 0) {
+            const { data: linkedAppts, error: linkedErr } = await supabase_1.supabaseAdmin
+                .from('hub_appointments')
+                .select('id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, starts_at, ends_at, status, title, hub_service_type_id, appointment_kind, notes, description, hub_resource_id, resource_label')
+                .eq('clinic_id', clinic_id)
+                .in('id', missingLinkedApptIds)
+                .is('deleted_at', null)
+                .neq('status', 'cancelled');
+            if (linkedErr)
+                return res.status(500).json({ error: linkedErr.message });
+            const linkedRows = (linkedAppts ?? []);
+            if (linkedRows.length > 0) {
+                const linkedIds = linkedRows.map((a) => a.id);
+                const { data: linkedLines, error: linkedLineErr } = await supabase_1.supabaseAdmin
+                    .from('hub_appointment_services')
+                    .select('id, appointment_id, hub_service_type_id, order_index, executed_at')
+                    .in('appointment_id', linkedIds)
+                    .order('order_index', { ascending: true });
+                if (linkedLineErr)
+                    return res.status(500).json({ error: linkedLineErr.message });
+                for (const row of linkedLines ?? []) {
+                    const aid = row.appointment_id;
+                    const stid = row.hub_service_type_id;
+                    const list = lineTypeIdsByAppt.get(aid) ?? [];
+                    list.push(stid);
+                    lineTypeIdsByAppt.set(aid, list);
+                    const lines = lineRowsByAppt.get(aid) ?? [];
+                    lines.push({
+                        id: row.id,
+                        hub_service_type_id: stid,
+                        order_index: row.order_index,
+                        executed_at: row.executed_at ?? null,
+                    });
+                    lineRowsByAppt.set(aid, lines);
+                }
+                const linkedGrooming = linkedRows.filter((a) => appointmentMatchesGroomingTypes(a, groomingTypeSet, lineTypeIdsByAppt));
+                for (const a of linkedGrooming) {
+                    appointments.push(a);
+                    groomingApptIds.push(a.id);
+                }
+            }
+        }
+        sessionsForDay = (sessionsRaw ?? []).filter((s) => {
             const aid = s.hub_appointment_id;
             if (aid && groomingApptIds.includes(aid))
                 return true;
@@ -489,9 +550,10 @@ const getHubGroomingDayBoard = async (req, res) => {
             const grooming_stage = session
                 ? session.grooming_stage
                 : (0, groomingStages_1.boardStageFromAppointmentStatus)(appointment_status, a.appointment_kind);
+            // Folga de 2 min: antecipar futuro para «agora» não marca ATENÇÃO/Em atraso na hora.
             const is_late = ['scheduled', 'checked_in', 'queued'].includes(grooming_stage) &&
                 ['pending_confirm', 'confirmed', 'checked_in', 'in_progress'].includes(appointment_status) &&
-                new Date(startsAt).getTime() < nowMs;
+                new Date(startsAt).getTime() < nowMs - 2 * 60_000;
             const staffId = session?.hub_staff_member_id ?? a.hub_staff_member_id;
             const guardianId = session?.guardian_id ?? a.guardian_id;
             let petId = (0, hubDayBoardPets_1.coalesceAppointmentPetId)(a.pet_id, session?.pet_id);
@@ -664,7 +726,7 @@ const openHubGroomingSessionFromAppointment = async (req, res) => {
         }
         const { data: appt, error: apptErr } = await supabase_1.supabaseAdmin
             .from('hub_appointments')
-            .select('id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes, appointment_kind, status')
+            .select('id, clinic_id, unit_id, pet_id, guardian_id, hub_staff_member_id, notes, appointment_kind, status, starts_at, ends_at')
             .eq('id', hub_appointment_id)
             .eq('clinic_id', clinic_id)
             .is('deleted_at', null)
@@ -686,7 +748,38 @@ const openHubGroomingSessionFromAppointment = async (req, res) => {
                 .maybeSingle();
             tutorSnapshot = petRow?.notes ?? null;
         }
-        const now = new Date().toISOString();
+        const now = new Date();
+        const nowIso = now.toISOString();
+        // Agendamento futuro: antecipa o slot para agora (mantém duração) para não virar «Avulso» na fila de hoje.
+        const ymdSp = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+        const startsAt = appt.starts_at;
+        const endsAt = appt.ends_at;
+        if (startsAt && endsAt) {
+            const startMs = new Date(startsAt).getTime();
+            const endMs = new Date(endsAt).getTime();
+            const startDay = ymdSp(startsAt);
+            const todayYmd = ymdSp(nowIso);
+            if (Number.isFinite(startMs) && Number.isFinite(endMs) && startDay > todayYmd) {
+                const durationMs = Math.max(endMs - startMs, 30 * 60_000);
+                const { error: anticipErr } = await supabase_1.supabaseAdmin
+                    .from('hub_appointments')
+                    .update({
+                    starts_at: nowIso,
+                    ends_at: new Date(now.getTime() + durationMs).toISOString(),
+                })
+                    .eq('id', hub_appointment_id)
+                    .eq('clinic_id', clinic_id);
+                if (anticipErr) {
+                    console.error('openFromAppointment anticipate slot', anticipErr.message);
+                    return res.status(500).json({
+                        error: 'Não foi possível antecipar o agendamento para a fila de hoje.',
+                    });
+                }
+                // Reflete no objeto local para sync/status a seguir.
+                appt.starts_at = nowIso;
+                appt.ends_at = new Date(now.getTime() + durationMs).toISOString();
+            }
+        }
         const { data, error } = await supabase_1.supabaseAdmin
             .from('hub_grooming_sessions')
             .insert({
@@ -697,7 +790,7 @@ const openHubGroomingSessionFromAppointment = async (req, res) => {
             hub_appointment_id,
             hub_staff_member_id: appt.hub_staff_member_id,
             grooming_stage: targetStage,
-            checked_in_at: now,
+            checked_in_at: nowIso,
             tutor_notes_snapshot: tutorSnapshot,
         })
             .select(SESSION_SELECT)
@@ -894,10 +987,19 @@ const patchHubGroomingSession = async (req, res) => {
                 payload: { from: current.grooming_stage, to: b.grooming_stage },
             });
             await syncAppointmentStatusForStage(b.clinic_id, current.hub_appointment_id, b.grooming_stage);
-            if (b.grooming_stage === 'ready' || b.grooming_stage === 'delivered' || b.grooming_stage === 'closed') {
+            if ((0, groomingStages_1.isGroomingServiceOperationallyDone)(b.grooming_stage)) {
                 await (0, hubResourcesService_1.releaseAppointmentResource)(b.clinic_id, current.hub_appointment_id);
-            }
-            if (b.grooming_stage === 'closed') {
+                // Pronto ⇒ linhas do agendamento feitas (contador X/Y) + comanda deixa de ser «em andamento».
+                try {
+                    await (0, groomingExecution_1.ensureGroomingAppointmentLinesExecuted)({
+                        clinicId: b.clinic_id,
+                        appointmentId: current.hub_appointment_id,
+                        executedByStaffId: current.hub_staff_member_id ?? null,
+                    });
+                }
+                catch (markErr) {
+                    console.error('ensureGroomingAppointmentLinesExecuted', id.data, markErr);
+                }
                 void (0, hubComandasController_1.syncOpenComandasAfterGroomingClosed)(b.clinic_id, id.data);
             }
             if (b.grooming_stage === 'ready') {

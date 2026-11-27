@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.VALID_STATUS_TRANSITIONS = exports.BOARDING_ACTIVE_CUSTODY_STATUSES = exports.BOARDING_STATUSES = exports.BOARDING_MODES = exports.BOARDING_APPOINTMENT_KINDS = exports.BOARDING_SERVICE_GROUPS = void 0;
+exports.VALID_STATUS_TRANSITIONS = exports.BOARDING_COMANDA_INCOMPLETE_STATUSES = exports.BOARDING_ACTIVE_CUSTODY_STATUSES = exports.BOARDING_STATUSES = exports.BOARDING_MODES = exports.BOARDING_APPOINTMENT_KINDS = exports.BOARDING_SERVICE_GROUPS = void 0;
+exports.isBoardingStatusReadyForComanda = isBoardingStatusReadyForComanda;
 exports.isBoardingActiveCustody = isBoardingActiveCustody;
 exports.isValidStatusTransition = isValidStatusTransition;
 exports.dayBoundsFromYmdSaoPaulo = dayBoundsFromYmdSaoPaulo;
@@ -30,6 +31,24 @@ exports.BOARDING_ACTIVE_CUSTODY_STATUSES = [
     'checkout_preparing',
     'ready_for_handoff',
 ];
+/**
+ * Status em que a comanda de hospedagem pode ser aberta antes do check-out
+ * (cobrança antecipada no Caixa). Cancelada/no-show ficam de fora.
+ */
+exports.BOARDING_COMANDA_INCOMPLETE_STATUSES = [
+    'reserved',
+    'checked_in',
+    'checkout_preparing',
+    'ready_for_handoff',
+];
+/** Reserva apta a gerar/sincronizar comanda (completa ou antecipada). */
+function isBoardingStatusReadyForComanda(status, opts) {
+    if (status === 'checked_out')
+        return true;
+    if (!opts?.allowIncomplete)
+        return false;
+    return exports.BOARDING_COMANDA_INCOMPLETE_STATUSES.includes(status);
+}
 exports.VALID_STATUS_TRANSITIONS = {
     reserved: ['checked_in', 'cancelled', 'no_show'],
     checked_in: ['checkout_preparing', 'ready_for_handoff', 'checked_out', 'reserved'],

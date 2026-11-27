@@ -2,6 +2,7 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.uploadHubUserProfilePhotoToStorage = uploadHubUserProfilePhotoToStorage;
 exports.uploadHubClinicProfilePhotoToStorage = uploadHubClinicProfilePhotoToStorage;
+exports.uploadHubClinicPublicProfileAssetToStorage = uploadHubClinicPublicProfileAssetToStorage;
 const supabase_1 = require("../config/supabase");
 const fileValidation_js_1 = require("./fileValidation.js");
 const logger_js_1 = require("./logger.js");
@@ -63,5 +64,13 @@ async function uploadHubUserProfilePhotoToStorage(file, userId) {
 }
 async function uploadHubClinicProfilePhotoToStorage(file, clinicId) {
     const path = buildPath('clinics', clinicId, file.originalname);
+    return uploadToHubProfileBucket(file, path);
+}
+/** Capa/logo da landing pública: clinics/{id}/public/{kind}-*.ext */
+async function uploadHubClinicPublicProfileAssetToStorage(file, clinicId, kind) {
+    const sanitized = (0, fileValidation_js_1.sanitizeFilename)(file.originalname);
+    const extRaw = sanitized.split('.').pop()?.toLowerCase() || 'jpg';
+    const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(extRaw) ? extRaw : 'jpg';
+    const path = `clinics/${clinicId}/public/${kind}-${Date.now()}.${safeExt}`;
     return uploadToHubProfileBucket(file, path);
 }

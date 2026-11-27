@@ -8,6 +8,8 @@ const clinicalDocumentValidation_1 = require("./clinicalDocumentValidation");
 const specialistReferralDocumentIssue_1 = require("./specialistReferralDocumentIssue");
 const hubSpecialistReferralPdf_1 = require("./hubSpecialistReferralPdf");
 const hubClinicalTimelineController_1 = require("./hubClinicalTimelineController");
+const publicClinicalPartiesResponse_1 = require("./publicClinicalPartiesResponse");
+const hubTenantAsserts_1 = require("./hubTenantAsserts");
 const uuidStr = zod_1.z.string().uuid();
 const prioritySchema = zod_1.z.enum(['routine', 'urgent']);
 const statusSchema = zod_1.z.enum(['draft', 'active', 'issued', 'cancelled']);
@@ -100,6 +102,21 @@ const createHubSpecialistReferral = async (req, res) => {
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
+    if (!(await (0, hubTenantAsserts_1.assertPetInClinic)(b.clinic_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Pet inválido' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertGuardianInClinic)(b.clinic_id, b.guardian_id))) {
+        return res.status(400).json({ error: 'Tutor inválido' });
+    }
+    if (b.guardian_id && !(await (0, hubTenantAsserts_1.assertGuardianLinkedToPet)(b.pet_id, b.guardian_id))) {
+        return res.status(400).json({ error: 'Tutor inválido' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertEncounterInClinic)(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Referência inválida' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertCaseInClinic)(b.clinic_id, b.hub_case_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Caso clínico inválido' });
+    }
     const { data, error } = await supabase_1.supabaseAdmin
         .from('hub_clinical_specialist_referrals')
         .insert({
@@ -380,6 +397,7 @@ function buildPublicSpecialistReferralPayload(doc) {
         revoked_at: doc.revoked_at,
         expires_at: doc.expires_at,
     });
+    const parties = (0, publicClinicalPartiesResponse_1.mapClinicalPartiesForPublic)(snapshot);
     return {
         status,
         validation_code: String(doc.validation_code ?? ''),
@@ -390,10 +408,7 @@ function buildPublicSpecialistReferralPayload(doc) {
         content_hash_short: contentHash ? (0, clinicalDocumentValidation_1.truncateContentHash)(contentHash) : '—',
         document_version: Number(doc.version_no ?? snapshot.document_version ?? 1),
         scope: snapshot.scope,
-        clinic: { name: snapshot.clinic.name },
-        pet: snapshot.pet,
-        guardian: snapshot.guardian,
-        veterinarian: snapshot.veterinarian,
+        ...parties,
         referrals: snapshot.referrals,
         disclaimers: snapshot.disclaimers ?? [],
     };

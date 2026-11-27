@@ -90,6 +90,10 @@ export interface HubInventoryLotRow {
   received_at: string;
   qty_on_hand: number;
   remaining_content?: number;
+  /** Presente em alertas de validade: lote com validade estritamente anterior a hoje. */
+  expired?: boolean;
+  /** Dias até a validade (negativo = já vencido). */
+  days_until?: number | null;
   item: {
     name: string;
     item_kind: HubItemKind;

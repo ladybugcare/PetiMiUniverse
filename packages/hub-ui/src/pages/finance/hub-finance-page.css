@@ -4953,8 +4953,7 @@
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 20px;
-  align-items: stretch;
-  max-height: 60vh;
+  align-items: start;
   min-height: 0;
 }
 
@@ -4985,12 +4984,6 @@
 
   .hub-caixa-page__ops-row {
     grid-template-columns: 1fr;
-    max-height: none;
-  }
-
-  .hub-caixa-page__col {
-    max-height: none;
-    overflow-y: visible;
   }
 }
 
@@ -5000,9 +4993,7 @@
   gap: 8px;
   min-width: 0;
   min-height: 0;
-  max-height: 60vh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: visible;
 }
 
 .hub-caixa-page__ops-row .hub-caixa-page__card {
@@ -5013,17 +5004,14 @@
 .hub-caixa-page__card--ops {
   display: flex;
   flex-direction: column;
-  flex: 1 1 auto;
   min-height: 0;
-  max-height: 100%;
-  overflow: hidden;
+  overflow: visible;
 }
 
+.hub-caixa-page__card-body,
 .hub-caixa-page__card-scroll {
-  flex: 1 1 auto;
   min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
+  overflow: visible;
 }
 
 .hub-caixa-page__ops-row h3.hub-caixa-page__card-title {
@@ -5449,10 +5437,6 @@ h3.hub-caixa-page__card-title {
 .hub-caixa-page__history-scroll {
   margin: 0 -2px;
   padding: 0 2px;
-}
-
-.hub-caixa-page__ops-row .hub-caixa-page__history-scroll {
-  max-height: none;
 }
 
 /* Timeline — Histórico da sessão */

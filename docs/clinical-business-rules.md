@@ -417,9 +417,10 @@ Manter inventário confiável sem **dupla baixa** nem furos entre clínica e cai
 
 ### 6.4 Fluxos
 
-1. **Medicação na consulta:** a equipe informa a quantidade usada (ex.: ml, se o item tem conteúdo por frasco/ampola). Com item + lote, o sistema **não** baixa automaticamente: exige confirmação (`confirm_stock_out`). Só então cria `encounter_out` na quantidade convertida (ex.: 2 ml ÷ 10 ml/frasco = 0,2 frasco). Sem item/lote, grava só o registro clínico + serviço de aplicação na comanda.
-2. **Embalagem quase vazia:** após uso fracionado, se o saldo do lote ficar **maior que 0 e menor que 20% de 1 unidade** de estoque, notifica a área **estoque** (e gestores). Em Estoque → Alertas, quem tem `hub.inventory.write` pode **Baixar resto** (`adjustment_out`).
-3. Administração clínica e venda na comanda: **uma** fonte de verdade por consumo (medicação clínica já baixa no atendimento; checkout não duplica).
+1. **Vacina na consulta (`in_clinic`):** ao escolher item do estoque, o **lote é obrigatório**. O sistema baixa **1 unidade** no registro (`encounter_out`) e coloca o produto na comanda. Sem lote válido com saldo, não registra a aplicação pelo estoque (é preciso dar entrada ou usar caminho de vacina **externa** na carteirinha). Vacina **externa** não baixa estoque.
+2. **Medicação na consulta:** a equipe informa a quantidade usada (ex.: ml, se o item tem conteúdo por frasco/ampola). Com item + lote, o sistema **não** baixa automaticamente: exige confirmação (`confirm_stock_out`). Só então cria `encounter_out` na quantidade convertida (ex.: 2 ml ÷ 10 ml/frasco = 0,2 frasco). Sem item/lote, grava só o registro clínico + serviço de aplicação na comanda.
+3. **Embalagem quase vazia:** após uso fracionado, se o saldo do lote ficar **maior que 0 e menor que 20% de 1 unidade** de estoque, notifica a área **estoque** (e gestores). Em Estoque → Alertas, quem tem `hub.inventory.write` pode **Baixar resto** (`adjustment_out`).
+4. Administração clínica e venda na comanda: **uma** fonte de verdade por consumo (medicação/vacina clínica já baixa no atendimento; checkout não duplica).
 
 ### 6.5 Exceções
 

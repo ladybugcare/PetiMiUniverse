@@ -3,6 +3,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getHubCustomerCreditBalance = exports.postHubCustomerCreditMovement = void 0;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
+const hubCustomerCredit_1 = require("./hubCustomerCredit");
+const hubTenantAsserts_1 = require("./hubTenantAsserts");
 const uuidStr = zod_1.z.string().uuid();
 function round2(n) {
     return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -29,6 +31,15 @@ const postHubCustomerCreditMovement = async (req, res) => {
         }
         const body = parsed.data;
         const userId = req.user?.id ?? null;
+        if (!(await (0, hubTenantAsserts_1.assertGuardianInClinic)(body.clinic_id, body.guardian_id))) {
+            return res.status(400).json({ error: 'Tutor inválido' });
+        }
+        if (!(await (0, hubTenantAsserts_1.assertComandaInClinic)(body.clinic_id, body.comanda_id))) {
+            return res.status(400).json({ error: 'Referência inválida' });
+        }
+        if (!(await (0, hubTenantAsserts_1.assertReceivableInClinic)(body.clinic_id, body.receivable_id))) {
+            return res.status(400).json({ error: 'Referência inválida' });
+        }
         if (body.direction === 'in' && body.payment_method === 'cash' && !body.cash_session_id) {
             return res.status(409).json({ error: 'Informe a sessão de caixa para entrada em dinheiro.' });
         }
@@ -80,26 +91,27 @@ const getHubCustomerCreditBalance = async (req, res) => {
         if (!clinicParsed.success || !guardianParsed.success) {
             return res.status(400).json({ error: 'clinic_id e guardian_id obrigatórios' });
         }
-        const { data, error } = await supabase_1.supabaseAdmin
-            .from('hub_customer_credit_movements')
-            .select('direction, amount')
-            .eq('clinic_id', clinicParsed.data)
-            .eq('guardian_id', guardianParsed.data);
-        if (error) {
-            if (String(error.message || '').includes('hub_customer_credit')) {
+        if (!(await (0, hubTenantAsserts_1.assertGuardianInClinic)(clinicParsed.data, guardianParsed.data))) {
+            return res.status(400).json({ error: 'Tutor inválido' });
+        }
+        try {
+            const balance = await (0, hubCustomerCredit_1.getHubCustomerCreditBalance)(clinicParsed.data, guardianParsed.data);
+            const { data, error } = await supabase_1.supabaseAdmin
+                .from('hub_customer_credit_movements')
+                .select('id')
+                .eq('clinic_id', clinicParsed.data)
+                .eq('guardian_id', guardianParsed.data);
+            if (error && !String(error.message || '').includes('hub_customer_credit')) {
+                return res.status(500).json({ error: error.message });
+            }
+            return res.json({ balance, movements_count: (data ?? []).length });
+        }
+        catch (e) {
+            if (e instanceof hubCustomerCredit_1.CustomerCreditError && e.status === 503) {
                 return res.json({ balance: 0, movements_count: 0 });
             }
-            return res.status(500).json({ error: error.message });
+            throw e;
         }
-        let balance = 0;
-        for (const row of data ?? []) {
-            const a = Number(row.amount ?? 0);
-            if (row.direction === 'in')
-                balance += a;
-            else
-                balance -= a;
-        }
-        return res.json({ balance: round2(balance), movements_count: (data ?? []).length });
     }
     catch (e) {
         console.error('getHubCustomerCreditBalance', e);

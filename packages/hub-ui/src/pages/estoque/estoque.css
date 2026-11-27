@@ -581,6 +581,13 @@
   color: var(--hc-text, #4a3b3a);
 }
 
+.hub-estoque__expiry-cell {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
 .hub-estoque__link {
   background: none;
   border: none;

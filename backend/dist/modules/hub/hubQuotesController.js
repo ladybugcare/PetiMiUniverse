@@ -1,4 +1,37 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.finalizeManualConversionHubQuote = exports.convertHubQuote = exports.suggestQuotePrice = exports.getHubQuotePdf = exports.getPublicQuote = exports.ensurePublicToken = exports.reopenHubQuoteAsDraft = exports.duplicateHubQuote = exports.cancelHubQuote = exports.awaitingReturnHubQuote = exports.sendHubQuote = exports.deleteHubQuote = exports.patchHubQuote = exports.createHubQuote = exports.getHubQuote = exports.listHubQuotes = void 0;
 const node_crypto_1 = require("node:crypto");
@@ -1070,7 +1103,7 @@ const PUBLIC_QUOTE_SELECT = `
   id, clinic_id, status, client_notes, total_amount, subtotal_amount,
   discount_kind, discount_value, currency, valid_days, sent_at, expires_at, created_at,
   clinic:clinics(name, photo_url),
-  prospect:hub_prospects(id, full_name, tax_id, phone, email),
+  prospect:hub_prospects(id, full_name, phone, email),
   pets:hub_quote_pets(id, quote_id, display_name, species, breed, size_tier, coat_type, age_months, sex, sort_order),
   lines:hub_quote_lines(id, quote_id, hub_service_type_id, description, quantity, unit_price, discount_amount, line_total, sort_order, pricing_variant,
     hub_service_types(name, service_group, description),
@@ -1104,7 +1137,7 @@ function toPublicQuote(row) {
             ? {
                 id: prospect.id,
                 full_name: prospect.full_name,
-                tax_id: prospect.tax_id ?? null,
+                // CPF/CNPJ omitido no link público — disponível só na ficha autenticada.
                 phone: prospect.phone,
                 email: prospect.email ?? null,
             }
@@ -1614,7 +1647,7 @@ const finalizeManualConversionHubQuote = async (req, res) => {
             const hubPetId = linkByQuotePet.get(qpid);
             const { data: petRow, error: petErr } = await supabase_1.supabaseAdmin
                 .from('hub_pets')
-                .select('id, clinic_id, deleted_at')
+                .select('id, clinic_id, deleted_at, deceased_at, death_invalidated_at')
                 .eq('id', hubPetId)
                 .maybeSingle();
             if (petErr || !petRow || petRow.clinic_id !== clinic_id) {
@@ -1622,6 +1655,10 @@ const finalizeManualConversionHubQuote = async (req, res) => {
             }
             if (petRow.deleted_at) {
                 return res.status(400).json({ error: 'Um dos pets indicados está inativo.' });
+            }
+            const { hasValidPetDeath } = await Promise.resolve().then(() => __importStar(require('./petDeathService')));
+            if (hasValidPetDeath(petRow)) {
+                return res.status(400).json({ error: 'Um dos pets indicados está falecido e não pode ser associado.' });
             }
             const { data: bond, error: bondErr } = await supabase_1.supabaseAdmin
                 .from('hub_pet_guardians')

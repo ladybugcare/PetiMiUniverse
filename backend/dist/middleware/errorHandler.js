@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.createError = exports.asyncHandler = exports.errorHandler = void 0;
 const logger_js_1 = require("../utils/logger.js");
 const errors_js_1 = require("../utils/errors.js");
+const sentry_js_1 = require("../utils/sentry.js");
 /**
  * Middleware de tratamento de erros global
  * Captura todos os erros não tratados e retorna respostas consistentes
@@ -44,6 +45,18 @@ const errorHandler = (err, req, res, next) => {
         logger_js_1.logger.error('System error', {
             ...logMetadata,
             stack: err.stack,
+        });
+    }
+    // Sentry: 5xx e erros não operacionais (não poluir com 4xx de negócio)
+    if (!isOperational || statusCode >= 500) {
+        void (0, sentry_js_1.captureException)(err, {
+            correlationId,
+            path: req.path,
+            method: req.method,
+            statusCode,
+            clinic_id: req.body?.clinic_id ||
+                req.query?.clinic_id ||
+                undefined,
         });
     }
     // Resposta de erro

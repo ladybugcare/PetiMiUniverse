@@ -7,6 +7,7 @@ exports.resolveServiceLinePricing = resolveServiceLinePricing;
 exports.validatePorteOverrideForServiceTypes = validatePorteOverrideForServiceTypes;
 exports.validateCoatOverrideForServiceTypes = validateCoatOverrideForServiceTypes;
 exports.requiresCoatPricing = requiresCoatPricing;
+exports.resolveAppliedSaleAmount = resolveAppliedSaleAmount;
 const hubServiceTypesPricingMatrix_1 = require("./hubServiceTypesPricingMatrix");
 function parseMatrix(raw) {
     const p = (0, hubServiceTypesPricingMatrix_1.parsePricingMatrixJson)(raw);
@@ -376,4 +377,15 @@ function validateCoatOverrideForServiceTypes(serviceTypes, overrideCoatType) {
 function requiresCoatPricing(serviceType) {
     const m = parseMatrix(serviceType.pricing_matrix);
     return m?.kind === 'pelagem' || m?.kind === 'porte_pelagem';
+}
+/**
+ * Preço de venda de uma linha de agendamento.
+ * `sale_amount_applied` null = sem snapshot → usa catálogo;
+ * `0` explícito permanece 0 (cobertura/cortesia).
+ */
+function resolveAppliedSaleAmount(saleAmountApplied, catalogSaleAmount) {
+    if (saleAmountApplied != null && Number.isFinite(Number(saleAmountApplied))) {
+        return (0, hubServiceTypesPricingMatrix_1.roundMoney2)(Number(saleAmountApplied));
+    }
+    return (0, hubServiceTypesPricingMatrix_1.roundMoney2)(Number(catalogSaleAmount ?? 0));
 }

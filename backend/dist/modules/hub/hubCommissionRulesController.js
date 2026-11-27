@@ -7,7 +7,12 @@ const uuidStr = zod_1.z.string().uuid();
 function round2(n) {
     return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
-const basisSchema = zod_1.z.enum(['percent_of_sale', 'fixed_per_sale']);
+const basisSchema = zod_1.z.enum(['percent_of_sale', 'fixed_per_sale', 'fixed_per_unit']);
+const RULE_SELECT = `
+  *,
+  hub_service_types ( id, name, code, service_group, active ),
+  hub_inventory_items ( id, name, store_sku, active )
+`;
 const listRulesQuerySchema = zod_1.z
     .object({
     clinic_id: uuidStr,
@@ -23,10 +28,7 @@ const listHubCommissionRules = async (req, res) => {
         const { clinic_id, include_inactive } = parsed.data;
         let q = supabase_1.supabaseAdmin
             .from('hub_commission_rules')
-            .select(`
-        *,
-        hub_service_types ( id, name, code, service_group, active )
-      `)
+            .select(RULE_SELECT)
             .eq('clinic_id', clinic_id)
             .is('deleted_at', null)
             .order('created_at', { ascending: false });
@@ -53,41 +55,72 @@ exports.listHubCommissionRules = listHubCommissionRules;
 const upsertRuleBodySchema = zod_1.z
     .object({
     clinic_id: uuidStr,
-    hub_service_type_id: uuidStr,
+    hub_service_type_id: uuidStr.optional().nullable(),
+    hub_inventory_item_id: uuidStr.optional().nullable(),
     basis: basisSchema,
     rate: zod_1.z.number().nonnegative(),
     notes: zod_1.z.string().trim().max(2000).optional().nullable(),
     active: zod_1.z.boolean().optional(),
 })
-    .strict();
+    .strict()
+    .superRefine((v, ctx) => {
+    const hasService = Boolean(v.hub_service_type_id);
+    const hasProduct = Boolean(v.hub_inventory_item_id);
+    if (hasService === hasProduct) {
+        ctx.addIssue({
+            code: zod_1.z.ZodIssueCode.custom,
+            message: 'Informe exatamente um alvo: hub_service_type_id ou hub_inventory_item_id',
+        });
+    }
+});
 const postHubCommissionRule = async (req, res) => {
     try {
         const parsed = upsertRuleBodySchema.safeParse(req.body);
         if (!parsed.success) {
             return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
         }
-        const { clinic_id, hub_service_type_id, basis, rate, notes, active } = parsed.data;
+        const { clinic_id, basis, rate, notes, active } = parsed.data;
+        const hub_service_type_id = parsed.data.hub_service_type_id ?? null;
+        const hub_inventory_item_id = parsed.data.hub_inventory_item_id ?? null;
         if (basis === 'percent_of_sale' && rate > 100) {
             return res.status(400).json({ error: 'Percentagem não pode exceder 100' });
         }
-        const { data: st, error: stErr } = await supabase_1.supabaseAdmin
-            .from('hub_service_types')
-            .select('id, clinic_id')
-            .eq('id', hub_service_type_id)
-            .maybeSingle();
-        if (stErr || !st || st.clinic_id !== clinic_id) {
-            return res.status(400).json({ error: 'Tipo de serviço inválido para esta clínica' });
+        if (hub_service_type_id) {
+            const { data: st, error: stErr } = await supabase_1.supabaseAdmin
+                .from('hub_service_types')
+                .select('id, clinic_id')
+                .eq('id', hub_service_type_id)
+                .maybeSingle();
+            if (stErr || !st || st.clinic_id !== clinic_id) {
+                return res.status(400).json({ error: 'Tipo de serviço inválido para esta clínica' });
+            }
         }
-        const { data: existing } = await supabase_1.supabaseAdmin
+        else if (hub_inventory_item_id) {
+            const { data: item, error: itemErr } = await supabase_1.supabaseAdmin
+                .from('hub_inventory_items')
+                .select('id, clinic_id, deleted_at')
+                .eq('id', hub_inventory_item_id)
+                .maybeSingle();
+            if (itemErr || !item || item.clinic_id !== clinic_id || item.deleted_at) {
+                return res.status(400).json({ error: 'Produto inválido para esta clínica' });
+            }
+        }
+        let existingQuery = supabase_1.supabaseAdmin
             .from('hub_commission_rules')
             .select('id')
             .eq('clinic_id', clinic_id)
-            .eq('hub_service_type_id', hub_service_type_id)
-            .is('deleted_at', null)
-            .maybeSingle();
+            .is('deleted_at', null);
+        if (hub_service_type_id) {
+            existingQuery = existingQuery.eq('hub_service_type_id', hub_service_type_id);
+        }
+        else {
+            existingQuery = existingQuery.eq('hub_inventory_item_id', hub_inventory_item_id);
+        }
+        const { data: existing } = await existingQuery.maybeSingle();
         const row = {
             clinic_id,
             hub_service_type_id,
+            hub_inventory_item_id,
             basis,
             rate: round2(rate),
             notes: notes ?? null,
@@ -98,7 +131,7 @@ const postHubCommissionRule = async (req, res) => {
                 .from('hub_commission_rules')
                 .update(row)
                 .eq('id', existing.id)
-                .select(`*, hub_service_types ( id, name, code, service_group, active )`)
+                .select(RULE_SELECT)
                 .single();
             if (error)
                 return res.status(500).json({ error: error.message });
@@ -107,7 +140,7 @@ const postHubCommissionRule = async (req, res) => {
         const { data, error } = await supabase_1.supabaseAdmin
             .from('hub_commission_rules')
             .insert(row)
-            .select(`*, hub_service_types ( id, name, code, service_group, active )`)
+            .select(RULE_SELECT)
             .single();
         if (error) {
             if (String(error.message || '').includes('hub_commission_rules')) {
@@ -168,7 +201,7 @@ const patchHubCommissionRule = async (req, res) => {
             .from('hub_commission_rules')
             .update(patch)
             .eq('id', idParsed.data)
-            .select(`*, hub_service_types ( id, name, code, service_group, active )`)
+            .select(RULE_SELECT)
             .single();
         if (error)
             return res.status(500).json({ error: error.message });
@@ -222,6 +255,24 @@ const previewQuerySchema = zod_1.z
     receivable_id: uuidStr,
 })
     .strict();
+function applyCommissionRule(lineTotal, rule, quantity = 1) {
+    if (!rule)
+        return { commission: 0, basis: null, rate: null };
+    const basis = rule.basis;
+    const rate = rule.rate;
+    const qty = Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+    let commission;
+    if (rule.basis === 'percent_of_sale') {
+        commission = round2(lineTotal * (rule.rate / 100));
+    }
+    else if (rule.basis === 'fixed_per_unit') {
+        commission = round2(Math.min(rule.rate * qty, lineTotal));
+    }
+    else {
+        commission = round2(Math.min(rule.rate, lineTotal));
+    }
+    return { commission, basis, rate };
+}
 const getHubCommissionPreview = async (req, res) => {
     try {
         const parsed = previewQuerySchema.safeParse(req.query);
@@ -238,66 +289,87 @@ const getHubCommissionPreview = async (req, res) => {
             return res.status(404).json({ error: 'Recebível não encontrado' });
         const { data: lines, error: lnErr } = await supabase_1.supabaseAdmin
             .from('hub_receivable_lines')
-            .select('id, hub_service_type_id, description, quantity, line_total')
+            .select('id, hub_service_type_id, hub_inventory_item_id, description, quantity, line_total, commission_accrued_at, commission_basis_amount, commission_original_amount, commission_rule_basis, commission_rule_rate')
             .eq('receivable_id', receivable_id)
             .order('sort_order', { ascending: true });
         if (lnErr)
             return res.status(500).json({ error: lnErr.message });
-        const { data: rules, error: ruErr } = await supabase_1.supabaseAdmin
-            .from('hub_commission_rules')
-            .select('hub_service_type_id, basis, rate, active')
-            .eq('clinic_id', clinic_id)
-            .eq('active', true)
-            .is('deleted_at', null);
-        if (ruErr) {
-            if (String(ruErr.message || '').includes('hub_commission_rules')) {
-                return res.status(503).json({
-                    error: 'Tabela hub_commission_rules não encontrada. Aplique 038_create_hub_commission_rules.sql.',
-                });
-            }
-            return res.status(500).json({ error: ruErr.message });
-        }
-        const ruleByService = new Map();
-        for (const r of rules ?? []) {
-            const sid = r.hub_service_type_id;
-            if (sid)
-                ruleByService.set(sid, { basis: String(r.basis), rate: Number(r.rate ?? 0) });
-        }
+        const hasSnapshot = (lines ?? []).some((ln) => Boolean(ln.commission_accrued_at));
         const out = [];
         let total = 0;
-        for (const ln of lines ?? []) {
-            const lineTotal = round2(Number(ln.line_total ?? 0));
-            const stId = ln.hub_service_type_id ?? null;
-            const rule = stId ? ruleByService.get(stId) : undefined;
-            let commission = 0;
-            let basis = null;
-            let rate = null;
-            if (rule && stId) {
-                basis = rule.basis;
-                rate = rule.rate;
-                if (rule.basis === 'percent_of_sale') {
-                    commission = round2(lineTotal * (rule.rate / 100));
-                }
-                else {
-                    commission = round2(Math.min(rule.rate, lineTotal));
-                }
+        if (hasSnapshot) {
+            for (const ln of lines ?? []) {
+                if (!ln.commission_accrued_at)
+                    continue;
+                const commission = round2(Number(ln.commission_original_amount ?? 0));
+                const basisAmount = round2(Number(ln.commission_basis_amount ?? ln.line_total ?? 0));
+                total = round2(total + commission);
+                out.push({
+                    line_id: ln.id,
+                    description: String(ln.description ?? ''),
+                    line_total: basisAmount,
+                    hub_service_type_id: ln.hub_service_type_id ?? null,
+                    hub_inventory_item_id: ln.hub_inventory_item_id ?? null,
+                    basis: ln.commission_rule_basis ?? null,
+                    rate: ln.commission_rule_rate != null ? Number(ln.commission_rule_rate) : null,
+                    commission_amount: commission,
+                    from_snapshot: true,
+                });
             }
-            total = round2(total + commission);
-            out.push({
-                line_id: ln.id,
-                description: String(ln.description ?? ''),
-                line_total: lineTotal,
-                hub_service_type_id: stId,
-                basis,
-                rate,
-                commission_amount: commission,
-            });
+        }
+        else {
+            const { data: rules, error: ruErr } = await supabase_1.supabaseAdmin
+                .from('hub_commission_rules')
+                .select('hub_service_type_id, hub_inventory_item_id, basis, rate, active')
+                .eq('clinic_id', clinic_id)
+                .eq('active', true)
+                .is('deleted_at', null);
+            if (ruErr) {
+                if (String(ruErr.message || '').includes('hub_commission_rules')) {
+                    return res.status(503).json({
+                        error: 'Tabela hub_commission_rules não encontrada. Aplique 038_create_hub_commission_rules.sql.',
+                    });
+                }
+                return res.status(500).json({ error: ruErr.message });
+            }
+            const ruleByService = new Map();
+            const ruleByProduct = new Map();
+            for (const r of rules ?? []) {
+                const entry = { basis: String(r.basis), rate: Number(r.rate ?? 0) };
+                const sid = r.hub_service_type_id;
+                const pid = r.hub_inventory_item_id;
+                if (sid)
+                    ruleByService.set(sid, entry);
+                if (pid)
+                    ruleByProduct.set(pid, entry);
+            }
+            for (const ln of lines ?? []) {
+                const lineTotal = round2(Number(ln.line_total ?? 0));
+                const qty = Number(ln.quantity ?? 1) || 1;
+                const stId = ln.hub_service_type_id ?? null;
+                const itemId = ln.hub_inventory_item_id ?? null;
+                const rule = stId ? ruleByService.get(stId) : itemId ? ruleByProduct.get(itemId) : undefined;
+                const { commission, basis, rate } = applyCommissionRule(lineTotal, rule, qty);
+                total = round2(total + commission);
+                out.push({
+                    line_id: ln.id,
+                    description: String(ln.description ?? ''),
+                    line_total: lineTotal,
+                    hub_service_type_id: stId,
+                    hub_inventory_item_id: itemId,
+                    basis,
+                    rate,
+                    commission_amount: commission,
+                    from_snapshot: false,
+                });
+            }
         }
         return res.json({
             receivable_id,
             receivable_final_amount: Number(rec.final_amount ?? 0),
             lines: out,
             total_commission: total,
+            from_snapshot: hasSnapshot,
         });
     }
     catch (e) {

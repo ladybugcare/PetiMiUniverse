@@ -38,6 +38,7 @@ exports.failureReturnsToClinic = failureReturnsToClinic;
 exports.resolveFailedPickupStop = resolveFailedPickupStop;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
+const hubCommissionAccrual_1 = require("./hubCommissionAccrual");
 const hubDayBoardPets_1 = require("./hubDayBoardPets");
 const hubComandasController_1 = require("./hubComandasController");
 const hubNotifyEvents_1 = require("./hubNotifyEvents");
@@ -292,8 +293,10 @@ function resolveDayBoardRange(query) {
  * Deriva o sentido da parada por heurística de ordem temporal.
  * Usado apenas para pernas que ainda não têm hub_pickup_stops (Fase 1 fallback).
  * Na Fase 2+ a direção vem diretamente de hub_pickup_stops.direction.
+ *
+ * Âncoras: serviços do mesmo pet no dia (banho standard, hotel_stay, daycare_block, etc.).
  */
-function deriveDirections(pickupAppts, standardAppts) {
+function deriveDirections(pickupAppts, serviceAppts) {
     const result = new Map();
     const byPet = new Map();
     for (const a of pickupAppts) {
@@ -302,12 +305,12 @@ function deriveDirections(pickupAppts, standardAppts) {
         list.push({ id: a.id, starts_at: a.starts_at });
         byPet.set(pid, list);
     }
-    const standardByPet = new Map();
-    for (const a of standardAppts) {
+    const serviceByPet = new Map();
+    for (const a of serviceAppts) {
         const pid = a.pet_id ?? '__no_pet__';
-        const list = standardByPet.get(pid) ?? [];
+        const list = serviceByPet.get(pid) ?? [];
         list.push(a.starts_at);
-        standardByPet.set(pid, list);
+        serviceByPet.set(pid, list);
     }
     for (const [pid, legs] of byPet.entries()) {
         legs.sort((a, b) => a.starts_at.localeCompare(b.starts_at));
@@ -318,10 +321,10 @@ function deriveDirections(pickupAppts, standardAppts) {
             continue;
         }
         const leg = legs[0];
-        const stdTimes = standardByPet.get(pid) ?? [];
-        if (stdTimes.length > 0) {
-            stdTimes.sort();
-            result.set(leg.id, leg.starts_at < stdTimes[0] ? 'pickup' : 'delivery');
+        const serviceTimes = serviceByPet.get(pid) ?? [];
+        if (serviceTimes.length > 0) {
+            serviceTimes.sort();
+            result.set(leg.id, leg.starts_at < serviceTimes[0] ? 'pickup' : 'delivery');
         }
         else {
             result.set(leg.id, 'unknown');
@@ -450,25 +453,25 @@ const getHubPickupDayBoard = async (req, res) => {
                 .filter((a) => !stopByApptId.has(a.id))
                 .map((a) => a.pet_id)
                 .filter(Boolean))];
-        const standardAppts = [];
+        const serviceAppts = [];
         if (loosePetIds.length > 0) {
-            let stdQ = supabase_1.supabaseAdmin
+            let svcQ = supabase_1.supabaseAdmin
                 .from('hub_appointments')
-                .select('pet_id, starts_at')
+                .select('pet_id, starts_at, appointment_kind')
                 .eq('clinic_id', clinic_id)
-                .eq('appointment_kind', 'standard')
+                .in('appointment_kind', ['standard', 'hotel_stay', 'daycare_block'])
                 .is('deleted_at', null)
                 .neq('status', 'cancelled')
                 .in('pet_id', loosePetIds)
                 .lt('starts_at', to)
                 .gt('ends_at', from);
             if (unit_id)
-                stdQ = stdQ.eq('unit_id', unit_id);
-            const { data: stdData } = await stdQ;
-            standardAppts.push(...(stdData ?? []));
+                svcQ = svcQ.eq('unit_id', unit_id);
+            const { data: svcData } = await svcQ;
+            serviceAppts.push(...(svcData ?? []));
         }
         const looseAppts = pickupAppts.filter((a) => !stopByApptId.has(a.id));
-        const heuristicMap = deriveDirections(looseAppts, standardAppts);
+        const heuristicMap = deriveDirections(looseAppts, serviceAppts);
         // 4. Enriquecer com pet, tutor e tipo de serviço
         const petIdSet = new Set(pickupAppts.map((a) => a.pet_id).filter(Boolean));
         const guIds = [...new Set(pickupAppts.map((a) => a.guardian_id).filter(Boolean))];
@@ -729,7 +732,7 @@ const addHubPickupStops = async (req, res) => {
         // Verificar rota existe e pertence à clínica
         const { data: route, error: routeErr } = await supabase_1.supabaseAdmin
             .from('hub_pickup_routes')
-            .select('id, status, vehicle_id')
+            .select('id, status, vehicle_id, driver_staff_id')
             .eq('id', id)
             .eq('clinic_id', clinic_id)
             .is('deleted_at', null)
@@ -781,6 +784,22 @@ const addHubPickupStops = async (req, res) => {
         const invalid = apptIds.filter((id) => !validApptIds.has(id));
         if (invalid.length) {
             return res.status(422).json({ error: `Agendamentos inválidos ou não são do tipo pickup_route: ${invalid.join(', ')}` });
+        }
+        const pickupPetIds = [
+            ...new Set((appts ?? [])
+                .map((a) => a.pet_id)
+                .filter((pid) => Boolean(pid))),
+        ];
+        if (pickupPetIds.length) {
+            const { assertPetEligibleForNewOp } = await Promise.resolve().then(() => __importStar(require('./hubTenantAsserts')));
+            for (const pid of pickupPetIds) {
+                if (!(await assertPetEligibleForNewOp(clinic_id, pid))) {
+                    return res.status(400).json({
+                        error: 'Não é possível incluir pet arquivado ou falecido em nova rota de leva e traz.',
+                        pet_id: pid,
+                    });
+                }
+            }
         }
         // Stops já em rota: conflita se for OUTRA rota; se for ESTA, atualiza (idempotente na edição).
         const { data: existing } = await supabase_1.supabaseAdmin
@@ -958,6 +977,14 @@ const addHubPickupStops = async (req, res) => {
             if (detachErr)
                 return res.status(500).json({ error: detachErr.message });
         }
+        if (route.driver_staff_id) {
+            try {
+                await (0, hubCommissionAccrual_1.backfillPickupLegCommissionStaff)(clinic_id, id);
+            }
+            catch (bfErr) {
+                console.error('[hubPickupController] backfillPickupLegCommissionStaff after addStops', bfErr);
+            }
+        }
         return res.status(201).json({ stops: created });
     }
     catch (e) {
@@ -1070,6 +1097,15 @@ const patchHubPickupRoute = async (req, res) => {
                 .eq('hub_pickup_route_id', id));
             await Promise.all(sequenceUpdates);
         }
+        const patchedDriver = updated?.driver_staff_id;
+        if (patchedDriver && parsed.data.driver_staff_id !== undefined) {
+            try {
+                await (0, hubCommissionAccrual_1.backfillPickupLegCommissionStaff)(clinic_id, id);
+            }
+            catch (bfErr) {
+                console.error('[hubPickupController] backfillPickupLegCommissionStaff after patchRoute', bfErr);
+            }
+        }
         return res.json({ route: updated });
     }
     catch (e) {
@@ -1101,7 +1137,7 @@ const getHubPickupRoute = async (req, res) => {
             return res.status(404).json({ error: 'Rota não encontrada' });
         const { data: stopsRaw, error: stopsErr } = await supabase_1.supabaseAdmin
             .from('hub_pickup_stops')
-            .select('id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, status, planned_at, completed_at, failure_reason, failure_outcome, failure_resolution, return_stop_id, notes, updated_at')
+            .select('id, hub_appointment_id, pet_id, guardian_id, direction, address_snapshot, sequence, status, planned_at, completed_at, failure_reason, failure_outcome, failure_resolution, return_stop_id, notes, updated_at, boarded_at, boarded_by_staff_id, boarded_source, boarded_late')
             .eq('hub_pickup_route_id', id)
             .order('sequence', { ascending: true });
         if (stopsErr)
@@ -1172,6 +1208,15 @@ const patchStopSchema = zod_1.z
     notes: zod_1.z.string().max(2000).optional().nullable(),
     planned_at: zod_1.z.string().datetime({ offset: true }).optional().nullable(),
     sequence: zod_1.z.number().int().min(0).optional(),
+    /** Confirma embarque (pet com o motorista) na devolução. */
+    confirm_boarded: zod_1.z.boolean().optional(),
+    /**
+     * Ao concluir devolução sem boarded_at: true = pet já está/estava comigo (grava embarque).
+     * Ausente/false com status completed → 409 NEED_BOARDING_CONFIRM.
+     */
+    confirm_pet_with_me: zod_1.z.boolean().optional(),
+    /** Registra divergência sem liberar quando há bloqueio clínico/hotel. */
+    report_divergence: zod_1.z.boolean().optional(),
 })
     .strict()
     .superRefine((val, ctx) => {
@@ -1191,10 +1236,10 @@ const patchHubPickupStop = async (req, res) => {
         const parsed = patchStopSchema.safeParse(req.body);
         if (!parsed.success)
             return res.status(400).json({ error: parsed.error.flatten() });
-        const { clinic_id, status: newStatus, ...rest } = parsed.data;
+        const { clinic_id, status: newStatus, confirm_boarded, confirm_pet_with_me, report_divergence, ...rest } = parsed.data;
         const { data: current, error: fetchErr } = await supabase_1.supabaseAdmin
             .from('hub_pickup_stops')
-            .select('id, status, direction, sequence, hub_appointment_id, hub_pickup_route_id')
+            .select('id, status, direction, sequence, hub_appointment_id, hub_pickup_route_id, boarded_at, boarded_by_staff_id, boarded_source, boarded_late')
             .eq('id', id)
             .eq('clinic_id', clinic_id)
             .maybeSingle();
@@ -1203,6 +1248,66 @@ const patchHubPickupStop = async (req, res) => {
         if (!current)
             return res.status(404).json({ error: 'Parada não encontrada' });
         const cur = current;
+        const actorStaffId = await resolveActorStaffIdFromRequest(req, clinic_id);
+        let boardingMeta = null;
+        // Embarque explícito (antes ou depois do deslocamento).
+        if (confirm_boarded || (confirm_pet_with_me && newStatus === 'completed' && cur.direction === 'delivery')) {
+            const { confirmDeliveryBoarding } = await Promise.resolve().then(() => __importStar(require('./pickupDeliveryBoarding')));
+            const boarded = await confirmDeliveryBoarding({
+                clinicId: clinic_id,
+                stopId: id,
+                staffId: actorStaffId,
+                source: 'driver',
+                requireDriverStaffId: actorStaffId,
+                reportDivergenceIfBlocked: Boolean(report_divergence),
+                forceLate: cur.status !== 'pending',
+            });
+            if (!boarded.ok) {
+                return res.status(boarded.status).json({
+                    error: boarded.error,
+                    code: boarded.code,
+                    block_kind: boarded.block_kind,
+                    divergence_recorded: boarded.divergence_recorded,
+                });
+            }
+            cur.boarded_at = boarded.boarded_at;
+            boardingMeta = {
+                boarded_at: boarded.boarded_at,
+                boarded_by_staff_id: boarded.boarded_by_staff_id,
+                boarded_source: boarded.boarded_source,
+                boarded_late: boarded.boarded_late,
+                already_boarded: boarded.already_boarded,
+                handoff_resolved: boarded.handoff_resolved,
+            };
+        }
+        // Concluir devolução sem embarque: pede confirmação explícita (não bloqueia en_route).
+        if (newStatus === 'completed' &&
+            cur.direction === 'delivery' &&
+            !cur.boarded_at &&
+            !confirm_pet_with_me) {
+            return res.status(409).json({
+                error: 'O pet já está com você? Confirme o embarque para concluir a entrega.',
+                code: 'NEED_BOARDING_CONFIRM',
+            });
+        }
+        const hasStatusOrFields = Boolean(newStatus) ||
+            rest.completed_at !== undefined ||
+            rest.failure_reason !== undefined ||
+            rest.notes !== undefined ||
+            rest.planned_at !== undefined ||
+            rest.sequence !== undefined;
+        if (!hasStatusOrFields) {
+            if (!boardingMeta) {
+                return res.status(400).json({ error: 'Nada para atualizar.' });
+            }
+            const { data: stopRow } = await supabase_1.supabaseAdmin
+                .from('hub_pickup_stops')
+                .select('id, status, completed_at, failure_reason, notes, sequence, direction, planned_at, updated_at, failure_outcome, failure_resolution, failed_at, return_stop_id, boarded_at, boarded_by_staff_id, boarded_source, boarded_late')
+                .eq('id', id)
+                .eq('clinic_id', clinic_id)
+                .maybeSingle();
+            return res.json({ stop: stopRow, boarding: boardingMeta });
+        }
         if (newStatus) {
             let allowed = VALID_STOP_TRANSITIONS[cur.status] ?? [];
             // Refinar transições de 'arrived' por sentido
@@ -1241,12 +1346,11 @@ const patchHubPickupStop = async (req, res) => {
             .update(patch)
             .eq('id', id)
             .eq('clinic_id', clinic_id)
-            .select('id, status, completed_at, failure_reason, notes, sequence, direction, planned_at, updated_at, failure_outcome, failure_resolution, failed_at, return_stop_id')
+            .select('id, status, completed_at, failure_reason, notes, sequence, direction, planned_at, updated_at, failure_outcome, failure_resolution, failed_at, return_stop_id, boarded_at, boarded_by_staff_id, boarded_source, boarded_late')
             .single();
         if (updateErr)
             return res.status(500).json({ error: updateErr.message });
         if (newStatus && newStatus !== cur.status) {
-            const actorStaffId = await resolveActorStaffIdFromRequest(req, clinic_id);
             await recordStopStatusEvent({
                 clinic_id,
                 hub_pickup_stop_id: id,
@@ -1333,7 +1437,7 @@ const patchHubPickupStop = async (req, res) => {
                 scheduleReceptionSync(clinic_id, petId);
             }
         }
-        return res.json({ stop: updated });
+        return res.json({ stop: updated, boarding: boardingMeta });
     }
     catch (e) {
         console.error('[hubPickupController] patchHubPickupStop', e);
@@ -2019,6 +2123,12 @@ const claimHubPickupRoute = async (req, res) => {
             return res.status(500).json({ error: claimErr.message });
         if (!claimed) {
             return res.status(409).json({ error: 'Esta rota acabou de ser atribuída a outro motorista.' });
+        }
+        try {
+            await (0, hubCommissionAccrual_1.backfillPickupLegCommissionStaff)(clinic_id, id);
+        }
+        catch (bfErr) {
+            console.error('[hubPickupController] backfillPickupLegCommissionStaff after claim', bfErr);
         }
         return res.json({ route: claimed, already_claimed: false });
     }

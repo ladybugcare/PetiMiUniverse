@@ -8,6 +8,7 @@ const examOrderDocumentIssue_1 = require("./examOrderDocumentIssue");
 const clinicalDocumentValidation_1 = require("./clinicalDocumentValidation");
 const hubExamOrderPdf_1 = require("./hubExamOrderPdf");
 const hubClinicalTimelineController_1 = require("./hubClinicalTimelineController");
+const publicClinicalPartiesResponse_1 = require("./publicClinicalPartiesResponse");
 const uuidStr = zod_1.z.string().uuid();
 const scopeSchema = zod_1.z.enum(['single', 'encounter_bundle']);
 const issueSchema = zod_1.z
@@ -229,6 +230,7 @@ function buildPublicExamOrderPayload(doc) {
         revoked_at: doc.revoked_at,
         expires_at: doc.expires_at,
     });
+    const parties = (0, publicClinicalPartiesResponse_1.mapClinicalPartiesForPublic)(snapshot);
     return {
         status,
         validation_code: String(doc.validation_code ?? ''),
@@ -239,10 +241,7 @@ function buildPublicExamOrderPayload(doc) {
         content_hash_short: contentHash ? (0, examOrderDocumentIssue_1.truncateContentHash)(contentHash) : '—',
         document_version: Number(doc.version_no ?? snapshot.document_version ?? 1),
         scope: snapshot.scope,
-        clinic: { name: snapshot.clinic.name },
-        pet: snapshot.pet,
-        guardian: snapshot.guardian,
-        veterinarian: snapshot.veterinarian,
+        ...parties,
         exams: snapshot.exams,
         disclaimers: snapshot.disclaimers ?? [],
     };

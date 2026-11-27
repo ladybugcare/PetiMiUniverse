@@ -76,6 +76,7 @@ const publicPrescriptions_js_1 = __importDefault(require("./modules/hub/routes/p
 const publicExamReferrals_js_1 = __importDefault(require("./modules/hub/routes/publicExamReferrals.js"));
 const publicMercadoPago_js_1 = __importDefault(require("./modules/hub/routes/publicMercadoPago.js"));
 const publicBoardingCare_js_1 = __importDefault(require("./modules/hub/routes/publicBoardingCare.js"));
+const publicClinicProfiles_js_1 = __importDefault(require("./modules/hub/routes/publicClinicProfiles.js"));
 // 🔹 Variáveis de ambiente são carregadas automaticamente por loadEnv.ts
 // quando importamos supabase (config/supabase.ts importa './loadEnv')
 // Ordem de carregamento: .env.${NODE_ENV}.local > .env.${NODE_ENV} > .env.local > .env
@@ -137,14 +138,11 @@ const allowedOrigins = getAllowedOrigins();
 const normalizedOrigins = allowedOrigins.map((origin) => origin.replace(/\/$/, ''));
 app.use((0, cors_1.default)({
     origin: (origin, callback) => {
-        // Permite requisições sem origem apenas em desenvolvimento
+        // Sem Origin = server-to-server (cron curl, healthchecks, Postman).
+        // Browsers sempre enviam Origin em XHR/fetch cross-origin; bloquear
+        // no-origin quebra jobs como cash-auto-close-cron em production.
         if (!origin) {
-            if (process.env.NODE_ENV === 'development' ||
-                process.env.NODE_ENV === 'staging' ||
-                process.env.NODE_ENV === 'test') {
-                return callback(null, true);
-            }
-            return callback(new Error('Not allowed by CORS'));
+            return callback(null, true);
         }
         const normalizedOrigin = origin.replace(/\/$/, '');
         // Dev: acesso pelo IP da rede local (ex.: http://192.168.x.x:3001 no celular)
@@ -174,7 +172,7 @@ app.use((0, cors_1.default)({
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-Cron-Secret'],
     exposedHeaders: ['Content-Range', 'X-Content-Range'],
     maxAge: 86400, // 24h
 }));
@@ -226,6 +224,7 @@ app.use('/api/public', publicPrescriptions_js_1.default);
 app.use('/api/public', publicExamReferrals_js_1.default);
 app.use('/api/public', publicMercadoPago_js_1.default);
 app.use('/api/public', publicBoardingCare_js_1.default);
+app.use('/api/public', publicClinicProfiles_js_1.default);
 app.use('/health', health_js_1.default);
 // 🔹 Healthcheck melhorado (verifica dependências)
 app.get('/', async (req, res) => {

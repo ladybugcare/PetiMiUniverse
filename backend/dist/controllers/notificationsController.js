@@ -1,7 +1,8 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.notifyProfessionalsByCategory = exports.clearReadNotifications = exports.deleteNotification = exports.markAllAsRead = exports.markAsRead = exports.getUnreadCount = exports.getNotifications = exports.createNotification = void 0;
+exports.notifyProfessionalsByCategory = exports.updateNotificationPrefs = exports.getNotificationPrefs = exports.clearReadNotifications = exports.deleteNotification = exports.markAllAsRead = exports.markAsRead = exports.getUnreadCount = exports.getNotifications = exports.createNotification = void 0;
 const supabase_1 = require("../config/supabase");
+const hubNotificationPrefs_1 = require("../modules/hub/hubNotificationPrefs");
 // O banco é compartilhado por todos os produtos e `notifications` é acessada com service role:
 // cada rota só pode ler/alterar notificações do próprio usuário autenticado.
 const isOwnUser = (req, userId) => typeof userId === 'string' && userId === req.user?.id;
@@ -210,6 +211,70 @@ const clearReadNotifications = async (req, res) => {
     }
 };
 exports.clearReadNotifications = clearReadNotifications;
+// ========================================
+// GET /notifications/prefs — Preferências Hub (Meu perfil)
+// ========================================
+const getNotificationPrefs = async (req, res) => {
+    const clinicId = String(req.query.clinic_id ?? '').trim();
+    const userId = req.user?.id;
+    if (!userId) {
+        return res.status(401).json({ error: 'Não autenticado' });
+    }
+    if (!clinicId) {
+        return res.status(400).json({ error: 'clinic_id is required' });
+    }
+    try {
+        const allowed = await (0, hubNotificationPrefs_1.userBelongsToClinic)(userId, clinicId);
+        if (!allowed) {
+            return res.status(403).json({ error: 'Acesso negado' });
+        }
+        const categories = await (0, hubNotificationPrefs_1.getHubNotificationPrefsForUser)(userId, clinicId);
+        res.json({ clinic_id: clinicId, categories });
+    }
+    catch (error) {
+        console.error('Error getting notification prefs:', error);
+        res.status(500).json({ error: error.message || 'Failed to get notification prefs' });
+    }
+};
+exports.getNotificationPrefs = getNotificationPrefs;
+// ========================================
+// PUT /notifications/prefs — Salvar preferências Hub
+// ========================================
+const updateNotificationPrefs = async (req, res) => {
+    const userId = req.user?.id;
+    const clinicId = String(req.body?.clinic_id ?? '').trim();
+    const rawCategories = req.body?.categories;
+    if (!userId) {
+        return res.status(401).json({ error: 'Não autenticado' });
+    }
+    if (!clinicId) {
+        return res.status(400).json({ error: 'clinic_id is required' });
+    }
+    if (!rawCategories || typeof rawCategories !== 'object') {
+        return res.status(400).json({ error: 'categories is required' });
+    }
+    try {
+        const allowed = await (0, hubNotificationPrefs_1.userBelongsToClinic)(userId, clinicId);
+        if (!allowed) {
+            return res.status(403).json({ error: 'Acesso negado' });
+        }
+        const next = (0, hubNotificationPrefs_1.defaultHubNotificationPrefs)();
+        for (const key of hubNotificationPrefs_1.HUB_NOTIFICATION_PREF_CATEGORIES) {
+            if (!Object.prototype.hasOwnProperty.call(rawCategories, key))
+                continue;
+            if (!(0, hubNotificationPrefs_1.isHubNotificationPrefCategory)(key))
+                continue;
+            next[key] = Boolean(rawCategories[key]);
+        }
+        const categories = await (0, hubNotificationPrefs_1.upsertHubNotificationPrefs)(userId, clinicId, next);
+        res.json({ clinic_id: clinicId, categories });
+    }
+    catch (error) {
+        console.error('Error updating notification prefs:', error);
+        res.status(500).json({ error: error.message || 'Failed to update notification prefs' });
+    }
+};
+exports.updateNotificationPrefs = updateNotificationPrefs;
 // ========================================
 // HELPER: Notificar profissionais por categoria
 // ========================================

@@ -123,7 +123,7 @@ export function HubWorkspaceInClinicMedications({
     try {
       const [itemsRes, lotsRes] = await Promise.all([
         hubInventoryApi.items.list(clinicId, false, 'medication'),
-        hubInventoryApi.lots.list(clinicId),
+        hubInventoryApi.lots.list(clinicId, { forSale: true }),
       ]);
       const inv = (itemsRes.items ?? []).find((i) => i.id === draft.hub_inventory_item_id);
       const lot = (lotsRes.lots ?? []).find((l) => l.id === draft.hub_inventory_lot_id);

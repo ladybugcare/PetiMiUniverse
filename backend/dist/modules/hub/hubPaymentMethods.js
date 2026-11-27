@@ -5,6 +5,7 @@ exports.normalizeAcceptedPaymentMethods = normalizeAcceptedPaymentMethods;
 exports.getAcceptedPaymentMethods = getAcceptedPaymentMethods;
 exports.assertPaymentMethodInList = assertPaymentMethodInList;
 const zod_1 = require("zod");
+const hubCardMachineFees_1 = require("./hubCardMachineFees");
 exports.HUB_PAYMENT_METHODS = [
     'pix',
     'cash',
@@ -21,7 +22,7 @@ exports.HUB_PAYMENT_METHOD_LABELS = {
     credit_card: 'Cartão de crédito',
     debit_card: 'Cartão de débito',
     transfer: 'Transferência',
-    payment_link: 'Link de pagamento',
+    payment_link: 'Link externo (baixa manual)',
     customer_credit: 'Crédito do tutor',
 };
 const acceptedPaymentMethodsSchema = zod_1.z
@@ -31,9 +32,11 @@ const acceptedPaymentMethodsSchema = zod_1.z
 exports.patchPaymentMethodSettingsSchema = zod_1.z
     .object({
     clinic_id: zod_1.z.string().uuid(),
-    accepted_payment_methods: acceptedPaymentMethodsSchema,
+    accepted_payment_methods: acceptedPaymentMethodsSchema.optional(),
+    card_machine_fees: hubCardMachineFees_1.cardMachineFeesPatchSchema.optional(),
 })
-    .strict();
+    .strict()
+    .refine((b) => b.accepted_payment_methods !== undefined || b.card_machine_fees !== undefined, { message: 'Informe accepted_payment_methods e/ou card_machine_fees' });
 /** Fallback para lista completa se vazio ou inválido. */
 function normalizeAcceptedPaymentMethods(raw) {
     if (!Array.isArray(raw) || raw.length === 0) {

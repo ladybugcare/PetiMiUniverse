@@ -42,6 +42,7 @@ const groomingPetTags_1 = require("./groomingPetTags");
 const hubDayBoardPets_1 = require("./hubDayBoardPets");
 const boardingOperational_1 = require("./boardingOperational");
 const hubBoardingSchemas_1 = require("./hubBoardingSchemas");
+const hubTenantAsserts_1 = require("./hubTenantAsserts");
 const boardingCareService_1 = require("./boardingCareService");
 const boardingPricing_1 = require("./boardingPricing");
 const boardingBilling_1 = require("./boardingBilling");
@@ -455,6 +456,20 @@ const createHubBoardingReservation = async (req, res) => {
         const { clinic_id, status: requestedStatus, ...rest } = parsed.data;
         const status = requestedStatus ?? 'checked_in';
         const nowIso = new Date().toISOString();
+        if (!(await (0, hubTenantAsserts_1.assertPetInClinic)(clinic_id, rest.pet_id))) {
+            return res.status(400).json({ error: 'Pet inválido' });
+        }
+        if (!(await (0, hubTenantAsserts_1.assertGuardianInClinic)(clinic_id, rest.guardian_id))) {
+            return res.status(400).json({ error: 'Tutor inválido' });
+        }
+        if (!(await (0, hubTenantAsserts_1.assertUnitInClinic)(clinic_id, rest.unit_id))) {
+            return res.status(400).json({ error: 'Unidade inválida' });
+        }
+        if (rest.pet_id &&
+            rest.guardian_id &&
+            !(await (0, hubTenantAsserts_1.assertGuardianLinkedToPet)(rest.pet_id, rest.guardian_id))) {
+            return res.status(400).json({ error: 'Tutor inválido' });
+        }
         if (status === 'reserved' && !rest.expected_check_in) {
             return res.status(400).json({ error: 'Informe a entrada prevista da reserva' });
         }
@@ -609,8 +624,13 @@ const patchHubBoardingReservation = async (req, res) => {
         catch (taskErr) {
             console.error('patchHubBoardingReservation tasks', taskErr);
         }
-        if ((rest.daily_rate_cents !== undefined || pricingChanged) &&
-            (newStatus ?? previousStatus) === 'checked_out') {
+        if (rest.daily_rate_cents !== undefined ||
+            pricingChanged ||
+            rest.expected_check_in !== undefined ||
+            rest.expected_check_out !== undefined ||
+            rest.checked_in_at !== undefined ||
+            rest.checked_out_at !== undefined ||
+            (newStatus != null && newStatus !== previousStatus)) {
             void (0, hubComandasController_1.syncOpenComandasAfterBoardingCheckedOut)(clinic_id, id);
         }
         if (newStatus && newStatus !== previousStatus) {

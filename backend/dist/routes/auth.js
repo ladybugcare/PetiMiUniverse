@@ -16,7 +16,8 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
     if (!email || !password) {
         throw new errors_js_1.ValidationError('Email e senha são obrigatórios');
     }
-    const { data, error } = await supabase_1.supabase.auth.signInWithPassword({
+    // Client efêmero: evita contaminar o singleton anon usado em outras rotas.
+    const { data, error } = await (0, supabase_1.createAuthClient)().auth.signInWithPassword({
         email,
         password,
     });
@@ -26,6 +27,11 @@ router.post('/login', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.asyncH
             error: error.message,
             correlationId: req.correlationId,
         });
+        const msg = String(error.message || '');
+        // Intermitência de rede com o Supabase Auth não é "credencial inválida".
+        if (/fetch failed|network|ECONNRESET|ETIMEDOUT|ENOTFOUND|socket|aborted|timeout/i.test(msg)) {
+            throw new errors_js_1.ExternalServiceError('Não foi possível conectar ao serviço de autenticação. Tente novamente em alguns segundos.', 'supabase-auth', error);
+        }
         throw new errors_js_1.UnauthorizedError(error.message);
     }
     const { user, session } = data;
@@ -374,7 +380,7 @@ router.post('/signup', rateLimiter_js_1.authLimiter, (0, errorHandler_js_1.async
     if (!email || !password) {
         throw new errors_js_1.ValidationError('Email e senha são obrigatórios');
     }
-    const { data, error } = await supabase_1.supabase.auth.signUp({
+    const { data, error } = await (0, supabase_1.createAuthClient)().auth.signUp({
         email,
         password,
         options: {

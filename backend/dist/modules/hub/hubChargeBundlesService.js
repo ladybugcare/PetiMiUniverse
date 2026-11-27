@@ -43,7 +43,8 @@ async function receivableBalanceAmount(receivableId, clinicId) {
         .from('hub_payments')
         .select('amount')
         .eq('receivable_id', receivableId)
-        .eq('clinic_id', clinicId);
+        .eq('clinic_id', clinicId)
+        .eq('status', 'posted');
     const paid = round2((payments ?? []).reduce((s, p) => s + Number(p.amount ?? 0), 0));
     return round2(Math.max(0, Number(rec.final_amount ?? 0) - paid));
 }

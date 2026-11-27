@@ -3,6 +3,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.insertLinkedClinicalAppointment = insertLinkedClinicalAppointment;
 exports.rescheduleLinkedAppointment = rescheduleLinkedAppointment;
 exports.setLinkedAppointmentStatus = setLinkedAppointmentStatus;
+exports.cancelLinkedOpenEncountersForAppointments = cancelLinkedOpenEncountersForAppointments;
 const supabase_1 = require("../../config/supabase");
 const hubPricingResolve_1 = require("./hubPricingResolve");
 const hubVariablePrice_1 = require("./hubVariablePrice");
@@ -85,20 +86,29 @@ function appointmentDurationMs(startsAt, endsAt) {
         return endMs - startMs;
     return DEFAULT_DURATION_MINUTES * 60_000;
 }
+const MISSING_SERVICE_MESSAGES = {
+    internacao: 'Não há tipo de serviço ativo no grupo Internação. Cadastre uma diária/serviço de internação para espelhar a admissão na agenda.',
+    cirurgia: 'Não há tipo de serviço ativo no grupo Cirurgia. Cadastre um serviço de cirurgia para espelhar o horário na agenda.',
+};
 /**
  * Cria um slot mínimo na agenda + uma linha de serviço.
- * Retorna o id do agendamento, ou `null` se não houver tipo de serviço / falha best-effort.
+ * Retorna o id do agendamento, ou `null` se não houver tipo de serviço / falha best-effort
+ * (quando `required` é false/omitido).
  * Nunca chama sync de cirurgia.
  */
 async function insertLinkedClinicalAppointment(opts) {
+    const required = opts.required === true;
     try {
         const st = await resolveMirrorServiceType({
             clinicId: opts.clinicId,
             serviceGroup: opts.serviceGroup,
             serviceTypeId: opts.serviceTypeId,
         });
-        if (!st)
+        if (!st) {
+            if (required)
+                throw new Error(MISSING_SERVICE_MESSAGES[opts.serviceGroup]);
             return null;
+        }
         const durationMin = durationMinutesOf(st);
         const startsAt = opts.startsAt;
         const endsAt = addMinutesIso(startsAt, durationMin);
@@ -159,6 +169,8 @@ async function insertLinkedClinicalAppointment(opts) {
     }
     catch (e) {
         console.error('insertLinkedClinicalAppointment', opts.serviceGroup, opts.petId, e?.message);
+        if (required)
+            throw e;
         return null;
     }
 }
@@ -218,5 +230,43 @@ async function setLinkedAppointmentStatus(opts) {
     }
     catch (e) {
         console.error('setLinkedAppointmentStatus', opts.appointmentId, e?.message);
+    }
+}
+/**
+ * Espelho inverso de setLinkedAppointmentStatus(cancelled):
+ * cancelar/falta na agenda cancela atendimentos clínicos ainda abertos (waiting/in_progress).
+ * Não mexe em encounters completed/cancelled.
+ */
+async function cancelLinkedOpenEncountersForAppointments(opts) {
+    const ids = [...new Set(opts.appointmentIds.filter(Boolean))];
+    if (ids.length === 0)
+        return [];
+    try {
+        const { data: openRows, error: listErr } = await supabase_1.supabaseAdmin
+            .from('hub_encounters')
+            .select('id')
+            .eq('clinic_id', opts.clinicId)
+            .in('hub_appointment_id', ids)
+            .in('status', ['waiting', 'in_progress'])
+            .is('deleted_at', null);
+        if (listErr)
+            throw new Error(listErr.message);
+        const encounterIds = (openRows ?? []).map((r) => r.id).filter(Boolean);
+        if (encounterIds.length === 0)
+            return [];
+        const { error: updErr } = await supabase_1.supabaseAdmin
+            .from('hub_encounters')
+            .update({ status: 'cancelled' })
+            .in('id', encounterIds)
+            .eq('clinic_id', opts.clinicId)
+            .in('status', ['waiting', 'in_progress'])
+            .is('deleted_at', null);
+        if (updErr)
+            throw new Error(updErr.message);
+        return encounterIds;
+    }
+    catch (e) {
+        console.error('cancelLinkedOpenEncountersForAppointments', e?.message);
+        return [];
     }
 }

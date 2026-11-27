@@ -1,9 +1,51 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.patchHubComanda = exports.postHubComandaCheckoutBulk = exports.postHubComandaSuggestItemPrice = exports.deleteHubComandaItem = exports.patchHubComandaItem = exports.postHubComandaAddItems = exports.postHubComandaResolveCancellation = exports.getHubComandaCancellationPendingCount = exports.listHubComandas = exports.getHubComandaByOrigin = exports.postHubComandaSyncFromOrigin = exports.postHubComandaCheckout = exports.postHubComandaApplyPackage = exports.getHubComandaDetail = exports.getHubComandaPdf = exports.getPublicComanda = exports.ensureComandaPublicToken = exports.postHubComandaOpen = void 0;
+exports.patchHubComanda = exports.postHubComandaCheckoutBulk = exports.postHubComandaSuggestItemPrice = exports.deleteHubComandaItem = exports.patchHubComandaItem = exports.postHubComandaAddItems = exports.postHubComandaResolveCancellation = exports.getHubComandaCancellationPendingCount = exports.listHubComandas = exports.getHubComandaByOrigin = exports.postHubComandaSyncFromOrigin = exports.postHubComandaCheckout = exports.postHubComandaApplyPackage = exports.getHubComandaDetail = exports.getHubComandaCupomPdf = exports.getHubComandaPdf = exports.getPublicComanda = exports.ensureComandaPublicToken = exports.postHubComandaOpen = exports.isSkippableLeavePendingHandoffError = void 0;
+exports.refreshComandaFinancialStatus = refreshComandaFinancialStatus;
+exports.tryVoidComandaAfterSaleFinanciallyEnded = tryVoidComandaAfterSaleFinanciallyEnded;
+exports.countOpenComandasPendingCaixa = countOpenComandasPendingCaixa;
 exports.tryAutoCloseComanda = tryAutoCloseComanda;
+exports.resolveSurgeryMergeIntoComandaItems = resolveSurgeryMergeIntoComandaItems;
+exports.applySurgeryServiceLinesToComandaItems = applySurgeryServiceLinesToComandaItems;
+exports.applyEncounterServiceLinesToComandaItems = applyEncounterServiceLinesToComandaItems;
+exports.leavePendingHandoffComanda = leavePendingHandoffComanda;
+exports.leavePendingHandoffOpenComandasForUnit = leavePendingHandoffOpenComandasForUnit;
 exports.syncOpenComandasAfterGroomingClosed = syncOpenComandasAfterGroomingClosed;
 exports.syncOpenComandasAfterEncounterChargeableChange = syncOpenComandasAfterEncounterChargeableChange;
+exports.isAppointmentTerminalCancelled = isAppointmentTerminalCancelled;
 exports.syncOpenComandasAfterEncounterCompleted = syncOpenComandasAfterEncounterCompleted;
 exports.syncOpenComandasAfterBoardingCheckedOut = syncOpenComandasAfterBoardingCheckedOut;
 exports.syncOpenComandasAfterAppointmentOperationalComplete = syncOpenComandasAfterAppointmentOperationalComplete;
@@ -15,22 +57,63 @@ exports.fetchOpenComandaOriginKeysExported = fetchOpenComandaOriginKeysExported;
 const node_crypto_1 = require("node:crypto");
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
-const hubFinancialController_1 = require("./hubFinancialController");
 const hubPricingResolve_1 = require("./hubPricingResolve");
 const hubQuoteDiscount_1 = require("./hubQuoteDiscount");
 const auditLog_1 = require("../../utils/auditLog");
 const hubComandaPdf_1 = require("./hubComandaPdf");
+const hubComandaCupomPdf_1 = require("./hubComandaCupomPdf");
 const hubClinicSettingsController_1 = require("./hubClinicSettingsController");
 const hubPaymentMethods_1 = require("./hubPaymentMethods");
+const hubCardMachineFees_1 = require("./hubCardMachineFees");
 const comandaEvents_1 = require("./comandaEvents");
 const comandaFinanceHandoff_1 = require("./comandaFinanceHandoff");
+var comandaFinanceHandoff_2 = require("./comandaFinanceHandoff");
+Object.defineProperty(exports, "isSkippableLeavePendingHandoffError", { enumerable: true, get: function () { return comandaFinanceHandoff_2.isSkippableLeavePendingHandoffError; } });
 const hubNotifyEvents_1 = require("./hubNotifyEvents");
 const supabaseSchemaErrors_js_1 = require("../../utils/supabaseSchemaErrors.js");
 const comandaStockOut_1 = require("./comandaStockOut");
+const hubTenantAsserts_1 = require("./hubTenantAsserts");
 const hubPackagesService_1 = require("./hubPackagesService");
 const hubInventoryStockUtils_1 = require("./hubInventoryStockUtils");
+const productSalePriceRules_1 = require("./productSalePriceRules");
 const appointmentPaidFromBilling_1 = require("./appointmentPaidFromBilling");
+const hubCustomerCredit_1 = require("./hubCustomerCredit");
+const hubCommissionAccrual_1 = require("./hubCommissionAccrual");
+const hubStaffResolve_1 = require("./hubStaffResolve");
+const hubSeriesBillingService_1 = require("./hubSeriesBillingService");
+const hubReceivableCancelCoverage_1 = require("./hubReceivableCancelCoverage");
 const uuidStr = zod_1.z.string().uuid();
+/** Mapa item_id → cost_amount do catálogo (para snapshot unit_cost_amount nas linhas de produto). */
+async function loadInventoryCostByItemId(clinicId, items) {
+    const ids = [
+        ...new Set(items
+            .filter((it) => String(it.item_kind ?? '') === 'product' && it.hub_inventory_item_id)
+            .map((it) => it.hub_inventory_item_id)),
+    ];
+    const map = new Map();
+    if (ids.length === 0)
+        return map;
+    const { data } = await supabase_1.supabaseAdmin
+        .from('hub_inventory_items')
+        .select('id, cost_amount')
+        .eq('clinic_id', clinicId)
+        .in('id', ids);
+    for (const row of data ?? []) {
+        if (row.cost_amount != null && Number.isFinite(Number(row.cost_amount))) {
+            map.set(row.id, Number(row.cost_amount));
+        }
+    }
+    return map;
+}
+function productUnitCostSnapshot(costByItem, item) {
+    if (String(item.item_kind ?? '') !== 'product')
+        return null;
+    const invId = item.hub_inventory_item_id;
+    if (!invId)
+        return null;
+    const cost = costByItem.get(invId);
+    return cost != null ? round2(cost) : null;
+}
 async function resolveComandaItemPricingVariant(item) {
     const originType = String(item.origin_type ?? '');
     const originId = item.origin_id;
@@ -68,11 +151,67 @@ async function assertComandaEditAllowed(comandaId, clinicId, context) {
         throw new Error((0, comandaEditScopes_1.editScopeErrorMessage)(scopes, context));
     }
 }
+/**
+ * Valida FKs efetivas da comanda antes de qualquer INSERT.
+ * Em `manual`/`package` (IDs vindos do body), também valida tutor/pets/vínculo.
+ * Em origens operacionais, valida unit/encounter/case persistidos (body ou resolução).
+ */
+async function assertComandaPersistedTenantFks(opts) {
+    if (!(await (0, hubTenantAsserts_1.assertUnitInClinic)(opts.clinicId, opts.unitId))) {
+        return { ok: false, error: 'Unidade inválida' };
+    }
+    if (!(await (0, hubTenantAsserts_1.assertEncounterInClinic)(opts.clinicId, opts.encounterId))) {
+        return { ok: false, error: 'Atendimento inválido' };
+    }
+    if (!(await (0, hubTenantAsserts_1.assertCaseInClinic)(opts.clinicId, opts.caseId))) {
+        return { ok: false, error: 'Caso clínico inválido' };
+    }
+    const clientSuppliedIds = opts.originType === 'manual' || opts.originType === 'package';
+    if (!clientSuppliedIds) {
+        return { ok: true };
+    }
+    if (!(await (0, hubTenantAsserts_1.assertGuardianInClinic)(opts.clinicId, opts.guardianId))) {
+        return { ok: false, error: 'Tutor inválido' };
+    }
+    const uniquePets = [
+        ...new Set(opts.petIds.filter((id) => typeof id === 'string' && id.length > 0)),
+    ];
+    for (const petId of uniquePets) {
+        if (!(await (0, hubTenantAsserts_1.assertPetInClinic)(opts.clinicId, petId))) {
+            return { ok: false, error: 'Pet inválido' };
+        }
+    }
+    const guardianId = opts.guardianId ?? null;
+    if (guardianId) {
+        for (const petId of uniquePets) {
+            if (!(await (0, hubTenantAsserts_1.assertGuardianLinkedToPet)(petId, guardianId))) {
+                return { ok: false, error: 'Tutor inválido' };
+            }
+        }
+    }
+    return { ok: true };
+}
 function round2(n) {
     return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 }
 const boardingBilling_1 = require("./boardingBilling");
+const boardingOperational_1 = require("./boardingOperational");
+const groomingStages_1 = require("./groomingStages");
 const hubHospitalizationBilling_1 = require("./hubHospitalizationBilling");
+async function loadServiceGroupByIds(serviceTypeIds) {
+    const ids = [...new Set(serviceTypeIds.filter(Boolean))];
+    const map = new Map();
+    if (ids.length === 0)
+        return map;
+    const { data } = await supabase_1.supabaseAdmin
+        .from('hub_service_types')
+        .select('id, service_group')
+        .in('id', ids);
+    for (const row of data ?? []) {
+        map.set(row.id, row.service_group);
+    }
+    return map;
+}
 const hubComandaSchemas_1 = require("./hubComandaSchemas");
 async function resolveClinicDefaultUnitId(clinicId) {
     const { data: main } = await supabase_1.supabaseAdmin
@@ -124,7 +263,115 @@ async function fetchOpenComandaOriginKeys(clinicId) {
         if (oid)
             set.add(`${row.origin_type}:${oid}`);
     }
-    return set;
+    const { expandBoardingAppointmentOriginKeys } = await Promise.resolve().then(() => __importStar(require('./boardingOriginKeys')));
+    const { expandGroomingAppointmentOriginKeys } = await Promise.resolve().then(() => __importStar(require('./groomingOriginKeys')));
+    const withBoarding = await expandBoardingAppointmentOriginKeys(clinicId, set);
+    return expandGroomingAppointmentOriginKeys(clinicId, withBoarding);
+}
+/** Origens de comandas não canceladas que já têm recebível (source_type do recebível pode ser manual). */
+async function fetchBilledComandaOriginKeys(clinicId) {
+    const keys = new Set();
+    const { data: comandas, error: cErr } = await supabase_1.supabaseAdmin
+        .from('hub_comandas')
+        .select('id, origin_type, origin_id, status')
+        .eq('clinic_id', clinicId)
+        .neq('status', 'cancelada')
+        .is('deleted_at', null)
+        .not('origin_id', 'is', null);
+    if (cErr)
+        throw new Error(cErr.message);
+    if (!comandas?.length)
+        return keys;
+    const comandaIds = comandas.map((c) => c.id);
+    const { data: receivables, error: rErr } = await supabase_1.supabaseAdmin
+        .from('hub_receivables')
+        .select('comanda_id')
+        .eq('clinic_id', clinicId)
+        .in('comanda_id', comandaIds)
+        .is('deleted_at', null)
+        .neq('status', 'cancelled');
+    if (rErr)
+        throw new Error(rErr.message);
+    const billedComandaIds = new Set((receivables ?? []).map((r) => r.comanda_id).filter(Boolean));
+    for (const c of comandas) {
+        if (billedComandaIds.has(c.id) || String(c.status) === 'fechada') {
+            keys.add(`${c.origin_type}:${c.origin_id}`);
+        }
+    }
+    const { expandBoardingAppointmentOriginKeys } = await Promise.resolve().then(() => __importStar(require('./boardingOriginKeys')));
+    const { expandGroomingAppointmentOriginKeys } = await Promise.resolve().then(() => __importStar(require('./groomingOriginKeys')));
+    const withBoarding = await expandBoardingAppointmentOriginKeys(clinicId, keys);
+    return expandGroomingAppointmentOriginKeys(clinicId, withBoarding);
+}
+/**
+ * Origens de itens já faturados em outras comandas (`origin_type:origin_id`).
+ * Checkout grava recebível como `source_type=manual`; a fatura real fica na comanda/linha.
+ * Usado para não re-lançar `appointment_service` (ex.: consulta paga na agenda) ao montar
+ * o snapshot do encounter.
+ */
+async function fetchInvoicedComandaItemOriginKeys(clinicId) {
+    const keys = new Set();
+    const addItemOrigins = (rows) => {
+        for (const it of rows ?? []) {
+            const ot = it.origin_type;
+            const oid = it.origin_id;
+            if (ot && oid)
+                keys.add(`${ot}:${oid}`);
+        }
+    };
+    // Comanda fechada = quitada: todos os itens com origem operacional já foram cobrados.
+    const { data: closedComandas, error: closedErr } = await supabase_1.supabaseAdmin
+        .from('hub_comandas')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .eq('status', 'fechada')
+        .is('deleted_at', null);
+    if (closedErr)
+        throw new Error(closedErr.message);
+    const closedIds = (closedComandas ?? []).map((c) => c.id);
+    if (closedIds.length > 0) {
+        const { data: closedItems, error: closedItemsErr } = await supabase_1.supabaseAdmin
+            .from('hub_comanda_items')
+            .select('origin_type, origin_id')
+            .eq('clinic_id', clinicId)
+            .in('comanda_id', closedIds);
+        if (closedItemsErr)
+            throw new Error(closedItemsErr.message);
+        addItemOrigins(closedItems);
+    }
+    // Comanda ainda aberta com cobrança parcial: só itens ligados a recebível ativo.
+    const { data: receivables, error: rErr } = await supabase_1.supabaseAdmin
+        .from('hub_receivables')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .is('deleted_at', null)
+        .neq('status', 'cancelled');
+    if (rErr)
+        throw new Error(rErr.message);
+    const recIds = (receivables ?? []).map((r) => r.id);
+    if (recIds.length === 0)
+        return keys;
+    const { data: lines, error: lineErr } = await supabase_1.supabaseAdmin
+        .from('hub_receivable_lines')
+        .select('comanda_item_id')
+        .in('receivable_id', recIds)
+        .not('comanda_item_id', 'is', null);
+    if (lineErr)
+        throw new Error(lineErr.message);
+    const itemIds = [
+        ...new Set((lines ?? []).map((l) => l.comanda_item_id).filter(Boolean)),
+    ];
+    if (itemIds.length === 0)
+        return keys;
+    const { data: invoicedItems, error: itemsErr } = await supabase_1.supabaseAdmin
+        .from('hub_comanda_items')
+        .select('origin_type, origin_id')
+        .eq('clinic_id', clinicId)
+        .in('id', itemIds);
+    if (itemsErr)
+        throw new Error(itemsErr.message);
+    addItemOrigins(invoicedItems);
+    return keys;
 }
 async function findOpenComandaIdByOrigin(clinicId, originType, originId) {
     const { data, error } = await supabase_1.supabaseAdmin
@@ -156,9 +403,27 @@ async function findOpenEncounterComandaIdForAppointment(clinicId, appointmentId)
     }
     return null;
 }
+async function findOpenGroomingComandaIdForAppointment(clinicId, appointmentId) {
+    const { data: sessions } = await supabase_1.supabaseAdmin
+        .from('hub_grooming_sessions')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .eq('hub_appointment_id', appointmentId)
+        .is('deleted_at', null)
+        .order('created_at', { ascending: false });
+    for (const sess of sessions ?? []) {
+        const bySess = await findOpenComandaIdByOrigin(clinicId, 'grooming_session', sess.id);
+        if (bySess)
+            return bySess;
+    }
+    return null;
+}
 /** Reutiliza comanda aberta do agendamento ao abrir checkout pela sessão B&T ou pelo encounter. */
 async function resolveExistingOpenComandaIdForOpen(clinicId, originType, originId) {
     if (originType === 'grooming_session') {
+        const bySess = await findOpenComandaIdByOrigin(clinicId, 'grooming_session', originId);
+        if (bySess)
+            return bySess;
         const { data: session } = await supabase_1.supabaseAdmin
             .from('hub_grooming_sessions')
             .select('hub_appointment_id')
@@ -195,7 +460,35 @@ async function resolveExistingOpenComandaIdForOpen(clinicId, originType, originI
         const byAppt = await findOpenComandaIdByOrigin(clinicId, 'appointment', originId);
         if (byAppt)
             return byAppt;
+        const byGroom = await findOpenGroomingComandaIdForAppointment(clinicId, originId);
+        if (byGroom)
+            return byGroom;
+        const boardingId = await findAnyBoardingReservationForAppointment(clinicId, originId);
+        if (boardingId) {
+            const byBoard = await findOpenComandaIdByOrigin(clinicId, 'boarding_reservation', boardingId);
+            if (byBoard)
+                return byBoard;
+        }
         return findOpenEncounterComandaIdForAppointment(clinicId, originId);
+    }
+    if (originType === 'boarding_reservation') {
+        const byBoard = await findOpenComandaIdByOrigin(clinicId, 'boarding_reservation', originId);
+        if (byBoard)
+            return byBoard;
+        const { data: rsv } = await supabase_1.supabaseAdmin
+            .from('hub_boarding_reservations')
+            .select('hub_appointment_id')
+            .eq('id', originId)
+            .eq('clinic_id', clinicId)
+            .is('deleted_at', null)
+            .maybeSingle();
+        const apptId = rsv?.hub_appointment_id ?? null;
+        if (apptId) {
+            const byAppt = await findOpenComandaIdByOrigin(clinicId, 'appointment', apptId);
+            if (byAppt)
+                return byAppt;
+        }
+        return null;
     }
     return findOpenComandaIdByOrigin(clinicId, originType, originId);
 }
@@ -215,29 +508,61 @@ async function findLatestClosedGroomingSessionIdForAppointment(clinicId, appoint
     return data?.id ?? null;
 }
 async function findLatestCompletedEncounterIdForAppointment(clinicId, appointmentId) {
-    const { data, error } = await supabase_1.supabaseAdmin
+    return findLatestEncounterIdForAppointment(clinicId, appointmentId, { completedOnly: true });
+}
+async function findLatestEncounterIdForAppointment(clinicId, appointmentId, opts) {
+    let q = supabase_1.supabaseAdmin
         .from('hub_encounters')
-        .select('id')
+        .select('id, status, completed_at, created_at')
         .eq('clinic_id', clinicId)
         .eq('hub_appointment_id', appointmentId)
-        .eq('status', 'completed')
         .is('deleted_at', null)
-        .order('completed_at', { ascending: false, nullsFirst: false })
-        .limit(1)
-        .maybeSingle();
+        .neq('status', 'cancelled');
+    if (opts?.completedOnly) {
+        q = q.eq('status', 'completed').order('completed_at', { ascending: false, nullsFirst: false });
+    }
+    else if (opts?.anyOpen) {
+        q = q.neq('status', 'completed').order('created_at', { ascending: false });
+    }
+    else {
+        q = q.order('created_at', { ascending: false });
+    }
+    const { data, error } = await q.limit(1).maybeSingle();
     if (error)
         throw new Error(error.message);
     return data?.id ?? null;
 }
-async function findCheckedOutBoardingReservationForAppointment(clinicId, appointmentId) {
+/** Reserva de hotel/creche cobrável ligada ao agendamento (ativa ou já com check-out). */
+async function findBillableBoardingReservationForAppointment(clinicId, appointmentId) {
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_boarding_reservations')
+        .select('id, status, checked_out_at, created_at')
+        .eq('clinic_id', clinicId)
+        .eq('hub_appointment_id', appointmentId)
+        .is('deleted_at', null)
+        .not('status', 'in', '("cancelled","no_show")')
+        .order('checked_out_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    if (error)
+        throw new Error(error.message);
+    if (!data?.id)
+        return null;
+    const st = String(data.status ?? '');
+    if (!(0, boardingOperational_1.isBoardingStatusReadyForComanda)(st, { allowIncomplete: true }))
+        return null;
+    return data.id;
+}
+async function findAnyBoardingReservationForAppointment(clinicId, appointmentId) {
     const { data, error } = await supabase_1.supabaseAdmin
         .from('hub_boarding_reservations')
         .select('id')
         .eq('clinic_id', clinicId)
         .eq('hub_appointment_id', appointmentId)
-        .eq('status', 'checked_out')
         .is('deleted_at', null)
-        .order('checked_out_at', { ascending: false, nullsFirst: false })
+        .not('status', 'in', '("cancelled")')
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
     if (error)
@@ -268,6 +593,10 @@ async function isOperationalCompleteForComanda(comanda) {
     if (originType === 'package')
         return true;
     if (originType === 'appointment') {
+        // Encounter clínico aberto → serviço em andamento (mesmo se a agenda já estiver "paid" por cobrança antecipada).
+        const openEncId = await findLatestEncounterIdForAppointment(clinicId, originId, { anyOpen: true });
+        if (openEncId)
+            return false;
         const { data: appt } = await supabase_1.supabaseAdmin
             .from('hub_appointments')
             .select('status')
@@ -285,7 +614,8 @@ async function isOperationalCompleteForComanda(comanda) {
             .eq('clinic_id', clinicId)
             .is('deleted_at', null)
             .maybeSingle();
-        return String(s?.grooming_stage ?? '') === 'closed';
+        // Pronto = serviço concluído (custódia/retirada pode continuar em ready).
+        return (0, groomingStages_1.isGroomingServiceOperationallyDone)(String(s?.grooming_stage ?? ''));
     }
     if (originType === 'encounter') {
         const { data: e } = await supabase_1.supabaseAdmin
@@ -309,7 +639,7 @@ async function isOperationalCompleteForComanda(comanda) {
     }
     return true;
 }
-async function sumPaymentsForComandaReceivables(comandaId, clinicId) {
+async function listReceivableIdsForComandaPayments(comandaId, clinicId) {
     const { data: recs, error: rErr } = await supabase_1.supabaseAdmin
         .from('hub_receivables')
         .select('id')
@@ -318,25 +648,83 @@ async function sumPaymentsForComandaReceivables(comandaId, clinicId) {
         .neq('status', 'cancelled');
     if (rErr)
         throw new Error(rErr.message);
-    const ids = (recs ?? []).map((r) => r.id);
+    return (recs ?? []).map((r) => r.id);
+}
+async function listPostedPaymentsForComandaReceivables(comandaId, clinicId, selectCols) {
+    const ids = await listReceivableIdsForComandaPayments(comandaId, clinicId);
     if (ids.length === 0)
-        return 0;
-    const { data: pays, error: pErr } = await supabase_1.supabaseAdmin.from('hub_payments').select('amount').in('receivable_id', ids);
+        return [];
+    const { data: pays, error: pErr } = await supabase_1.supabaseAdmin
+        .from('hub_payments')
+        .select(selectCols)
+        .in('receivable_id', ids)
+        .eq('status', 'posted');
     if (pErr)
         throw new Error(pErr.message);
-    return round2((pays ?? []).reduce((s, row) => s + Number(row.amount ?? 0), 0));
+    return (pays ?? []);
 }
-/** Saldo em linhas ainda não faturadas + resíduo dos recebíveis (pendente / parcial). */
+/** Pagamentos da timeline da comanda (um evento por lançamento; posted + reversed). */
+async function listTimelinePaymentsForComanda(comandaId, clinicId) {
+    const ids = await listReceivableIdsForComandaPayments(comandaId, clinicId);
+    if (ids.length === 0)
+        return [];
+    const { data: pays, error: pErr } = await supabase_1.supabaseAdmin
+        .from('hub_payments')
+        .select('id, amount, payment_method, status, payment_date, effective_payment_date, created_at')
+        .in('receivable_id', ids)
+        .in('status', ['posted', 'reversed'])
+        .order('created_at', { ascending: true });
+    if (pErr)
+        throw new Error(pErr.message);
+    return (pays ?? []).map((row) => {
+        const at = String(row.effective_payment_date ?? '') ||
+            String(row.payment_date ?? '') ||
+            String(row.created_at ?? '');
+        return {
+            id: String(row.id),
+            amount: round2(Number(row.amount ?? 0)),
+            payment_method: String(row.payment_method ?? ''),
+            status: String(row.status ?? ''),
+            payment_date: at,
+        };
+    });
+}
+async function sumPaymentsForComandaReceivables(comandaId, clinicId) {
+    const pays = await listPostedPaymentsForComandaReceivables(comandaId, clinicId, 'amount');
+    return round2(pays.reduce((s, row) => s + Number(row.amount ?? 0), 0));
+}
+const EMPTY_CARD_FEE_TOTALS = {
+    card_gross_total: 0,
+    card_fee_total: 0,
+    card_net_total: 0,
+    card_without_fee_gross_total: 0,
+};
+/** Totais de taxa da maquininha na comanda (somente pagamentos posted). */
+async function computeComandaCardFeeTotals(comandaId, clinicId) {
+    const pays = await listPostedPaymentsForComandaReceivables(comandaId, clinicId, 'amount, payment_method, card_fee_amount, net_amount');
+    return (0, hubCardMachineFees_1.aggregateCardFeeTotals)(pays.map((row) => ({
+        payment_method: String(row.payment_method ?? ''),
+        amount: Number(row.amount ?? 0),
+        card_fee_amount: row.card_fee_amount == null || !Number.isFinite(Number(row.card_fee_amount))
+            ? null
+            : Number(row.card_fee_amount),
+        net_amount: row.net_amount == null || !Number.isFinite(Number(row.net_amount))
+            ? null
+            : Number(row.net_amount),
+    })));
+}
+/** Saldo em linhas ainda não faturadas (líquidas do desconto de cabeçalho) + resíduo dos recebíveis. */
 async function computeComandaBalancePayload(comandaId, clinicId) {
     const { data: comandaRow, error: cErr } = await supabase_1.supabaseAdmin
         .from('hub_comandas')
-        .select('total_amount')
+        .select('total_amount, discount_amount')
         .eq('id', comandaId)
         .eq('clinic_id', clinicId)
         .maybeSingle();
     if (cErr)
         throw new Error(cErr.message);
     const totalAmount = Number(comandaRow?.total_amount ?? 0);
+    const headerDiscount = Number(comandaRow?.discount_amount ?? 0);
     const { data: items, error: iErr } = await supabase_1.supabaseAdmin
         .from('hub_comanda_items')
         .select('id, line_total')
@@ -350,40 +738,131 @@ async function computeComandaBalancePayload(comandaId, clinicId) {
         .eq('comanda_id', comandaId)
         .not('comanda_item_id', 'is', null);
     const recIds = [...new Set((lineRows ?? []).map((r) => r.receivable_id))];
-    let activeRecById = new Map();
+    /** Recebível “conta” para faturamento de itens (não reabre linha na comanda). */
+    let billsItemByRecId = new Map();
+    /** Recebível listável na ficha financeira (exclui cancelamento puro sem devolução). */
+    let listableRecById = new Map();
     if (recIds.length) {
-        const { data: recs } = await supabase_1.supabaseAdmin.from('hub_receivables').select('id, status').in('id', recIds);
-        activeRecById = new Map((recs ?? []).map((r) => [r.id, String(r.status) !== 'cancelled']));
+        const { data: recs, error: covErr } = await supabase_1.supabaseAdmin
+            .from('hub_receivables')
+            .select('id, status, returned_amount, cancel_rebill')
+            .in('id', recIds);
+        const coverageRows = covErr && String(covErr.message || '').includes('cancel_rebill')
+            ? (await supabase_1.supabaseAdmin
+                .from('hub_receivables')
+                .select('id, status, returned_amount')
+                .in('id', recIds)).data
+            : recs;
+        for (const r of coverageRows ?? []) {
+            const id = r.id;
+            // reissue (legado/cancel_rebill≠false) reabre itens; void_sale mantém cobertos.
+            billsItemByRecId.set(id, (0, hubReceivableCancelCoverage_1.receivableBillsComandaItem)(r));
+            listableRecById.set(id, (0, hubReceivableCancelCoverage_1.receivableListableOnComanda)(r));
+        }
     }
     const invoicedItemIds = new Set();
     for (const row of lineRows ?? []) {
         const cid = row.comanda_item_id;
         const rid = row.receivable_id;
-        if (cid && activeRecById.get(rid))
+        if (cid && billsItemByRecId.get(rid))
             invoicedItemIds.add(cid);
     }
-    const openItemIds = (items ?? []).map((it) => it.id).filter((id) => !invoicedItemIds.has(id));
+    const allItems = items ?? [];
+    const openItemIds = allItems.map((it) => it.id).filter((id) => !invoicedItemIds.has(id));
     const openSet = new Set(openItemIds);
-    const openLinesTotal = round2((items ?? []).filter((it) => openSet.has(it.id)).reduce((s, it) => s + Number(it.line_total ?? 0), 0));
-    const paid = await sumPaymentsForComandaReceivables(comandaId, clinicId);
-    const { data: recs, error: rErr } = await supabase_1.supabaseAdmin
-        .from('hub_receivables')
-        .select('id, final_amount, status')
-        .eq('comanda_id', comandaId)
-        .eq('clinic_id', clinicId)
-        .neq('status', 'cancelled');
-    if (rErr)
-        throw new Error(rErr.message);
+    const openLinesTotal = round2(allItems.filter((it) => openSet.has(it.id)).reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+    const allLinesTotal = round2(allItems.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+    const postedGross = await sumPaymentsForComandaReceivables(comandaId, clinicId);
+    let recs = null;
+    {
+        const primary = await supabase_1.supabaseAdmin
+            .from('hub_receivables')
+            .select('id, final_amount, status, returned_amount, cancel_rebill')
+            .eq('comanda_id', comandaId)
+            .eq('clinic_id', clinicId);
+        if (primary.error && String(primary.error.message || '').includes('cancel_rebill')) {
+            const legacy = await supabase_1.supabaseAdmin
+                .from('hub_receivables')
+                .select('id, final_amount, status, returned_amount')
+                .eq('comanda_id', comandaId)
+                .eq('clinic_id', clinicId);
+            if (legacy.error)
+                throw new Error(legacy.error.message);
+            recs = (legacy.data ?? []);
+        }
+        else if (primary.error) {
+            throw new Error(primary.error.message);
+        }
+        else {
+            recs = (primary.data ?? []);
+        }
+    }
     let receivableResidual = 0;
+    let netTotal = 0;
+    let returnedTotal = 0;
+    let lineRefundsTotal = 0;
+    let paidNetTotal = 0;
     for (const r of recs ?? []) {
         const rid = r.id;
+        const returnedAmt = Number(r.returned_amount ?? 0);
+        // Cancelamento sem devolução (void ou reissue) não entra no líquido vigente.
+        if ((0, hubReceivableCancelCoverage_1.isFinancialCancelWithoutReturn)(r))
+            continue;
         const fa = Number(r.final_amount ?? 0);
-        const { data: pays } = await supabase_1.supabaseAdmin.from('hub_payments').select('amount').eq('receivable_id', rid);
-        const paidRec = round2((pays ?? []).reduce((a, row) => a + Number(row.amount ?? 0), 0));
-        receivableResidual += round2(Math.max(0, fa - paidRec));
+        netTotal = round2(netTotal + fa);
+        returnedTotal = round2(returnedTotal + returnedAmt);
+        const [{ data: pays }, { data: refundAdjs }] = await Promise.all([
+            supabase_1.supabaseAdmin
+                .from('hub_payments')
+                .select('amount')
+                .eq('receivable_id', rid)
+                .eq('status', 'posted'),
+            supabase_1.supabaseAdmin
+                .from('hub_financial_adjustments')
+                .select('amount, payment_id')
+                .eq('receivable_id', rid)
+                .eq('adjustment_type', 'refund'),
+        ]);
+        const postedRec = round2((pays ?? []).reduce((a, row) => a + Number(row.amount ?? 0), 0));
+        const lineRefundsRec = round2((refundAdjs ?? [])
+            .filter((row) => row.payment_id == null)
+            .reduce((a, row) => a + Number(row.amount ?? 0), 0));
+        lineRefundsTotal = round2(lineRefundsTotal + lineRefundsRec);
+        const netPaidRec = round2(Math.max(0, postedRec - lineRefundsRec));
+        paidNetTotal = round2(paidNetTotal + netPaidRec);
+        // refunded: episódio financeiro encerrado — sem residual a cobrar.
+        if ((0, hubReceivableCancelCoverage_1.receivableResidualCountsTowardBalance)(r)) {
+            receivableResidual += round2(Math.max(0, fa - netPaidRec));
+        }
     }
-    const balance_due = round2(openLinesTotal + receivableResidual);
-    return { paid_total: paid, balance_due, total_amount: totalAmount };
+    // Itens ainda não faturados entram no líquido vigente da comanda.
+    const openHeaderDisc = (0, comandaFinanceHandoff_1.openLinesHeaderDiscount)({
+        openLinesTotal,
+        allLinesTotal,
+        headerDiscount,
+        openItemsCount: openItemIds.length,
+        allItemsCount: allItems.length,
+    });
+    netTotal = round2(netTotal + Math.max(0, openLinesTotal - openHeaderDisc));
+    const balance_due = (0, comandaFinanceHandoff_1.computeBalanceDueFromParts)({
+        openLinesTotal,
+        allLinesTotal,
+        headerDiscount,
+        openItemsCount: openItemIds.length,
+        allItemsCount: allItems.length,
+        receivableResidual,
+    });
+    return {
+        /** Pago líquido efetivo (posted − refunds de linha). */
+        paid_total: paidNetTotal,
+        balance_due,
+        /** Bruto original da comanda (linhas históricas preservadas). */
+        total_amount: totalAmount,
+        net_total: netTotal,
+        returned_amount: returnedTotal,
+        posted_total: postedGross,
+        line_refunds_total: lineRefundsTotal,
+    };
 }
 /** Preenche finance_handoff_at sem criar recebíveis (ex.: saldo restante após pagamento parcial). */
 async function applyFinanceHandoffOnly(comandaId, clinicId, detail, dueDate) {
@@ -412,6 +891,7 @@ async function applyFinanceHandoffOnly(comandaId, clinicId, detail, dueDate) {
     }
     return activeRecIds;
 }
+/** Atualiza financial_status pelo saldo real — inclusive comanda fechada (não reabre). */
 async function refreshComandaFinancialStatus(comandaId, clinicId, comandaRow) {
     const total = Number(comandaRow.total_amount ?? 0);
     const { balance_due } = await computeComandaBalancePayload(comandaId, clinicId);
@@ -425,6 +905,152 @@ async function refreshComandaFinancialStatus(comandaId, clinicId, comandaRow) {
         financial = opDone ? 'balanced' : 'open';
     await supabase_1.supabaseAdmin.from('hub_comandas').update({ financial_status: financial }).eq('id', comandaId).eq('clinic_id', clinicId);
 }
+/**
+ * Após reembolso/void total: se não restar recebível cobrável, anula a comanda
+ * (evita fantasma em “Pendentes de dias anteriores” no caixa).
+ * Não usa `receivableListableOnComanda` — `refunded` é listável na ficha, mas não mantém cobrança.
+ */
+async function tryVoidComandaAfterSaleFinanciallyEnded(opts) {
+    const comandaId = opts.comandaId;
+    if (!comandaId)
+        return { comanda_status: null };
+    const { data: comandaRow } = await supabase_1.supabaseAdmin
+        .from('hub_comandas')
+        .select('*')
+        .eq('id', comandaId)
+        .eq('clinic_id', opts.clinicId)
+        .maybeSingle();
+    if (!comandaRow)
+        return { comanda_status: null };
+    const currentStatus = String(comandaRow.status ?? '');
+    if (currentStatus === 'cancelada') {
+        await refreshComandaFinancialStatus(comandaId, opts.clinicId, comandaRow);
+        return { comanda_status: 'cancelada' };
+    }
+    let siblings = [];
+    {
+        const primary = await supabase_1.supabaseAdmin
+            .from('hub_receivables')
+            .select('id, status, returned_amount, cancel_rebill')
+            .eq('comanda_id', comandaId)
+            .eq('clinic_id', opts.clinicId)
+            .is('deleted_at', null);
+        if (primary.error && String(primary.error.message || '').includes('cancel_rebill')) {
+            const legacy = await supabase_1.supabaseAdmin
+                .from('hub_receivables')
+                .select('id, status, returned_amount')
+                .eq('comanda_id', comandaId)
+                .eq('clinic_id', opts.clinicId)
+                .is('deleted_at', null);
+            siblings = (legacy.data ?? []);
+        }
+        else {
+            siblings = (primary.data ?? []);
+        }
+    }
+    // Sem recebíveis: comanda ainda não faturada (ex. venda rápida aberta) — não anular.
+    const stillChargeable = siblings.some((r) => (0, hubReceivableCancelCoverage_1.receivableKeepsComandaChargeable)(r));
+    if (siblings.length === 0 || stillChargeable) {
+        await refreshComandaFinancialStatus(comandaId, opts.clinicId, comandaRow);
+        return { comanda_status: currentStatus || null };
+    }
+    const now = new Date().toISOString();
+    const originType = String(comandaRow.origin_type ?? '');
+    const originId = comandaRow.origin_id;
+    const waiveReason = `Anulação financeira: ${opts.reason}`.slice(0, 2000);
+    if (originId) {
+        if (originType === 'grooming_session') {
+            await supabase_1.supabaseAdmin
+                .from('hub_grooming_sessions')
+                .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
+                .eq('id', originId)
+                .eq('clinic_id', opts.clinicId);
+        }
+        else if (originType === 'encounter') {
+            await supabase_1.supabaseAdmin
+                .from('hub_encounters')
+                .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
+                .eq('id', originId)
+                .eq('clinic_id', opts.clinicId);
+        }
+        else if (originType === 'appointment') {
+            await supabase_1.supabaseAdmin
+                .from('hub_appointments')
+                .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
+                .eq('id', originId)
+                .eq('clinic_id', opts.clinicId);
+        }
+        else if (originType === 'quote') {
+            await supabase_1.supabaseAdmin
+                .from('hub_quotes')
+                .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
+                .eq('id', originId)
+                .eq('clinic_id', opts.clinicId);
+        }
+        else if (originType === 'boarding_reservation') {
+            await supabase_1.supabaseAdmin
+                .from('hub_boarding_reservations')
+                .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
+                .eq('id', originId)
+                .eq('clinic_id', opts.clinicId);
+        }
+    }
+    await supabase_1.supabaseAdmin
+        .from('hub_comandas')
+        .update({ status: 'cancelada', closed_at: now, financial_status: 'balanced' })
+        .eq('id', comandaId)
+        .eq('clinic_id', opts.clinicId);
+    return { comanda_status: 'cancelada' };
+}
+/**
+ * Contagem usada pelo Financeiro / visão geral — alinhada ao caixa (edit_scopes.caixa + saldo).
+ * Cura comandas fantasma (aberta sem saldo cobrável) no enriquecimento.
+ */
+async function countOpenComandasPendingCaixa(clinicId, unitId) {
+    const { data: rows, error } = await supabase_1.supabaseAdmin
+        .from('hub_comandas')
+        .select('id, total_amount, status, finance_handoff_at, origin_type, origin_id')
+        .eq('clinic_id', clinicId)
+        .or(`unit_id.eq.${unitId},unit_id.is.null`)
+        .eq('status', 'aberta')
+        .is('finance_handoff_at', null)
+        .is('deleted_at', null);
+    if (error)
+        throw new Error(error.message);
+    let count = 0;
+    let total = 0;
+    for (const row of rows ?? []) {
+        const comandaId = row.id;
+        let { balance_due } = await computeComandaBalancePayload(comandaId, clinicId);
+        if (balance_due <= 0.02) {
+            try {
+                const voided = await tryVoidComandaAfterSaleFinanciallyEnded({
+                    clinicId,
+                    comandaId,
+                    reason: 'Cura automática: sem saldo cobrável',
+                });
+                if (voided.comanda_status === 'cancelada')
+                    continue;
+                const closed = await tryAutoCloseComanda(comandaId, clinicId);
+                if (closed)
+                    continue;
+                ({ balance_due } = await computeComandaBalancePayload(comandaId, clinicId));
+            }
+            catch (e) {
+                console.warn('[hub_comandas] countOpenComandasPendingCaixa heal', comandaId, e);
+            }
+        }
+        if (balance_due <= 0.02)
+            continue;
+        const operational_complete = await isOperationalCompleteForComanda(row);
+        const scopes = (0, comandaEditScopes_1.computeComandaEditScopes)(row, operational_complete, balance_due);
+        if (!scopes.caixa)
+            continue;
+        count += 1;
+        total = round2(total + balance_due);
+    }
+    return { count, total: round2(total) };
+}
 /** Fecha comanda aberta quando saldo quitado e sem itens em aberto. */
 async function tryAutoCloseComanda(comandaId, clinicId) {
     const { data: comandaRow, error } = await supabase_1.supabaseAdmin
@@ -437,13 +1063,47 @@ async function tryAutoCloseComanda(comandaId, clinicId) {
         return false;
     if (String(comandaRow.status) !== 'aberta')
         return false;
+    // Pagamento antecipado com serviço em andamento: mantém aberta para novos itens (ex. medicação no AT).
+    const opDone = await isOperationalCompleteForComanda(comandaRow);
+    if (!opDone) {
+        await refreshComandaFinancialStatus(comandaId, clinicId, comandaRow);
+        return false;
+    }
     const detail = await getHubComandaDetailPayload(comandaId, clinicId);
     const stillOpenItems = detail.open_item_ids.length > 0;
     const balAfter = Number(detail.balance_due ?? 0);
     const total = Number(comandaRow.total_amount ?? 0);
+    const itemCount = Array.isArray(detail.items) ? detail.items.length : 0;
+    const hasPackageCoverage = Array.isArray(detail.items)
+        ? detail.items.some((it) => Boolean(it.package_balance_id))
+        : false;
     // Não fecha comanda vazia (ex.: manual aberta sem itens ainda).
-    if (stillOpenItems || balAfter > 0.02 || total <= 0.02)
+    // Cobertura total por pacote: itens podem permanecer em open_item_ids (sem recebível).
+    // Só fecha após resgate confirmado — aplicar pacote sozinho não encerra.
+    if (balAfter > 0.02)
         return false;
+    if (itemCount === 0)
+        return false;
+    if (stillOpenItems) {
+        if (!(hasPackageCoverage && total <= 0.02))
+            return false;
+        const packageItemIds = detail.items
+            .filter((it) => Boolean(it.package_balance_id))
+            .map((it) => it.id);
+        if (!packageItemIds.length)
+            return false;
+        const { data: redemptions } = await supabase_1.supabaseAdmin
+            .from('hub_package_redemptions')
+            .select('id')
+            .in('comanda_item_id', packageItemIds)
+            .is('reversed_at', null)
+            .limit(1);
+        if (!redemptions?.length)
+            return false;
+    }
+    else if (total <= 0.02 && !hasPackageCoverage) {
+        return false;
+    }
     const now = new Date().toISOString();
     const { error: closeErr } = await supabase_1.supabaseAdmin
         .from('hub_comandas')
@@ -500,7 +1160,7 @@ function comandaItemInsertRow(clinicId, comandaId, it) {
 async function sumAppointmentServicesSaleForComanda(appointmentId, defaultPetId) {
     const { data: svcRows, error } = await supabase_1.supabaseAdmin
         .from('hub_appointment_services')
-        .select('id, hub_service_type_id, order_index, sale_amount_applied, hub_service_types(name)')
+        .select('id, hub_service_type_id, order_index, sale_amount_applied, hub_service_types(name, sale_amount)')
         .eq('appointment_id', appointmentId)
         .order('order_index', { ascending: true });
     if (error)
@@ -509,10 +1169,10 @@ async function sumAppointmentServicesSaleForComanda(appointmentId, defaultPetId)
     let subtotal = 0;
     let idx = 0;
     for (const row of svcRows ?? []) {
-        const sale = Number(row.sale_amount_applied ?? 0);
         const st = row.hub_service_types;
-        const name = Array.isArray(st) ? st[0]?.name : st?.name;
-        const desc = name || 'Serviço';
+        const stRow = Array.isArray(st) ? st[0] : st;
+        const sale = (0, hubPricingResolve_1.resolveAppliedSaleAmount)(row.sale_amount_applied, stRow?.sale_amount);
+        const desc = stRow?.name || 'Serviço';
         subtotal += sale;
         items.push({
             pet_id: defaultPetId,
@@ -575,6 +1235,66 @@ const APPOINTMENT_STATUSES_OPEN_FOR_COMANDA = new Set([
     'done',
     'paid',
 ]);
+/** Agendamentos com comanda ativa (não cancelada) na origem `appointment`. */
+async function appointmentIdsWithActiveComanda(clinicId, appointmentIds) {
+    const out = new Set();
+    if (!appointmentIds.length)
+        return out;
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_comandas')
+        .select('origin_id')
+        .eq('clinic_id', clinicId)
+        .eq('origin_type', 'appointment')
+        .neq('status', 'cancelada')
+        .is('deleted_at', null)
+        .in('origin_id', appointmentIds);
+    if (error)
+        throw new Error(error.message);
+    for (const row of data ?? []) {
+        const oid = row.origin_id;
+        if (oid)
+            out.add(oid);
+    }
+    return out;
+}
+/**
+ * Inclui serviços das pernas `pickup_route` filhas na comanda do ancestral (pai ou bloco).
+ * Não inclui perna que já tenha comanda própria (anti-duplicata).
+ */
+async function appendAttachedPickupLegsToComandaSnapshot(clinicId, parentAppointmentId, snapshot) {
+    const { data: legs, error } = await supabase_1.supabaseAdmin
+        .from('hub_appointments')
+        .select('id, status')
+        .eq('clinic_id', clinicId)
+        .eq('parent_appointment_id', parentAppointmentId)
+        .eq('appointment_kind', 'pickup_route')
+        .is('deleted_at', null);
+    if (error)
+        throw new Error(error.message);
+    const candidateIds = [];
+    for (const leg of legs ?? []) {
+        const st = String(leg.status ?? '');
+        if (st === 'cancelled' || st === 'no_show')
+            continue;
+        candidateIds.push(leg.id);
+    }
+    if (candidateIds.length === 0)
+        return snapshot;
+    const withOwnComanda = await appointmentIdsWithActiveComanda(clinicId, candidateIds);
+    const items = [...snapshot.items];
+    let subtotal = snapshot.subtotal;
+    let sortBase = items.length;
+    for (const legId of candidateIds) {
+        if (withOwnComanda.has(legId))
+            continue;
+        const legBuilt = await sumAppointmentServicesSaleForComanda(legId, snapshot.pet_id);
+        for (const it of legBuilt.items) {
+            items.push({ ...it, sort_order: sortBase++ });
+        }
+        subtotal = round2(subtotal + legBuilt.subtotal);
+    }
+    return { ...snapshot, items, subtotal };
+}
 async function buildComandaItemsFromAppointment(clinicId, appointmentId, opts) {
     const { data: appt, error } = await supabase_1.supabaseAdmin
         .from('hub_appointments')
@@ -600,8 +1320,16 @@ async function buildComandaItemsFromAppointment(clinicId, appointmentId, opts) {
         throw new Error('NO_GUARDIAN');
     const petId = appt.pet_id ?? null;
     const built = await sumAppointmentServicesSaleForComanda(appointmentId, petId);
-    if (built.items.length === 0) {
-        built.items.push({
+    let snapshot = {
+        items: built.items,
+        subtotal: built.subtotal,
+        unit_id: appt.unit_id ?? null,
+        guardian_id: guardianId,
+        pet_id: petId,
+    };
+    snapshot = await appendAttachedPickupLegsToComandaSnapshot(clinicId, appointmentId, snapshot);
+    if (snapshot.items.length === 0) {
+        snapshot.items.push({
             pet_id: petId,
             item_kind: 'fee',
             hub_service_type_id: null,
@@ -621,7 +1349,7 @@ async function buildComandaItemsFromAppointment(clinicId, appointmentId, opts) {
     const applied = await (0, hubPackagesService_1.autoApplyEligiblePackagesToItems)({
         clinicId,
         guardianId,
-        items: built.items,
+        items: snapshot.items,
         resolvePricingVariant: async (item) => {
             if (item.origin_type === 'appointment_service' && item.origin_id) {
                 const { data: svc } = await supabase_1.supabaseAdmin
@@ -656,11 +1384,11 @@ async function buildComandaItemsFromAppointment(clinicId, appointmentId, opts) {
         },
     });
     return {
-        items: built.items,
-        subtotal: applied.appliedCount > 0 ? applied.subtotal : built.subtotal,
-        unit_id: appt.unit_id ?? null,
-        guardian_id: guardianId,
-        pet_id: petId,
+        items: snapshot.items,
+        subtotal: applied.appliedCount > 0 ? applied.subtotal : snapshot.subtotal,
+        unit_id: snapshot.unit_id,
+        guardian_id: snapshot.guardian_id,
+        pet_id: snapshot.pet_id,
     };
 }
 async function buildComandaItemsFromGroomingSession(clinicId, sessionId) {
@@ -882,6 +1610,251 @@ async function fetchPrimaryGuardianForPet(petId) {
         .maybeSingle();
     return data?.guardian_id ?? null;
 }
+/**
+ * Carrega serviços cirúrgicos confirmados e os mescla na comanda:
+ * - substitui o espelho `appointment_service` quando há vínculo (mesma cobrança);
+ * - não duplica por `hub_service_type_id` já coberto por outra linha cirúrgica;
+ * - preços pendentes ficam de fora (só `confirmed` + `charge`).
+ */
+async function loadConfirmedSurgeryServiceRows(opts) {
+    const surgeryIds = new Set();
+    if (opts.encounterId) {
+        const { data, error } = await supabase_1.supabaseAdmin
+            .from('hub_surgeries')
+            .select('id')
+            .eq('hub_encounter_id', opts.encounterId)
+            .eq('clinic_id', opts.clinicId)
+            .is('deleted_at', null);
+        if (!error || !(0, supabaseSchemaErrors_js_1.isMissingPostgrestRelation)(error)) {
+            for (const row of data ?? [])
+                surgeryIds.add(row.id);
+        }
+    }
+    if (opts.appointmentId) {
+        const { data, error } = await supabase_1.supabaseAdmin
+            .from('hub_surgeries')
+            .select('id')
+            .eq('hub_appointment_id', opts.appointmentId)
+            .eq('clinic_id', opts.clinicId)
+            .is('deleted_at', null);
+        if (!error || !(0, supabaseSchemaErrors_js_1.isMissingPostgrestRelation)(error)) {
+            for (const row of data ?? [])
+                surgeryIds.add(row.id);
+        }
+    }
+    if (surgeryIds.size === 0)
+        return [];
+    const { data: surgSvcRows, error: surgSvcErr } = await supabase_1.supabaseAdmin
+        .from('hub_surgery_services')
+        .select('id, surgery_id, hub_service_type_id, hub_appointment_service_id, service_name, quantity, unit_amount, billing_mode, price_status')
+        .in('surgery_id', [...surgeryIds])
+        .eq('billing_mode', 'charge')
+        .eq('price_status', 'confirmed')
+        .is('deleted_at', null);
+    if (surgSvcErr && (0, supabaseSchemaErrors_js_1.isMissingPostgrestRelation)(surgSvcErr))
+        return [];
+    if (surgSvcErr)
+        throw new Error(surgSvcErr.message);
+    return (surgSvcRows ?? []);
+}
+/** @internal exportado para testes de regressão da comanda cirúrgica */
+/**
+ * Mescla linhas cirúrgicas confirmadas no snapshot da comanda.
+ * Sem cirurgia, devolve **cópia** dos itens — o builder faz `allItems.length = 0; push(...merged)`,
+ * e devolver a mesma referência apagaria consulta/vacina (mesmo padrão de
+ * `dropAppointmentLinesReplacedByHospitalization`).
+ */
+function resolveSurgeryMergeIntoComandaItems(opts) {
+    if (opts.surgSvcList.length === 0) {
+        return {
+            items: opts.items.map((it, i) => ({ ...it, sort_order: i })),
+            subtotal: round2(opts.subtotal),
+        };
+    }
+    return applySurgeryServiceLinesToComandaItems({
+        items: opts.items,
+        surgSvcList: opts.surgSvcList,
+        petId: opts.petId,
+    });
+}
+function applySurgeryServiceLinesToComandaItems(opts) {
+    const { items, surgSvcList, petId } = opts;
+    if (surgSvcList.length === 0) {
+        return resolveSurgeryMergeIntoComandaItems({
+            items,
+            subtotal: items.reduce((s, it) => s + Number(it.line_total ?? 0), 0),
+            petId,
+            surgSvcList: [],
+        });
+    }
+    const replaceApptIds = new Set(surgSvcList
+        .map((row) => row.hub_appointment_service_id)
+        .filter((id) => Boolean(id)));
+    const replaceTypeIds = new Set(surgSvcList
+        .map((row) => row.hub_service_type_id)
+        .filter((id) => Boolean(id)));
+    let subtotal = 0;
+    const kept = [];
+    for (const it of items) {
+        if (it.origin_type === 'appointment_service') {
+            const oid = it.origin_id;
+            const typeId = it.hub_service_type_id;
+            if ((oid && replaceApptIds.has(oid)) || (typeId && replaceTypeIds.has(typeId))) {
+                continue;
+            }
+        }
+        if (it.origin_type === 'surgery_service') {
+            // Será reinserido abaixo a partir da fonte canônica.
+            continue;
+        }
+        kept.push({ ...it, sort_order: kept.length });
+        subtotal = round2(subtotal + Number(it.line_total ?? 0));
+    }
+    const seenSurgerySvc = new Set();
+    const seenTypeIds = new Set(kept
+        .map((it) => it.hub_service_type_id)
+        .filter((id) => Boolean(id)));
+    for (const row of surgSvcList) {
+        if (seenSurgerySvc.has(row.id))
+            continue;
+        seenSurgerySvc.add(row.id);
+        const typeId = row.hub_service_type_id;
+        if (typeId && seenTypeIds.has(typeId))
+            continue;
+        if (typeId)
+            seenTypeIds.add(typeId);
+        const qty = Number(row.quantity ?? 1) || 1;
+        const unit = Number(row.unit_amount ?? 0);
+        const lineTotal = round2(qty * unit);
+        kept.push({
+            pet_id: petId,
+            item_kind: 'service',
+            hub_service_type_id: typeId,
+            hub_inventory_item_id: null,
+            hub_inventory_lot_id: null,
+            description: `Cirurgia: ${String(row.service_name || 'Procedimento')}`,
+            quantity: qty,
+            unit_amount: unit,
+            discount_amount: 0,
+            line_total: lineTotal,
+            service_date: null,
+            origin_type: 'surgery_service',
+            origin_id: row.id,
+            sort_order: kept.length,
+        });
+        subtotal = round2(subtotal + lineTotal);
+    }
+    return { items: kept, subtotal };
+}
+async function mergeSurgeryServicesIntoComandaItems(opts) {
+    const surgSvcList = await loadConfirmedSurgeryServiceRows({
+        clinicId: opts.clinicId,
+        encounterId: opts.encounterId,
+        appointmentId: opts.appointmentId,
+    });
+    return resolveSurgeryMergeIntoComandaItems({
+        items: opts.items,
+        subtotal: opts.subtotal,
+        petId: opts.petId,
+        surgSvcList,
+    });
+}
+async function loadConfirmedEncounterServiceRows(clinicId, encounterId) {
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_encounter_services')
+        .select('id, hub_service_type_id, hub_appointment_service_id, service_name, quantity, unit_amount, billing_mode, price_status')
+        .eq('hub_encounter_id', encounterId)
+        .eq('clinic_id', clinicId)
+        .eq('billing_mode', 'charge')
+        .eq('price_status', 'confirmed')
+        .is('deleted_at', null)
+        .order('sort_order', { ascending: true });
+    if (error && (0, supabaseSchemaErrors_js_1.isMissingPostgrestRelation)(error))
+        return [];
+    if (error)
+        throw new Error(error.message);
+    return (data ?? []);
+}
+/** @internal exportado para testes — merge de serviços da consulta na comanda. */
+function applyEncounterServiceLinesToComandaItems(opts) {
+    const { items, encSvcList, petId } = opts;
+    if (encSvcList.length === 0) {
+        return {
+            items: items.map((it, i) => ({ ...it, sort_order: i })),
+            subtotal: round2(items.reduce((s, it) => s + Number(it.line_total ?? 0), 0)),
+        };
+    }
+    const replaceApptIds = new Set(encSvcList
+        .map((row) => row.hub_appointment_service_id)
+        .filter((id) => Boolean(id)));
+    const replaceTypeIds = new Set(encSvcList
+        .map((row) => row.hub_service_type_id)
+        .filter((id) => Boolean(id)));
+    let subtotal = 0;
+    const kept = [];
+    for (const it of items) {
+        if (it.origin_type === 'appointment_service') {
+            const oid = it.origin_id;
+            const typeId = it.hub_service_type_id;
+            if ((oid && replaceApptIds.has(oid)) || (typeId && replaceTypeIds.has(typeId))) {
+                continue;
+            }
+        }
+        if (it.origin_type === 'encounter_service')
+            continue;
+        kept.push({ ...it, sort_order: kept.length });
+        subtotal = round2(subtotal + Number(it.line_total ?? 0));
+    }
+    const seenEncSvc = new Set();
+    const seenTypeIds = new Set(kept
+        .map((it) => it.hub_service_type_id)
+        .filter((id) => Boolean(id)));
+    for (const row of encSvcList) {
+        if (seenEncSvc.has(row.id))
+            continue;
+        seenEncSvc.add(row.id);
+        const typeId = row.hub_service_type_id;
+        if (typeId && seenTypeIds.has(typeId))
+            continue;
+        if (typeId)
+            seenTypeIds.add(typeId);
+        const qty = Number(row.quantity ?? 1) || 1;
+        const unit = Number(row.unit_amount ?? 0);
+        const lineTotal = round2(qty * unit);
+        kept.push({
+            pet_id: petId,
+            item_kind: 'service',
+            hub_service_type_id: typeId,
+            hub_inventory_item_id: null,
+            hub_inventory_lot_id: null,
+            description: String(row.service_name || 'Serviço clínico'),
+            quantity: qty,
+            unit_amount: unit,
+            discount_amount: 0,
+            line_total: lineTotal,
+            service_date: null,
+            origin_type: 'encounter_service',
+            origin_id: row.id,
+            sort_order: kept.length,
+        });
+        subtotal = round2(subtotal + lineTotal);
+    }
+    return { items: kept, subtotal };
+}
+async function mergeEncounterServicesIntoComandaItems(opts) {
+    const encSvcList = await loadConfirmedEncounterServiceRows(opts.clinicId, opts.encounterId);
+    if (encSvcList.length === 0) {
+        return {
+            items: opts.items.map((it, i) => ({ ...it, sort_order: i })),
+            subtotal: round2(opts.subtotal),
+        };
+    }
+    return applyEncounterServiceLinesToComandaItems({
+        items: opts.items,
+        encSvcList,
+        petId: opts.petId,
+    });
+}
 async function buildComandaItemsFromEncounter(clinicId, encounterId, opts) {
     const { data: enc, error } = await supabase_1.supabaseAdmin
         .from('hub_encounters')
@@ -1047,178 +2020,75 @@ async function buildComandaItemsFromEncounter(clinicId, encounterId, opts) {
         });
         subtotal += serviceAmount;
     }
-    // 4. Clinical exams requested in this encounter
-    const { data: examRows } = await supabase_1.supabaseAdmin
-        .from('hub_clinical_exams')
-        .select('id, exam_type, lab_kind, lab_name, external_lab_name, price')
-        .eq('hub_encounter_id', encounterId)
-        .neq('status', 'cancelled')
-        .is('deleted_at', null);
-    for (const exam of examRows ?? []) {
-        const examRow = exam;
-        const amount = typeof examRow.price === 'number' ? examRow.price : 0;
-        const labLabel = examRow.lab_kind === 'external'
-            ? examRow.external_lab_name
-                ? ` — ${String(examRow.external_lab_name)}`
-                : ' (externo)'
-            : examRow.lab_name
-                ? ` — ${String(examRow.lab_name)}`
-                : '';
-        allItems.push({
-            pet_id: petId,
-            item_kind: 'service',
-            hub_service_type_id: null,
-            hub_inventory_item_id: null,
-            hub_inventory_lot_id: null,
-            description: `Exame: ${String(examRow.exam_type || 'Exame')}${labLabel}`,
-            quantity: 1,
-            unit_amount: amount,
-            discount_amount: 0,
-            line_total: amount,
-            service_date: null,
-            origin_type: 'clinical_exam',
-            origin_id: examRow.id,
-            sort_order: allItems.length,
+    // 4. Serviços do grupo clinica lançados no atendimento (pedido de exame PDF não cobra).
+    {
+        const encSvcMerged = await mergeEncounterServicesIntoComandaItems({
+            clinicId,
+            items: allItems,
+            subtotal,
+            petId,
+            encounterId,
         });
-        subtotal += amount;
+        allItems.length = 0;
+        allItems.push(...encSvcMerged.items);
+        subtotal = encSvcMerged.subtotal;
     }
     // 5. Serviços de cirurgia vinculados a este atendimento
-    const coveredApptSvcIds = new Set(allItems
-        .filter((it) => it.origin_type === 'appointment_service' && it.origin_id)
-        .map((it) => it.origin_id));
-    const { data: surgeryRows, error: surgeryErr } = await supabase_1.supabaseAdmin
-        .from('hub_surgeries')
-        .select('id')
-        .eq('hub_encounter_id', encounterId)
-        .eq('clinic_id', clinicId)
-        .is('deleted_at', null);
-    const surgeryList = surgeryErr && (0, supabaseSchemaErrors_js_1.isMissingPostgrestRelation)(surgeryErr) ? [] : surgeryRows ?? [];
-    const surgeryIds = surgeryList.map((s) => s.id);
-    if (surgeryIds.length > 0) {
-        const { data: surgSvcRows, error: surgSvcErr } = await supabase_1.supabaseAdmin
-            .from('hub_surgery_services')
-            .select('id, surgery_id, hub_service_type_id, hub_appointment_service_id, service_name, quantity, unit_amount, billing_mode, price_status')
-            .in('surgery_id', surgeryIds)
-            .eq('billing_mode', 'charge')
-            .eq('price_status', 'confirmed')
-            .is('deleted_at', null);
-        const surgSvcList = surgSvcErr && (0, supabaseSchemaErrors_js_1.isMissingPostgrestRelation)(surgSvcErr) ? [] : surgSvcRows ?? [];
-        for (const raw of surgSvcList) {
-            const row = raw;
-            const apptSvcId = row.hub_appointment_service_id;
-            if (apptSvcId && coveredApptSvcIds.has(apptSvcId))
-                continue;
-            const qty = Number(row.quantity ?? 1) || 1;
-            const unit = Number(row.unit_amount ?? 0);
-            const lineTotal = round2(qty * unit);
-            allItems.push({
-                pet_id: petId,
-                item_kind: 'service',
-                hub_service_type_id: row.hub_service_type_id ?? null,
-                hub_inventory_item_id: null,
-                hub_inventory_lot_id: null,
-                description: `Cirurgia: ${String(row.service_name || 'Procedimento')}`,
-                quantity: qty,
-                unit_amount: unit,
-                discount_amount: 0,
-                line_total: lineTotal,
-                service_date: null,
-                origin_type: 'surgery_service',
-                origin_id: row.id,
-                sort_order: allItems.length,
-            });
-            subtotal += lineTotal;
-        }
-    }
-    // 6. Diárias e lançamentos de internação vinculados a este atendimento
-    const { data: hospRows, error: hospErr } = await supabase_1.supabaseAdmin
-        .from('hub_hospitalizations')
-        .select('id, pet_id, status, admitted_at, discharged_at, daily_hub_service_type_id, daily_unit_amount')
-        .eq('hub_encounter_id', encounterId)
-        .eq('clinic_id', clinicId)
-        .is('deleted_at', null);
-    const hospList = hospErr && (0, supabaseSchemaErrors_js_1.isMissingPostgrestRelation)(hospErr) ? [] : hospRows ?? [];
-    const dailyServiceIds = [
-        ...new Set(hospList
-            .map((h) => h.daily_hub_service_type_id)
-            .filter(Boolean)),
-    ];
-    const dailyNameById = new Map();
-    if (dailyServiceIds.length > 0) {
-        const { data: dailySvcs } = await supabase_1.supabaseAdmin
-            .from('hub_service_types')
-            .select('id, name')
-            .in('id', dailyServiceIds);
-        for (const s of dailySvcs ?? []) {
-            dailyNameById.set(s.id, String(s.name));
-        }
-    }
-    for (const raw of hospList) {
-        const hosp = raw;
-        const built = (0, hubHospitalizationBilling_1.buildHospitalizationDailyItems)({
-            id: hosp.id,
-            pet_id: hosp.pet_id ?? petId,
-            status: String(hosp.status ?? ''),
-            admitted_at: String(hosp.admitted_at ?? ''),
-            discharged_at: hosp.discharged_at ?? null,
-            daily_hub_service_type_id: hosp.daily_hub_service_type_id ?? null,
-            daily_unit_amount: hosp.daily_unit_amount == null ? null : Number(hosp.daily_unit_amount),
-            service_name: hosp.daily_hub_service_type_id
-                ? dailyNameById.get(hosp.daily_hub_service_type_id) ?? null
-                : null,
+    // Preferir a linha cirúrgica confirmada sobre o espelho da agenda (evita "Consulta R$0" + total errado).
+    {
+        const surgMerged = await mergeSurgeryServicesIntoComandaItems({
+            clinicId,
+            items: allItems,
+            subtotal,
+            petId,
+            encounterId,
+            appointmentId: apptId,
         });
-        if (built) {
-            allItems.push({
-                ...built.line,
-                sort_order: allItems.length,
-            });
-            subtotal += built.subtotal;
-        }
+        allItems.length = 0;
+        allItems.push(...surgMerged.items);
+        subtotal = surgMerged.subtotal;
     }
-    const hospIds = hospList.map((h) => h.id);
-    if (hospIds.length > 0) {
-        const { data: chargeRows, error: chargeErr } = await supabase_1.supabaseAdmin
-            .from('hub_hospitalization_charges')
-            .select('id, hub_service_type_id, hub_inventory_item_id, hub_inventory_lot_id, service_name, quantity, unit_amount, billing_mode, price_status, service_date, charge_kind')
-            .in('hospitalization_id', hospIds)
-            .eq('billing_mode', 'charge')
-            .eq('price_status', 'confirmed')
-            .is('deleted_at', null);
-        const chargeList = chargeErr && (0, supabaseSchemaErrors_js_1.isMissingPostgrestRelation)(chargeErr) ? [] : chargeRows ?? [];
-        for (const raw of chargeList) {
-            const row = raw;
-            const qty = Number(row.quantity ?? 1) || 1;
-            const unit = Number(row.unit_amount ?? 0);
-            const lineTotal = round2(qty * unit);
-            const kind = String(row.charge_kind ?? 'other');
-            const prefix = kind === 'medication'
-                ? 'Medicação (internação)'
-                : kind === 'material'
-                    ? 'Material (internação)'
-                    : kind === 'procedure'
-                        ? 'Procedimento (internação)'
-                        : 'Internação';
-            allItems.push({
-                pet_id: petId,
-                item_kind: row.hub_inventory_item_id ? 'product' : 'service',
-                hub_service_type_id: row.hub_service_type_id ?? null,
-                hub_inventory_item_id: row.hub_inventory_item_id ?? null,
-                hub_inventory_lot_id: row.hub_inventory_lot_id ?? null,
-                description: `${prefix}: ${String(row.service_name || 'Item')}`,
-                quantity: qty,
-                unit_amount: unit,
-                discount_amount: 0,
-                line_total: lineTotal,
-                service_date: row.service_date ?? null,
-                origin_type: 'hospitalization_charge',
-                origin_id: row.id,
-                sort_order: allItems.length,
-            });
-            subtotal += lineTotal;
-        }
+    // 6. Diárias e lançamentos de internação (encounter e/ou appointment espelhado)
+    const hospBuilt = await (0, hubHospitalizationBilling_1.loadHospitalizationComandaItems)({
+        clinicId,
+        encounterId,
+        appointmentId: apptId,
+        defaultPetId: petId,
+    });
+    // Remove espelho de agenda (appointment_service de internação) quando há diária.
+    const apptSvcIds = allItems
+        .filter((it) => it.origin_type === 'appointment_service' && it.hub_service_type_id)
+        .map((it) => it.hub_service_type_id);
+    const groupById = await loadServiceGroupByIds(apptSvcIds);
+    const dropped = (0, hubHospitalizationBilling_1.dropAppointmentLinesReplacedByHospitalization)(allItems, groupById, hospBuilt.items);
+    allItems.length = 0;
+    allItems.push(...dropped.items);
+    subtotal = round2(subtotal - dropped.removedTotal);
+    for (const line of hospBuilt.items) {
+        allItems.push({ ...line, sort_order: allItems.length });
     }
-    // Fallback: generic consultation fee if nothing was found
-    if (allItems.length === 0) {
+    subtotal = round2(subtotal + hospBuilt.subtotal);
+    // Não re-lançar origens já faturadas noutra comanda (ex.: consulta paga na agenda).
+    const hadItemsBeforeInvoicedDedupe = allItems.length > 0;
+    const invoicedOrigins = await fetchInvoicedComandaItemOriginKeys(clinicId);
+    if (invoicedOrigins.size > 0) {
+        const kept = [];
+        let keptSubtotal = 0;
+        for (const it of allItems) {
+            const ot = it.origin_type;
+            const oid = it.origin_id;
+            if (ot && oid && invoicedOrigins.has(`${ot}:${oid}`))
+                continue;
+            kept.push({ ...it, sort_order: kept.length });
+            keptSubtotal = round2(keptSubtotal + Number(it.line_total ?? 0));
+        }
+        allItems.length = 0;
+        allItems.push(...kept);
+        subtotal = keptSubtotal;
+    }
+    // Fallback genérico só se o encounter nunca teve item cobrável.
+    // Se os itens existiam e já foram faturados noutra comanda, devolve vazio (sem reabrir cobrança).
+    if (allItems.length === 0 && !hadItemsBeforeInvoicedDedupe) {
         allItems.push({
             pet_id: petId,
             item_kind: 'fee',
@@ -1237,6 +2107,7 @@ async function buildComandaItemsFromEncounter(clinicId, encounterId, opts) {
             origin_id: null,
             sort_order: 0,
         });
+        subtotal = 0;
     }
     return {
         items: allItems,
@@ -1246,7 +2117,7 @@ async function buildComandaItemsFromEncounter(clinicId, encounterId, opts) {
         pet_id: petId,
     };
 }
-async function buildComandaItemsFromBoardingReservation(clinicId, reservationId) {
+async function buildComandaItemsFromBoardingReservation(clinicId, reservationId, opts) {
     const { data: res, error } = await supabase_1.supabaseAdmin
         .from('hub_boarding_reservations')
         .select('*')
@@ -1260,8 +2131,11 @@ async function buildComandaItemsFromBoardingReservation(clinicId, reservationId)
     const guardianId = res.guardian_id;
     if (!guardianId)
         throw new Error('NO_GUARDIAN');
-    if (res.status !== 'checked_out')
+    if (res.billing_waived_at)
+        throw new Error('WAIVED');
+    if (!(0, boardingOperational_1.isBoardingStatusReadyForComanda)(String(res.status ?? ''), opts)) {
         throw new Error('NOT_READY');
+    }
     const unitId = res.unit_id ?? null;
     let cutoffTime = null;
     if (unitId) {
@@ -1348,16 +2222,54 @@ async function buildDesiredComandaSnapshot(clinicId, comanda) {
     const ot = String(comanda.origin_type ?? '');
     const oid = comanda.origin_id;
     if (ot === 'appointment') {
-        const encId = await findLatestCompletedEncounterIdForAppointment(clinicId, oid);
+        // Preferir encounter (concluído ou em andamento) para sync ao vivo de medicação/vacina/etc.
+        const completedEncId = await findLatestCompletedEncounterIdForAppointment(clinicId, oid);
+        const openEncId = completedEncId
+            ? null
+            : await findLatestEncounterIdForAppointment(clinicId, oid, { anyOpen: true });
+        const encId = completedEncId ?? openEncId;
         if (encId) {
-            const encBuilt = await buildComandaItemsFromEncounter(clinicId, encId);
-            return appendGroomingExtrasToAppointmentSnapshot(clinicId, oid, encBuilt);
+            let encBuilt = await buildComandaItemsFromEncounter(clinicId, encId, {
+                allowIncomplete: !completedEncId,
+            });
+            encBuilt = await appendGroomingExtrasToAppointmentSnapshot(clinicId, oid, encBuilt);
+            // Encounter não carrega L&T; pernas anexadas entram na comanda do appointment pai/bloco.
+            return appendAttachedPickupLegsToComandaSnapshot(clinicId, oid, encBuilt);
         }
         let snapshot = await buildComandaItemsFromAppointment(clinicId, oid, { allowIncompleteStatus: true });
         snapshot = await appendGroomingExtrasToAppointmentSnapshot(clinicId, oid, snapshot);
-        const boardingId = await findCheckedOutBoardingReservationForAppointment(clinicId, oid);
+        // Cirurgia ligada ao appointment: preferir hub_surgery_services confirmados.
+        {
+            const openEncForSurg = await findLatestEncounterIdForAppointment(clinicId, oid, { anyOpen: true });
+            const surgMerged = await mergeSurgeryServicesIntoComandaItems({
+                clinicId,
+                items: snapshot.items,
+                subtotal: snapshot.subtotal,
+                petId: snapshot.pet_id,
+                encounterId: openEncForSurg,
+                appointmentId: oid,
+            });
+            snapshot = { ...snapshot, items: surgMerged.items, subtotal: surgMerged.subtotal };
+        }
+        // Internação ligada ao appointment (sem encounter): anexa diárias/charges.
+        // Com encounter aberto/concluído o snapshot já veio de buildComandaItemsFromEncounter acima.
+        const hospForAppt = await (0, hubHospitalizationBilling_1.loadHospitalizationComandaItems)({
+            clinicId,
+            appointmentId: oid,
+            defaultPetId: snapshot.pet_id,
+        });
+        {
+            const svcIds = snapshot.items
+                .filter((it) => it.origin_type === 'appointment_service' && it.hub_service_type_id)
+                .map((it) => it.hub_service_type_id);
+            const groupById = await loadServiceGroupByIds(svcIds);
+            snapshot = (0, hubHospitalizationBilling_1.mergeHospitalizationItemsIntoSnapshot)(snapshot, hospForAppt.items, groupById);
+        }
+        const boardingId = await findBillableBoardingReservationForAppointment(clinicId, oid);
         if (boardingId) {
-            const boardingBuilt = await buildComandaItemsFromBoardingReservation(clinicId, boardingId);
+            const boardingBuilt = await buildComandaItemsFromBoardingReservation(clinicId, boardingId, {
+                allowIncomplete: true,
+            });
             const { items: apptItems, removedTotal } = await dropAppointmentLinesReplacedByBoarding(clinicId, boardingId, snapshot.items);
             const base = apptItems.length;
             return {
@@ -1409,7 +2321,7 @@ async function buildDesiredComandaSnapshot(clinicId, comanda) {
         return { ...q, pet_id: null };
     }
     if (ot === 'boarding_reservation') {
-        return await buildComandaItemsFromBoardingReservation(clinicId, oid);
+        return await buildComandaItemsFromBoardingReservation(clinicId, oid, { allowIncomplete: true });
     }
     throw new Error('NOT_FOUND');
 }
@@ -1439,7 +2351,7 @@ const openComandaBodySchema = zod_1.z
         .min(1)
         .max(20)
         .optional(),
-    guardian_id: uuidStr.optional(),
+    guardian_id: uuidStr.optional().nullable(),
     unit_id: uuidStr.optional().nullable(),
     manual_lines: zod_1.z
         .array(zod_1.z
@@ -1456,12 +2368,11 @@ const openComandaBodySchema = zod_1.z
 })
     .strict()
     .superRefine((data, ctx) => {
+    // origin_type manual: guardian_id e origin_id opcionais (venda avulsa de balcão)
     if (data.origin_type === 'manual') {
-        if (!data.guardian_id) {
-            ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, message: 'guardian_id obrigatório para comanda manual' });
-        }
+        return;
     }
-    else if (data.origin_type === 'package') {
+    if (data.origin_type === 'package') {
         if (!data.guardian_id) {
             ctx.addIssue({ code: zod_1.z.ZodIssueCode.custom, message: 'guardian_id obrigatório para venda de pacote' });
         }
@@ -1505,22 +2416,80 @@ const postHubComandaOpen = async (req, res) => {
             return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
         }
         const b = parsed.data;
-        const { clinic_id, origin_type, hub_case_id, hub_encounter_id } = b;
-        const effectiveOriginId = origin_type === 'manual'
+        const { clinic_id, hub_case_id, hub_encounter_id } = b;
+        let origin_type = b.origin_type;
+        let effectiveOriginId = origin_type === 'manual'
             ? (b.origin_id ?? (0, node_crypto_1.randomUUID)())
             : origin_type === 'package'
                 ? (b.origin_id ?? (0, hubPackagesService_1.newPurchaseGroupId)())
                 : b.origin_id;
+        // Hotel/Creche: com reserva cobrável (ativa ou checked_out), preferir boarding_reservation
+        // e reutilizar comanda appointment já aberta quando existir.
+        // Banho: com sessão ligada, preferir grooming_session (origem canônica) para colidir no unique index.
+        /** Agendamento original para trava de fatura em série (antes de remap boarding/grooming). */
+        let seriesGuardAppointmentId = origin_type === 'appointment' ? effectiveOriginId : null;
+        if (origin_type === 'appointment') {
+            const existingApptOrLinked = await resolveExistingOpenComandaIdForOpen(clinic_id, 'appointment', effectiveOriginId);
+            if (existingApptOrLinked) {
+                const detail = await getHubComandaDetailPayload(existingApptOrLinked, clinic_id);
+                return res.status(200).json(detail);
+            }
+            const billableBoarding = await findBillableBoardingReservationForAppointment(clinic_id, effectiveOriginId);
+            if (billableBoarding) {
+                origin_type = 'boarding_reservation';
+                effectiveOriginId = billableBoarding;
+            }
+            else {
+                const { findLinkedGroomingSessionIdForAppointment } = await Promise.resolve().then(() => __importStar(require('./groomingOriginKeys')));
+                const linkedSession = await findLinkedGroomingSessionIdForAppointment(clinic_id, effectiveOriginId);
+                if (linkedSession) {
+                    origin_type = 'grooming_session';
+                    effectiveOriginId = linkedSession;
+                }
+            }
+        }
+        else if (origin_type === 'grooming_session') {
+            const { data: sess } = await supabase_1.supabaseAdmin
+                .from('hub_grooming_sessions')
+                .select('hub_appointment_id')
+                .eq('id', effectiveOriginId)
+                .eq('clinic_id', clinic_id)
+                .maybeSingle();
+            seriesGuardAppointmentId =
+                sess?.hub_appointment_id ??
+                    null;
+        }
+        if (seriesGuardAppointmentId) {
+            const seriesGuard = await (0, hubSeriesBillingService_1.isAppointmentPendingPeriodicSeriesInvoice)(seriesGuardAppointmentId);
+            if (seriesGuard.seriesInvoiceComandaId) {
+                const detail = await getHubComandaDetailPayload(seriesGuard.seriesInvoiceComandaId, clinic_id);
+                return res.status(200).json(detail);
+            }
+            if (seriesGuard.pending) {
+                return res.status(409).json({
+                    code: 'SERIES_PERIODIC_PENDING',
+                    error: 'Esta ocorrência faz parte de uma série com fatura mensal. A cobrança será lançada na fatura da série, não no caixa do dia.',
+                });
+            }
+        }
         if (origin_type !== 'manual') {
             const keys = await fetchActiveReceivableKeys(clinic_id);
-            if (keys.has(`${origin_type}:${effectiveOriginId}`)) {
+            const { expandBoardingAppointmentOriginKeys } = await Promise.resolve().then(() => __importStar(require('./boardingOriginKeys')));
+            const { expandGroomingAppointmentOriginKeys } = await Promise.resolve().then(() => __importStar(require('./groomingOriginKeys')));
+            const withBoarding = await expandBoardingAppointmentOriginKeys(clinic_id, new Set(keys));
+            const expanded = await expandGroomingAppointmentOriginKeys(clinic_id, withBoarding);
+            // Recebível pode nascer como source_type=manual; a origem efetiva está na comanda.
+            const billedViaComanda = await fetchBilledComandaOriginKeys(clinic_id);
+            if (expanded.has(`${origin_type}:${effectiveOriginId}`) ||
+                billedViaComanda.has(`${origin_type}:${effectiveOriginId}`)) {
                 return res.status(409).json({ error: 'Já existe cobrança para esta origem' });
             }
         }
         if (origin_type === 'appointment' ||
             origin_type === 'grooming_session' ||
             origin_type === 'encounter' ||
-            origin_type === 'boarding_reservation') {
+            origin_type === 'boarding_reservation' ||
+            origin_type === 'quote') {
             const existingId = await resolveExistingOpenComandaIdForOpen(clinic_id, origin_type, effectiveOriginId);
             if (existingId) {
                 const detail = await getHubComandaDetailPayload(existingId, clinic_id);
@@ -1538,9 +2507,14 @@ const postHubComandaOpen = async (req, res) => {
                 .eq('status', 'aberta')
                 .is('deleted_at', null)
                 .maybeSingle();
+            if (existing?.id) {
+                // Idempotente: reabrir a mesma comanda ativa (evita 409/500 no 2º «Gerar venda»).
+                const detail = await getHubComandaDetailPayload(existing.id, clinic_id);
+                return res.status(200).json(detail);
+            }
             return res.status(409).json({
                 error: 'Já existe comanda aberta para esta origem',
-                comanda_id: existing?.id ?? null,
+                comanda_id: null,
             });
         }
         let built;
@@ -1579,7 +2553,7 @@ const postHubComandaOpen = async (req, res) => {
                 items,
                 subtotal: round2(subtotal),
                 unit_id: unitId,
-                guardian_id: b.guardian_id,
+                guardian_id: b.guardian_id ?? null,
                 pet_id: contextPetId,
             };
         }
@@ -1650,7 +2624,10 @@ const postHubComandaOpen = async (req, res) => {
             built = await buildComandaItemsFromQuote(clinic_id, effectiveOriginId);
         }
         else if (origin_type === 'boarding_reservation') {
-            built = await buildComandaItemsFromBoardingReservation(clinic_id, effectiveOriginId);
+            // Hotel/Creche: permite comanda antecipada (antes do check-out operacional)
+            built = await buildComandaItemsFromBoardingReservation(clinic_id, effectiveOriginId, {
+                allowIncomplete: true,
+            });
         }
         else if (origin_type === 'package') {
             const pkgBuilt = await (0, hubPackagesService_1.buildComandaItemsFromPackagePurchase)({
@@ -1694,6 +2671,19 @@ const postHubComandaOpen = async (req, res) => {
         }
         const resolvedPetId = built.pet_id ??
             (built.items.map((it) => it.pet_id).find((pid) => Boolean(pid)) ?? null);
+        // Isolamento multi-tenant: valida FKs efetivas (o que será persistido) antes de qualquer escrita.
+        const tenantCheck = await assertComandaPersistedTenantFks({
+            clinicId: clinic_id,
+            originType: origin_type,
+            unitId: built.unit_id,
+            guardianId: built.guardian_id,
+            petIds: [resolvedPetId, ...built.items.map((it) => it.pet_id)],
+            encounterId: resolvedEncounterId,
+            caseId: resolvedCaseId,
+        });
+        if (!tenantCheck.ok) {
+            return res.status(400).json({ error: tenantCheck.error });
+        }
         const { data: comanda, error: cErr } = await supabase_1.supabaseAdmin
             .from('hub_comandas')
             .insert({
@@ -1716,6 +2706,16 @@ const postHubComandaOpen = async (req, res) => {
             .select('id')
             .single();
         if (cErr || !comanda) {
+            const errMsg = String(cErr?.message ?? '');
+            const isActiveOriginRace = /uniq_hub_comandas_active_origin/i.test(errMsg) ||
+                (/duplicate key/i.test(errMsg) && /active_origin|origin/i.test(errMsg));
+            if (isActiveOriginRace && origin_type !== 'manual') {
+                const racedId = await resolveExistingOpenComandaIdForOpen(clinic_id, origin_type, effectiveOriginId);
+                if (racedId) {
+                    const detail = await getHubComandaDetailPayload(racedId, clinic_id);
+                    return res.status(200).json(detail);
+                }
+            }
             console.error('postHubComandaOpen', cErr);
             return res.status(500).json({ error: cErr?.message || 'Erro ao criar comanda' });
         }
@@ -1843,22 +2843,46 @@ async function getHubComandaDetailPayload(comandaId, clinicId) {
         .eq('comanda_id', comandaId)
         .not('comanda_item_id', 'is', null);
     const recIds = [...new Set((lineRows ?? []).map((r) => r.receivable_id))];
-    let activeRecById = new Map();
+    /** Itens permanecem faturados salvo reissue (cancelamento puro que reabre cobrança). */
+    let billsItemByRecId = new Map();
+    /** Listáveis na ficha: paid/pending/refunded + cancelled-com-devolução. */
+    let listableRecById = new Map();
     if (recIds.length) {
-        const { data: recs } = await supabase_1.supabaseAdmin.from('hub_receivables').select('id, status').in('id', recIds);
-        activeRecById = new Map((recs ?? []).map((r) => [r.id, String(r.status) !== 'cancelled']));
+        const { data: recs, error: covErr } = await supabase_1.supabaseAdmin
+            .from('hub_receivables')
+            .select('id, status, returned_amount, cancel_rebill')
+            .in('id', recIds);
+        const coverageRows = covErr && String(covErr.message || '').includes('cancel_rebill')
+            ? (await supabase_1.supabaseAdmin
+                .from('hub_receivables')
+                .select('id, status, returned_amount')
+                .in('id', recIds)).data
+            : recs;
+        for (const r of coverageRows ?? []) {
+            const id = r.id;
+            billsItemByRecId.set(id, (0, hubReceivableCancelCoverage_1.receivableBillsComandaItem)(r));
+            listableRecById.set(id, (0, hubReceivableCancelCoverage_1.receivableListableOnComanda)(r));
+        }
     }
     const invoicedItemIds = new Set();
     for (const row of lineRows ?? []) {
         const cid = row.comanda_item_id;
         const rid = row.receivable_id;
-        if (cid && activeRecById.get(rid))
+        if (cid && billsItemByRecId.get(rid))
             invoicedItemIds.add(cid);
     }
     const openItemIds = (items ?? []).map((it) => it.id).filter((id) => !invoicedItemIds.has(id));
-    const activeReceivableIds = recIds.filter((id) => activeRecById.get(id));
+    const activeReceivableIds = recIds.filter((id) => listableRecById.get(id));
     const comandaRow = comanda;
-    const { paid_total, balance_due } = await computeComandaBalancePayload(comandaId, clinicId);
+    const [balancePayload, cardFeeTotals] = await Promise.all([
+        computeComandaBalancePayload(comandaId, clinicId),
+        computeComandaCardFeeTotals(comandaId, clinicId).catch((e) => {
+            // Colunas de taxa ausentes (migration 154) → zera sem quebrar o detail.
+            console.warn('[hub_comandas] card fee totals skipped', e);
+            return EMPTY_CARD_FEE_TOTALS;
+        }),
+    ]);
+    const { paid_total, balance_due, net_total, returned_amount, posted_total, line_refunds_total, } = balancePayload;
     const operational_complete = await isOperationalCompleteForComanda(comandaRow);
     const edit_scopes = (0, comandaEditScopes_1.computeComandaEditScopes)(comandaRow, operational_complete, balance_due);
     // Enriquecer com nomes de tutor/pet
@@ -1958,7 +2982,40 @@ async function getHubComandaDetailPayload(comandaId, clinicId) {
                 packageBalancesByItemId[it.id] = eligible;
         }
     }
-    const events = await (0, comandaEvents_1.listComandaEvents)(comandaId, clinicId);
+    const [events, timelinePayments] = await Promise.all([
+        (0, comandaEvents_1.listComandaEvents)(comandaId, clinicId),
+        listTimelinePaymentsForComanda(comandaId, clinicId).catch((e) => {
+            console.warn('[hub_comandas] timeline payments skipped', e);
+            return [];
+        }),
+    ]);
+    // Itens da comanda já devolvidos fisicamente (preserva histórico; só marca UI).
+    const returnedComandaItemIds = new Set();
+    if (recIds.length) {
+        const { data: returnEvents, error: retErr } = await supabase_1.supabaseAdmin
+            .from('hub_product_return_events')
+            .select('receivable_line_id')
+            .eq('clinic_id', clinicId)
+            .in('receivable_id', recIds);
+        if (retErr && !/does not exist|schema cache|42P01/i.test(String(retErr.message))) {
+            throw new Error(retErr.message);
+        }
+        const returnedLineIds = [
+            ...new Set((returnEvents ?? []).map((r) => String(r.receivable_line_id ?? '')).filter(Boolean)),
+        ];
+        if (returnedLineIds.length) {
+            const { data: returnedLines } = await supabase_1.supabaseAdmin
+                .from('hub_receivable_lines')
+                .select('id, comanda_item_id')
+                .eq('comanda_id', comandaId)
+                .in('id', returnedLineIds);
+            for (const row of returnedLines ?? []) {
+                const cid = row.comanda_item_id == null ? null : String(row.comanda_item_id);
+                if (cid)
+                    returnedComandaItemIds.add(cid);
+            }
+        }
+    }
     const encounterIdForPending = comandaRow.hub_encounter_id ||
         (String(comandaRow.origin_type) === 'encounter' ? comandaRow.origin_id : null);
     const pending_price_approvals = await listPendingClinicalPriceApprovals(clinicId, encounterIdForPending);
@@ -1968,22 +3025,55 @@ async function getHubComandaDetailPayload(comandaId, clinicId) {
         pets,
         open_item_ids: openItemIds,
         invoiced_item_ids: [...invoicedItemIds],
+        returned_item_ids: [...returnedComandaItemIds],
         active_receivable_ids: activeReceivableIds,
         paid_total,
         balance_due,
+        /** Líquido vigente (recebíveis após devoluções + itens abertos). */
+        net_total,
+        returned_amount,
+        posted_total,
+        line_refunds_total,
+        card_gross_total: cardFeeTotals.card_gross_total,
+        card_fee_total: cardFeeTotals.card_fee_total,
+        card_net_total: cardFeeTotals.card_net_total,
+        card_without_fee_gross_total: cardFeeTotals.card_without_fee_gross_total,
         operational_complete,
         edit_scopes,
         allowed_guardians: allowedGuardians,
         package_balances_by_item_id: packageBalancesByItemId,
         events,
+        /** Um lançamento por pagamento (não agregar métodos na timeline). */
+        payments: timelinePayments,
         pending_price_approvals,
     };
 }
-/** Preços de cirurgia/internação ainda pendentes de aprovação financeira (não entram na comanda até confirmar). */
+/** Preços clínicos ainda pendentes de aprovação financeira (não entram na comanda até confirmar). */
 async function listPendingClinicalPriceApprovals(clinicId, encounterId) {
     if (!encounterId)
         return [];
     const out = [];
+    const { data: encSvcRows, error: encSvcErr } = await supabase_1.supabaseAdmin
+        .from('hub_encounter_services')
+        .select('id, hub_encounter_id, service_name, unit_amount, quantity')
+        .eq('hub_encounter_id', encounterId)
+        .eq('clinic_id', clinicId)
+        .eq('billing_mode', 'charge')
+        .eq('price_status', 'pending_approval')
+        .is('deleted_at', null);
+    if (!encSvcErr || !(0, supabaseSchemaErrors_js_1.isMissingPostgrestRelation)(encSvcErr)) {
+        for (const raw of encSvcRows ?? []) {
+            const row = raw;
+            out.push({
+                kind: 'encounter_service',
+                id: row.id,
+                parent_id: row.hub_encounter_id,
+                service_name: String(row.service_name || 'Serviço clínico'),
+                unit_amount: Number(row.unit_amount ?? 0),
+                quantity: Number(row.quantity ?? 1) || 1,
+            });
+        }
+    }
     const { data: surgeries, error: surgErr } = await supabase_1.supabaseAdmin
         .from('hub_surgeries')
         .select('id')
@@ -2207,6 +3297,30 @@ const getHubComandaPdf = async (req, res) => {
     }
 };
 exports.getHubComandaPdf = getHubComandaPdf;
+/** Cupom térmico (58/80mm) — largura vem de hub_clinic_settings.cupom_width_mm. */
+const getHubComandaCupomPdf = async (req, res) => {
+    try {
+        const idParsed = uuidStr.safeParse(req.params.id);
+        const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
+        if (!idParsed.success || !clinicParsed.success) {
+            return res.status(400).json({ error: 'id e clinic_id (UUID) obrigatórios' });
+        }
+        const clinicId = clinicParsed.data;
+        const [payload, settings] = await Promise.all([
+            loadComandaPdfPayload(idParsed.data, clinicId),
+            (0, hubClinicSettingsController_1.getOrCreateHubClinicSettings)(clinicId),
+        ]);
+        (0, hubComandaCupomPdf_1.streamComandaCupomPdf)(res, payload, settings.cupom_width_mm);
+        return;
+    }
+    catch (e) {
+        if (e?.message === 'NOT_FOUND')
+            return res.status(404).json({ error: 'Comanda não encontrada' });
+        console.error('getHubComandaCupomPdf', e);
+        return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+};
+exports.getHubComandaCupomPdf = getHubComandaCupomPdf;
 const getHubComandaDetail = async (req, res) => {
     try {
         const idParsed = uuidStr.safeParse(req.params.id);
@@ -2305,15 +3419,15 @@ const postHubComandaApplyPackage = async (req, res) => {
         else if (String(item.origin_type) === 'appointment_service' && item.origin_id) {
             const { data: svc } = await supabase_1.supabaseAdmin
                 .from('hub_appointment_services')
-                .select('sale_amount_applied, hub_service_types(name)')
+                .select('sale_amount_applied, hub_service_types(name, sale_amount)')
                 .eq('id', item.origin_id)
                 .maybeSingle();
             if (svc) {
-                unitAmount = round2(Number(svc.sale_amount_applied ?? 0));
-                lineTotal = unitAmount;
                 const st = svc.hub_service_types;
-                const name = Array.isArray(st) ? st[0]?.name : st?.name;
-                description = name || description.split(' — Pacote')[0].trim();
+                const stRow = Array.isArray(st) ? st[0] : st;
+                unitAmount = (0, hubPricingResolve_1.resolveAppliedSaleAmount)(svc.sale_amount_applied, stRow?.sale_amount);
+                lineTotal = unitAmount;
+                description = stRow?.name || description.split(' — Pacote')[0].trim();
             }
         }
         else if (String(item.origin_type) === 'grooming_extra' && item.origin_id) {
@@ -2381,6 +3495,10 @@ const checkoutBodySchema = zod_1.z
         payment_method: hubPaymentMethods_1.hubPaymentMethodSchema,
         cash_session_id: uuidStr.optional().nullable(),
         installments: zod_1.z.number().int().min(1).max(99).optional(),
+        /** UUID por intenção de pagamento — retry/duplo clique não duplica hub_payments. */
+        idempotency_key: uuidStr.optional().nullable(),
+        /** Valor entregue em dinheiro (UI); não grava coluna — só validação/notes. */
+        tendered_amount: zod_1.z.number().positive().optional().nullable(),
     })
         .strict())
         .optional(),
@@ -2460,58 +3578,33 @@ const postHubComandaCheckout = async (req, res) => {
                 return res.status(400).json({ error: 'Informe waive_reason (motivo) para cancelar' });
             }
             const originType = String(comanda.origin_type);
-            const originId = comanda.origin_id;
-            if (originType !== 'manual') {
+            const originId = comanda.origin_id ?? null;
+            if (originType !== 'manual' && originId) {
                 const keys = await fetchActiveReceivableKeys(clinic_id);
                 if (keys.has(`${originType}:${originId}`)) {
                     return res.status(409).json({ error: 'Já existe cobrança; não é possível cancelar comanda desta forma' });
                 }
             }
-            const now = new Date().toISOString();
-            if (originType === 'grooming_session') {
-                await supabase_1.supabaseAdmin
-                    .from('hub_grooming_sessions')
-                    .update({ billing_waived_at: now, billing_waive_reason: waive_reason })
-                    .eq('id', originId)
-                    .eq('clinic_id', clinic_id);
-            }
-            else if (originType === 'encounter') {
-                await supabase_1.supabaseAdmin
-                    .from('hub_encounters')
-                    .update({ billing_waived_at: now, billing_waive_reason: waive_reason })
-                    .eq('id', originId)
-                    .eq('clinic_id', clinic_id);
-            }
-            else if (originType === 'appointment') {
-                await supabase_1.supabaseAdmin
-                    .from('hub_appointments')
-                    .update({ billing_waived_at: now, billing_waive_reason: waive_reason })
-                    .eq('id', originId)
-                    .eq('clinic_id', clinic_id);
-            }
-            else if (originType === 'quote') {
-                await supabase_1.supabaseAdmin
-                    .from('hub_quotes')
-                    .update({ billing_waived_at: now, billing_waive_reason: waive_reason })
-                    .eq('id', originId)
-                    .eq('clinic_id', clinic_id);
-            }
-            else if (originType === 'boarding_reservation') {
-                await supabase_1.supabaseAdmin
-                    .from('hub_boarding_reservations')
-                    .update({ billing_waived_at: now, billing_waive_reason: waive_reason })
-                    .eq('id', originId)
-                    .eq('clinic_id', clinic_id);
-            }
-            else if (originType === 'manual') {
-                /* comanda manual: sem entidade operacional a dispensar */
-            }
-            await (0, hubPackagesService_1.reversePackageRedemptionsForComanda)(clinic_id, comandaId);
-            await supabase_1.supabaseAdmin.from('hub_comandas').update({ status: 'cancelada', closed_at: now }).eq('id', comandaId);
+            const { waiveOriginAndCancelOpenComanda } = await Promise.resolve().then(() => __importStar(require('./hubComandaOperationalCancel.js')));
+            await waiveOriginAndCancelOpenComanda({
+                clinicId: clinic_id,
+                comandaId,
+                originType,
+                originId,
+                waiveReason: waive_reason,
+            });
             return res.json({ ok: true, comanda: { ...comanda, status: 'cancelada' } });
         }
         if (action === 'leave_pending' && !due_date) {
             return res.status(400).json({ error: 'due_date obrigatório para deixar pendente' });
+        }
+        const executorCheck = await (0, hubCommissionAccrual_1.assertServiceLinesHaveExecutor)(clinic_id, items);
+        if (!executorCheck.ok) {
+            return res.status(409).json({
+                error: executorCheck.message,
+                code: 'COMMISSION_EXECUTOR_REQUIRED',
+                missing: executorCheck.missing,
+            });
         }
         const itemById = new Map(items.map((it) => [it.id, it]));
         let groups = [];
@@ -2564,15 +3657,44 @@ const postHubComandaCheckout = async (req, res) => {
         const receivableIds = [];
         const nonEmptyGroupIndices = [];
         const stockMovementIds = [];
+        const creditConsumptions = [];
         let unitId = comanda.unit_id ?? null;
         if (!unitId)
             unitId = await resolveClinicDefaultUnitId(clinic_id);
-        const guardianId = comanda.guardian_id;
+        const guardianId = comanda.guardian_id ?? null;
+        const allComandaItems = detail.items;
+        const openLinesGross = round2(items.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+        const allLinesGross = round2(allComandaItems.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+        const headerDiscount = Number(comanda.discount_amount ?? 0);
+        const checkoutDiscountPool = (0, comandaFinanceHandoff_1.openLinesHeaderDiscount)({
+            openLinesTotal: openLinesGross,
+            allLinesTotal: allLinesGross,
+            headerDiscount,
+            openItemsCount: items.length,
+            allItemsCount: allComandaItems.length,
+        });
+        let discountRemaining = checkoutDiscountPool;
         const rollbackReceivables = async () => {
             for (const mid of stockMovementIds) {
                 await supabase_1.supabaseAdmin.from('hub_stock_movements').delete().eq('id', mid);
             }
             stockMovementIds.length = 0;
+            for (const credit of creditConsumptions.splice(0)) {
+                try {
+                    await (0, hubCustomerCredit_1.restoreHubCustomerCredit)({
+                        clinicId: clinic_id,
+                        guardianId: credit.guardianId,
+                        amount: credit.amount,
+                        reason: 'Rollback de checkout — crédito devolvido',
+                        comandaId,
+                        receivableId: credit.receivableId,
+                        createdByUserId: userId,
+                    });
+                }
+                catch (restoreErr) {
+                    console.error('rollbackReceivables restore credit', restoreErr);
+                }
+            }
             for (const rid of receivableIds) {
                 await supabase_1.supabaseAdmin.from('hub_payments').delete().eq('receivable_id', rid);
                 await supabase_1.supabaseAdmin.from('hub_receivable_lines').delete().eq('receivable_id', rid);
@@ -2582,12 +3704,23 @@ const postHubComandaCheckout = async (req, res) => {
                 await supabase_1.supabaseAdmin.from('hub_quotes').update({ billing_state: 'awaiting_billing' }).eq('id', comanda.origin_id);
             }
         };
+        const billableGroupSubtotals = groups.map((gids) => round2(gids.map((id) => itemById.get(id)).reduce((s, it) => s + Number(it.line_total ?? 0), 0)));
+        const billableGross = round2(billableGroupSubtotals.reduce((s, v) => s + Math.max(0, v), 0));
         for (let gi = 0; gi < groups.length; gi++) {
             const gids = groups[gi];
             const groupItems = gids.map((id) => itemById.get(id));
-            const subtotal = round2(groupItems.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+            const subtotal = billableGroupSubtotals[gi] ?? 0;
             if (subtotal <= 0.009)
                 continue;
+            let groupDiscount = 0;
+            if (discountRemaining > 0 && billableGross > 0) {
+                const isLastBillable = groups.slice(gi + 1).every((ids, idx) => (billableGroupSubtotals[gi + 1 + idx] ?? 0) <= 0.009);
+                groupDiscount = isLastBillable
+                    ? discountRemaining
+                    : round2(Math.min(discountRemaining, (checkoutDiscountPool * subtotal) / billableGross));
+                discountRemaining = round2(Math.max(0, discountRemaining - groupDiscount));
+            }
+            const finalAmount = round2(Math.max(0, subtotal - groupDiscount));
             const manualSourceId = (0, node_crypto_1.randomUUID)();
             const { data: rec, error: rErr } = await supabase_1.supabaseAdmin
                 .from('hub_receivables')
@@ -2599,7 +3732,9 @@ const postHubComandaCheckout = async (req, res) => {
                 source_id: manualSourceId,
                 comanda_id: comandaId,
                 original_amount: subtotal,
-                final_amount: subtotal,
+                final_amount: finalAmount,
+                net_amount_at_sale: finalAmount,
+                returned_amount: 0,
                 status: 'pending',
                 due_date: action === 'leave_pending' ? due_date : null,
                 notes: null,
@@ -2614,11 +3749,22 @@ const postHubComandaCheckout = async (req, res) => {
             const receivableId = rec.id;
             receivableIds.push(receivableId);
             nonEmptyGroupIndices.push(gi);
+            const costByItem = await loadInventoryCostByItemId(clinic_id, groupItems);
+            const commissionByItem = await (0, hubCommissionAccrual_1.buildCommissionInsertFieldsForItems)({
+                clinicId: clinic_id,
+                items: groupItems,
+                originalAmount: subtotal,
+                netAmountAtSale: finalAmount,
+                actingUserId: userId,
+                // Checkout: só usa sold_by já gravado; não promove o caixa a vendedor.
+                allowActingUserAsSaleAuthor: false,
+            });
             let sort = 0;
             for (const it of groupItems) {
                 const lineKind = String(it.item_kind ?? '') === 'product'
                     ? 'product'
                     : mapItemToReceivableLineKind(it.origin_type ?? null);
+                const snap = commissionByItem.get(String(it.id));
                 const { error: lnErr } = await supabase_1.supabaseAdmin.from('hub_receivable_lines').insert({
                     clinic_id,
                     receivable_id: receivableId,
@@ -2633,8 +3779,10 @@ const postHubComandaCheckout = async (req, res) => {
                     description: String(it.description),
                     quantity: Number(it.quantity ?? 1),
                     unit_sale_amount: Number(it.unit_amount ?? 0),
+                    unit_cost_amount: productUnitCostSnapshot(costByItem, it),
                     line_total: Number(it.line_total ?? 0),
                     sort_order: sort++,
+                    ...(0, hubCommissionAccrual_1.snapshotToInsertFields)(snap),
                 });
                 if (lnErr) {
                     await rollbackReceivables();
@@ -2642,6 +3790,7 @@ const postHubComandaCheckout = async (req, res) => {
                 }
             }
         }
+        const checkoutCostByItem = await loadInventoryCostByItemId(clinic_id, items);
         for (const it of items) {
             if (String(it.item_kind ?? '') !== 'product')
                 continue;
@@ -2660,6 +3809,7 @@ const postHubComandaCheckout = async (req, res) => {
                 itemId: invItemId,
                 lotId: invLotId,
                 qty,
+                unitCost: checkoutCostByItem.get(invItemId) ?? null,
                 notes: `Venda na comanda ${comandaId}: ${String(it.description ?? 'Produto')}`,
                 referenceType: 'hub_comanda_item',
                 referenceId: it.id,
@@ -2717,6 +3867,10 @@ const postHubComandaCheckout = async (req, res) => {
                 .eq('clinic_id', clinic_id);
         }
         if (String(comanda.origin_type) === 'package' && comanda.origin_id) {
+            if (!guardianId) {
+                await rollbackReceivables();
+                return res.status(409).json({ error: 'Venda de pacote exige tutor na comanda.' });
+            }
             const packagePurchaseLines = items
                 .filter((it) => String(it.origin_type) === 'package_purchase' && it.origin_id)
                 .map((it) => ({
@@ -2747,6 +3901,10 @@ const postHubComandaCheckout = async (req, res) => {
                 await rollbackReceivables();
                 return res.status(400).json({ error: 'payments obrigatório para receber agora' });
             }
+            if (payments.some((p) => p.payment_method === 'customer_credit') && !guardianId) {
+                await rollbackReceivables();
+                return res.status(409).json({ error: 'Comanda sem tutor — não é possível pagar com crédito.' });
+            }
             const clinicSettings = await (0, hubClinicSettingsController_1.getOrCreateHubClinicSettings)(clinic_id);
             for (const pay of payments) {
                 try {
@@ -2761,10 +3919,24 @@ const postHubComandaCheckout = async (req, res) => {
                 }
             }
             const expectedByGroup = new Map();
-            for (let gi = 0; gi < groups.length; gi++) {
-                const sub = round2(groups[gi].map((id) => itemById.get(id)).reduce((s, it) => s + Number(it.line_total ?? 0), 0));
-                if (sub > 0.009)
-                    expectedByGroup.set(gi, sub);
+            {
+                let payDiscountRemaining = checkoutDiscountPool;
+                for (let gi = 0; gi < groups.length; gi++) {
+                    const sub = billableGroupSubtotals[gi] ?? 0;
+                    if (sub <= 0.009)
+                        continue;
+                    let groupDiscount = 0;
+                    if (payDiscountRemaining > 0 && billableGross > 0) {
+                        const isLastBillable = groups
+                            .slice(gi + 1)
+                            .every((_ids, idx) => (billableGroupSubtotals[gi + 1 + idx] ?? 0) <= 0.009);
+                        groupDiscount = isLastBillable
+                            ? payDiscountRemaining
+                            : round2(Math.min(payDiscountRemaining, (checkoutDiscountPool * sub) / billableGross));
+                        payDiscountRemaining = round2(Math.max(0, payDiscountRemaining - groupDiscount));
+                    }
+                    expectedByGroup.set(gi, round2(Math.max(0, sub - groupDiscount)));
+                }
             }
             const paidByGroup = new Map();
             for (const pay of payments) {
@@ -2786,70 +3958,94 @@ const postHubComandaCheckout = async (req, res) => {
             for (const pay of payments) {
                 const rid = receivableIdForGroupIndex(pay.group_index);
                 const { data: recRow } = await supabase_1.supabaseAdmin.from('hub_receivables').select('final_amount, unit_id').eq('id', rid).single();
-                const finalAmt = Number(recRow?.final_amount ?? 0);
-                let validatedCashSessionId = null;
                 const recUnit = recRow?.unit_id;
-                if (pay.payment_method === 'cash') {
-                    if (!pay.cash_session_id) {
-                        await rollbackReceivables();
-                        return res.status(409).json({ error: 'Abra o caixa para receber em dinheiro.' });
-                    }
-                    const { data: cashSession, error: cashErr } = await supabase_1.supabaseAdmin
-                        .from('hub_cash_sessions')
-                        .select('id, clinic_id, unit_id, status')
-                        .eq('id', pay.cash_session_id)
-                        .maybeSingle();
-                    if (cashErr ||
-                        !cashSession ||
-                        cashSession.clinic_id !== clinic_id ||
-                        cashSession.status !== 'open' ||
-                        (recUnit && cashSession.unit_id !== recUnit)) {
-                        await rollbackReceivables();
-                        return res.status(409).json({ error: 'Sessão de caixa inválida ou fechada.' });
-                    }
-                    validatedCashSessionId = cashSession.id;
-                }
-                else if (pay.cash_session_id) {
-                    const { data: cashSession, error: cashErr } = await supabase_1.supabaseAdmin
-                        .from('hub_cash_sessions')
-                        .select('id, clinic_id, unit_id, status')
-                        .eq('id', pay.cash_session_id)
-                        .maybeSingle();
-                    if (cashErr ||
-                        !cashSession ||
-                        cashSession.clinic_id !== clinic_id ||
-                        cashSession.status !== 'open' ||
-                        (recUnit && cashSession.unit_id !== recUnit)) {
-                        await rollbackReceivables();
-                        return res.status(409).json({ error: 'Sessão de caixa inválida ou fechada.' });
-                    }
-                    validatedCashSessionId = cashSession.id;
-                }
-                else {
-                    validatedCashSessionId = await (0, hubFinancialController_1.resolvePaymentCashSessionId)(clinic_id, recUnit, unitId);
-                }
-                const { error: pErr } = await supabase_1.supabaseAdmin.from('hub_payments').insert({
-                    clinic_id,
-                    receivable_id: rid,
-                    cash_session_id: validatedCashSessionId,
-                    amount: round2(pay.amount),
-                    payment_method: pay.payment_method,
-                    installments: pay.installments ?? 1,
-                    payment_date: new Date().toISOString(),
-                    notes: null,
-                    created_by_user_id: userId,
-                    payment_timing: payment_timing,
+                const { insertPostedPaymentWithIdempotency, validatePaymentCashSession } = await Promise.resolve().then(() => __importStar(require('./hubFinanceLedger.js')));
+                const cashCheck = await validatePaymentCashSession({
+                    clinicId: clinic_id,
+                    paymentMethod: pay.payment_method,
+                    cashSessionId: pay.cash_session_id ?? null,
+                    receivableUnitId: recUnit,
                 });
-                if (pErr) {
+                if (!cashCheck.ok) {
                     await rollbackReceivables();
-                    return res.status(500).json({ error: pErr.message });
+                    return res.status(cashCheck.status).json({ error: cashCheck.error });
                 }
-                const { data: sumRows } = await supabase_1.supabaseAdmin.from('hub_payments').select('amount').eq('receivable_id', rid);
-                const paid = round2((sumRows ?? []).reduce((a, r) => a + Number(r.amount ?? 0), 0));
-                let nextStatus = 'partially_paid';
-                if (paid >= finalAmt - 0.009)
-                    nextStatus = 'paid';
-                await supabase_1.supabaseAdmin.from('hub_receivables').update({ status: nextStatus }).eq('id', rid);
+                const validatedCashSessionId = cashCheck.cash_session_id;
+                if (pay.payment_method === 'cash' && pay.tendered_amount != null) {
+                    const tendered = round2(Number(pay.tendered_amount));
+                    const recorded = round2(pay.amount);
+                    if (recorded > tendered + 0.009) {
+                        await rollbackReceivables();
+                        return res.status(400).json({
+                            error: 'Valor do pagamento em dinheiro não pode exceder o valor recebido (tendered).',
+                        });
+                    }
+                }
+                const idempotencyKey = pay.idempotency_key ?? null;
+                if (pay.payment_method === 'customer_credit') {
+                    if (!guardianId) {
+                        await rollbackReceivables();
+                        return res.status(409).json({ error: 'Comanda sem tutor — não é possível pagar com crédito.' });
+                    }
+                    try {
+                        await (0, hubCustomerCredit_1.consumeHubCustomerCredit)({
+                            clinicId: clinic_id,
+                            guardianId,
+                            amount: round2(pay.amount),
+                            reason: 'Pagamento com crédito do tutor (checkout)',
+                            comandaId,
+                            receivableId: rid,
+                            createdByUserId: userId,
+                        });
+                        creditConsumptions.push({
+                            guardianId,
+                            amount: round2(pay.amount),
+                            receivableId: rid,
+                        });
+                    }
+                    catch (e) {
+                        await rollbackReceivables();
+                        if (e instanceof hubCustomerCredit_1.CustomerCreditError) {
+                            return res.status(e.status).json({ error: e.message });
+                        }
+                        throw e;
+                    }
+                }
+                let tenderedAmount = null;
+                let changeAmount = null;
+                let paymentNotes = null;
+                if (pay.payment_method === 'cash' && pay.tendered_amount != null) {
+                    tenderedAmount = round2(Number(pay.tendered_amount));
+                    const recorded = round2(pay.amount);
+                    changeAmount = round2(Math.max(0, tenderedAmount - recorded));
+                    if (changeAmount > 0.009) {
+                        paymentNotes = `Troco R$ ${changeAmount.toFixed(2)} (recebido R$ ${tenderedAmount.toFixed(2)})`;
+                    }
+                }
+                const inserted = await insertPostedPaymentWithIdempotency({
+                    clinicId: clinic_id,
+                    receivableId: rid,
+                    cashSessionId: validatedCashSessionId,
+                    amount: round2(pay.amount),
+                    paymentMethod: pay.payment_method,
+                    installments: pay.installments ?? 1,
+                    paymentDate: new Date().toISOString(),
+                    notes: paymentNotes,
+                    createdByUserId: userId,
+                    paymentTiming: payment_timing,
+                    idempotencyKey,
+                    tenderedAmount,
+                    changeAmount,
+                });
+                if (!inserted.ok) {
+                    await rollbackReceivables();
+                    return res.status(inserted.status ?? 500).json({
+                        error: inserted.error,
+                        ...(inserted.existing ? { existing_payment: inserted.existing } : {}),
+                    });
+                }
+                const { recalculateReceivableFromPosted } = await Promise.resolve().then(() => __importStar(require('./hubFinanceLedger.js')));
+                const nextStatus = await recalculateReceivableFromPosted(rid);
                 if (nextStatus === 'paid') {
                     void (0, appointmentPaidFromBilling_1.markHubAppointmentPaidFromReceivable)({ clinicId: clinic_id, receivableId: rid });
                 }
@@ -2892,6 +4088,294 @@ async function maybeSyncEmptyComandaForHandoff(comandaId, clinicId, detail, acto
         return detail;
     }
 }
+/**
+ * Handoff leave_pending de uma comanda: recebível + linhas + finance_handoff_at.
+ * Nunca cria recebível sem linhas (exceto handoff só de saldo já faturado).
+ */
+async function leavePendingHandoffComanda(comandaId, clinicId, opts) {
+    const userId = opts.userId ?? null;
+    const dueDate = opts.dueDate;
+    const receivableIds = [];
+    const stockMovementIds = [];
+    const rollback = async () => {
+        for (const mid of stockMovementIds) {
+            await supabase_1.supabaseAdmin.from('hub_stock_movements').delete().eq('id', mid);
+        }
+        stockMovementIds.length = 0;
+        for (const rid of receivableIds.splice(0)) {
+            await supabase_1.supabaseAdmin.from('hub_receivable_lines').delete().eq('receivable_id', rid);
+            await supabase_1.supabaseAdmin.from('hub_receivables').delete().eq('id', rid);
+        }
+    };
+    try {
+        let detail = await getHubComandaDetailPayload(comandaId, clinicId);
+        let comanda = detail.comanda;
+        if (String(comanda.status) !== 'aberta') {
+            return { comanda_id: comandaId, receivable_ids: [], error: 'Comanda não está aberta' };
+        }
+        if (comanda.finance_handoff_at) {
+            return {
+                comanda_id: comandaId,
+                receivable_ids: detail.active_receivable_ids ?? [],
+                skipped: true,
+            };
+        }
+        detail = await maybeSyncEmptyComandaForHandoff(comandaId, clinicId, detail, userId);
+        comanda = detail.comanda;
+        const items = detail.items.filter((it) => detail.open_item_ids.includes(it.id));
+        if (items.length === 0) {
+            if ((0, comandaFinanceHandoff_1.canHandoffExistingReceivables)(detail)) {
+                const ids = await applyFinanceHandoffOnly(comandaId, clinicId, detail, dueDate);
+                return { comanda_id: comandaId, receivable_ids: ids };
+            }
+            return {
+                comanda_id: comandaId,
+                receivable_ids: [],
+                skipped: true,
+                error: 'Não há itens em aberto para enviar ao financeiro',
+            };
+        }
+        const executorCheck = await (0, hubCommissionAccrual_1.assertServiceLinesHaveExecutor)(clinicId, items);
+        if (!executorCheck.ok) {
+            return {
+                comanda_id: comandaId,
+                receivable_ids: [],
+                error: executorCheck.message,
+                code: 'COMMISSION_EXECUTOR_REQUIRED',
+            };
+        }
+        let unitId = comanda.unit_id ?? null;
+        if (!unitId)
+            unitId = await resolveClinicDefaultUnitId(clinicId);
+        const guardianId = comanda.guardian_id ?? null;
+        const subtotal = round2(items.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+        const allComandaItems = detail.items;
+        const allLinesGross = round2(allComandaItems.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+        const headerDiscount = Number(comanda.discount_amount ?? 0);
+        const handoffDiscount = (0, comandaFinanceHandoff_1.openLinesHeaderDiscount)({
+            openLinesTotal: subtotal,
+            allLinesTotal: allLinesGross,
+            headerDiscount,
+            openItemsCount: items.length,
+            allItemsCount: allComandaItems.length,
+        });
+        const finalAmount = round2(Math.max(0, subtotal - handoffDiscount));
+        if (subtotal <= 0.009) {
+            const hasPackageCoverage = items.some((it) => it.package_balance_id);
+            if (hasPackageCoverage) {
+                await (0, hubPackagesService_1.redeemPackageBalancesOnCheckout)({
+                    clinicId,
+                    comandaId,
+                    staffUserId: userId,
+                });
+                await supabase_1.supabaseAdmin
+                    .from('hub_comandas')
+                    .update({ finance_handoff_at: new Date().toISOString() })
+                    .eq('id', comandaId)
+                    .eq('clinic_id', clinicId);
+                await tryAutoCloseComanda(comandaId, clinicId);
+                return { comanda_id: comandaId, receivable_ids: [] };
+            }
+            return {
+                comanda_id: comandaId,
+                receivable_ids: [],
+                skipped: true,
+                error: 'Nenhum recebível gerado (valores zerados)',
+            };
+        }
+        const manualSourceId = (0, node_crypto_1.randomUUID)();
+        const { data: rec, error: rErr } = await supabase_1.supabaseAdmin
+            .from('hub_receivables')
+            .insert({
+            clinic_id: clinicId,
+            unit_id: unitId,
+            guardian_id: guardianId,
+            source_type: 'manual',
+            source_id: manualSourceId,
+            comanda_id: comandaId,
+            original_amount: subtotal,
+            final_amount: finalAmount,
+            net_amount_at_sale: finalAmount,
+            returned_amount: 0,
+            status: 'pending',
+            due_date: dueDate,
+            notes: null,
+        })
+            .select('id')
+            .single();
+        if (rErr || !rec) {
+            return {
+                comanda_id: comandaId,
+                receivable_ids: [],
+                error: rErr?.message ?? 'Erro ao criar recebível',
+            };
+        }
+        const receivableId = rec.id;
+        receivableIds.push(receivableId);
+        const handoffCostByItem = await loadInventoryCostByItemId(clinicId, items);
+        const commissionByItem = await (0, hubCommissionAccrual_1.buildCommissionInsertFieldsForItems)({
+            clinicId,
+            items: items,
+            originalAmount: subtotal,
+            netAmountAtSale: finalAmount,
+            actingUserId: userId,
+            // leave_pending / auto-close: nunca inventar vendedor pelo ator do handoff.
+            allowActingUserAsSaleAuthor: false,
+        });
+        let sort = 0;
+        for (const it of items) {
+            const lineKind = String(it.item_kind ?? '') === 'product'
+                ? 'product'
+                : mapItemToReceivableLineKind(it.origin_type ?? null);
+            const snap = commissionByItem.get(String(it.id));
+            const { error: lnErr } = await supabase_1.supabaseAdmin.from('hub_receivable_lines').insert({
+                clinic_id: clinicId,
+                receivable_id: receivableId,
+                comanda_id: comandaId,
+                comanda_item_id: it.id,
+                pet_id: it.pet_id ?? null,
+                line_kind: lineKind,
+                source_line_id: it.origin_id ?? null,
+                hub_service_type_id: it.hub_service_type_id ?? null,
+                hub_inventory_item_id: it.hub_inventory_item_id ?? null,
+                hub_inventory_lot_id: it.hub_inventory_lot_id ?? null,
+                description: String(it.description),
+                quantity: Number(it.quantity ?? 1),
+                unit_sale_amount: Number(it.unit_amount ?? 0),
+                unit_cost_amount: productUnitCostSnapshot(handoffCostByItem, it),
+                line_total: Number(it.line_total ?? 0),
+                sort_order: sort++,
+                ...(0, hubCommissionAccrual_1.snapshotToInsertFields)(snap),
+            });
+            if (lnErr) {
+                await rollback();
+                return { comanda_id: comandaId, receivable_ids: [], error: lnErr.message };
+            }
+        }
+        for (const it of items) {
+            if (String(it.item_kind ?? '') !== 'product')
+                continue;
+            if ((0, comandaStockOut_1.comandaProductOriginAlreadyStockedOut)(it.origin_type ?? null))
+                continue;
+            const invItemId = it.hub_inventory_item_id ?? null;
+            const invLotId = it.hub_inventory_lot_id ?? null;
+            if (!invItemId || !invLotId)
+                continue;
+            const qty = Number(it.quantity ?? 1);
+            if (!(qty > 0))
+                continue;
+            const stockResult = await (0, hubInventoryStockUtils_1.createSaleStockOut)({
+                clinicId,
+                itemId: invItemId,
+                lotId: invLotId,
+                qty,
+                unitCost: handoffCostByItem.get(invItemId) ?? null,
+                notes: `Venda na comanda ${comandaId}: ${String(it.description ?? 'Produto')}`,
+                referenceType: 'hub_comanda_item',
+                referenceId: it.id,
+                createdBy: userId,
+            });
+            if ('error' in stockResult) {
+                await rollback();
+                return { comanda_id: comandaId, receivable_ids: [], error: stockResult.error };
+            }
+            if (!stockResult.skipped) {
+                stockMovementIds.push(stockResult.id);
+            }
+        }
+        await supabase_1.supabaseAdmin
+            .from('hub_comandas')
+            .update({ finance_handoff_at: new Date().toISOString() })
+            .eq('id', comandaId)
+            .eq('clinic_id', clinicId);
+        if (String(comanda.origin_type) === 'quote' && comanda.origin_id) {
+            await supabase_1.supabaseAdmin
+                .from('hub_quotes')
+                .update({ billing_state: 'receivable_created' })
+                .eq('id', comanda.origin_id)
+                .eq('clinic_id', clinicId);
+        }
+        if (String(comanda.origin_type) === 'package' && comanda.origin_id) {
+            if (!guardianId) {
+                return {
+                    comanda_id: comandaId,
+                    receivable_ids: receivableIds,
+                    error: 'Venda de pacote exige tutor na comanda.',
+                };
+            }
+            const packagePurchaseLines = items
+                .filter((it) => String(it.origin_type) === 'package_purchase' && it.origin_id)
+                .map((it) => ({
+                packageId: String(it.origin_id),
+                petId: it.pet_id ?? null,
+            }));
+            if (packagePurchaseLines.length) {
+                await (0, hubPackagesService_1.fulfillPackagePurchasesOnComandaCheckout)({
+                    clinicId,
+                    comandaId,
+                    purchaseGroupId: comanda.origin_id,
+                    guardianId,
+                    packagePurchaseLines,
+                    purchasedReceivableId: receivableId,
+                });
+            }
+        }
+        const hasServicePackageCoverage = items.some((it) => it.package_balance_id);
+        if (hasServicePackageCoverage && String(comanda.origin_type) !== 'package') {
+            await (0, hubPackagesService_1.redeemPackageBalancesOnCheckout)({
+                clinicId,
+                comandaId,
+                staffUserId: userId,
+            });
+        }
+        return { comanda_id: comandaId, receivable_ids: [receivableId] };
+    }
+    catch (e) {
+        await rollback().catch(() => undefined);
+        return {
+            comanda_id: comandaId,
+            receivable_ids: [],
+            error: e?.message ?? 'Erro ao processar comanda',
+        };
+    }
+}
+/** Handoff leave_pending de todas as comandas abertas da unidade (sem finance_handoff_at). */
+async function leavePendingHandoffOpenComandasForUnit(clinicId, unitId, opts) {
+    const { data: openComandas, error } = await supabase_1.supabaseAdmin
+        .from('hub_comandas')
+        .select('id')
+        .eq('clinic_id', clinicId)
+        .eq('unit_id', unitId)
+        .eq('status', 'aberta')
+        .is('finance_handoff_at', null)
+        .is('deleted_at', null);
+    if (error) {
+        throw new Error(error.message);
+    }
+    const results = [];
+    const errors = [];
+    let handoffCount = 0;
+    let skippedCount = 0;
+    for (const row of openComandas ?? []) {
+        const comandaId = row.id;
+        const result = await leavePendingHandoffComanda(comandaId, clinicId, opts);
+        results.push(result);
+        if (result.skipped) {
+            skippedCount++;
+            continue;
+        }
+        if (result.error) {
+            if ((0, comandaFinanceHandoff_1.isSkippableLeavePendingHandoffError)(result.error)) {
+                skippedCount++;
+                continue;
+            }
+            errors.push(`${comandaId.slice(0, 8)}: ${result.error}`);
+            continue;
+        }
+        handoffCount++;
+    }
+    return { handoff_count: handoffCount, skipped_count: skippedCount, results, errors };
+}
 async function applySyncComandaFromOrigin(clinicId, comandaId, opts) {
     const detail = await getHubComandaDetailPayload(comandaId, clinicId);
     const comanda = detail.comanda;
@@ -2925,14 +4409,95 @@ async function applySyncComandaFromOrigin(clinicId, comandaId, opts) {
             return true;
         return !invoicedOriginKeys.has(`${ot}:${oid}`);
     });
-    // Preserva itens adicionados manualmente pelo Caixa — só deleta os que vieram da origem operacional
+    // Diárias já faturadas + quantity maior (late checkout etc.): linha aberta de ajuste (não estorna se cair).
     const allItems = detail.items;
+    const boardingDesiredById = new Map();
+    for (const row of built.items) {
+        if (row.origin_type === 'boarding_reservation' && row.origin_id) {
+            boardingDesiredById.set(String(row.origin_id), row);
+        }
+    }
+    for (const [reservationId, desiredLine] of boardingDesiredById) {
+        const mainKey = `boarding_reservation:${reservationId}`;
+        if (!invoicedOriginKeys.has(mainKey))
+            continue;
+        let invoicedQty = 0;
+        let invoicedUnit = Number(desiredLine.unit_amount);
+        for (const it of allItems) {
+            if (!invoiced.has(it.id))
+                continue;
+            const ot = String(it.origin_type ?? '');
+            const oid = String(it.origin_id ?? '');
+            if (oid !== reservationId)
+                continue;
+            if (ot !== 'boarding_reservation' && ot !== 'boarding_reservation_adjustment')
+                continue;
+            invoicedQty = round2(invoicedQty + Number(it.quantity ?? 0));
+            if (ot === 'boarding_reservation')
+                invoicedUnit = Number(it.unit_amount ?? invoicedUnit);
+        }
+        const delta = round2(Number(desiredLine.quantity) - invoicedQty);
+        if (delta <= 0)
+            continue;
+        const desc = String(desiredLine.description ?? '');
+        const mode = desc.startsWith('Creche') ? 'daycare' : 'hotel';
+        const adj = (0, boardingBilling_1.buildBoardingQuantityAdjustmentLine)({
+            reservationId,
+            mode,
+            petId: desiredLine.pet_id ?? null,
+            hubServiceTypeId: desiredLine.hub_service_type_id ?? null,
+            deltaQuantity: delta,
+            unitAmount: invoicedUnit,
+            serviceDate: desiredLine.service_date ?? null,
+            sortOrder: desiredFiltered.length,
+        });
+        if (adj)
+            desiredFiltered.push(adj);
+    }
+    // Preserva itens adicionados manualmente pelo Caixa — só deleta os que vieram da origem operacional
     const openIdsSet = new Set(detail.open_item_ids);
     const manualOpenIds = new Set(allItems
         .filter((it) => openIdsSet.has(it.id) && it.origin_type === 'manual')
         .map((it) => it.id));
     const openIds = [...openIdsSet].filter((id) => !manualOpenIds.has(id));
     const removedItems = allItems.filter((it) => openIds.includes(it.id));
+    const originLineFingerprint = (row) => [
+        String(row.origin_type ?? ''),
+        String(row.origin_id ?? ''),
+        String(row.hub_service_type_id ?? ''),
+        String(row.description ?? ''),
+        round2(Number(row.quantity ?? 0)),
+        round2(Number(row.unit_amount ?? 0)),
+        round2(Number(row.line_total ?? 0)),
+    ].join('|');
+    const currentFp = removedItems
+        .map((it) => originLineFingerprint({
+        origin_type: it.origin_type ?? null,
+        origin_id: it.origin_id ?? null,
+        description: it.description ?? null,
+        hub_service_type_id: it.hub_service_type_id ?? null,
+        quantity: Number(it.quantity ?? 0),
+        unit_amount: Number(it.unit_amount ?? 0),
+        line_total: Number(it.line_total ?? 0),
+    }))
+        .sort()
+        .join('\n');
+    const desiredFp = desiredFiltered
+        .map((it) => originLineFingerprint({
+        origin_type: it.origin_type,
+        origin_id: it.origin_id,
+        description: it.description,
+        hub_service_type_id: it.hub_service_type_id,
+        quantity: it.quantity,
+        unit_amount: it.unit_amount,
+        line_total: it.line_total,
+    }))
+        .sort()
+        .join('\n');
+    // Mid-AT / complete podem sync várias vezes com o mesmo snapshot — evita churn no DB e no histórico.
+    if (currentFp === desiredFp) {
+        return detail;
+    }
     if (openIds.length) {
         const { error: delErr } = await supabase_1.supabaseAdmin.from('hub_comanda_items').delete().in('id', openIds);
         if (delErr)
@@ -2958,45 +4523,21 @@ async function applySyncComandaFromOrigin(clinicId, comandaId, opts) {
         if (insErr)
             throw new Error(insErr.message);
     }
-    for (const it of removedItems) {
-        const snap = (0, comandaEvents_1.itemSnapshotFromRow)(it);
-        void (0, comandaEvents_1.recordComandaItemRemovedEvent)({
-            clinic_id: clinicId,
-            comanda_id: comandaId,
-            item: snap,
-            actor_user_id: opts?.actor_user_id ?? null,
-            edit_context: opts?.edit_context ?? null,
-            source: 'sync_origin',
-        });
-    }
-    for (const row of insertRows) {
-        void (0, comandaEvents_1.recordComandaItemAddedEvent)({
-            clinic_id: clinicId,
-            comanda_id: comandaId,
-            item: {
-                description: String(row.description),
-                item_kind: String(row.item_kind),
-                quantity: Number(row.quantity),
-                unit_amount: Number(row.unit_amount),
-                line_total: Number(row.line_total),
-            },
-            actor_user_id: opts?.actor_user_id ?? null,
-            edit_context: opts?.edit_context ?? null,
-            source: 'sync_origin',
-        });
-    }
+    // Sync rebuilda linhas de origem: um único evento de resumo (sem N× removido/adicionado).
     if (removedItems.length > 0 || insertRows.length > 0) {
         void (0, comandaEvents_1.recordComandaEvent)({
             clinic_id: clinicId,
             comanda_id: comandaId,
             event_type: 'items_synced',
-            title: 'Itens sincronizados com a origem',
-            body: removedItems.length || insertRows.length
-                ? `${removedItems.length} removido(s), ${insertRows.length} adicionado(s)`
-                : null,
+            title: 'Comanda atualizada a partir do atendimento',
+            body: `${insertRows.length} item(ns) na comanda aberta`,
             actor_user_id: opts?.actor_user_id ?? null,
             edit_context: opts?.edit_context ?? null,
-            metadata: { removed_count: removedItems.length, added_count: insertRows.length },
+            metadata: {
+                removed_count: removedItems.length,
+                added_count: insertRows.length,
+                source: 'sync_origin',
+            },
         });
     }
     const { data: remaining } = await supabase_1.supabaseAdmin.from('hub_comanda_items').select('line_total').eq('comanda_id', comandaId);
@@ -3125,18 +4666,48 @@ async function syncOpenComandasAfterEncounterChargeableChange(clinicId, encounte
         console.error('syncOpenComandasAfterEncounterChargeableChange', e);
     }
 }
+/** Agenda cancelled/no_show — não completar encounter nem abrir comanda. */
+async function isAppointmentTerminalCancelled(clinicId, appointmentId) {
+    if (!appointmentId)
+        return false;
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_appointments')
+        .select('status')
+        .eq('id', appointmentId)
+        .eq('clinic_id', clinicId)
+        .is('deleted_at', null)
+        .maybeSingle();
+    if (error) {
+        console.error('isAppointmentTerminalCancelled', error.message);
+        return false;
+    }
+    const st = String(data?.status ?? '');
+    return st === 'cancelled' || st === 'no_show';
+}
 async function ensureOpenComandaForCompletedEncounter(clinicId, encounterId, appointmentId, caseId) {
     try {
+        if (await isAppointmentTerminalCancelled(clinicId, appointmentId))
+            return;
         const keys = await fetchActiveReceivableKeys(clinicId);
         if (keys.has(`encounter:${encounterId}`))
             return;
         if (appointmentId && keys.has(`appointment:${appointmentId}`))
             return;
+        // Mesmo critério de postHubComandaOpen: recebível pode nascer como manual.
+        const billedViaComanda = await fetchBilledComandaOriginKeys(clinicId);
+        if (billedViaComanda.has(`encounter:${encounterId}`))
+            return;
         const built = await buildComandaItemsFromEncounter(clinicId, encounterId);
+        // Snapshot já omite appointment_service (e demais origens) faturados na agenda.
+        // Sem saldo clínico novo → não abrir segunda comanda vazia/duplicada.
+        const billableItems = built.items.filter((it) => Number(it.line_total ?? 0) > 0);
+        if (billableItems.length === 0)
+            return;
         const discount = 0;
-        const total = round2(Math.max(0, built.subtotal - discount));
+        const subtotal = round2(billableItems.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+        const total = round2(Math.max(0, subtotal - discount));
         const resolvedPetId = built.pet_id ??
-            (built.items.map((it) => it.pet_id).find((pid) => Boolean(pid)) ?? null);
+            (billableItems.map((it) => it.pet_id).find((pid) => Boolean(pid)) ?? null);
         const { data: comanda, error: cErr } = await supabase_1.supabaseAdmin
             .from('hub_comandas')
             .insert({
@@ -3150,7 +4721,7 @@ async function ensureOpenComandaForCompletedEncounter(clinicId, encounterId, app
             hub_encounter_id: encounterId,
             status: 'aberta',
             financial_status: 'open',
-            subtotal_amount: built.subtotal,
+            subtotal_amount: subtotal,
             discount_amount: discount,
             total_amount: total,
             notes: null,
@@ -3162,7 +4733,7 @@ async function ensureOpenComandaForCompletedEncounter(clinicId, encounterId, app
             return;
         }
         const comandaId = comanda.id;
-        const rows = built.items.map((it) => comandaItemInsertRow(clinicId, comandaId, it));
+        const rows = billableItems.map((it, idx) => comandaItemInsertRow(clinicId, comandaId, { ...it, sort_order: idx }));
         if (rows.length > 0) {
             const { error: iErr } = await supabase_1.supabaseAdmin.from('hub_comanda_items').insert(rows);
             if (iErr) {
@@ -3197,6 +4768,9 @@ async function ensureOpenComandaForCompletedEncounter(clinicId, encounterId, app
 }
 async function syncOpenComandasAfterEncounterCompleted(clinicId, encounterId) {
     const { ids, appointmentId, caseId } = await listOpenComandaIdsForEncounter(clinicId, encounterId);
+    // Agenda cancelada/falta: não sincronizar nem abrir comanda (visita operacionalmente encerrada).
+    if (await isAppointmentTerminalCancelled(clinicId, appointmentId))
+        return;
     if (ids.length > 0) {
         for (const id of ids) {
             await syncAndTryAutoCloseComanda(clinicId, id);
@@ -3228,6 +4802,10 @@ async function syncOpenComandasAfterBoardingCheckedOut(clinicId, reservationId) 
 }
 /** Sincroniza e tenta fechar comanda aberta vinculada ao agendamento quando o serviço conclui. */
 async function syncOpenComandasAfterAppointmentOperationalComplete(clinicId, appointmentId) {
+    const seriesGuard = await (0, hubSeriesBillingService_1.isAppointmentPendingPeriodicSeriesInvoice)(appointmentId);
+    // Série com fatura mensal pendente: não criar/sincronizar cobrança da ocorrência no dia.
+    if (seriesGuard.pending)
+        return;
     const id = await findOpenComandaIdByOrigin(clinicId, 'appointment', appointmentId);
     if (!id)
         return;
@@ -3258,26 +4836,8 @@ const resolveCancellationBodySchema = zod_1.z
 })
     .strict();
 async function recalculateReceivableStatusLocal(receivableId) {
-    const { data: rec, error: rErr } = await supabase_1.supabaseAdmin
-        .from('hub_receivables')
-        .select('id, final_amount, status')
-        .eq('id', receivableId)
-        .maybeSingle();
-    if (rErr || !rec)
-        throw new Error(rErr?.message || 'Recebível não encontrado');
-    if (['cancelled', 'refunded'].includes(String(rec.status)))
-        return String(rec.status);
-    const { data: payments, error: pErr } = await supabase_1.supabaseAdmin
-        .from('hub_payments')
-        .select('amount')
-        .eq('receivable_id', receivableId);
-    if (pErr)
-        throw new Error(pErr.message);
-    const paid = round2((payments ?? []).reduce((sum, row) => sum + Number(row.amount ?? 0), 0));
-    const finalAmount = Number(rec.final_amount ?? 0);
-    const nextStatus = paid <= 0.009 ? 'pending' : paid >= finalAmount - 0.009 ? 'paid' : 'partially_paid';
-    await supabase_1.supabaseAdmin.from('hub_receivables').update({ status: nextStatus }).eq('id', receivableId);
-    return nextStatus;
+    const { recalculateReceivableFromPosted } = await Promise.resolve().then(() => __importStar(require('./hubFinanceLedger.js')));
+    return recalculateReceivableFromPosted(receivableId);
 }
 async function resolveOpenComandaIdForCancellation(clinicId, operationalType, operationalId) {
     if (operationalType === 'appointment') {
@@ -3452,6 +5012,7 @@ async function financialAdjustmentFlagsForEncounters(clinicId, encounterIds) {
     return out;
 }
 async function reverseAllComandaPayments(clinicId, comandaId, reason, userId) {
+    const { reversePaymentSoft, FinanceLedgerError } = await Promise.resolve().then(() => __importStar(require('./hubFinanceLedger.js')));
     const { data: recs, error: rErr } = await supabase_1.supabaseAdmin
         .from('hub_receivables')
         .select('id, final_amount, status')
@@ -3462,47 +5023,47 @@ async function reverseAllComandaPayments(clinicId, comandaId, reason, userId) {
         throw new Error(rErr.message);
     const recRows = recs ?? [];
     if (!recRows.length)
-        return 0;
+        return { totalReversed: 0, restoredCustomerCredit: 0 };
     const recIds = recRows.map((r) => r.id);
     const { data: payments, error: pErr } = await supabase_1.supabaseAdmin
         .from('hub_payments')
-        .select('id, clinic_id, receivable_id, amount, payment_method, cash_session_id')
-        .in('receivable_id', recIds);
+        .select('id, clinic_id, receivable_id, amount, payment_method, cash_session_id, status')
+        .in('receivable_id', recIds)
+        .eq('status', 'posted');
     if (pErr)
         throw new Error(pErr.message);
     let totalReversed = 0;
+    let restoredCustomerCredit = 0;
     for (const payment of payments ?? []) {
         if (payment.clinic_id !== clinicId)
             continue;
-        let warning = null;
-        if (payment.payment_method === 'cash' && payment.cash_session_id) {
-            const { data: session } = await supabase_1.supabaseAdmin
-                .from('hub_cash_sessions')
-                .select('id, status')
-                .eq('id', payment.cash_session_id)
-                .eq('clinic_id', clinicId)
-                .maybeSingle();
-            if (session?.status === 'closed') {
-                warning = 'Pagamento em dinheiro estornado de caixa já fechado; revise a conferência da sessão.';
-            }
+        try {
+            await reversePaymentSoft({
+                paymentId: payment.id,
+                clinicId,
+                userId,
+                reason,
+                mode: 'payment_reversal',
+            });
         }
-        await supabase_1.supabaseAdmin.from('hub_financial_adjustments').insert({
-            clinic_id: clinicId,
-            receivable_id: payment.receivable_id,
-            adjustment_type: 'refund',
-            amount: payment.amount,
-            reason: warning ? `${reason} (${warning})` : reason,
-            created_by_user_id: userId,
-        });
-        const { error: delErr } = await supabase_1.supabaseAdmin.from('hub_payments').delete().eq('id', payment.id);
-        if (delErr)
-            throw new Error(delErr.message);
+        catch (e) {
+            if (e instanceof FinanceLedgerError && e.status === 409)
+                continue;
+            throw e;
+        }
+        if (payment.payment_method === 'customer_credit') {
+            restoredCustomerCredit = round2(restoredCustomerCredit + Number(payment.amount ?? 0));
+        }
         totalReversed = round2(totalReversed + Number(payment.amount ?? 0));
-        await recalculateReceivableStatusLocal(payment.receivable_id);
     }
     for (const rec of recRows) {
         const rid = rec.id;
-        const { data: paysLeft } = await supabase_1.supabaseAdmin.from('hub_payments').select('id').eq('receivable_id', rid).limit(1);
+        const { data: paysLeft } = await supabase_1.supabaseAdmin
+            .from('hub_payments')
+            .select('id')
+            .eq('receivable_id', rid)
+            .eq('status', 'posted')
+            .limit(1);
         if ((paysLeft ?? []).length > 0)
             continue;
         if (String(rec.status) === 'cancelled')
@@ -3518,9 +5079,27 @@ async function reverseAllComandaPayments(clinicId, comandaId, reason, userId) {
                 created_by_user_id: userId,
             });
         }
-        await supabase_1.supabaseAdmin.from('hub_receivables').update({ status: 'cancelled' }).eq('id', rid);
+        {
+            const upd = await supabase_1.supabaseAdmin
+                .from('hub_receivables')
+                .update({ status: 'cancelled', cancel_rebill: false })
+                .eq('id', rid);
+            if (upd.error && String(upd.error.message || '').includes('cancel_rebill')) {
+                await supabase_1.supabaseAdmin.from('hub_receivables').update({ status: 'cancelled' }).eq('id', rid);
+            }
+        }
+        await (0, appointmentPaidFromBilling_1.syncHubAppointmentPaidFromReceivable)({ clinicId, receivableId: rid });
     }
-    return totalReversed;
+    const { data: comandaRow } = await supabase_1.supabaseAdmin
+        .from('hub_comandas')
+        .select('*')
+        .eq('id', comandaId)
+        .eq('clinic_id', clinicId)
+        .maybeSingle();
+    if (comandaRow) {
+        await refreshComandaFinancialStatus(comandaId, clinicId, comandaRow);
+    }
+    return { totalReversed, restoredCustomerCredit };
 }
 async function enrichCancellationQueueRows(clinicId, rows) {
     if (!rows.length)
@@ -3546,17 +5125,29 @@ async function enrichCancellationQueueRows(clinicId, rows) {
                 return [cid, { paid_total, balance_due, operational_complete: true, edit_scopes: null }];
             }
             let { paid_total, balance_due } = await computeComandaBalancePayload(cid, clinicId);
-            // Cura: recebível pago sem auto-close deixava comanda aberta “fantasma” no perfil.
+            // Cura: quitada sem auto-close, ou reembolsada/estornada sem anular a comanda —
+            // evitava fantasma em “Pendentes de dias anteriores” no caixa.
             if (String(row.status) === 'aberta' && balance_due <= 0.02) {
                 try {
-                    const closed = await tryAutoCloseComanda(cid, clinicId);
-                    if (closed) {
-                        row.status = 'fechada';
+                    const voided = await tryVoidComandaAfterSaleFinanciallyEnded({
+                        clinicId,
+                        comandaId: cid,
+                        reason: 'Cura automática: sem saldo cobrável na comanda',
+                    });
+                    if (voided.comanda_status === 'cancelada') {
+                        row.status = 'cancelada';
                         ({ paid_total, balance_due } = await computeComandaBalancePayload(cid, clinicId));
+                    }
+                    else {
+                        const closed = await tryAutoCloseComanda(cid, clinicId);
+                        if (closed) {
+                            row.status = 'fechada';
+                            ({ paid_total, balance_due } = await computeComandaBalancePayload(cid, clinicId));
+                        }
                     }
                 }
                 catch (e) {
-                    console.error('enrichComandaRows tryAutoCloseComanda', cid, e);
+                    console.error('enrichComandaRows tryVoid/tryAutoCloseComanda', cid, e);
                 }
             }
             const operational_complete = await isOperationalCompleteForComanda(row);
@@ -3700,7 +5291,10 @@ const getHubComandaByOrigin = async (req, res) => {
             }
         }
         if (!rowId && origin_type === 'appointment') {
-            rowId = await findOpenEncounterComandaIdForAppointment(clinic_id, origin_id);
+            rowId = await findOpenGroomingComandaIdForAppointment(clinic_id, origin_id);
+            if (!rowId) {
+                rowId = await findOpenEncounterComandaIdForAppointment(clinic_id, origin_id);
+            }
         }
         if (!rowId)
             return res.status(404).json({ error: 'Comanda aberta não encontrada' });
@@ -3833,35 +5427,39 @@ const postHubComandaResolveCancellation = async (req, res) => {
             if (paid_total <= 0.009) {
                 return res.status(409).json({ error: 'Não há pagamentos na comanda para converter em crédito.' });
             }
-            const reversed = await reverseAllComandaPayments(clinic_id, comandaId, reason, userId);
-            if (cash_session_id) {
-                const { data: sess } = await supabase_1.supabaseAdmin
-                    .from('hub_cash_sessions')
-                    .select('id, clinic_id, status')
-                    .eq('id', cash_session_id)
-                    .maybeSingle();
-                if (!sess || sess.clinic_id !== clinic_id || sess.status !== 'open') {
-                    return res.status(409).json({ error: 'Sessão de caixa inválida' });
+            const { totalReversed, restoredCustomerCredit } = await reverseAllComandaPayments(clinic_id, comandaId, reason, userId);
+            // Pagamentos já feitos com crédito voltam no reverse; aqui só credita o restante (pix/dinheiro/etc.).
+            const creditToGrant = round2(totalReversed - restoredCustomerCredit);
+            if (creditToGrant > 0.009) {
+                if (cash_session_id) {
+                    const { data: sess } = await supabase_1.supabaseAdmin
+                        .from('hub_cash_sessions')
+                        .select('id, clinic_id, status')
+                        .eq('id', cash_session_id)
+                        .maybeSingle();
+                    if (!sess || sess.clinic_id !== clinic_id || sess.status !== 'open') {
+                        return res.status(409).json({ error: 'Sessão de caixa inválida' });
+                    }
                 }
-            }
-            const { error: crErr } = await supabase_1.supabaseAdmin.from('hub_customer_credit_movements').insert({
-                clinic_id,
-                guardian_id: guardianId,
-                direction: 'in',
-                amount: reversed,
-                reason,
-                comanda_id: comandaId,
-                receivable_id: null,
-                payment_method: null,
-                cash_session_id: cash_session_id ?? null,
-                notes: 'Crédito por cancelamento operacional (comanda)',
-                created_by_user_id: userId,
-            });
-            if (crErr) {
-                if (String(crErr.message || '').includes('hub_customer_credit')) {
-                    return res.status(503).json({ error: 'Tabela de crédito do tutor não encontrada.' });
+                const { error: crErr } = await supabase_1.supabaseAdmin.from('hub_customer_credit_movements').insert({
+                    clinic_id,
+                    guardian_id: guardianId,
+                    direction: 'in',
+                    amount: creditToGrant,
+                    reason,
+                    comanda_id: comandaId,
+                    receivable_id: null,
+                    payment_method: null,
+                    cash_session_id: cash_session_id ?? null,
+                    notes: 'Crédito por cancelamento operacional (comanda)',
+                    created_by_user_id: userId,
+                });
+                if (crErr) {
+                    if (String(crErr.message || '').includes('hub_customer_credit')) {
+                        return res.status(503).json({ error: 'Tabela de crédito do tutor não encontrada.' });
+                    }
+                    return res.status(500).json({ error: crErr.message });
                 }
-                return res.status(500).json({ error: crErr.message });
             }
         }
         else {
@@ -3925,6 +5523,58 @@ async function recomputeComandaTotals(comandaId, clinicId) {
         .eq('id', comandaId)
         .eq('clinic_id', clinicId);
 }
+/**
+ * Após editar desconto de comanda `series_invoice`, alinha recebível pending e total da fatura.
+ * Rejeita se o novo total ficar abaixo do já pago.
+ */
+async function syncSeriesInvoiceTotalsAfterDiscount(comandaId, clinicId) {
+    const { data: comanda } = await supabase_1.supabaseAdmin
+        .from('hub_comandas')
+        .select('id, origin_type, origin_id, total_amount, discount_amount')
+        .eq('id', comandaId)
+        .eq('clinic_id', clinicId)
+        .maybeSingle();
+    if (!comanda || String(comanda.origin_type) !== 'series_invoice') {
+        return { ok: true };
+    }
+    const newTotal = round2(Number(comanda.total_amount ?? 0));
+    const { paid_total } = await computeComandaBalancePayload(comandaId, clinicId);
+    if (newTotal + 0.009 < paid_total) {
+        return {
+            ok: false,
+            error: `Desconto deixa o total (R$ ${newTotal.toFixed(2)}) abaixo do já pago (R$ ${paid_total.toFixed(2)}).`,
+        };
+    }
+    const { data: receivables } = await supabase_1.supabaseAdmin
+        .from('hub_receivables')
+        .select('id, status, original_amount, final_amount')
+        .eq('comanda_id', comandaId)
+        .eq('clinic_id', clinicId)
+        .eq('status', 'pending');
+    for (const rec of receivables ?? []) {
+        const patch = { final_amount: newTotal };
+        if (paid_total <= 0.009) {
+            patch.original_amount = newTotal;
+        }
+        const { error } = await supabase_1.supabaseAdmin
+            .from('hub_receivables')
+            .update(patch)
+            .eq('id', rec.id)
+            .eq('clinic_id', clinicId);
+        if (error) {
+            return { ok: false, error: error.message };
+        }
+    }
+    const invoiceId = comanda.origin_id;
+    if (invoiceId) {
+        await supabase_1.supabaseAdmin
+            .from('hub_series_invoices')
+            .update({ total_amount: newTotal })
+            .eq('id', invoiceId)
+            .eq('clinic_id', clinicId);
+    }
+    return { ok: true };
+}
 const addComandaItemsBodySchema = zod_1.z
     .object({
     clinic_id: uuidStr,
@@ -3965,7 +5615,7 @@ const postHubComandaAddItems = async (req, res) => {
         }
         const { data: comanda, error: cErr } = await supabase_1.supabaseAdmin
             .from('hub_comandas')
-            .select('id, status, clinic_id, pet_id')
+            .select('id, status, clinic_id, pet_id, guardian_id')
             .eq('id', comandaId)
             .eq('clinic_id', clinic_id)
             .is('deleted_at', null)
@@ -3974,6 +5624,24 @@ const postHubComandaAddItems = async (req, res) => {
             return res.status(500).json({ error: cErr.message });
         if (!comanda)
             return res.status(404).json({ error: 'Comanda não encontrada' });
+        const defaultPetId = comanda.pet_id ?? null;
+        const comandaGuardianId = comanda.guardian_id ?? null;
+        const effectivePetIds = items.map((it) => it.pet_id ?? defaultPetId);
+        // Isolamento: valida todos os pets efetivos (após default) antes de qualquer escrita.
+        for (const petId of effectivePetIds) {
+            if (!(await (0, hubTenantAsserts_1.assertPetInClinic)(clinic_id, petId))) {
+                return res.status(400).json({ error: 'Pet inválido' });
+            }
+        }
+        if (comandaGuardianId) {
+            for (const petId of effectivePetIds) {
+                if (!petId)
+                    continue;
+                if (!(await (0, hubTenantAsserts_1.assertGuardianLinkedToPet)(petId, comandaGuardianId))) {
+                    return res.status(400).json({ error: 'Tutor inválido' });
+                }
+            }
+        }
         const { data: maxSortRow } = await supabase_1.supabaseAdmin
             .from('hub_comanda_items')
             .select('sort_order')
@@ -3982,7 +5650,53 @@ const postHubComandaAddItems = async (req, res) => {
             .limit(1)
             .maybeSingle();
         let sortBase = Number(maxSortRow?.sort_order ?? -1) + 1;
-        const defaultPetId = comanda.pet_id ?? null;
+        const productItemIds = [
+            ...new Set(items
+                .filter((it) => it.item_kind === 'product' && it.hub_inventory_item_id)
+                .map((it) => it.hub_inventory_item_id)),
+        ];
+        if (productItemIds.length > 0) {
+            const { data: invRows, error: invErr } = await supabase_1.supabaseAdmin
+                .from('hub_inventory_items')
+                .select('id, name, sale_amount, max_sale_discount_pct, allow_price_override_on_sale')
+                .eq('clinic_id', clinic_id)
+                .in('id', productItemIds)
+                .is('deleted_at', null);
+            if (invErr)
+                return res.status(500).json({ error: invErr.message });
+            const invById = new Map((invRows ?? []).map((r) => [r.id, r]));
+            for (const it of items) {
+                if (it.item_kind !== 'product')
+                    continue;
+                if (!it.hub_inventory_item_id) {
+                    return res.status(400).json({ error: 'Produto exige hub_inventory_item_id' });
+                }
+                if (!it.hub_inventory_lot_id) {
+                    return res.status(400).json({ error: `Produto "${it.description}" exige lote` });
+                }
+                const inv = invById.get(it.hub_inventory_item_id);
+                if (!inv) {
+                    return res.status(400).json({ error: `Produto não encontrado: ${it.description}` });
+                }
+                const priced = (0, productSalePriceRules_1.validateProductSalePricing)({
+                    item: inv,
+                    quantity: it.quantity,
+                    unit_amount: it.unit_amount,
+                    discount_amount: it.discount_amount,
+                });
+                if (!priced.ok)
+                    return res.status(400).json({ error: priced.error });
+                const stockErr = await (0, hubInventoryStockUtils_1.validateLotStockForOut)(clinic_id, it.hub_inventory_item_id, it.hub_inventory_lot_id, it.quantity);
+                if (stockErr) {
+                    return res.status(400).json({
+                        error: `${stockErr} (produto: ${it.description})`,
+                    });
+                }
+            }
+        }
+        const sellerStaffId = items.some((it) => it.item_kind === 'product') && userId
+            ? await (0, hubStaffResolve_1.resolveStaffIdForUser)(clinic_id, userId)
+            : null;
         const insertRows = items.map((it) => ({
             clinic_id,
             comanda_id: comandaId,
@@ -3999,6 +5713,7 @@ const postHubComandaAddItems = async (req, res) => {
             origin_type: 'manual',
             origin_id: null,
             sort_order: sortBase++,
+            ...(it.item_kind === 'product' && sellerStaffId ? { sold_by_staff_id: sellerStaffId } : {}),
         }));
         const { error: insErr } = await supabase_1.supabaseAdmin.from('hub_comanda_items').insert(insertRows);
         if (insErr)
@@ -4047,6 +5762,7 @@ const patchComandaItemBodySchema = zod_1.z
     quantity: zod_1.z.number().positive().optional(),
     unit_amount: zod_1.z.number().min(0).optional(),
     discount_amount: zod_1.z.number().min(0).optional(),
+    hub_inventory_lot_id: uuidStr.optional().nullable(),
 })
     .strict();
 const patchHubComandaItem = async (req, res) => {
@@ -4071,7 +5787,7 @@ const patchHubComandaItem = async (req, res) => {
         }
         const { data: item, error: iErr } = await supabase_1.supabaseAdmin
             .from('hub_comanda_items')
-            .select('id, comanda_id, origin_type, description, item_kind, quantity, unit_amount, discount_amount, line_total')
+            .select('id, comanda_id, origin_type, description, item_kind, quantity, unit_amount, discount_amount, line_total, hub_inventory_item_id, hub_inventory_lot_id')
             .eq('id', itemId)
             .eq('comanda_id', comandaId)
             .maybeSingle();
@@ -4084,6 +5800,17 @@ const patchHubComandaItem = async (req, res) => {
         if (item.origin_type !== 'manual' && updates.description !== undefined) {
             return res.status(409).json({ error: 'Descrição só pode ser editada em itens adicionados manualmente' });
         }
+        if (updates.hub_inventory_lot_id !== undefined) {
+            if (item.origin_type !== 'manual') {
+                return res.status(409).json({ error: 'Lote só pode ser alterado em itens adicionados manualmente' });
+            }
+            if (String(item.item_kind) !== 'product' || !item.hub_inventory_item_id) {
+                return res.status(400).json({ error: 'Lote só se aplica a produtos de estoque' });
+            }
+            if (!updates.hub_inventory_lot_id) {
+                return res.status(400).json({ error: 'Produto exige lote' });
+            }
+        }
         const { data: invoicedLine } = await supabase_1.supabaseAdmin
             .from('hub_receivable_lines')
             .select('id')
@@ -4095,6 +5822,36 @@ const patchHubComandaItem = async (req, res) => {
         const qty = updates.quantity ?? Number(item.quantity ?? 1);
         const unit = updates.unit_amount ?? Number(item.unit_amount ?? 0);
         const disc = updates.discount_amount ?? Number(item.discount_amount ?? 0);
+        const nextLotId = updates.hub_inventory_lot_id !== undefined
+            ? updates.hub_inventory_lot_id
+            : (item.hub_inventory_lot_id ?? null);
+        if (String(item.item_kind) === 'product' && item.hub_inventory_item_id) {
+            const { data: inv, error: invErr } = await supabase_1.supabaseAdmin
+                .from('hub_inventory_items')
+                .select('id, name, sale_amount, max_sale_discount_pct, allow_price_override_on_sale')
+                .eq('id', item.hub_inventory_item_id)
+                .eq('clinic_id', clinic_id)
+                .is('deleted_at', null)
+                .maybeSingle();
+            if (invErr)
+                return res.status(500).json({ error: invErr.message });
+            if (!inv)
+                return res.status(400).json({ error: 'Produto de estoque não encontrado' });
+            const priced = (0, productSalePriceRules_1.validateProductSalePricing)({
+                item: inv,
+                quantity: qty,
+                unit_amount: unit,
+                discount_amount: disc,
+            });
+            if (!priced.ok)
+                return res.status(400).json({ error: priced.error });
+            if (!nextLotId) {
+                return res.status(400).json({ error: 'Produto exige lote' });
+            }
+            const stockErr = await (0, hubInventoryStockUtils_1.validateLotStockForOut)(clinic_id, item.hub_inventory_item_id, nextLotId, qty);
+            if (stockErr)
+                return res.status(400).json({ error: stockErr });
+        }
         const line_total = round2(qty * unit - disc);
         const { error: upErr } = await supabase_1.supabaseAdmin
             .from('hub_comanda_items')
@@ -4118,6 +5875,10 @@ const patchHubComandaItem = async (req, res) => {
             const before = Number(item.discount_amount ?? 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
             const after = updates.discount_amount.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
             changes.push(`desconto ${before} → ${after}`);
+        }
+        if (updates.hub_inventory_lot_id !== undefined &&
+            updates.hub_inventory_lot_id !== (item.hub_inventory_lot_id ?? null)) {
+            changes.push('lote alterado');
         }
         if (changes.length > 0) {
             void (0, comandaEvents_1.recordComandaEvent)({
@@ -4302,6 +6063,8 @@ const checkoutBulkBodySchema = zod_1.z
     /** Para receive_now: método e valor (aplicado a cada comanda proporcionalmente, ou por grupo). */
     payment_method: zod_1.z.string().optional().nullable(),
     cash_session_id: uuidStr.optional().nullable(),
+    /** Mapa opcional comanda_id|receivable_id → idempotency_key (uuid) por pagamento. */
+    idempotency_keys: zod_1.z.record(zod_1.z.string().uuid(), uuidStr).optional(),
 })
     .strict();
 const postHubComandaCheckoutBulk = async (req, res) => {
@@ -4310,8 +6073,11 @@ const postHubComandaCheckoutBulk = async (req, res) => {
         if (!parsed.success) {
             return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
         }
-        const { clinic_id, comanda_ids, action, due_date, payment_timing, payment_method, cash_session_id } = parsed.data;
+        const { clinic_id, comanda_ids, action, due_date, payment_timing, payment_method, cash_session_id, idempotency_keys: bulkIdempotencyKeys, } = parsed.data;
         const userId = req.user?.id ?? null;
+        if (action === 'leave_pending' && !due_date) {
+            return res.status(400).json({ error: 'due_date obrigatório para deixar pendente' });
+        }
         if (action === 'receive_now' && payment_method) {
             const clinicSettings = await (0, hubClinicSettingsController_1.getOrCreateHubClinicSettings)(clinic_id);
             try {
@@ -4338,7 +6104,56 @@ const postHubComandaCheckoutBulk = async (req, res) => {
         }
         const notOpen = (comandas ?? []).filter((c) => String(c.status) !== 'aberta');
         if (notOpen.length > 0) {
-            return res.status(409).json({ error: `Comanda(s) não abertas: ${notOpen.map((c) => c.id).join(', ')}` });
+            const detail = notOpen
+                .map((c) => {
+                const st = String(c.status ?? 'desconhecido');
+                const label = st === 'fechada'
+                    ? 'fechada (já quitada ou encerrada)'
+                    : st === 'cancelada'
+                        ? 'cancelada'
+                        : st;
+                return `${c.id} (${label})`;
+            })
+                .join(', ');
+            return res.status(409).json({
+                error: `Comanda(s) não elegíveis para este lote — remova-as e tente de novo: ${detail}`,
+            });
+        }
+        // leave_pending: caminho único (recebível + linhas + finance_handoff_at)
+        if (action === 'leave_pending') {
+            const results = [];
+            for (const comanda of comandas ?? []) {
+                const row = await leavePendingHandoffComanda(comanda.id, clinic_id, {
+                    dueDate: due_date,
+                    userId,
+                });
+                if (row.skipped && (!row.error || (0, comandaFinanceHandoff_1.isSkippableLeavePendingHandoffError)(row.error))) {
+                    results.push({
+                        comanda_id: row.comanda_id,
+                        receivable_ids: row.receivable_ids,
+                        error: row.error,
+                        ...(row.code ? { code: row.code } : {}),
+                    });
+                    continue;
+                }
+                results.push({
+                    comanda_id: row.comanda_id,
+                    receivable_ids: row.receivable_ids,
+                    error: row.error,
+                    ...(row.code ? { code: row.code } : {}),
+                });
+            }
+            const meta = (0, auditLog_1.extractRequestMetadata)(req);
+            void (0, auditLog_1.createAuditLog)({
+                user_id: userId ?? '',
+                clinic_id,
+                action: 'comanda_checkout_bulk',
+                entity_type: 'hub_comandas',
+                new_values: { comanda_ids, action, results },
+                ...meta,
+            });
+            const hasErrors = results.some((r) => r.error && !(0, comandaFinanceHandoff_1.isSkippableLeavePendingHandoffError)(r.error));
+            return res.status(hasErrors ? 207 : 201).json({ results, partial_errors: hasErrors });
         }
         // Processa cada comanda individualmente reaproveitando o checkout existente
         const results = [];
@@ -4366,30 +6181,12 @@ const postHubComandaCheckoutBulk = async (req, res) => {
                         },
                     ];
                 }
-                // Chamada interna ao core do checkout (reutiliza a lógica existente via supabase direto)
-                // Para simplificar, usa o endpoint internamente construindo um fake request/response
-                // Na prática: chamamos a lógica diretamente replicando o essencial do postHubComandaCheckout
-                let detail = await getHubComandaDetailPayload(comandaId, clinic_id);
-                if (action === 'leave_pending') {
-                    detail = await maybeSyncEmptyComandaForHandoff(comandaId, clinic_id, detail, userId);
-                }
+                // receive_now / cancel — leave_pending já foi tratado acima
+                const detail = await getHubComandaDetailPayload(comandaId, clinic_id);
                 const items = detail.items.filter((it) => detail.open_item_ids.includes(it.id));
                 const unitId = detail.comanda.unit_id;
                 if (items.length === 0) {
-                    if (action === 'leave_pending' && (0, comandaFinanceHandoff_1.canHandoffExistingReceivables)(detail)) {
-                        try {
-                            const receivableIds = await applyFinanceHandoffOnly(comandaId, clinic_id, detail, due_date ?? null);
-                            results.push({ comanda_id: comandaId, receivable_ids: receivableIds });
-                        }
-                        catch (handoffErr) {
-                            results.push({
-                                comanda_id: comandaId,
-                                receivable_ids: [],
-                                error: handoffErr.message ?? 'Erro ao enviar ao financeiro',
-                            });
-                        }
-                    }
-                    else if (action === 'receive_now') {
+                    if (action === 'receive_now') {
                         const bal = Number(detail.balance_due ?? 0);
                         const activeRecIds = detail.active_receivable_ids ?? [];
                         if (bal <= 0.02) {
@@ -4403,46 +6200,81 @@ const postHubComandaCheckoutBulk = async (req, res) => {
                             for (const rid of activeRecIds) {
                                 const { data: rec } = await supabase_1.supabaseAdmin
                                     .from('hub_receivables')
-                                    .select('id, status, final_amount, unit_id')
+                                    .select('id, status, final_amount, unit_id, guardian_id, comanda_id')
                                     .eq('id', rid)
                                     .maybeSingle();
                                 if (!rec || rec.status === 'cancelled' || rec.status === 'paid')
                                     continue;
-                                const { data: pays } = await supabase_1.supabaseAdmin.from('hub_payments').select('amount').eq('receivable_id', rid);
+                                const { data: pays } = await supabase_1.supabaseAdmin
+                                    .from('hub_payments')
+                                    .select('amount')
+                                    .eq('receivable_id', rid)
+                                    .eq('status', 'posted');
                                 const paidSoFar = round2((pays ?? []).reduce((a, row) => a + Number(row.amount ?? 0), 0));
                                 const due = round2(Math.max(0, Number(rec.final_amount ?? 0) - paidSoFar));
                                 if (due <= 0.009)
                                     continue;
-                                let validatedCashSessionId = null;
-                                if (payment_method === 'cash') {
-                                    if (!cash_session_id) {
-                                        payError = 'Abra o caixa para receber em dinheiro.';
-                                        break;
-                                    }
-                                    validatedCashSessionId = cash_session_id;
-                                }
-                                else {
-                                    validatedCashSessionId = await (0, hubFinancialController_1.resolvePaymentCashSessionId)(clinic_id, rec.unit_id ?? null, unitId);
-                                }
-                                const { error: payInsErr } = await supabase_1.supabaseAdmin.from('hub_payments').insert({
-                                    clinic_id,
-                                    receivable_id: rid,
-                                    cash_session_id: validatedCashSessionId,
-                                    amount: due,
-                                    payment_method,
-                                    installments: 1,
-                                    payment_date: new Date().toISOString(),
-                                    notes: null,
-                                    created_by_user_id: userId,
-                                    payment_timing,
+                                const { insertPostedPaymentWithIdempotency, validatePaymentCashSession, recalculateReceivableFromPosted } = await Promise.resolve().then(() => __importStar(require('./hubFinanceLedger.js')));
+                                const cashCheck = await validatePaymentCashSession({
+                                    clinicId: clinic_id,
+                                    paymentMethod: payment_method,
+                                    cashSessionId: cash_session_id ?? null,
+                                    receivableUnitId: rec.unit_id ?? null,
                                 });
-                                if (payInsErr) {
-                                    payError = payInsErr.message;
+                                if (!cashCheck.ok) {
+                                    payError = cashCheck.error;
                                     break;
                                 }
-                                await supabase_1.supabaseAdmin.from('hub_receivables').update({ status: 'paid' }).eq('id', rid);
+                                const validatedCashSessionId = cashCheck.cash_session_id;
+                                if (payment_method === 'customer_credit') {
+                                    const creditGuardianId = rec.guardian_id ??
+                                        detail.comanda.guardian_id;
+                                    if (!creditGuardianId) {
+                                        payError = 'Comanda sem tutor — não é possível pagar com crédito.';
+                                        break;
+                                    }
+                                    try {
+                                        await (0, hubCustomerCredit_1.consumeHubCustomerCredit)({
+                                            clinicId: clinic_id,
+                                            guardianId: creditGuardianId,
+                                            amount: due,
+                                            reason: 'Pagamento com crédito do tutor (checkout em lote)',
+                                            comandaId,
+                                            receivableId: rid,
+                                            createdByUserId: userId,
+                                        });
+                                    }
+                                    catch (e) {
+                                        payError =
+                                            e instanceof hubCustomerCredit_1.CustomerCreditError
+                                                ? e.message
+                                                : e.message ?? 'Erro ao debitar crédito do tutor';
+                                        break;
+                                    }
+                                }
+                                const lineKey = bulkIdempotencyKeys?.[rid] ?? bulkIdempotencyKeys?.[comandaId] ?? null;
+                                const inserted = await insertPostedPaymentWithIdempotency({
+                                    clinicId: clinic_id,
+                                    receivableId: rid,
+                                    cashSessionId: validatedCashSessionId,
+                                    amount: due,
+                                    paymentMethod: payment_method,
+                                    installments: 1,
+                                    paymentDate: new Date().toISOString(),
+                                    notes: null,
+                                    createdByUserId: userId,
+                                    paymentTiming: payment_timing,
+                                    idempotencyKey: lineKey,
+                                });
+                                if (!inserted.ok) {
+                                    payError = inserted.error;
+                                    break;
+                                }
+                                const nextStatus = await recalculateReceivableFromPosted(rid);
                                 paidIds.push(rid);
-                                void (0, appointmentPaidFromBilling_1.markHubAppointmentPaidFromReceivable)({ clinicId: clinic_id, receivableId: rid });
+                                if (nextStatus === 'paid') {
+                                    void (0, appointmentPaidFromBilling_1.markHubAppointmentPaidFromReceivable)({ clinicId: clinic_id, receivableId: rid });
+                                }
                             }
                             if (payError) {
                                 results.push({ comanda_id: comandaId, receivable_ids: paidIds, error: payError });
@@ -4471,13 +6303,21 @@ const postHubComandaCheckoutBulk = async (req, res) => {
                         results.push({
                             comanda_id: comandaId,
                             receivable_ids: [],
-                            error: action === 'leave_pending' ? 'Não há itens em aberto para enviar ao financeiro' : undefined,
                         });
                     }
                     continue;
                 }
                 const guardianId = detail.comanda.guardian_id;
                 const subtotal = round2(items.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
+                const bulkExecutorCheck = await (0, hubCommissionAccrual_1.assertServiceLinesHaveExecutor)(clinic_id, items);
+                if (!bulkExecutorCheck.ok) {
+                    results.push({
+                        comanda_id: comandaId,
+                        receivable_ids: [],
+                        error: bulkExecutorCheck.message,
+                    });
+                    continue;
+                }
                 const manualSourceId = (0, node_crypto_1.randomUUID)();
                 const { data: rec, error: rErr } = await supabase_1.supabaseAdmin
                     .from('hub_receivables')
@@ -4490,8 +6330,10 @@ const postHubComandaCheckoutBulk = async (req, res) => {
                     comanda_id: comandaId,
                     original_amount: subtotal,
                     final_amount: subtotal,
+                    net_amount_at_sale: subtotal,
+                    returned_amount: 0,
                     status: 'pending',
-                    due_date: action === 'leave_pending' ? due_date : null,
+                    due_date: null,
                     notes: null,
                 })
                     .select('id')
@@ -4501,21 +6343,40 @@ const postHubComandaCheckoutBulk = async (req, res) => {
                     continue;
                 }
                 const receivableId = rec.id;
-                const { error: linesErr } = await supabase_1.supabaseAdmin.from('hub_receivable_lines').insert(items.map((it, sort) => ({
-                    clinic_id,
-                    receivable_id: receivableId,
-                    comanda_id: comandaId,
-                    comanda_item_id: it.id,
-                    pet_id: it.pet_id ?? null,
-                    line_kind: 'service',
-                    source_line_id: it.origin_id ?? null,
-                    hub_service_type_id: it.hub_service_type_id ?? null,
-                    description: String(it.description),
-                    quantity: Number(it.quantity ?? 1),
-                    unit_sale_amount: Number(it.unit_amount ?? 0),
-                    line_total: Number(it.line_total ?? 0),
-                    sort_order: sort,
-                })));
+                const batchCostByItem = await loadInventoryCostByItemId(clinic_id, items);
+                const commissionByItem = await (0, hubCommissionAccrual_1.buildCommissionInsertFieldsForItems)({
+                    clinicId: clinic_id,
+                    items: items,
+                    originalAmount: subtotal,
+                    netAmountAtSale: subtotal,
+                    actingUserId: userId,
+                    allowActingUserAsSaleAuthor: false,
+                });
+                const { error: linesErr } = await supabase_1.supabaseAdmin.from('hub_receivable_lines').insert(items.map((it, sort) => {
+                    const lineKind = String(it.item_kind ?? '') === 'product'
+                        ? 'product'
+                        : mapItemToReceivableLineKind(it.origin_type ?? null);
+                    const snap = commissionByItem.get(String(it.id));
+                    return {
+                        clinic_id,
+                        receivable_id: receivableId,
+                        comanda_id: comandaId,
+                        comanda_item_id: it.id,
+                        pet_id: it.pet_id ?? null,
+                        line_kind: lineKind,
+                        source_line_id: it.origin_id ?? null,
+                        hub_service_type_id: it.hub_service_type_id ?? null,
+                        hub_inventory_item_id: it.hub_inventory_item_id ?? null,
+                        hub_inventory_lot_id: it.hub_inventory_lot_id ?? null,
+                        description: String(it.description),
+                        quantity: Number(it.quantity ?? 1),
+                        unit_sale_amount: Number(it.unit_amount ?? 0),
+                        unit_cost_amount: productUnitCostSnapshot(batchCostByItem, it),
+                        line_total: Number(it.line_total ?? 0),
+                        sort_order: sort,
+                        ...(0, hubCommissionAccrual_1.snapshotToInsertFields)(snap),
+                    };
+                }));
                 if (linesErr) {
                     await supabase_1.supabaseAdmin.from('hub_receivables').delete().eq('id', receivableId);
                     results.push({
@@ -4526,46 +6387,81 @@ const postHubComandaCheckoutBulk = async (req, res) => {
                     continue;
                 }
                 if (action === 'receive_now' && payment_method) {
-                    let validatedCashSessionId = null;
-                    if (payment_method === 'cash') {
-                        if (!cash_session_id) {
+                    const { insertPostedPaymentWithIdempotency, validatePaymentCashSession, recalculateReceivableFromPosted } = await Promise.resolve().then(() => __importStar(require('./hubFinanceLedger.js')));
+                    const cashCheck = await validatePaymentCashSession({
+                        clinicId: clinic_id,
+                        paymentMethod: payment_method,
+                        cashSessionId: cash_session_id ?? null,
+                        receivableUnitId: unitId,
+                    });
+                    if (!cashCheck.ok) {
+                        await supabase_1.supabaseAdmin.from('hub_receivable_lines').delete().eq('receivable_id', receivableId);
+                        await supabase_1.supabaseAdmin.from('hub_receivables').delete().eq('id', receivableId);
+                        results.push({ comanda_id: comandaId, receivable_ids: [], error: cashCheck.error });
+                        continue;
+                    }
+                    const validatedCashSessionId = cashCheck.cash_session_id;
+                    if (payment_method === 'customer_credit') {
+                        if (!guardianId) {
                             await supabase_1.supabaseAdmin.from('hub_receivable_lines').delete().eq('receivable_id', receivableId);
                             await supabase_1.supabaseAdmin.from('hub_receivables').delete().eq('id', receivableId);
-                            results.push({ comanda_id: comandaId, receivable_ids: [], error: 'Abra o caixa para receber em dinheiro.' });
+                            results.push({
+                                comanda_id: comandaId,
+                                receivable_ids: [],
+                                error: 'Comanda sem tutor — não é possível pagar com crédito.',
+                            });
                             continue;
                         }
-                        validatedCashSessionId = cash_session_id;
+                        try {
+                            await (0, hubCustomerCredit_1.consumeHubCustomerCredit)({
+                                clinicId: clinic_id,
+                                guardianId,
+                                amount: round2(subtotal),
+                                reason: 'Pagamento com crédito do tutor (checkout em lote)',
+                                comandaId,
+                                receivableId,
+                                createdByUserId: userId,
+                            });
+                        }
+                        catch (e) {
+                            await supabase_1.supabaseAdmin.from('hub_receivable_lines').delete().eq('receivable_id', receivableId);
+                            await supabase_1.supabaseAdmin.from('hub_receivables').delete().eq('id', receivableId);
+                            results.push({
+                                comanda_id: comandaId,
+                                receivable_ids: [],
+                                error: e instanceof hubCustomerCredit_1.CustomerCreditError
+                                    ? e.message
+                                    : e.message ?? 'Erro ao debitar crédito do tutor',
+                            });
+                            continue;
+                        }
                     }
-                    else {
-                        validatedCashSessionId = await (0, hubFinancialController_1.resolvePaymentCashSessionId)(clinic_id, unitId, unitId);
-                    }
-                    await supabase_1.supabaseAdmin.from('hub_payments').insert({
-                        clinic_id,
-                        receivable_id: receivableId,
-                        cash_session_id: validatedCashSessionId,
+                    const lineKey = bulkIdempotencyKeys?.[comandaId] ?? null;
+                    const inserted = await insertPostedPaymentWithIdempotency({
+                        clinicId: clinic_id,
+                        receivableId,
+                        cashSessionId: validatedCashSessionId,
                         amount: round2(subtotal),
-                        payment_method,
+                        paymentMethod: payment_method,
                         installments: 1,
-                        payment_date: new Date().toISOString(),
+                        paymentDate: new Date().toISOString(),
                         notes: null,
-                        created_by_user_id: userId,
-                        payment_timing,
+                        createdByUserId: userId,
+                        paymentTiming: payment_timing,
+                        idempotencyKey: lineKey,
                     });
-                    await supabase_1.supabaseAdmin.from('hub_receivables').update({ status: 'paid' }).eq('id', receivableId);
-                    void (0, appointmentPaidFromBilling_1.markHubAppointmentPaidFromReceivable)({ clinicId: clinic_id, receivableId });
+                    if (!inserted.ok) {
+                        await supabase_1.supabaseAdmin.from('hub_receivable_lines').delete().eq('receivable_id', receivableId);
+                        await supabase_1.supabaseAdmin.from('hub_receivables').delete().eq('id', receivableId);
+                        results.push({ comanda_id: comandaId, receivable_ids: [], error: inserted.error });
+                        continue;
+                    }
+                    const nextStatus = await recalculateReceivableFromPosted(receivableId);
+                    if (nextStatus === 'paid') {
+                        void (0, appointmentPaidFromBilling_1.markHubAppointmentPaidFromReceivable)({ clinicId: clinic_id, receivableId });
+                    }
                 }
-                if (action === 'leave_pending') {
-                    await supabase_1.supabaseAdmin
-                        .from('hub_comandas')
-                        .update({ finance_handoff_at: new Date().toISOString() })
-                        .eq('id', comandaId)
-                        .eq('clinic_id', clinic_id);
-                    // leave_pending mantém saldo em aberto — auto-close seria no-op após outro
-                    // getHubComandaDetailPayload completo (custo alto em lote).
-                }
-                else {
-                    await tryAutoCloseComanda(comandaId, clinic_id);
-                }
+                await tryAutoCloseComanda(comandaId, clinic_id);
                 results.push({ comanda_id: comandaId, receivable_ids: [receivableId] });
             }
             catch (itemErr) {
@@ -4623,7 +6519,7 @@ const patchHubComanda = async (req, res) => {
         }
         const { data: comanda, error: cErr } = await supabase_1.supabaseAdmin
             .from('hub_comandas')
-            .select('id, status, clinic_id, finance_handoff_at')
+            .select('id, status, clinic_id, finance_handoff_at, origin_type, discount_amount')
             .eq('id', comandaId)
             .eq('clinic_id', clinic_id)
             .is('deleted_at', null)
@@ -4662,6 +6558,7 @@ const patchHubComanda = async (req, res) => {
                 return res.status(400).json({ error: 'Tutor não permitido para os pets desta comanda' });
             }
         }
+        const previousDiscount = Number(comanda.discount_amount ?? 0);
         const patch = {};
         if (discount_amount !== undefined)
             patch.discount_amount = discount_amount;
@@ -4684,6 +6581,16 @@ const patchHubComanda = async (req, res) => {
         }
         if (discount_amount !== undefined) {
             await recomputeComandaTotals(comandaId, clinic_id);
+            const sync = await syncSeriesInvoiceTotalsAfterDiscount(comandaId, clinic_id);
+            if (!sync.ok) {
+                await supabase_1.supabaseAdmin
+                    .from('hub_comandas')
+                    .update({ discount_amount: previousDiscount })
+                    .eq('id', comandaId)
+                    .eq('clinic_id', clinic_id);
+                await recomputeComandaTotals(comandaId, clinic_id);
+                return res.status(409).json({ error: sync.error });
+            }
         }
         const detail = await getHubComandaDetailPayload(comandaId, clinic_id);
         return res.json(detail);

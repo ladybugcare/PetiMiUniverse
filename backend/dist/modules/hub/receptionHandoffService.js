@@ -45,8 +45,53 @@ exports.handoffInDay = handoffInDay;
 const supabase_1 = require("../../config/supabase");
 const pickupArrival_1 = require("./pickupArrival");
 const receptionCustody_1 = require("./receptionCustody");
+const pickupLegDirection_1 = require("./pickupLegDirection");
 const CLINICAL_GROUPS = new Set(['clinica', 'internacao', 'cirurgia']);
 const GROOMING_GROUP = 'banho_tosa';
+function buildCustodyLegs(appointments, stopByAppt, driverByRoute) {
+    const pickupLegs = appointments.filter((a) => a.appointment_kind === 'pickup_route' && a.parent_appointment_id && a.status !== 'cancelled');
+    const siblingStartsByParent = new Map();
+    for (const a of pickupLegs) {
+        const parentId = a.parent_appointment_id;
+        const list = siblingStartsByParent.get(parentId) ?? [];
+        if (a.starts_at)
+            list.push(a.starts_at);
+        siblingStartsByParent.set(parentId, list);
+    }
+    const parentStartsById = new Map();
+    for (const a of appointments) {
+        if (a.appointment_kind === 'pickup_route')
+            continue;
+        parentStartsById.set(a.id, a.starts_at);
+    }
+    return appointments
+        .filter((a) => a.appointment_kind === 'pickup_route' && a.parent_appointment_id)
+        .map((a) => {
+        const stop = stopByAppt.get(a.id);
+        const routeId = stop?.hub_pickup_route_id ?? null;
+        const parentId = a.parent_appointment_id;
+        const explicit = stop?.direction ?? null;
+        const direction = (0, pickupLegDirection_1.inferPickupLegDirection)({
+            explicitDirection: explicit,
+            legStartsAt: a.starts_at,
+            siblingLegStartsAts: siblingStartsByParent.get(parentId) ?? [],
+            parentStartsAt: parentStartsById.get(parentId) ?? null,
+        });
+        return {
+            parent_appointment_id: a.parent_appointment_id,
+            appointment_status: a.status,
+            direction,
+            stop_status: stop?.status ?? null,
+            route_id: routeId,
+            driver_id: routeId ? driverByRoute.get(routeId) ?? null : null,
+            boarded_at: stop?.boarded_at ?? null,
+            boarded_by_staff_id: stop?.boarded_by_staff_id ?? null,
+            boarded_source: boardingSourceOf(stop),
+            boarded_late: Boolean(stop?.boarded_late),
+            failure_outcome: failureOutcomeOf(stop),
+        };
+    });
+}
 /** Pet já tem destino operacional no dia (não só leva e traz / perna de rota). */
 function petHasDestinationService(appointments, typeById) {
     for (const a of appointments) {
@@ -64,7 +109,32 @@ function petHasDestinationService(appointments, typeById) {
     }
     return false;
 }
-const STOP_COLUMNS = 'id, hub_appointment_id, direction, status, hub_pickup_route_id, completed_at, failure_outcome, failure_resolution, failure_reason, failed_at, return_stop_id';
+const STOP_COLUMNS = 'id, hub_appointment_id, direction, status, hub_pickup_route_id, completed_at, boarded_at, boarded_by_staff_id, boarded_source, boarded_late, failure_outcome, failure_resolution, failure_reason, failed_at, return_stop_id';
+function boardingSourceOf(stop) {
+    const src = stop?.boarded_source;
+    return src === 'driver' || src === 'reception' ? src : null;
+}
+/** Fecha handoff `embarque` órfão quando a parada já tem boarded_* (recuperação). */
+async function recoverBoardedEmbarqueHandoffs(clinicId, petId, legs) {
+    const boarded = legs.filter((l) => l.direction === 'delivery' && l.boarded_at);
+    if (boarded.length === 0)
+        return;
+    const { ensureEmbarqueHandoffResolvedForBoardedStop } = await Promise.resolve().then(() => __importStar(require('./pickupDeliveryBoarding')));
+    for (const leg of boarded) {
+        try {
+            await ensureEmbarqueHandoffResolvedForBoardedStop({
+                clinicId,
+                petId,
+                parentAppointmentId: leg.parent_appointment_id,
+                boardedSource: leg.boarded_source === 'driver' ? 'driver' : 'reception',
+                boardedByStaffId: leg.boarded_by_staff_id ?? null,
+            });
+        }
+        catch (e) {
+            console.error('[receptionHandoff] recover boarded embarque', e);
+        }
+    }
+}
 /** Situação dos retornos à clínica ligados a falhas pendentes. */
 async function loadReturnStops(clinicId, stops) {
     const ids = [
@@ -196,6 +266,7 @@ async function persistReconcile(clinicId, reconciled) {
 async function syncReceptionHandoffsForPet(clinicId, petId, dayYmd) {
     const day = dayYmd || (0, receptionCustody_1.todayYmdSaoPaulo)();
     const snap = await loadSnapshot(clinicId, petId, day);
+    await recoverBoardedEmbarqueHandoffs(clinicId, petId, snap.legs);
     const plan = (0, receptionCustody_1.planCustody)(snap);
     await applyCustodySideEffects(clinicId, plan);
     const existing = await loadStored(clinicId, petId);
@@ -225,7 +296,7 @@ async function loadStored(clinicId, petId) {
 async function loadSnapshot(clinicId, petId, dayYmd) {
     const { data: apptRows, error: apptErr } = await supabase_1.supabaseAdmin
         .from('hub_appointments')
-        .select('id, unit_id, guardian_id, pet_id, status, appointment_kind, starts_at, parent_appointment_id, hub_service_type_id')
+        .select('id, unit_id, guardian_id, pet_id, status, appointment_kind, starts_at, ends_at, parent_appointment_id, visit_group_id, hub_service_type_id')
         .eq('clinic_id', clinicId)
         .eq('pet_id', petId)
         .is('deleted_at', null);
@@ -302,16 +373,17 @@ async function loadSnapshot(clinicId, petId, dayYmd) {
         throw new Error(encErr.message);
     const { data: hosps, error: hErr } = await supabase_1.supabaseAdmin
         .from('hub_hospitalizations')
-        .select('id, guardian_id, hub_appointment_id, status, discharged_at')
+        .select('id, unit_id, guardian_id, hub_appointment_id, status, discharged_at')
         .eq('clinic_id', clinicId)
         .eq('pet_id', petId);
     if (hErr)
         throw new Error(hErr.message);
     const { data: surgeries, error: surErr } = await supabase_1.supabaseAdmin
         .from('hub_surgeries')
-        .select('id, status')
+        .select('id, status, deleted_at, discharge_at, unit_id, guardian_id, hub_appointment_id')
         .eq('clinic_id', clinicId)
-        .eq('pet_id', petId);
+        .eq('pet_id', petId)
+        .is('deleted_at', null);
     if (surErr)
         throw new Error(surErr.message);
     const { data: boarding, error: bErr } = await supabase_1.supabaseAdmin
@@ -352,22 +424,7 @@ async function loadSnapshot(clinicId, petId, dayYmd) {
         if (apptId)
             stopByAppt.set(apptId, stop);
     }
-    const legs = appointments
-        .filter((a) => a.appointment_kind === 'pickup_route' && a.parent_appointment_id)
-        .map((a) => {
-        const stop = stopByAppt.get(a.id);
-        const routeId = stop?.hub_pickup_route_id ?? null;
-        const direction = stop?.direction ?? null;
-        return {
-            parent_appointment_id: a.parent_appointment_id,
-            appointment_status: a.status,
-            direction,
-            stop_status: stop?.status ?? null,
-            route_id: routeId,
-            driver_id: routeId ? driverByRoute.get(routeId) ?? null : null,
-            failure_outcome: failureOutcomeOf(stop),
-        };
-    });
+    const legs = buildCustodyLegs(appointments, stopByAppt, driverByRoute);
     const nowIso = new Date().toISOString();
     const failedReturns = buildFailedReturns(appointments, stops, await loadReturnStops(clinicId, stops), nowIso);
     const unresolvedArrivals = [];
@@ -414,6 +471,7 @@ async function loadSnapshot(clinicId, petId, dayYmd) {
             service_group: a.hub_service_type_id ? typeById.get(a.hub_service_type_id)?.service_group ?? null : null,
             service_name: a.hub_service_type_id ? typeById.get(a.hub_service_type_id)?.name ?? null : null,
             parent_appointment_id: a.parent_appointment_id,
+            visit_group_id: a.visit_group_id ?? null,
         })),
         groomingSessions: (sessions ?? []).map((s) => ({
             id: s.id,
@@ -436,14 +494,23 @@ async function loadSnapshot(clinicId, petId, dayYmd) {
             const linked = appointments.find((a) => a.id === h.hub_appointment_id);
             return {
                 id: h.id,
-                unit_id: linked?.unit_id ?? null,
+                // Preferir unit_id da internação (sync em lote já fazia isso); appointment é fallback.
+                unit_id: h.unit_id ?? linked?.unit_id ?? null,
                 guardian_id: h.guardian_id ?? linked?.guardian_id ?? null,
                 hub_appointment_id: h.hub_appointment_id ?? null,
                 status: String(h.status),
                 discharged_at: h.discharged_at ?? null,
             };
         }),
-        surgeries: (surgeries ?? []).map((s) => ({ id: s.id, status: String(s.status) })),
+        surgeries: (surgeries ?? []).map((s) => ({
+            id: s.id,
+            status: String(s.status),
+            deleted_at: s.deleted_at ?? null,
+            discharge_at: s.discharge_at ?? null,
+            unit_id: s.unit_id ?? null,
+            guardian_id: s.guardian_id ?? null,
+            hub_appointment_id: s.hub_appointment_id ?? null,
+        })),
         boarding: (boarding ?? []).map((b) => ({
             id: b.id,
             unit_id: b.unit_id ?? null,
@@ -484,7 +551,7 @@ async function collectReceptionPetIds(clinicId, unitId, dayYmd) {
     const { dayBoundsFromYmdSaoPaulo } = await Promise.resolve().then(() => __importStar(require('./boardingOperational')));
     const { from, to } = dayBoundsFromYmdSaoPaulo(dayYmd);
     const ids = new Set();
-    const [appts, sessions, open, encounters, discharges, boardingOut] = await Promise.all([
+    const [appts, sessions, open, encounters, discharges, surgeryDischarges, boardingOut] = await Promise.all([
         supabase_1.supabaseAdmin
             .from('hub_appointments')
             .select('pet_id')
@@ -527,6 +594,15 @@ async function collectReceptionPetIds(clinicId, unitId, dayYmd) {
             .lte('discharged_at', to)
             .limit(100),
         supabase_1.supabaseAdmin
+            .from('hub_surgeries')
+            .select('pet_id')
+            .eq('clinic_id', clinicId)
+            .is('deleted_at', null)
+            .not('discharge_at', 'is', null)
+            .gte('discharge_at', from)
+            .lte('discharge_at', to)
+            .limit(100),
+        supabase_1.supabaseAdmin
             .from('hub_boarding_reservations')
             .select('pet_id')
             .eq('clinic_id', clinicId)
@@ -549,6 +625,9 @@ async function collectReceptionPetIds(clinicId, unitId, dayYmd) {
         if (row.pet_id)
             ids.add(row.pet_id);
     for (const row of discharges.data ?? [])
+        if (row.pet_id)
+            ids.add(row.pet_id);
+    for (const row of surgeryDischarges.data ?? [])
         if (row.pet_id)
             ids.add(row.pet_id);
     for (const row of boardingOut.data ?? [])
@@ -574,7 +653,7 @@ async function syncReceptionUnit(clinicId, unitId, dayYmd) {
     if (petIds.length === 0)
         return;
     const [apptRows, sessionRows, encounterRows, hospRows, surgeryRows, boardingRows, storedRows] = await Promise.all([
-        selectByPetIds('hub_appointments', clinicId, petIds, 'id, unit_id, guardian_id, pet_id, status, appointment_kind, starts_at, parent_appointment_id, hub_service_type_id', { activeOnly: true }),
+        selectByPetIds('hub_appointments', clinicId, petIds, 'id, unit_id, guardian_id, pet_id, status, appointment_kind, starts_at, ends_at, parent_appointment_id, visit_group_id, hub_service_type_id', { activeOnly: true }),
         selectByPetIds('hub_grooming_sessions', clinicId, petIds, 'id, pet_id, unit_id, guardian_id, hub_appointment_id, grooming_stage, ready_at', {
             activeOnly: true,
         }),
@@ -582,7 +661,7 @@ async function syncReceptionUnit(clinicId, unitId, dayYmd) {
             activeOnly: true,
         }),
         selectByPetIds('hub_hospitalizations', clinicId, petIds, 'id, pet_id, unit_id, guardian_id, hub_appointment_id, status, discharged_at'),
-        selectByPetIds('hub_surgeries', clinicId, petIds, 'id, pet_id, status'),
+        selectByPetIds('hub_surgeries', clinicId, petIds, 'id, pet_id, status, deleted_at, discharge_at, unit_id, guardian_id, hub_appointment_id', { activeOnly: true }),
         selectByPetIds('hub_boarding_reservations', clinicId, petIds, 'id, pet_id, unit_id, status, guardian_id, hub_appointment_id, mode, expected_check_out, handoff_ready_at', { activeOnly: true }),
         selectByPetIds('hub_reception_handoffs', clinicId, petIds, 'id, pet_id, kind, source_type, source_id, status, resolved_at, context'),
     ]);
@@ -711,21 +790,8 @@ async function syncReceptionUnit(clinicId, unitId, dayYmd) {
     const refreshRows = [];
     for (const petId of petIds) {
         const appointments = apptsByPet.get(petId) ?? [];
-        const legs = appointments
-            .filter((a) => a.appointment_kind === 'pickup_route' && a.parent_appointment_id)
-            .map((a) => {
-            const stop = stopByAppt.get(a.id);
-            const routeId = stop?.hub_pickup_route_id ?? null;
-            return {
-                parent_appointment_id: a.parent_appointment_id,
-                appointment_status: a.status,
-                direction: stop?.direction ?? null,
-                stop_status: stop?.status ?? null,
-                route_id: routeId,
-                driver_id: routeId ? driverByRoute.get(routeId) ?? null : null,
-                failure_outcome: failureOutcomeOf(stop),
-            };
-        });
+        const legs = buildCustodyLegs(appointments, stopByAppt, driverByRoute);
+        await recoverBoardedEmbarqueHandoffs(clinicId, petId, legs);
         const apptIdSet = new Set(appointments.map((a) => a.id));
         const failedReturns = buildFailedReturns(appointments, stopRows.filter((s) => apptIdSet.has(s.hub_appointment_id)), returnStops, nowIso);
         const unresolvedArrivals = [];
@@ -774,6 +840,7 @@ async function syncReceptionUnit(clinicId, unitId, dayYmd) {
                 service_group: a.hub_service_type_id ? typeById.get(a.hub_service_type_id)?.service_group ?? null : null,
                 service_name: a.hub_service_type_id ? typeById.get(a.hub_service_type_id)?.name ?? null : null,
                 parent_appointment_id: a.parent_appointment_id,
+                visit_group_id: a.visit_group_id ?? null,
             })),
             groomingSessions: (sessionsByPet.get(petId) ?? []).map((s) => ({
                 id: s.id,
@@ -803,7 +870,15 @@ async function syncReceptionUnit(clinicId, unitId, dayYmd) {
                     discharged_at: h.discharged_at,
                 };
             }),
-            surgeries: (surgeriesByPet.get(petId) ?? []).map((s) => ({ id: s.id, status: String(s.status) })),
+            surgeries: (surgeriesByPet.get(petId) ?? []).map((s) => ({
+                id: s.id,
+                status: String(s.status),
+                deleted_at: s.deleted_at ?? null,
+                discharge_at: s.discharge_at ?? null,
+                unit_id: s.unit_id ?? null,
+                guardian_id: s.guardian_id ?? null,
+                hub_appointment_id: s.hub_appointment_id ?? null,
+            })),
             boarding: (boardingByPet.get(petId) ?? []).map((b) => ({
                 id: b.id,
                 unit_id: b.unit_id,
@@ -851,6 +926,8 @@ const ACTION_BY_KIND = {
     autorizar_extra: ['autorizar', 'dispensar'],
     encaminhar: ['recebi'],
     lt_falha: ['tutor_busca', 'novo_lt'],
+    // Informativo: pet já no consultório — sem ação operacional na recepção.
+    no_consultorio: [],
 };
 async function resolveReceptionHandoff(opts) {
     const { data: row, error } = await supabase_1.supabaseAdmin
@@ -928,6 +1005,32 @@ async function applyResolution(clinicId, row, action, staffId, payload) {
         return;
     }
     if (action === 'entreguei' || action === 'embarquei') {
+        if (action === 'embarquei') {
+            const { confirmDeliveryBoarding, findDeliveryStopForParentAppointment } = await Promise.resolve().then(() => __importStar(require('./pickupDeliveryBoarding')));
+            let parentAppointmentId = (typeof ctx.appointment_id === 'string' && ctx.appointment_id) || null;
+            if (!parentAppointmentId && row.source_type === 'boarding_reservation') {
+                const { loadReservation } = await Promise.resolve().then(() => __importStar(require('./boardingCareService')));
+                const reservation = await loadReservation(clinicId, row.source_id);
+                parentAppointmentId = reservation?.hub_appointment_id ?? null;
+            }
+            if (parentAppointmentId) {
+                const stopId = await findDeliveryStopForParentAppointment(clinicId, parentAppointmentId);
+                if (stopId) {
+                    const boarded = await confirmDeliveryBoarding({
+                        clinicId,
+                        stopId,
+                        staffId,
+                        source: 'reception',
+                    });
+                    if (!boarded.ok && boarded.code === 'BLOCKED') {
+                        throw new Error(boarded.error);
+                    }
+                    if (!boarded.ok && boarded.code !== 'NOT_DELIVERY' && boarded.code !== 'NOT_FOUND') {
+                        throw new Error(boarded.error);
+                    }
+                }
+            }
+        }
         if (row.source_type === 'boarding_reservation') {
             const { completeBoardingReservationCheckout, loadReservation, loadUnitSettings, petHasOpenBoardingCharge } = await Promise.resolve().then(() => __importStar(require('./boardingCareService')));
             const reservation = await loadReservation(clinicId, row.source_id);
@@ -939,7 +1042,11 @@ async function applyResolution(clinicId, row, action, staffId, payload) {
                         throw new Error('Há cobrança em aberto no Caixa. Quite a comanda antes de confirmar a saída.');
                     }
                 }
-                await completeBoardingReservationCheckout({ clinicId, reservationId: row.source_id });
+                // Embarque: checkout do hotel só após entrega ao tutor (boarded ≠ delivered).
+                // Retirada no balcão: fecha agora.
+                if (action === 'entreguei') {
+                    await completeBoardingReservationCheckout({ clinicId, reservationId: row.source_id });
+                }
             }
         }
         if (row.pet_id) {

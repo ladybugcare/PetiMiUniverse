@@ -27,6 +27,10 @@ import {
   resolveCareLocation,
 } from './hubCareLocation';
 import { setLinkedAppointmentStatus } from './hubClinicalAppointmentMirror';
+import {
+  findOpenClinicalPresenceForPet,
+  openClinicalPresenceConflictPayload,
+} from './hubClinicalOpenPresence';
 
 /** Grava um snapshot versionado do documento clínico em hub_clinical_document_versions. */
 async function saveEncounterSnapshot(opts: {
@@ -184,6 +188,8 @@ const createEncounterSchema = z
     new_case_title: z.string().trim().max(500).optional().nullable(),
     reopen_reason: z.string().trim().min(8).max(1000).optional().nullable(),
     encounter_type: encounterTypeSchema.optional().default('consultation'),
+    /** Confirmação explícita para abrir segundo atendimento/encaixe do mesmo pet. */
+    allow_duplicate_open: z.boolean().optional(),
     ...careLocationBodyFields,
   })
   .strict()
@@ -202,6 +208,8 @@ const checkInClinicalWalkInSchema = z
     hub_service_type_id: uuidStr,
     chief_complaint: z.string().trim().max(4000).optional().nullable(),
     encounter_type: z.enum(['consultation', 'emergency']).optional().default('consultation'),
+    /** Confirmação explícita para segundo encaixe do mesmo pet. */
+    allow_duplicate_open: z.boolean().optional(),
     ...careLocationBodyFields,
   })
   .strict()
@@ -1112,6 +1120,15 @@ export const checkInHubClinicalWalkIn = async (req: Request, res: Response) => {
           return res.status(400).json({ error: 'O tutor informado não está vinculado a este pet' });
         }
       }
+      if (b.allow_duplicate_open !== true) {
+        const open = await findOpenClinicalPresenceForPet({
+          clinicId: b.clinic_id,
+          petId: b.pet_id,
+        });
+        if (open) {
+          return res.status(409).json(openClinicalPresenceConflictPayload(open));
+        }
+      }
     }
 
     const careKind = b.care_location_kind ?? 'own_unit';
@@ -1205,6 +1222,17 @@ export const createHubEncounter = async (req: Request, res: Response) => {
         }
         if (!(await guardianLinkedToPet(b.pet_id!, resolvedGuardianId))) {
           return res.status(400).json({ error: 'O tutor informado não está vinculado a este pet' });
+        }
+      }
+
+      if (b.allow_duplicate_open !== true) {
+        const open = await findOpenClinicalPresenceForPet({
+          clinicId: b.clinic_id,
+          petId: b.pet_id!,
+          excludeAppointmentId: b.hub_appointment_id ?? null,
+        });
+        if (open) {
+          return res.status(409).json(openClinicalPresenceConflictPayload(open));
         }
       }
 
@@ -1365,6 +1393,7 @@ export const openHubEncounterFromAppointment = async (req: Request, res: Respons
         create_new_case: z.boolean().optional(),
         new_case_title: z.string().max(200).optional().nullable(),
         reopen_reason: z.string().trim().min(8).max(1000).optional().nullable(),
+        allow_duplicate_open: z.boolean().optional(),
       })
       .safeParse(req.body);
     if (!body.success) return res.status(400).json({ error: body.error.flatten() });
@@ -1437,6 +1466,17 @@ export const openHubEncounterFromAppointment = async (req: Request, res: Respons
         });
       }
       resolvedGuardianId = apptGuardianId;
+
+      if (body.data.allow_duplicate_open !== true) {
+        const open = await findOpenClinicalPresenceForPet({
+          clinicId: clinic_id,
+          petId,
+          excludeAppointmentId: hub_appointment_id,
+        });
+        if (open) {
+          return res.status(409).json(openClinicalPresenceConflictPayload(open));
+        }
+      }
 
       try {
         caseId = await resolveOrCreateClinicalCase({

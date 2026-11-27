@@ -9,7 +9,7 @@ async function resolveAuthUserId(req) {
     if (!authHeader?.startsWith('Bearer '))
         return null;
     const token = authHeader.split(' ')[1];
-    const { data: { user }, error, } = await supabase_1.supabase.auth.getUser(token);
+    const { data: { user }, error, } = await supabase_1.supabaseAdmin.auth.getUser(token);
     if (error || !user)
         return null;
     return user.id;

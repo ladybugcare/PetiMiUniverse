@@ -6,6 +6,7 @@ const supabase_1 = require("../../config/supabase");
 const hubClinicalTimelineController_1 = require("./hubClinicalTimelineController");
 const hubCareLocation_1 = require("./hubCareLocation");
 const hubComandasController_1 = require("./hubComandasController");
+const hubTenantAsserts_1 = require("./hubTenantAsserts");
 const uuidStr = zod_1.z.string().uuid();
 const examStatusSchema = zod_1.z.enum(['requested', 'collected', 'sent', 'result_received', 'completed', 'cancelled']);
 const labKindSchema = zod_1.z.enum(['internal', 'external']);
@@ -303,6 +304,21 @@ const createHubClinicalExam = async (req, res) => {
         if (!parsed.success)
             return res.status(400).json({ error: parsed.error.flatten() });
         const b = parsed.data;
+        if (!(await (0, hubTenantAsserts_1.assertPetInClinic)(b.clinic_id, b.pet_id))) {
+            return res.status(400).json({ error: 'Pet inválido' });
+        }
+        if (!(await (0, hubTenantAsserts_1.assertGuardianInClinic)(b.clinic_id, b.guardian_id))) {
+            return res.status(400).json({ error: 'Tutor inválido' });
+        }
+        if (b.guardian_id && !(await (0, hubTenantAsserts_1.assertGuardianLinkedToPet)(b.pet_id, b.guardian_id))) {
+            return res.status(400).json({ error: 'Tutor inválido' });
+        }
+        if (b.hub_encounter_id && !(await (0, hubTenantAsserts_1.assertEncounterInClinic)(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+            return res.status(400).json({ error: 'Referência inválida' });
+        }
+        if (!(await (0, hubTenantAsserts_1.assertCaseInClinic)(b.clinic_id, b.hub_case_id, b.pet_id))) {
+            return res.status(400).json({ error: 'Caso clínico inválido' });
+        }
         const inherited = await inheritCareLocationFromEncounter(b.clinic_id, b.hub_encounter_id);
         const careKind = b.care_location_kind ?? inherited?.care_location_kind ?? 'own_unit';
         const partnerId = b.hub_partner_clinic_id !== undefined

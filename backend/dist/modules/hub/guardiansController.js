@@ -1,8 +1,42 @@
 "use strict";
+var __createBinding = (this && this.__createBinding) || (Object.create ? (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    var desc = Object.getOwnPropertyDescriptor(m, k);
+    if (!desc || ("get" in desc ? !m.__esModule : desc.writable || desc.configurable)) {
+      desc = { enumerable: true, get: function() { return m[k]; } };
+    }
+    Object.defineProperty(o, k2, desc);
+}) : (function(o, m, k, k2) {
+    if (k2 === undefined) k2 = k;
+    o[k2] = m[k];
+}));
+var __setModuleDefault = (this && this.__setModuleDefault) || (Object.create ? (function(o, v) {
+    Object.defineProperty(o, "default", { enumerable: true, value: v });
+}) : function(o, v) {
+    o["default"] = v;
+});
+var __importStar = (this && this.__importStar) || (function () {
+    var ownKeys = function(o) {
+        ownKeys = Object.getOwnPropertyNames || function (o) {
+            var ar = [];
+            for (var k in o) if (Object.prototype.hasOwnProperty.call(o, k)) ar[ar.length] = k;
+            return ar;
+        };
+        return ownKeys(o);
+    };
+    return function (mod) {
+        if (mod && mod.__esModule) return mod;
+        var result = {};
+        if (mod != null) for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+        __setModuleDefault(result, mod);
+        return result;
+    };
+})();
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateHubGuardian = exports.createHubGuardian = exports.listHubGuardians = exports.getHubGuardianById = exports.getHubGuardianStats = void 0;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
+const brTaxId_1 = require("../../utils/brTaxId");
 const uuidStr = zod_1.z.string().uuid();
 /** Colunas persistidas em `hub_guardians` (exceto deleted_at em create). */
 const GUARDIAN_SELECT = 'id, clinic_id, full_name, phone, email, notes, created_at, updated_at, deleted_at, client_kind, legal_name, birth_date, sex, tax_id, id_doc_type, id_doc_number, lead_source, postal_code, state, city, district, street, street_number, complement, client_status';
@@ -10,9 +44,46 @@ const clientKindSchema = zod_1.z.enum(['individual', 'company']);
 const clientStatusSchema = zod_1.z.enum(['active', 'inactive']);
 const sexSchema = zod_1.z.enum(['M', 'F', 'U']).optional().nullable();
 function normalizeGuardianTaxId(raw) {
-    if (!raw)
-        return '';
-    return String(raw).replace(/\D/g, '');
+    return (0, brTaxId_1.normalizeBrTaxId)(raw);
+}
+const taxIdCreateSchema = zod_1.z
+    .string({ message: 'CPF/CNPJ é obrigatório' })
+    .trim()
+    .min(1, 'CPF/CNPJ é obrigatório')
+    .max(32, 'CPF/CNPJ muito longo')
+    .refine((v) => (0, brTaxId_1.isValidBrTaxId)(v), {
+    message: 'CPF/CNPJ inválido',
+});
+const phoneCreateSchema = zod_1.z
+    .string({ message: 'Telefone é obrigatório' })
+    .trim()
+    .min(1, 'Telefone é obrigatório')
+    .max(40, 'Telefone muito longo')
+    .refine((v) => (0, brTaxId_1.isValidBrPhone)(v), {
+    message: 'Telefone inválido (use DDD + número)',
+});
+async function findDuplicateGuardianByTaxId(clinicId, taxId, excludeId) {
+    const taxNorm = normalizeGuardianTaxId(taxId);
+    if (!taxNorm)
+        return null;
+    const { data, error } = await supabase_1.supabaseAdmin
+        .from('hub_guardians')
+        .select('id, full_name, tax_id')
+        .eq('clinic_id', clinicId)
+        .is('deleted_at', null)
+        .limit(200);
+    if (error) {
+        console.error('[hub_guardians] duplicate tax lookup', error);
+        throw error;
+    }
+    for (const row of data ?? []) {
+        if (excludeId && row.id === excludeId)
+            continue;
+        if (normalizeGuardianTaxId(row.tax_id) === taxNorm) {
+            return { id: row.id, full_name: String(row.full_name ?? '') };
+        }
+    }
+    return null;
 }
 const optionalTrimmed = (max) => zod_1.z
     .union([zod_1.z.string(), zod_1.z.null(), zod_1.z.undefined()])
@@ -21,8 +92,8 @@ const optionalTrimmed = (max) => zod_1.z
     .refine((v) => v === null || v === undefined || v.length <= max, { message: 'Texto muito longo' });
 const createHubGuardianBodySchema = zod_1.z.object({
     clinic_id: uuidStr,
-    full_name: zod_1.z.string().trim().min(1, 'Nome é obrigatório').max(200),
-    phone: zod_1.z.string().trim().min(1, 'Telefone é obrigatório').max(40),
+    full_name: zod_1.z.string().trim().min(1, 'Nome é obrigatório').max(200, 'Nome deve ter no máximo 200 caracteres'),
+    phone: phoneCreateSchema,
     email: optionalTrimmed(254).optional(),
     notes: optionalTrimmed(8000).optional(),
     client_kind: clientKindSchema.optional(),
@@ -33,7 +104,7 @@ const createHubGuardianBodySchema = zod_1.z.object({
         .transform((v) => (v === undefined || v === null || v === '' ? undefined : String(v)))
         .refine((v) => v === undefined || /^\d{4}-\d{2}-\d{2}$/.test(v), { message: 'Data inválida (use AAAA-MM-DD)' }),
     sex: sexSchema,
-    tax_id: zod_1.z.string().trim().min(1, 'CPF/CNPJ é obrigatório').max(32),
+    tax_id: taxIdCreateSchema,
     id_doc_type: optionalTrimmed(80).optional(),
     id_doc_number: optionalTrimmed(80).optional(),
     lead_source: optionalTrimmed(120).optional(),
@@ -48,8 +119,16 @@ const createHubGuardianBodySchema = zod_1.z.object({
 });
 const updateHubGuardianBodySchema = zod_1.z.object({
     clinic_id: uuidStr,
-    full_name: zod_1.z.string().trim().min(1).max(200).optional(),
-    phone: zod_1.z.string().trim().max(40).optional().nullable(),
+    full_name: zod_1.z.string().trim().min(1).max(200, 'Nome deve ter no máximo 200 caracteres').optional(),
+    phone: zod_1.z
+        .string()
+        .trim()
+        .max(40)
+        .optional()
+        .nullable()
+        .refine((v) => v === undefined || v === null || v === '' || (0, brTaxId_1.isValidBrPhone)(v), {
+        message: 'Telefone inválido (use DDD + número)',
+    }),
     email: optionalTrimmed(254).optional(),
     notes: optionalTrimmed(8000).optional(),
     /** true = soft delete; false = restaurar */
@@ -69,7 +148,8 @@ const updateHubGuardianBodySchema = zod_1.z.object({
         .transform((v) => (v === undefined ? undefined : v == null ? '' : String(v).trim()))
         .optional()
         .refine((v) => v === undefined || v.length >= 1, { message: 'CPF/CNPJ é obrigatório' })
-        .refine((v) => v === undefined || v.length <= 32, { message: 'CPF/CNPJ muito longo' }),
+        .refine((v) => v === undefined || v.length <= 32, { message: 'CPF/CNPJ muito longo' })
+        .refine((v) => v === undefined || (0, brTaxId_1.isValidBrTaxId)(v), { message: 'CPF/CNPJ inválido' }),
     id_doc_type: optionalTrimmed(80).optional(),
     id_doc_number: optionalTrimmed(80).optional(),
     lead_source: optionalTrimmed(120).optional(),
@@ -82,22 +162,34 @@ const updateHubGuardianBodySchema = zod_1.z.object({
     complement: optionalTrimmed(120).optional(),
     client_status: clientStatusSchema.optional(),
 });
+/** Evita HeadersOverflow no PostgREST (~16KB) em `.in('id', [muitos UUIDs])`. */
+function chunkIds(ids, size = 80) {
+    const out = [];
+    for (let i = 0; i < ids.length; i += size)
+        out.push(ids.slice(i, i + size));
+    return out;
+}
 async function fetchPetsByGuardianIds(clinicId, guardianIds) {
     const map = new Map();
     if (guardianIds.length === 0)
         return map;
-    const { data, error } = await supabase_1.supabaseAdmin
-        .from('hub_pet_guardians')
-        .select('guardian_id, role, hub_pets(id, name, species, breed, sex, size_tier, coat_type, coat_color, birth_date, clinic_id, deleted_at)')
-        .in('guardian_id', guardianIds);
-    if (error || !data) {
-        console.error('[hub_guardians] fetchPetsByGuardianIds', error);
-        return map;
+    const data = [];
+    for (const part of chunkIds(guardianIds)) {
+        const { data: chunk, error } = await supabase_1.supabaseAdmin
+            .from('hub_pet_guardians')
+            .select('guardian_id, role, hub_pets(id, name, species, breed, sex, size_tier, coat_type, coat_color, birth_date, clinic_id, deleted_at, deceased_at, death_invalidated_at)')
+            .in('guardian_id', part);
+        if (error) {
+            console.error('[hub_guardians] fetchPetsByGuardianIds', error);
+            return map;
+        }
+        data.push(...(chunk ?? []));
     }
+    const { isPetEligibleForNewOp } = await Promise.resolve().then(() => __importStar(require('./petDeathService')));
     for (const row of data) {
         const rawPet = row.hub_pets;
         const pet = Array.isArray(rawPet) ? rawPet[0] : rawPet;
-        if (!pet || pet.clinic_id !== clinicId || pet.deleted_at != null)
+        if (!pet || pet.clinic_id !== clinicId || !isPetEligibleForNewOp(pet))
             continue;
         if (row.role !== 'primary' && row.role !== 'secondary')
             continue;
@@ -350,9 +442,17 @@ const createHubGuardian = async (req, res) => {
     try {
         const body = createHubGuardianBodySchema.safeParse(req.body);
         if (!body.success) {
-            return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
+            const flat = body.error.flatten();
+            return res.status(400).json({ error: (0, brTaxId_1.firstZodFieldMessage)(flat), details: flat });
         }
         const d = body.data;
+        const dup = await findDuplicateGuardianByTaxId(d.clinic_id, d.tax_id);
+        if (dup) {
+            return res.status(409).json({
+                error: `Já existe tutor com este CPF/CNPJ (${dup.full_name}).`,
+                duplicate_guardian: dup,
+            });
+        }
         const row = {
             clinic_id: d.clinic_id,
             full_name: d.full_name,
@@ -364,7 +464,7 @@ const createHubGuardian = async (req, res) => {
             legal_name: d.legal_name ?? null,
             birth_date: d.birth_date ?? null,
             sex: d.sex ?? null,
-            tax_id: d.tax_id,
+            tax_id: normalizeGuardianTaxId(d.tax_id) || d.tax_id,
             id_doc_type: d.id_doc_type ?? null,
             id_doc_number: d.id_doc_number ?? null,
             lead_source: d.lead_source ?? null,
@@ -403,7 +503,8 @@ const updateHubGuardian = async (req, res) => {
         const id = idParsed.data;
         const body = updateHubGuardianBodySchema.safeParse(req.body);
         if (!body.success) {
-            return res.status(400).json({ error: 'Dados inválidos', details: body.error.flatten() });
+            const flat = body.error.flatten();
+            return res.status(400).json({ error: (0, brTaxId_1.firstZodFieldMessage)(flat), details: flat });
         }
         const d = body.data;
         const { clinic_id, archived } = d;
@@ -417,6 +518,15 @@ const updateHubGuardian = async (req, res) => {
         }
         if (existing.clinic_id !== clinic_id) {
             return res.status(403).json({ error: 'Tutor não pertence a esta clínica' });
+        }
+        if (d.tax_id !== undefined) {
+            const dup = await findDuplicateGuardianByTaxId(clinic_id, d.tax_id, id);
+            if (dup) {
+                return res.status(409).json({
+                    error: `Já existe tutor com este CPF/CNPJ (${dup.full_name}).`,
+                    duplicate_guardian: dup,
+                });
+            }
         }
         const patch = {};
         if (archived === true) {
@@ -443,7 +553,7 @@ const updateHubGuardian = async (req, res) => {
         if (d.sex !== undefined)
             patch.sex = d.sex;
         if (d.tax_id !== undefined)
-            patch.tax_id = d.tax_id;
+            patch.tax_id = normalizeGuardianTaxId(d.tax_id) || d.tax_id;
         if (d.id_doc_type !== undefined)
             patch.id_doc_type = d.id_doc_type;
         if (d.id_doc_number !== undefined)

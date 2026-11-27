@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.getHubPetPackageBalances = exports.getHubGuardianPackageBalances = exports.patchHubPackage = exports.postHubPackage = exports.postHubPackageSuggestPrice = exports.getHubPackage = exports.listHubPackages = void 0;
+exports.postHubPackageBalanceRefund = exports.getHubPackageBalanceRefundPreview = exports.postHubPackageBalanceCancel = exports.getHubPetPackageBalances = exports.getHubGuardianPackageBalances = exports.patchHubPackage = exports.postHubPackage = exports.postHubPackageSuggestPrice = exports.getHubPackage = exports.listHubPackages = void 0;
 const zod_1 = require("zod");
 const supabase_1 = require("../../config/supabase");
 const hubPackagesService_1 = require("./hubPackagesService");
@@ -306,9 +306,12 @@ const getHubPetPackageBalances = async (req, res) => {
         if (!petParsed.success || !clinicParsed.success) {
             return res.status(400).json({ error: 'petId e clinic_id obrigatórios' });
         }
+        const includeCancelled = String(req.query.include_cancelled ?? '') === '1' ||
+            String(req.query.include_cancelled ?? '').toLowerCase() === 'true';
         const balances = await (0, hubPackagesService_1.listActivePackageBalances)({
             clinicId: clinicParsed.data,
             petId: petParsed.data,
+            includeCancelled,
         });
         return res.json({ balances });
     }
@@ -318,3 +321,95 @@ const getHubPetPackageBalances = async (req, res) => {
     }
 };
 exports.getHubPetPackageBalances = getHubPetPackageBalances;
+const cancelPackageBalanceBodySchema = zod_1.z
+    .object({
+    clinic_id: uuidStr,
+    reason: zod_1.z.string().trim().min(3).max(2000),
+})
+    .strict();
+const postHubPackageBalanceCancel = async (req, res) => {
+    try {
+        const idParsed = uuidStr.safeParse(req.params.id);
+        const parsed = cancelPackageBalanceBodySchema.safeParse(req.body);
+        if (!idParsed.success || !parsed.success) {
+            return res.status(400).json({ error: 'Dados inválidos', details: parsed.success ? undefined : parsed.error.flatten() });
+        }
+        const balance = await (0, hubPackagesService_1.cancelPackageBalanceCommercial)({
+            balanceId: idParsed.data,
+            clinicId: parsed.data.clinic_id,
+            userId: req.user?.id ?? null,
+            reason: parsed.data.reason,
+        });
+        return res.status(200).json({ balance });
+    }
+    catch (e) {
+        if (e instanceof hubPackagesService_1.PackageBalanceError) {
+            return res.status(e.status).json({ error: e.message });
+        }
+        console.error('postHubPackageBalanceCancel', e);
+        return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+};
+exports.postHubPackageBalanceCancel = postHubPackageBalanceCancel;
+const getHubPackageBalanceRefundPreview = async (req, res) => {
+    try {
+        const idParsed = uuidStr.safeParse(req.params.id);
+        const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
+        if (!idParsed.success || !clinicParsed.success) {
+            return res.status(400).json({ error: 'id e clinic_id obrigatórios' });
+        }
+        const preview = await (0, hubPackagesService_1.previewPackageBalanceRefund)({
+            balanceId: idParsed.data,
+            clinicId: clinicParsed.data,
+        });
+        return res.json({ preview });
+    }
+    catch (e) {
+        if (e instanceof hubPackagesService_1.PackageBalanceError) {
+            return res.status(e.status).json({ error: e.message });
+        }
+        console.error('getHubPackageBalanceRefundPreview', e);
+        return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+};
+exports.getHubPackageBalanceRefundPreview = getHubPackageBalanceRefundPreview;
+const authorizePackageRefundBodySchema = zod_1.z
+    .object({
+    clinic_id: uuidStr,
+    refund_amount: zod_1.z.number().positive(),
+    reason: zod_1.z.string().trim().min(3).max(2000),
+    refund_method: zod_1.z.string().trim().min(1).max(64).optional().nullable(),
+    refund_effective_date: zod_1.z
+        .string()
+        .regex(/^\d{4}-\d{2}-\d{2}$/)
+        .optional()
+        .nullable(),
+})
+    .strict();
+const postHubPackageBalanceRefund = async (req, res) => {
+    try {
+        const idParsed = uuidStr.safeParse(req.params.id);
+        const parsed = authorizePackageRefundBodySchema.safeParse(req.body);
+        if (!idParsed.success || !parsed.success) {
+            return res.status(400).json({ error: 'Dados inválidos', details: parsed.success ? undefined : parsed.error.flatten() });
+        }
+        const result = await (0, hubPackagesService_1.authorizePackageBalanceRefund)({
+            balanceId: idParsed.data,
+            clinicId: parsed.data.clinic_id,
+            userId: req.user?.id ?? null,
+            refundAmount: parsed.data.refund_amount,
+            reason: parsed.data.reason,
+            refundMethod: parsed.data.refund_method ?? null,
+            refundEffectiveDate: parsed.data.refund_effective_date ?? null,
+        });
+        return res.status(201).json(result);
+    }
+    catch (e) {
+        if (e instanceof hubPackagesService_1.PackageBalanceError) {
+            return res.status(e.status).json({ error: e.message });
+        }
+        console.error('postHubPackageBalanceRefund', e);
+        return res.status(500).json({ error: e?.message || 'Erro interno' });
+    }
+};
+exports.postHubPackageBalanceRefund = postHubPackageBalanceRefund;

@@ -12,8 +12,9 @@ export function isLotExpired(
   todayYmd: string = inventoryTodayYmd(),
 ): boolean {
   if (expiryDate == null || expiryDate === '') return false;
-  return expiryDate < todayYmd;
+  return expiryDate.slice(0, 10) < todayYmd;
 }
 
 export const LOT_EXPIRED_CREATE_MSG = 'Não é permitido cadastrar lote com validade vencida.';
-export const LOT_EXPIRED_SALE_MSG = 'Não é permitido vender produto com lote vencido.';
+/** Bloqueio compartilhado: venda, comanda e consumo clínico. */
+export const LOT_EXPIRED_SALE_MSG = 'Não é permitido usar lote vencido.';

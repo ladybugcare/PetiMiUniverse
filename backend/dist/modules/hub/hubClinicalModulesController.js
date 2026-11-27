@@ -55,6 +55,9 @@ const hubSurgeryFromAppointment_1 = require("./hubSurgeryFromAppointment");
 const hubClinicalAppointmentMirror_1 = require("./hubClinicalAppointmentMirror");
 const hubPayablesService_1 = require("./hubPayablesService");
 const hubVariablePrice_1 = require("./hubVariablePrice");
+const hospitalizationRequestIds_1 = require("./hospitalizationRequestIds");
+const petDeathService_1 = require("./petDeathService");
+const hubTenantAsserts_1 = require("./hubTenantAsserts");
 const uuidStr = zod_1.z.string().uuid();
 const surgeryServiceInputSchema = zod_1.z.object({
     hub_service_type_id: uuidStr,
@@ -179,9 +182,9 @@ const prescriptionItemInputSchema = zod_1.z.object({
     presentation: zod_1.z.string().trim().max(200).optional().nullable(),
     concentration: zod_1.z.string().trim().max(200).optional().nullable(),
     quantity: zod_1.z.string().trim().max(200).optional().nullable(),
-    posology: zod_1.z.string().trim().max(200).optional().nullable(),
+    posology: zod_1.z.string().trim().max(2000).optional().nullable(),
     dosage: zod_1.z.string().trim().max(200).optional().nullable(),
-    frequency: zod_1.z.string().trim().max(200).optional().nullable(),
+    frequency: zod_1.z.string().trim().max(2000).optional().nullable(),
     duration: zod_1.z.string().trim().max(200).optional().nullable(),
     instructions: zod_1.z.string().trim().max(2000).optional().nullable(),
     hub_inventory_item_id: uuidStr.optional().nullable(),
@@ -306,6 +309,18 @@ const createHubPrescription = async (req, res) => {
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
+    if (!(await (0, hubTenantAsserts_1.assertPetInClinic)(b.clinic_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Pet inválido' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertCaseInClinic)(b.clinic_id, b.hub_case_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Caso clínico inválido' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertEncounterInClinic)(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Referência inválida' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertStaffInClinic)(b.clinic_id, b.hub_staff_member_id))) {
+        return res.status(400).json({ error: 'Referência inválida' });
+    }
     if (b.hub_case_id) {
         const { data: caseRow } = await supabase_1.supabaseAdmin
             .from('hub_clinical_cases')
@@ -320,21 +335,30 @@ const createHubPrescription = async (req, res) => {
             return res.status(400).json({ error: 'Caso cancelado não pode receber receita. Abra um caso novo.' });
         }
     }
-    /** Uma prescrição ativa/rascunho por atendimento: novos itens são anexados à existente. */
+    /** Uma prescrição ativa/rascunho/emitida (mesmo dia) por atendimento: novos itens são anexados à existente. */
     if (b.hub_encounter_id) {
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
         const { data: issuedList } = await supabase_1.supabaseAdmin
             .from('hub_prescriptions')
-            .select('id')
+            .select('id, prescribed_at, created_at')
             .eq('hub_encounter_id', b.hub_encounter_id)
             .eq('clinic_id', b.clinic_id)
             .eq('pet_id', b.pet_id)
             .eq('status', 'issued')
             .is('deleted_at', null)
+            .order('prescribed_at', { ascending: false })
             .limit(1);
-        if (issuedList?.length) {
-            return res.status(409).json({
-                error: 'Prescrição já emitida; não é possível adicionar medicamentos sem reemitir nova versão',
-            });
+        const issuedRow = issuedList?.[0];
+        if (issuedRow) {
+            const anchor = issuedRow.prescribed_at || issuedRow.created_at;
+            const rxDay = anchor
+                ? new Date(anchor).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
+                : today;
+            if (rxDay !== today) {
+                return res.status(409).json({
+                    error: 'Prescrição já emitida em outro dia; não é possível adicionar medicamentos',
+                });
+            }
         }
         const { data: existingList } = await supabase_1.supabaseAdmin
             .from('hub_prescriptions')
@@ -342,11 +366,11 @@ const createHubPrescription = async (req, res) => {
             .eq('hub_encounter_id', b.hub_encounter_id)
             .eq('clinic_id', b.clinic_id)
             .eq('pet_id', b.pet_id)
-            .in('status', ['draft', 'active'])
+            .in('status', issuedRow ? ['issued', 'draft', 'active'] : ['draft', 'active'])
             .is('deleted_at', null)
             .order('prescribed_at', { ascending: false })
             .limit(1);
-        const existingId = existingList?.[0]?.id;
+        const existingId = existingList?.[0]?.id ?? issuedRow?.id;
         if (existingId) {
             const { data: maxRow } = await supabase_1.supabaseAdmin
                 .from('hub_prescription_items')
@@ -453,7 +477,7 @@ const patchHubPrescription = async (req, res) => {
     }
     const { data: rx, error: rxErr } = await supabase_1.supabaseAdmin
         .from('hub_prescriptions')
-        .select('id, status, clinic_id, pet_id')
+        .select('id, status, clinic_id, pet_id, prescribed_at, created_at')
         .eq('id', id.data)
         .eq('clinic_id', b.clinic_id)
         .is('deleted_at', null)
@@ -464,10 +488,17 @@ const patchHubPrescription = async (req, res) => {
         return res.status(404).json({ error: 'Prescrição não encontrada' });
     if (rx.status === 'cancelled')
         return res.status(409).json({ error: 'Prescrição cancelada não pode ser editada' });
-    if (rx.status === 'issued' && hasContentEdit) {
-        return res.status(409).json({
-            error: 'Prescrição já emitida; não é possível editar conteúdo sem reemitir nova versão (vínculo a caso/atendimento ainda é permitido)',
-        });
+    if (hasContentEdit) {
+        const anchor = rx.prescribed_at || rx.created_at;
+        const rxDay = anchor
+            ? new Date(anchor).toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' })
+            : new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+        if (rxDay !== today) {
+            return res.status(409).json({
+                error: 'Edição de conteúdo disponível apenas no dia da receita (vínculo a caso/atendimento ainda é permitido)',
+            });
+        }
     }
     if (b.hub_case_id) {
         const { data: caseRow } = await supabase_1.supabaseAdmin
@@ -738,7 +769,7 @@ const getHubPrescriptionPdf = async (req, res) => {
       *,
       clinic:clinics(name, phone, email, address, city, state),
       pet:hub_pets(name, species, breed, birth_date),
-      staff:hub_staff_members(full_name, crmv, crmv_uf)
+      staff:hub_staff_members(full_name, crmv, crmv_uf, signature_image_url, stamp_image_url)
     `)
         .eq('id', id.data)
         .eq('clinic_id', clinic_id.data)
@@ -764,7 +795,7 @@ const getHubPrescriptionPdf = async (req, res) => {
     if (itemsErr)
         return res.status(500).json({ error: itemsErr.message });
     const guardianEmbed = petGuardian?.[0]?.guardian ?? null;
-    (0, hubPrescriptionPdf_1.streamPrescriptionPdf)(res, { ...rx, items: items ?? [], guardian: guardianEmbed });
+    await (0, hubPrescriptionPdf_1.streamPrescriptionPdf)(res, { ...rx, items: items ?? [], guardian: guardianEmbed });
 };
 exports.getHubPrescriptionPdf = getHubPrescriptionPdf;
 // ── Vaccinations ────────────────────────────────────────────────────────────
@@ -814,6 +845,18 @@ const createHubVaccination = async (req, res) => {
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
+    if (!(await (0, hubTenantAsserts_1.assertPetInClinic)(b.clinic_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Pet inválido' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertEncounterInClinic)(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Referência inválida' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertCaseInClinic)(b.clinic_id, b.hub_case_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Caso clínico inválido' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertStaffInClinic)(b.clinic_id, b.hub_staff_member_id))) {
+        return res.status(400).json({ error: 'Referência inválida' });
+    }
     let inventoryItem = null;
     let inventoryLot = null;
     let priceSnapshot = null;
@@ -956,6 +999,18 @@ const createHubMedicationAdministration = async (req, res) => {
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
+    if (!(await (0, hubTenantAsserts_1.assertPetInClinic)(b.clinic_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Pet inválido' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertEncounterInClinic)(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Referência inválida' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertCaseInClinic)(b.clinic_id, b.hub_case_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Caso clínico inválido' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertStaffInClinic)(b.clinic_id, b.hub_staff_member_id))) {
+        return res.status(400).json({ error: 'Referência inválida' });
+    }
     let service = null;
     {
         const first = await supabase_1.supabaseAdmin
@@ -1143,7 +1198,14 @@ const createHubClinicalAttachment = async (req, res) => {
         .safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
-    const { data, error } = await supabase_1.supabaseAdmin.from('hub_clinical_attachments').insert(parsed.data).select('*').single();
+    const b = parsed.data;
+    if (!(await (0, hubTenantAsserts_1.assertPetInClinic)(b.clinic_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Pet inválido' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertEncounterInClinic)(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Referência inválida' });
+    }
+    const { data, error } = await supabase_1.supabaseAdmin.from('hub_clinical_attachments').insert(b).select('*').single();
     if (error) {
         if ((0, supabaseSchemaErrors_js_1.isMissingPostgrestRelation)(error)) {
             return res.status(503).json({ error: supabaseSchemaErrors_js_1.CLINICAL_ATTACHMENTS_MIGRATION_HINT });
@@ -1187,6 +1249,12 @@ const uploadHubClinicalAttachment = (req, res) => {
         if (!parsed.success)
             return res.status(400).json({ error: parsed.error.flatten() });
         const b = parsed.data;
+        if (!(await (0, hubTenantAsserts_1.assertPetInClinic)(b.clinic_id, b.pet_id))) {
+            return res.status(400).json({ error: 'Pet inválido' });
+        }
+        if (!(await (0, hubTenantAsserts_1.assertEncounterInClinic)(b.clinic_id, b.hub_encounter_id, b.pet_id))) {
+            return res.status(400).json({ error: 'Referência inválida' });
+        }
         try {
             const { url, path } = await (0, hubClinicalFileUpload_js_1.uploadHubClinicalFileToStorage)({
                 buffer: req.file.buffer,
@@ -1256,7 +1324,11 @@ const createHubHospitalBed = async (req, res) => {
         .safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
-    const { data, error } = await supabase_1.supabaseAdmin.from('hub_hospital_beds').insert(parsed.data).select('*').single();
+    const bedBody = parsed.data;
+    if (!(await (0, hubTenantAsserts_1.assertUnitInClinic)(bedBody.clinic_id, bedBody.unit_id))) {
+        return res.status(400).json({ error: 'Unidade inválida' });
+    }
+    const { data, error } = await supabase_1.supabaseAdmin.from('hub_hospital_beds').insert(bedBody).select('*').single();
     if (error) {
         if (error.code === '23505' || error.message?.includes('uniq_hub_hospital_beds')) {
             return res.status(409).json({ error: 'Já existe um leito com este código nesta clínica.' });
@@ -1311,11 +1383,111 @@ const createHubHospitalization = async (req, res) => {
         daily_hub_service_type_id: uuidStr.optional().nullable(),
         daily_unit_amount: zod_1.z.number().min(0).optional().nullable(),
         daily_includes_medication: zod_1.z.boolean().optional().default(false),
+        /** Slot da agenda (ex.: diária agendada) — reusa em vez de espelhar walk-in. */
+        hub_appointment_id: uuidStr.optional().nullable(),
     })
         .safeParse(req.body);
     if (!parsed.success)
         return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
+    if (!(await (0, hubTenantAsserts_1.assertPetInClinic)(b.clinic_id, b.pet_id))) {
+        return res.status(400).json({ error: 'Pet inválido' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertGuardianInClinic)(b.clinic_id, b.guardian_id))) {
+        return res.status(400).json({ error: 'Tutor inválido' });
+    }
+    if (b.guardian_id && !(await (0, hubTenantAsserts_1.assertGuardianLinkedToPet)(b.pet_id, b.guardian_id))) {
+        return res.status(400).json({ error: 'Tutor inválido' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertUnitInClinic)(b.clinic_id, b.unit_id))) {
+        return res.status(400).json({ error: 'Unidade inválida' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertHospitalBedInClinic)(b.clinic_id, b.hub_hospital_bed_id))) {
+        return res.status(400).json({ error: 'Referência inválida' });
+    }
+    if (!(await (0, hubTenantAsserts_1.assertStaffInClinic)(b.clinic_id, b.hub_staff_member_id))) {
+        return res.status(400).json({ error: 'Referência inválida' });
+    }
+    let reuseAppointmentId = b.hub_appointment_id ?? null;
+    if (reuseAppointmentId) {
+        const { data: appt, error: apptErr } = await supabase_1.supabaseAdmin
+            .from('hub_appointments')
+            .select('id, pet_id, status, deleted_at')
+            .eq('id', reuseAppointmentId)
+            .eq('clinic_id', b.clinic_id)
+            .maybeSingle();
+        if (apptErr)
+            return res.status(500).json({ error: apptErr.message });
+        if (!appt || appt.deleted_at) {
+            return res.status(400).json({ error: 'Agendamento não encontrado para vincular à internação' });
+        }
+        const apptPet = appt.pet_id ?? null;
+        if (apptPet && apptPet !== b.pet_id) {
+            return res.status(400).json({ error: 'O agendamento não pertence a este pet' });
+        }
+        if (appt.status === 'cancelled') {
+            return res.status(400).json({ error: 'Não é possível internar a partir de um agendamento cancelado' });
+        }
+    }
+    // Idempotência / concorrência: no máximo uma internação ativa por pet.
+    const { data: activeForPet, error: activePetErr } = await supabase_1.supabaseAdmin
+        .from('hub_hospitalizations')
+        .select('id')
+        .eq('clinic_id', b.clinic_id)
+        .eq('pet_id', b.pet_id)
+        .eq('status', 'active')
+        .is('deleted_at', null)
+        .limit(1)
+        .maybeSingle();
+    if (activePetErr)
+        return res.status(500).json({ error: activePetErr.message });
+    if (activeForPet) {
+        return res.status(409).json({
+            error: 'Este pet já possui uma internação ativa nesta clínica.',
+            code: 'HOSPITALIZATION_PET_ACTIVE',
+            hospitalization_id: activeForPet.id,
+        });
+    }
+    if (b.hub_hospital_bed_id) {
+        const { data: bed, error: bedErr } = await supabase_1.supabaseAdmin
+            .from('hub_hospital_beds')
+            .select('id, status')
+            .eq('id', b.hub_hospital_bed_id)
+            .eq('clinic_id', b.clinic_id)
+            .is('deleted_at', null)
+            .maybeSingle();
+        if (bedErr)
+            return res.status(500).json({ error: bedErr.message });
+        if (!bed)
+            return res.status(400).json({ error: 'Leito não encontrado' });
+        if (bed.status === 'maintenance') {
+            return res.status(409).json({ error: 'Este leito está em manutenção.' });
+        }
+        if (bed.status === 'occupied') {
+            return res.status(409).json({
+                error: 'Este leito já está ocupado.',
+                code: 'HOSPITALIZATION_BED_OCCUPIED',
+            });
+        }
+        const { data: activeOnBed, error: activeBedErr } = await supabase_1.supabaseAdmin
+            .from('hub_hospitalizations')
+            .select('id')
+            .eq('clinic_id', b.clinic_id)
+            .eq('hub_hospital_bed_id', b.hub_hospital_bed_id)
+            .eq('status', 'active')
+            .is('deleted_at', null)
+            .limit(1)
+            .maybeSingle();
+        if (activeBedErr)
+            return res.status(500).json({ error: activeBedErr.message });
+        if (activeOnBed) {
+            return res.status(409).json({
+                error: 'Este leito já está ocupado.',
+                code: 'HOSPITALIZATION_BED_OCCUPIED',
+                hospitalization_id: activeOnBed.id,
+            });
+        }
+    }
     let dailyUnitAmount = b.daily_unit_amount ?? null;
     if (b.daily_hub_service_type_id) {
         const { data: svc, error: svcErr } = await supabase_1.supabaseAdmin
@@ -1383,29 +1555,111 @@ const createHubHospitalization = async (req, res) => {
     })
         .select('*')
         .single();
-    if (error)
+    if (error) {
+        const code = error.code;
+        if (code === '23505') {
+            return res.status(409).json({
+                error: 'Já existe internação ativa para este pet ou leito.',
+                code: 'HOSPITALIZATION_ACTIVE_CONFLICT',
+            });
+        }
         return res.status(500).json({ error: error.message });
+    }
     if (b.hub_hospital_bed_id) {
-        await supabase_1.supabaseAdmin.from('hub_hospital_beds').update({ status: 'occupied' }).eq('id', b.hub_hospital_bed_id);
+        // Ocupa só se ainda disponível — protege corrida entre dois POSTs.
+        const { data: occupied, error: occErr } = await supabase_1.supabaseAdmin
+            .from('hub_hospital_beds')
+            .update({ status: 'occupied' })
+            .eq('id', b.hub_hospital_bed_id)
+            .eq('clinic_id', b.clinic_id)
+            .eq('status', 'available')
+            .select('id')
+            .maybeSingle();
+        if (occErr)
+            return res.status(500).json({ error: occErr.message });
+        if (!occupied) {
+            const rolledBackId = data.id;
+            await supabase_1.supabaseAdmin
+                .from('hub_hospitalizations')
+                .update({ status: 'cancelled', hub_hospital_bed_id: null })
+                .eq('id', rolledBackId)
+                .eq('clinic_id', b.clinic_id);
+            await supabase_1.supabaseAdmin
+                .from('hub_encounters')
+                .update({ status: 'cancelled', completed_at: new Date().toISOString() })
+                .eq('id', encounterId)
+                .eq('clinic_id', b.clinic_id)
+                .in('status', ['in_progress', 'waiting']);
+            return res.status(409).json({
+                error: 'Este leito já está ocupado.',
+                code: 'HOSPITALIZATION_BED_OCCUPIED',
+            });
+        }
     }
     const hospitalizationId = data.id;
     const admittedAt = data.admitted_at ?? new Date().toISOString();
-    // Consultório → Agenda: marco de admissão no dia (não modela estadia multi-dia).
-    const appointmentId = await (0, hubClinicalAppointmentMirror_1.insertLinkedClinicalAppointment)({
-        clinicId: b.clinic_id,
-        unitId: b.unit_id,
-        petId: b.pet_id,
-        guardianId: b.guardian_id,
-        staffMemberId: b.hub_staff_member_id,
-        serviceTypeId: b.daily_hub_service_type_id,
-        serviceGroup: 'internacao',
-        startsAt: admittedAt,
-        title: b.reason?.trim() || 'Internação',
-        status: 'in_progress',
-        appointmentKind: 'clinical_walk_in',
-        notes: b.admission_notes ?? null,
-        intakeHubCaseId: caseId,
-    });
+    // Agenda: reusa slot agendado (diária) ou espelha marco walk-in de admissão.
+    let appointmentId = reuseAppointmentId;
+    if (reuseAppointmentId) {
+        const { error: reuseErr } = await supabase_1.supabaseAdmin
+            .from('hub_appointments')
+            .update({ status: 'in_progress' })
+            .eq('id', reuseAppointmentId)
+            .eq('clinic_id', b.clinic_id)
+            .is('deleted_at', null);
+        if (reuseErr) {
+            await supabase_1.supabaseAdmin
+                .from('hub_hospitalizations')
+                .update({ status: 'cancelled', hub_hospital_bed_id: null })
+                .eq('id', hospitalizationId)
+                .eq('clinic_id', b.clinic_id);
+            await supabase_1.supabaseAdmin
+                .from('hub_encounters')
+                .update({ status: 'cancelled', completed_at: new Date().toISOString() })
+                .eq('id', encounterId)
+                .eq('clinic_id', b.clinic_id)
+                .in('status', ['in_progress', 'waiting']);
+            return res.status(400).json({
+                error: reuseErr.message || 'Não foi possível vincular o agendamento à internação.',
+            });
+        }
+    }
+    else {
+        try {
+            appointmentId = await (0, hubClinicalAppointmentMirror_1.insertLinkedClinicalAppointment)({
+                clinicId: b.clinic_id,
+                unitId: b.unit_id,
+                petId: b.pet_id,
+                guardianId: b.guardian_id,
+                staffMemberId: b.hub_staff_member_id,
+                serviceTypeId: b.daily_hub_service_type_id,
+                serviceGroup: 'internacao',
+                startsAt: admittedAt,
+                title: b.reason?.trim() || 'Internação',
+                status: 'in_progress',
+                appointmentKind: 'clinical_walk_in',
+                notes: b.admission_notes ?? null,
+                intakeHubCaseId: caseId,
+                required: true,
+            });
+        }
+        catch (mirrorErr) {
+            await supabase_1.supabaseAdmin
+                .from('hub_hospitalizations')
+                .update({ status: 'cancelled', hub_hospital_bed_id: null })
+                .eq('id', hospitalizationId)
+                .eq('clinic_id', b.clinic_id);
+            await supabase_1.supabaseAdmin
+                .from('hub_encounters')
+                .update({ status: 'cancelled', completed_at: new Date().toISOString() })
+                .eq('id', encounterId)
+                .eq('clinic_id', b.clinic_id)
+                .in('status', ['in_progress', 'waiting']);
+            return res.status(400).json({
+                error: mirrorErr?.message || 'Não foi possível espelhar a internação na agenda.',
+            });
+        }
+    }
     let hospitalization = data;
     if (appointmentId) {
         await supabase_1.supabaseAdmin
@@ -1476,14 +1730,16 @@ const patchHubHospitalization = async (req, res) => {
         daily_hub_service_type_id: uuidStr.optional().nullable(),
         daily_unit_amount: zod_1.z.number().min(0).optional().nullable(),
         daily_includes_medication: zod_1.z.boolean().optional(),
+        /** Payload de óbito do pet — obrigatório quando status=death. */
+        pet_death: petDeathService_1.clinicalDeathPayloadSchema,
     })
         .safeParse(req.body);
     if (!id.success || !parsed.success)
         return res.status(400).json({ error: 'Dados inválidos' });
-    const { clinic_id, create_new_case, new_case_title, hub_case_id, hub_hospital_bed_id, ...patch } = parsed.data;
+    const { clinic_id, create_new_case, new_case_title, hub_case_id, hub_hospital_bed_id, pet_death, ...patch } = parsed.data;
     const { data: existing, error: getErr } = await supabase_1.supabaseAdmin
         .from('hub_hospitalizations')
-        .select('id, hub_hospital_bed_id, status, pet_id, guardian_id, hub_encounter_id, unit_id, admission_notes, reason, hub_appointment_id')
+        .select('id, hub_hospital_bed_id, status, pet_id, guardian_id, hub_encounter_id, hub_case_id, unit_id, admission_notes, reason, hub_appointment_id, discharged_at')
         .eq('id', id.data)
         .eq('clinic_id', clinic_id)
         .maybeSingle();
@@ -1543,26 +1799,92 @@ const patchHubHospitalization = async (req, res) => {
             return res.status(400).json({ error: e?.message });
         }
     }
-    if (patch.status === 'discharged') {
-        update.discharged_at = new Date().toISOString();
+    const closingHospitalization = patch.status === 'discharged' || patch.status === 'death' || patch.status === 'transferred';
+    const cancellingHospitalization = patch.status === 'cancelled';
+    // Óbito: registro centralizado do pet + status da internação na mesma RPC (atômico).
+    let petDeathPending;
+    if (patch.status === 'death') {
+        if (!pet_death?.death_type) {
+            return res.status(400).json({
+                error: 'Informe pet_death.death_type para registrar óbito na internação',
+                code: 'pet_death_required',
+            });
+        }
+        const deathResult = await (0, petDeathService_1.registerPetDeath)({
+            clinic_id,
+            pet_id: existing.pet_id,
+            deceased_at: pet_death.deceased_at ?? new Date().toISOString(),
+            death_type: pet_death.death_type,
+            death_cause: pet_death.death_cause ?? null,
+            death_notes: pet_death.death_notes ?? patch.discharge_notes ?? null,
+            death_source: 'hospitalization',
+            death_ref_id: id.data,
+            archive: pet_death.archive ?? false,
+            hub_case_id: existing.hub_case_id ?? hub_case_id ?? null,
+            hub_encounter_id: existing.hub_encounter_id ?? null,
+            actor_user_id: req.user?.id ?? null,
+        });
+        if (!deathResult.ok) {
+            return res.status(deathResult.status).json({ error: deathResult.error, code: deathResult.code });
+        }
+        petDeathPending = deathResult.pending;
+        // Status/discharge já aplicados pela RPC — não reaplicar no update local.
+        delete update.status;
+        delete update.discharge_notes;
+    }
+    else if (closingHospitalization) {
+        // death/transferred também precisam de discharged_at para diárias e fila do Caixa.
+        update.discharged_at =
+            existing.discharged_at ?? new Date().toISOString();
     }
     const { data, error } = await supabase_1.supabaseAdmin
         .from('hub_hospitalizations')
-        .update(update)
+        .update(Object.keys(update).length ? update : { updated_at: new Date().toISOString() })
         .eq('id', id.data)
         .eq('clinic_id', clinic_id)
         .select('*, hub_hospital_beds(code, label), hub_pets(name, species), hub_guardians(full_name)')
         .maybeSingle();
     if (error)
         return res.status(500).json({ error: error.message });
-    const discharged = patch.status === 'discharged' || patch.status === 'death' || patch.status === 'transferred';
+    if (closingHospitalization || cancellingHospitalization) {
+        try {
+            const { closeHospitalizationMedPlan } = await Promise.resolve().then(() => __importStar(require('./hospitalizationMedPlanService')));
+            await closeHospitalizationMedPlan({
+                clinicId: clinic_id,
+                hospitalizationId: id.data,
+                hospitalizationStatus: (patch.status ?? 'discharged'),
+            });
+        }
+        catch (e) {
+            console.error('closeHospitalizationMedPlan', e);
+        }
+    }
+    const discharged = closingHospitalization;
     const linkedAppointmentId = existing.hub_appointment_id ?? null;
+    const linkedEncounterId = existing.hub_encounter_id ?? null;
     if (discharged) {
         await (0, hubClinicalAppointmentMirror_1.setLinkedAppointmentStatus)({
             clinicId: clinic_id,
             appointmentId: linkedAppointmentId,
             status: 'done',
         });
+        // Libera o atendimento clínico para a fila do Caixa (comanda do encounter).
+        if (linkedEncounterId) {
+            const { data: enc } = await supabase_1.supabaseAdmin
+                .from('hub_encounters')
+                .select('id, status')
+                .eq('id', linkedEncounterId)
+                .eq('clinic_id', clinic_id)
+                .is('deleted_at', null)
+                .maybeSingle();
+            if (enc && !['completed', 'cancelled'].includes(String(enc.status ?? ''))) {
+                await supabase_1.supabaseAdmin
+                    .from('hub_encounters')
+                    .update({ status: 'completed', completed_at: new Date().toISOString() })
+                    .eq('id', linkedEncounterId)
+                    .eq('clinic_id', clinic_id);
+            }
+        }
     }
     else if (patch.status === 'cancelled') {
         await (0, hubClinicalAppointmentMirror_1.setLinkedAppointmentStatus)({
@@ -1573,36 +1895,84 @@ const patchHubHospitalization = async (req, res) => {
     }
     const prevBedId = existing.hub_hospital_bed_id ?? null;
     const nextBedId = hub_hospital_bed_id !== undefined ? hub_hospital_bed_id ?? null : prevBedId;
-    if (discharged) {
+    if (discharged || cancellingHospitalization) {
         const toFree = nextBedId ?? prevBedId;
         if (toFree) {
-            await supabase_1.supabaseAdmin.from('hub_hospital_beds').update({ status: 'available' }).eq('id', toFree);
+            await supabase_1.supabaseAdmin
+                .from('hub_hospital_beds')
+                .update({ status: 'available' })
+                .eq('id', toFree)
+                .eq('clinic_id', clinic_id);
         }
         if (prevBedId && prevBedId !== toFree) {
-            await supabase_1.supabaseAdmin.from('hub_hospital_beds').update({ status: 'available' }).eq('id', prevBedId);
+            await supabase_1.supabaseAdmin
+                .from('hub_hospital_beds')
+                .update({ status: 'available' })
+                .eq('id', prevBedId)
+                .eq('clinic_id', clinic_id);
         }
     }
     else if (hub_hospital_bed_id !== undefined && prevBedId !== nextBedId) {
         if (prevBedId) {
-            await supabase_1.supabaseAdmin.from('hub_hospital_beds').update({ status: 'available' }).eq('id', prevBedId);
+            await supabase_1.supabaseAdmin
+                .from('hub_hospital_beds')
+                .update({ status: 'available' })
+                .eq('id', prevBedId)
+                .eq('clinic_id', clinic_id);
         }
         if (nextBedId) {
-            await supabase_1.supabaseAdmin.from('hub_hospital_beds').update({ status: 'occupied' }).eq('id', nextBedId);
+            const { data: occupiedBed, error: occupyErr } = await supabase_1.supabaseAdmin
+                .from('hub_hospital_beds')
+                .update({ status: 'occupied' })
+                .eq('id', nextBedId)
+                .eq('clinic_id', clinic_id)
+                .eq('status', 'available')
+                .select('id')
+                .maybeSingle();
+            if (occupyErr)
+                return res.status(500).json({ error: occupyErr.message });
+            if (!occupiedBed) {
+                // Reverte a troca de leito se o destino já foi ocupado.
+                await supabase_1.supabaseAdmin
+                    .from('hub_hospitalizations')
+                    .update({ hub_hospital_bed_id: prevBedId })
+                    .eq('id', id.data)
+                    .eq('clinic_id', clinic_id);
+                if (prevBedId) {
+                    await supabase_1.supabaseAdmin
+                        .from('hub_hospital_beds')
+                        .update({ status: 'occupied' })
+                        .eq('id', prevBedId)
+                        .eq('clinic_id', clinic_id);
+                }
+                return res.status(409).json({
+                    error: 'Este leito já está ocupado.',
+                    code: 'HOSPITALIZATION_BED_OCCUPIED',
+                });
+            }
         }
+    }
+    // Cancelamento: encerra encounter/appointment espelhados para não bloquear handoff de saída.
+    if (cancellingHospitalization && linkedEncounterId) {
+        await supabase_1.supabaseAdmin
+            .from('hub_encounters')
+            .update({ status: 'cancelled', completed_at: new Date().toISOString() })
+            .eq('id', linkedEncounterId)
+            .eq('clinic_id', clinic_id)
+            .in('status', ['in_progress', 'waiting']);
     }
     const hospData = data;
     if (hospData) {
         const closeStatus = patch.status;
-        if (closeStatus === 'discharged' || closeStatus === 'death' || closeStatus === 'transferred') {
-            const timelineTitle = closeStatus === 'discharged' ? 'Alta da internação' :
-                closeStatus === 'death' ? 'Óbito — internação encerrada' :
-                    'Transferência — internação encerrada';
+        // Óbito: timeline já gravada na RPC (pet_death_recorded + hospitalization_death).
+        if (closeStatus === 'discharged' || closeStatus === 'transferred') {
+            const timelineTitle = closeStatus === 'discharged' ? 'Alta da internação' : 'Transferência — internação encerrada';
             void (0, hubClinicalTimelineController_1.recordTimelineEvent)({
                 clinic_id,
                 pet_id: hospData.pet_id,
                 hub_case_id: hospData.hub_case_id,
                 hub_encounter_id: hospData.hub_encounter_id,
-                event_type: closeStatus === 'discharged' ? 'hospitalization_discharged' : 'note',
+                event_type: closeStatus === 'discharged' ? 'hospitalization_discharged' : 'hospitalization_transferred',
                 ref_type: 'hospitalization',
                 ref_id: id.data,
                 title: timelineTitle,
@@ -1614,7 +1984,10 @@ const patchHubHospitalization = async (req, res) => {
             scheduleReceptionSync(clinic_id, hospData.pet_id);
         }
     }
-    return res.json({ hospitalization: data });
+    return res.json({
+        hospitalization: data,
+        ...(petDeathPending ? { pet_death_pending: petDeathPending } : {}),
+    });
 };
 exports.patchHubHospitalization = patchHubHospitalization;
 const addHubHospitalizationDailyNote = async (req, res) => {
@@ -1641,13 +2014,15 @@ exports.addHubHospitalizationDailyNote = addHubHospitalizationDailyNote;
 // ── Hospitalization events ────────────────────────────────────────────────────
 const hospitalizationEventKindSchema = zod_1.z.enum(['vital', 'medication', 'feeding', 'fluid', 'nursing', 'note']);
 const listHubHospitalizationEvents = async (req, res) => {
-    const hospitalization_id = uuidStr.safeParse(req.query.hospitalization_id);
-    if (!hospitalization_id.success)
-        return res.status(400).json({ error: 'hospitalization_id obrigatório' });
+    // Preferência: ID na rota (`/hospitalizations/:id/events`). Query `hospitalization_id` permanece por compatibilidade.
+    const hospitalizationId = (0, hospitalizationRequestIds_1.resolveHospitalizationEventsId)(req.params.id, req.query.hospitalization_id);
+    if (!hospitalizationId) {
+        return res.status(400).json({ error: 'id da internação obrigatório (rota ou hospitalization_id)' });
+    }
     let q = supabase_1.supabaseAdmin
         .from('hub_hospitalization_events')
         .select('id, hospitalization_id, kind, recorded_at, payload, hub_staff_member_id, created_at')
-        .eq('hospitalization_id', hospitalization_id.data)
+        .eq('hospitalization_id', hospitalizationId)
         .order('recorded_at', { ascending: false })
         .limit(500);
     if (req.query.kind) {
@@ -1826,8 +2201,11 @@ const createHubSurgery = async (req, res) => {
         return res.status(400).json({ error: e?.message });
     }
     // Consultório → Agenda: cria o slot sem sync (evita ficha duplicada).
+    // Sem scheduled_at: espelha "agora" para a recepção ver na grade.
     let appointmentId = b.hub_appointment_id ?? null;
-    if (!appointmentId && b.scheduled_at) {
+    const scheduledAt = b.scheduled_at ?? new Date().toISOString();
+    const mirroredFromNow = !b.scheduled_at && !b.hub_appointment_id;
+    if (!appointmentId) {
         appointmentId = await (0, hubClinicalAppointmentMirror_1.insertLinkedClinicalAppointment)({
             clinicId: b.clinic_id,
             unitId: b.unit_id,
@@ -1836,10 +2214,10 @@ const createHubSurgery = async (req, res) => {
             staffMemberId: b.hub_staff_member_id,
             serviceTypeId: primaryServiceTypeId,
             serviceGroup: 'cirurgia',
-            startsAt: b.scheduled_at,
+            startsAt: scheduledAt,
             title: b.title,
-            status: 'confirmed',
-            appointmentKind: 'standard',
+            status: mirroredFromNow ? 'in_progress' : 'confirmed',
+            appointmentKind: mirroredFromNow ? 'clinical_walk_in' : 'standard',
             intakeHubCaseId: caseId,
         });
     }
@@ -1863,7 +2241,7 @@ const createHubSurgery = async (req, res) => {
         hub_appointment_id: appointmentId,
         hub_staff_member_id: b.hub_staff_member_id ?? null,
         title: b.title,
-        scheduled_at: b.scheduled_at ?? null,
+        scheduled_at: scheduledAt,
         anesthetic_risk: b.anesthetic_risk ?? null,
         pre_op: b.pre_op ?? {},
         procedure: b.procedure ?? {},
@@ -1966,16 +2344,19 @@ const patchHubSurgery = async (req, res) => {
         create_new_case: zod_1.z.boolean().optional(),
         new_case_title: zod_1.z.string().trim().max(500).optional().nullable(),
         reopen_reason: zod_1.z.string().trim().min(8).max(1000).optional().nullable(),
+        clinical_outcome: zod_1.z.enum(['death']).optional().nullable(),
+        pet_death: petDeathService_1.clinicalDeathPayloadSchema,
     })
         .safeParse(req.body);
     if (!id.success || !parsed.success)
         return res.status(400).json({ error: 'Dados inválidos' });
-    const { clinic_id, create_new_case, new_case_title, hub_case_id, reopen_reason, ...patch } = parsed.data;
+    const { clinic_id, create_new_case, new_case_title, hub_case_id, reopen_reason, pet_death, clinical_outcome, ...patch } = parsed.data;
     const { data: existing } = await supabase_1.supabaseAdmin
         .from('hub_surgeries')
-        .select('pet_id, guardian_id, unit_id, hub_case_id, hub_encounter_id, hub_staff_member_id, hub_appointment_id, title, status, team')
+        .select('pet_id, guardian_id, unit_id, hub_case_id, hub_encounter_id, hub_staff_member_id, hub_appointment_id, title, status, team, discharge_at, completed_at, deleted_at')
         .eq('id', id.data)
         .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
         .maybeSingle();
     if (!existing)
         return res.status(404).json({ error: 'Cirurgia não encontrada' });
@@ -1986,6 +2367,48 @@ const patchHubSurgery = async (req, res) => {
     }
     const existingStatus = existing.status;
     const linkedAppointmentId = existing.hub_appointment_id;
+    const existingDischargeAt = existing.discharge_at ?? null;
+    let petDeathPending;
+    if (clinical_outcome === 'death') {
+        if (!pet_death?.death_type) {
+            return res.status(400).json({
+                error: 'Informe pet_death.death_type para registrar óbito na cirurgia',
+                code: 'pet_death_required',
+            });
+        }
+        const deathResult = await (0, petDeathService_1.registerPetDeath)({
+            clinic_id,
+            pet_id: existing.pet_id,
+            deceased_at: pet_death.deceased_at ?? new Date().toISOString(),
+            death_type: pet_death.death_type,
+            death_cause: pet_death.death_cause ?? null,
+            death_notes: pet_death.death_notes ?? null,
+            death_source: 'surgery',
+            death_ref_id: id.data,
+            archive: pet_death.archive ?? false,
+            hub_case_id: existing.hub_case_id ?? hub_case_id ?? null,
+            hub_encounter_id: existing.hub_encounter_id ?? null,
+            actor_user_id: req.user?.id ?? null,
+        });
+        if (!deathResult.ok) {
+            return res.status(deathResult.status).json({ error: deathResult.error, code: deathResult.code });
+        }
+        petDeathPending = deathResult.pending;
+        // clinical_outcome já setado pela RPC
+    }
+    // Alta ambulatorial só após o procedimento concluído — não confunde com "completed".
+    if (patch.discharge_at) {
+        const statusAfter = patch.status ?? existingStatus;
+        if (statusAfter !== 'completed') {
+            return res.status(400).json({
+                error: 'Registre a alta clínica só depois de concluir o procedimento cirúrgico.',
+            });
+        }
+    }
+    if (patch.status === 'completed' && update.completed_at === undefined) {
+        update.completed_at =
+            existing.completed_at ?? new Date().toISOString();
+    }
     // Reagenda o slot enquanto a ficha ainda está scheduled.
     if (patch.scheduled_at &&
         existingStatus === 'scheduled' &&
@@ -2110,6 +2533,86 @@ const patchHubSurgery = async (req, res) => {
             title: `Cirurgia realizada: ${ex.title}`,
             created_by: ex.hub_staff_member_id,
         });
+        // Concluir o procedimento NÃO encerra o encounter nem autoriza retirada.
+    }
+    // Liberação clínica ambulatorial (discharge_at): encerra o encounter se não houver
+    // internação ativa no mesmo atendimento — sem fechar o caso clínico.
+    const dischargeJustRegistered = Boolean(patch.discharge_at) &&
+        !existingDischargeAt &&
+        Boolean(responseRow.discharge_at ?? patch.discharge_at);
+    if (dischargeJustRegistered && existing) {
+        const ex = existing;
+        const row = responseRow;
+        const linkedEncounterId = row.hub_encounter_id ?? ex.hub_encounter_id;
+        const petId = ex.pet_id;
+        let hasActiveHospitalization = false;
+        if (linkedEncounterId) {
+            const { data: activeHosp } = await supabase_1.supabaseAdmin
+                .from('hub_hospitalizations')
+                .select('id')
+                .eq('clinic_id', clinic_id)
+                .eq('hub_encounter_id', linkedEncounterId)
+                .eq('status', 'active')
+                .limit(1)
+                .maybeSingle();
+            hasActiveHospitalization = Boolean(activeHosp);
+        }
+        if (!hasActiveHospitalization) {
+            const { data: activeHospPet } = await supabase_1.supabaseAdmin
+                .from('hub_hospitalizations')
+                .select('id')
+                .eq('clinic_id', clinic_id)
+                .eq('pet_id', petId)
+                .eq('status', 'active')
+                .limit(1)
+                .maybeSingle();
+            hasActiveHospitalization = Boolean(activeHospPet);
+        }
+        if (linkedEncounterId && !hasActiveHospitalization) {
+            const { data: enc } = await supabase_1.supabaseAdmin
+                .from('hub_encounters')
+                .select('id, status, completed_at, hub_appointment_id')
+                .eq('id', linkedEncounterId)
+                .eq('clinic_id', clinic_id)
+                .is('deleted_at', null)
+                .maybeSingle();
+            const encApptId = enc?.hub_appointment_id ??
+                null;
+            const apptTerminal = await (0, hubComandasController_1.isAppointmentTerminalCancelled)(clinic_id, encApptId);
+            if (apptTerminal) {
+                // Agenda cancelada/falta: não completar encounter nem abrir comanda.
+            }
+            else if (enc && !['completed', 'cancelled'].includes(String(enc.status ?? ''))) {
+                const nowIso = new Date().toISOString();
+                await supabase_1.supabaseAdmin
+                    .from('hub_encounters')
+                    .update({ status: 'completed', completed_at: nowIso })
+                    .eq('id', linkedEncounterId)
+                    .eq('clinic_id', clinic_id)
+                    .in('status', ['waiting', 'in_progress']);
+                void (0, hubComandasController_1.syncOpenComandasAfterEncounterCompleted)(clinic_id, linkedEncounterId);
+            }
+            else if (enc && enc.status === 'completed' && !enc.completed_at) {
+                await supabase_1.supabaseAdmin
+                    .from('hub_encounters')
+                    .update({ completed_at: new Date().toISOString() })
+                    .eq('id', linkedEncounterId)
+                    .eq('clinic_id', clinic_id);
+            }
+        }
+        void (0, hubClinicalTimelineController_1.recordTimelineEvent)({
+            clinic_id,
+            pet_id: petId,
+            hub_case_id: row.hub_case_id ?? ex.hub_case_id,
+            hub_encounter_id: linkedEncounterId,
+            event_type: 'note',
+            ref_type: 'surgery',
+            ref_id: id.data,
+            title: `Alta cirúrgica: ${ex.title}`,
+            created_by: ex.hub_staff_member_id,
+        });
+        const { scheduleReceptionSync } = await Promise.resolve().then(() => __importStar(require('./receptionSync')));
+        scheduleReceptionSync(clinic_id, petId);
     }
     if (patch.status === 'cancelled' && existing) {
         await (0, hubClinicalAppointmentMirror_1.setLinkedAppointmentStatus)({
@@ -2143,7 +2646,11 @@ const patchHubSurgery = async (req, res) => {
         const listed = await (0, hubPayablesService_1.listPayablesForSurgery)(clinic_id, id.data);
         payables = listed.payables;
     }
-    return res.json({ surgery: responseRow, payables });
+    return res.json({
+        surgery: responseRow,
+        payables,
+        ...(petDeathPending ? { pet_death_pending: petDeathPending } : {}),
+    });
 };
 exports.patchHubSurgery = patchHubSurgery;
 /** Alertas simples: vacinas com próxima dose nos próximos 30 dias. */
@@ -2158,7 +2665,7 @@ const getHubClinicalAlerts = async (req, res) => {
     const in30Str = in30.toISOString().slice(0, 10);
     const { data: vaccines, error } = await supabase_1.supabaseAdmin
         .from('hub_vaccination_records')
-        .select('id, pet_id, vaccine_name, next_dose_at, hub_pets(name)')
+        .select('id, pet_id, vaccine_name, next_dose_at, hub_pets(name, deleted_at, deceased_at, death_invalidated_at)')
         .eq('clinic_id', clinic_id.data)
         .is('deleted_at', null)
         .not('next_dose_at', 'is', null)
@@ -2166,8 +2673,17 @@ const getHubClinicalAlerts = async (req, res) => {
         .lte('next_dose_at', in30Str);
     if (error)
         return res.status(500).json({ error: error.message });
+    const { hasValidPetDeath } = await Promise.resolve().then(() => __importStar(require('./petDeathService')));
+    const alerts = (vaccines ?? []).filter((v) => {
+        const pet = v.hub_pets;
+        if (!pet)
+            return true;
+        if (pet.deleted_at)
+            return false;
+        return !hasValidPetDeath(pet);
+    });
     return res.json({
-        alerts: (vaccines ?? []).map((v) => ({
+        alerts: alerts.map((v) => ({
             type: 'vaccine_due',
             message: `Vacina ${v.vaccine_name} — próxima dose ${v.next_dose_at}`,
             pet_id: v.pet_id,

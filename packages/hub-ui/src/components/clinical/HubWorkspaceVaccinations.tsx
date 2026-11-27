@@ -51,7 +51,7 @@ export function HubWorkspaceVaccinations({
       return;
     }
     if (!draft.hub_inventory_lot_id) {
-      showError('Selecione o lote da vacina.');
+      showError('Selecione o lote da vacina no estoque.');
       return;
     }
     if (!draft.vaccine_name.trim()) {

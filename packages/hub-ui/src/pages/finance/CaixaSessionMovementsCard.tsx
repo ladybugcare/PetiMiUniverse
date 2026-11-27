@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo, useState } from 'react';
 import {
   ArrowDownToLine,
   ArrowUpFromLine,
@@ -17,6 +17,8 @@ import {
   cardFeeTotalCentsPositive,
 } from '../../utils/hubCardMachineFees';
 import { HUB_PAYMENT_METHOD_LABELS } from '../../utils/hubPaymentMethods';
+
+const INITIAL_VISIBLE = 4;
 
 function formatBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
@@ -64,7 +66,7 @@ function MovementRow({ label, amount, icon, tone, signed = false }: MovementRowP
       </strong>
     </li>
   );
-};
+}
 
 type MovementsSectionProps = {
   title: string;
@@ -84,6 +86,19 @@ function MovementsSection({ title, total, variant, children }: MovementsSectionP
     </section>
   );
 }
+
+type MovementLine =
+  | {
+      key: string;
+      kind: 'method';
+      method: HubPaymentMethod;
+      amount: number;
+    }
+  | {
+      key: string;
+      kind: 'fee' | 'card_net' | 'withdrawal' | 'deposit';
+      amount: number;
+    };
 
 export type CaixaSessionMovementsCardProps = {
   cashOpen: boolean;
@@ -114,13 +129,48 @@ export const CaixaSessionMovementsCard: React.FC<CaixaSessionMovementsCardProps>
   cardNetTotal = 0,
   cardWithoutFeeGrossTotal = 0,
 }) => {
+  const [expanded, setExpanded] = useState(false);
   const outflowsNet = round2(depositsTotal - withdrawalsTotal);
   const showCardFees = cardFeeTotalCentsPositive(cardFeeTotal);
-  const visibleMethods = methodsEntries.filter(([, total]) => isNonZeroAmount(total));
-  const showWithdrawals = isNonZeroAmount(withdrawalsTotal);
-  const showDeposits = isNonZeroAmount(depositsTotal);
-  const showEntradas = visibleMethods.length > 0;
-  const showOutflows = showWithdrawals || showDeposits;
+
+  const lines = useMemo((): MovementLine[] => {
+    const next: MovementLine[] = [];
+    for (const [method, total] of methodsEntries) {
+      if (!isNonZeroAmount(total)) continue;
+      next.push({ key: `method-${method}`, kind: 'method', method, amount: Number(total) });
+    }
+    if (showCardFees) {
+      next.push({ key: 'card-fee', kind: 'fee', amount: cardFeeTotal });
+      next.push({ key: 'card-net', kind: 'card_net', amount: cardNetTotal });
+    }
+    if (isNonZeroAmount(withdrawalsTotal)) {
+      next.push({ key: 'withdrawal', kind: 'withdrawal', amount: -withdrawalsTotal });
+    }
+    if (isNonZeroAmount(depositsTotal)) {
+      next.push({ key: 'deposit', kind: 'deposit', amount: depositsTotal });
+    }
+    return next;
+  }, [
+    methodsEntries,
+    showCardFees,
+    cardFeeTotal,
+    cardNetTotal,
+    withdrawalsTotal,
+    depositsTotal,
+  ]);
+
+  const hasMore = lines.length > INITIAL_VISIBLE;
+  const visibleLines = expanded ? lines : lines.slice(0, INITIAL_VISIBLE);
+
+  const methodLines = visibleLines.filter(
+    (line): line is Extract<MovementLine, { kind: 'method' }> => line.kind === 'method',
+  );
+  const feeVisible = visibleLines.some((line) => line.kind === 'fee');
+  const cardNetVisible = visibleLines.some((line) => line.kind === 'card_net');
+  const withdrawalVisible = visibleLines.some((line) => line.kind === 'withdrawal');
+  const depositVisible = visibleLines.some((line) => line.kind === 'deposit');
+  const showEntradas = methodLines.length > 0;
+  const showOutflows = withdrawalVisible || depositVisible;
 
   return (
     <div className="hub-caixa-page__card hub-caixa-page__card--ops">
@@ -130,16 +180,16 @@ export const CaixaSessionMovementsCard: React.FC<CaixaSessionMovementsCardProps>
       ) : loadingMethods ? (
         <HubLoading variant="block" label="Carregando formas de pagamento…" />
       ) : (
-        <div className="hub-caixa-page__card-scroll">
+        <div className="hub-caixa-page__card-body">
           {showEntradas ? (
             <MovementsSection title="Entradas" total={methodsTotal} variant="in">
-              {visibleMethods.map(([method, total]) => {
-                const meta = PAYMENT_METHOD_ICONS[method];
+              {methodLines.map((line) => {
+                const meta = PAYMENT_METHOD_ICONS[line.method];
                 return (
                   <MovementRow
-                    key={method}
-                    label={HUB_PAYMENT_METHOD_LABELS[method]}
-                    amount={Number(total)}
+                    key={line.key}
+                    label={HUB_PAYMENT_METHOD_LABELS[line.method]}
+                    amount={line.amount}
                     icon={meta.icon}
                     tone={meta.tone}
                   />
@@ -148,23 +198,27 @@ export const CaixaSessionMovementsCard: React.FC<CaixaSessionMovementsCardProps>
             </MovementsSection>
           ) : null}
 
-          {showCardFees ? (
+          {feeVisible || cardNetVisible ? (
             <div className="hub-caixa-page__card-fees" aria-label="Taxas da maquininha">
-              <div className="hub-caixa-page__movements-footer-row">
-                <span className="hub-caixa-page__movements-footer-icon hub-caixa-page__movements-icon hub-caixa-page__movements-icon--blue">
-                  <CreditCard size={14} strokeWidth={2} />
-                </span>
-                <span className="hub-caixa-page__movements-label">Taxa da maquininha</span>
-                <strong className="hub-caixa-page__movements-value">{formatBrl(cardFeeTotal)}</strong>
-              </div>
-              <div className="hub-caixa-page__movements-footer-row">
-                <span className="hub-caixa-page__movements-footer-icon hub-caixa-page__movements-icon hub-caixa-page__movements-icon--teal">
-                  <CreditCard size={14} strokeWidth={2} />
-                </span>
-                <span className="hub-caixa-page__movements-label">Líquido estimado do cartão</span>
-                <strong className="hub-caixa-page__movements-value">{formatBrl(cardNetTotal)}</strong>
-              </div>
-              {cardWithoutFeeGrossTotal > 0.009 ? (
+              {feeVisible ? (
+                <div className="hub-caixa-page__movements-footer-row">
+                  <span className="hub-caixa-page__movements-footer-icon hub-caixa-page__movements-icon hub-caixa-page__movements-icon--blue">
+                    <CreditCard size={14} strokeWidth={2} />
+                  </span>
+                  <span className="hub-caixa-page__movements-label">Taxa da maquininha</span>
+                  <strong className="hub-caixa-page__movements-value">{formatBrl(cardFeeTotal)}</strong>
+                </div>
+              ) : null}
+              {cardNetVisible ? (
+                <div className="hub-caixa-page__movements-footer-row">
+                  <span className="hub-caixa-page__movements-footer-icon hub-caixa-page__movements-icon hub-caixa-page__movements-icon--teal">
+                    <CreditCard size={14} strokeWidth={2} />
+                  </span>
+                  <span className="hub-caixa-page__movements-label">Líquido estimado do cartão</span>
+                  <strong className="hub-caixa-page__movements-value">{formatBrl(cardNetTotal)}</strong>
+                </div>
+              ) : null}
+              {feeVisible && cardWithoutFeeGrossTotal > 0.009 ? (
                 <p className="hub-caixa-page__card-fees-hint">{CARD_FEE_PARTIAL_COVERAGE_HINT}</p>
               ) : null}
             </div>
@@ -172,7 +226,7 @@ export const CaixaSessionMovementsCard: React.FC<CaixaSessionMovementsCardProps>
 
           {showOutflows ? (
             <MovementsSection title="Saídas" total={outflowsNet} variant="out">
-              {showWithdrawals ? (
+              {withdrawalVisible ? (
                 <MovementRow
                   label="Sangria"
                   amount={-withdrawalsTotal}
@@ -181,7 +235,7 @@ export const CaixaSessionMovementsCard: React.FC<CaixaSessionMovementsCardProps>
                   signed
                 />
               ) : null}
-              {showDeposits ? (
+              {depositVisible ? (
                 <MovementRow
                   label="Suprimento"
                   amount={depositsTotal}
@@ -203,6 +257,16 @@ export const CaixaSessionMovementsCard: React.FC<CaixaSessionMovementsCardProps>
               </strong>
             </div>
           </div>
+
+          {hasMore ? (
+            <button
+              type="button"
+              className="hub-caixa-timeline__more"
+              onClick={() => setExpanded((v) => !v)}
+            >
+              {expanded ? 'Ver menos movimentações' : 'Ver mais movimentações →'}
+            </button>
+          ) : null}
         </div>
       )}
     </div>
