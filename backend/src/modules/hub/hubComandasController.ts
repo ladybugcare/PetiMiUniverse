@@ -4460,6 +4460,8 @@ export type LeavePendingHandoffResult = {
   /** Comanda sem valor a faturar / já enviada — não é falha dura. */
   skipped?: boolean;
   error?: string;
+  /** Código estável para a UI (ex.: COMMISSION_EXECUTOR_REQUIRED). */
+  code?: string;
 };
 
 /**
@@ -6632,7 +6634,7 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
 
     // leave_pending: caminho único (recebível + linhas + finance_handoff_at)
     if (action === 'leave_pending') {
-      const results: { comanda_id: string; receivable_ids: string[]; error?: string }[] = [];
+      const results: { comanda_id: string; receivable_ids: string[]; error?: string; code?: string }[] = [];
       for (const comanda of comandas ?? []) {
         const row = await leavePendingHandoffComanda(comanda.id as string, clinic_id, {
           dueDate: due_date as string,
@@ -6643,6 +6645,7 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
             comanda_id: row.comanda_id,
             receivable_ids: row.receivable_ids,
             error: row.error,
+            ...(row.code ? { code: row.code } : {}),
           });
           continue;
         }
@@ -6650,6 +6653,7 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
           comanda_id: row.comanda_id,
           receivable_ids: row.receivable_ids,
           error: row.error,
+          ...(row.code ? { code: row.code } : {}),
         });
       }
       const meta = extractRequestMetadata(req);
