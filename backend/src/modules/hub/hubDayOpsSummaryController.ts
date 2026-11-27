@@ -385,7 +385,7 @@ export const getHubDayOpsSummary = async (req: Request, res: Response) => {
     if (canFinance) {
       tasks.push(
         (async () => {
-          const [{ data: cashSession }, { data: openComandas }, { data: openRecs }, { data: payPeriod }] =
+          const [{ data: cashSession }, openComandasAgg, { data: openRecs }, { data: payPeriod }] =
             await Promise.all([
               supabaseAdmin
                 .from('hub_cash_sessions')
@@ -394,13 +394,13 @@ export const getHubDayOpsSummary = async (req: Request, res: Response) => {
                 .eq('unit_id', unit_id)
                 .eq('status', 'open')
                 .maybeSingle(),
-              supabaseAdmin
-                .from('hub_comandas')
-                .select('id')
-                .eq('clinic_id', clinic_id)
-                .eq('unit_id', unit_id)
-                .eq('status', 'aberta')
-                .is('finance_handoff_at', null),
+              (async () => {
+                const { countOpenComandasPendingCaixa } = await import('./hubComandasController.js');
+                return countOpenComandasPendingCaixa(clinic_id, unit_id).catch(() => ({
+                  count: 0,
+                  total: 0,
+                }));
+              })(),
               supabaseAdmin
                 .from('hub_receivables')
                 .select('id, final_amount, due_date')
@@ -514,7 +514,7 @@ export const getHubDayOpsSummary = async (req: Request, res: Response) => {
             outstanding,
             cash_open: cashSession?.status === 'open',
             cash_opened_at: (cashSession?.opened_at as string | null) ?? null,
-            pending_billing: (openComandas ?? []).length,
+            pending_billing: openComandasAgg?.count ?? 0,
           };
 
           const prevAlerts = (out.alerts as Record<string, number> | undefined) ?? {

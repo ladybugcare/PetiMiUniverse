@@ -80,6 +80,7 @@ import { isAppointmentPendingPeriodicSeriesInvoice } from './hubSeriesBillingSer
 import {
   isFinancialCancelWithoutReturn,
   receivableBillsComandaItem,
+  receivableKeepsComandaChargeable,
   receivableListableOnComanda,
   receivableResidualCountsTowardBalance,
 } from './hubReceivableCancelCoverage';
@@ -1045,6 +1046,157 @@ export async function refreshComandaFinancialStatus(
   else if (balance_due <= 0.02 && total > 0) financial = opDone ? 'balanced' : 'awaiting_balance';
   else financial = opDone ? 'balanced' : 'open';
   await supabaseAdmin.from('hub_comandas').update({ financial_status: financial }).eq('id', comandaId).eq('clinic_id', clinicId);
+}
+
+/**
+ * Após reembolso/void total: se não restar recebível cobrável, anula a comanda
+ * (evita fantasma em “Pendentes de dias anteriores” no caixa).
+ * Não usa `receivableListableOnComanda` — `refunded` é listável na ficha, mas não mantém cobrança.
+ */
+export async function tryVoidComandaAfterSaleFinanciallyEnded(opts: {
+  clinicId: string;
+  comandaId: string | null | undefined;
+  reason: string;
+}): Promise<{ comanda_status: string | null }> {
+  const comandaId = opts.comandaId;
+  if (!comandaId) return { comanda_status: null };
+
+  const { data: comandaRow } = await supabaseAdmin
+    .from('hub_comandas')
+    .select('*')
+    .eq('id', comandaId)
+    .eq('clinic_id', opts.clinicId)
+    .maybeSingle();
+  if (!comandaRow) return { comanda_status: null };
+
+  const currentStatus = String(comandaRow.status ?? '');
+  if (currentStatus === 'cancelada') {
+    await refreshComandaFinancialStatus(comandaId, opts.clinicId, comandaRow as Record<string, unknown>);
+    return { comanda_status: 'cancelada' };
+  }
+
+  let siblings: Array<Record<string, unknown>> = [];
+  {
+    const primary = await supabaseAdmin
+      .from('hub_receivables')
+      .select('id, status, returned_amount, cancel_rebill')
+      .eq('comanda_id', comandaId)
+      .eq('clinic_id', opts.clinicId)
+      .is('deleted_at', null);
+    if (primary.error && String(primary.error.message || '').includes('cancel_rebill')) {
+      const legacy = await supabaseAdmin
+        .from('hub_receivables')
+        .select('id, status, returned_amount')
+        .eq('comanda_id', comandaId)
+        .eq('clinic_id', opts.clinicId)
+        .is('deleted_at', null);
+      siblings = (legacy.data ?? []) as Array<Record<string, unknown>>;
+    } else {
+      siblings = (primary.data ?? []) as Array<Record<string, unknown>>;
+    }
+  }
+
+  // Sem recebíveis: comanda ainda não faturada (ex. venda rápida aberta) — não anular.
+  const stillChargeable = siblings.some((r) => receivableKeepsComandaChargeable(r));
+  if (siblings.length === 0 || stillChargeable) {
+    await refreshComandaFinancialStatus(comandaId, opts.clinicId, comandaRow as Record<string, unknown>);
+    return { comanda_status: currentStatus || null };
+  }
+
+  const now = new Date().toISOString();
+  const originType = String(comandaRow.origin_type ?? '');
+  const originId = comandaRow.origin_id as string | null;
+  const waiveReason = `Anulação financeira: ${opts.reason}`.slice(0, 2000);
+  if (originId) {
+    if (originType === 'grooming_session') {
+      await supabaseAdmin
+        .from('hub_grooming_sessions')
+        .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
+        .eq('id', originId)
+        .eq('clinic_id', opts.clinicId);
+    } else if (originType === 'encounter') {
+      await supabaseAdmin
+        .from('hub_encounters')
+        .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
+        .eq('id', originId)
+        .eq('clinic_id', opts.clinicId);
+    } else if (originType === 'appointment') {
+      await supabaseAdmin
+        .from('hub_appointments')
+        .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
+        .eq('id', originId)
+        .eq('clinic_id', opts.clinicId);
+    } else if (originType === 'quote') {
+      await supabaseAdmin
+        .from('hub_quotes')
+        .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
+        .eq('id', originId)
+        .eq('clinic_id', opts.clinicId);
+    } else if (originType === 'boarding_reservation') {
+      await supabaseAdmin
+        .from('hub_boarding_reservations')
+        .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
+        .eq('id', originId)
+        .eq('clinic_id', opts.clinicId);
+    }
+  }
+
+  await supabaseAdmin
+    .from('hub_comandas')
+    .update({ status: 'cancelada', closed_at: now, financial_status: 'balanced' })
+    .eq('id', comandaId)
+    .eq('clinic_id', opts.clinicId);
+  return { comanda_status: 'cancelada' };
+}
+
+/**
+ * Contagem usada pelo Financeiro / visão geral — alinhada ao caixa (edit_scopes.caixa + saldo).
+ * Cura comandas fantasma (aberta sem saldo cobrável) no enriquecimento.
+ */
+export async function countOpenComandasPendingCaixa(
+  clinicId: string,
+  unitId: string,
+): Promise<{ count: number; total: number }> {
+  const { data: rows, error } = await supabaseAdmin
+    .from('hub_comandas')
+    .select('id, total_amount, status, finance_handoff_at, origin_type, origin_id')
+    .eq('clinic_id', clinicId)
+    .or(`unit_id.eq.${unitId},unit_id.is.null`)
+    .eq('status', 'aberta')
+    .is('finance_handoff_at', null)
+    .is('deleted_at', null);
+  if (error) throw new Error(error.message);
+
+  let count = 0;
+  let total = 0;
+  for (const row of rows ?? []) {
+    const comandaId = row.id as string;
+    let { balance_due } = await computeComandaBalancePayload(comandaId, clinicId);
+    if (balance_due <= 0.02) {
+      try {
+        const voided = await tryVoidComandaAfterSaleFinanciallyEnded({
+          clinicId,
+          comandaId,
+          reason: 'Cura automática: sem saldo cobrável',
+        });
+        if (voided.comanda_status === 'cancelada') continue;
+        const closed = await tryAutoCloseComanda(comandaId, clinicId);
+        if (closed) continue;
+        ({ balance_due } = await computeComandaBalancePayload(comandaId, clinicId));
+      } catch (e) {
+        console.warn('[hub_comandas] countOpenComandasPendingCaixa heal', comandaId, e);
+      }
+    }
+    if (balance_due <= 0.02) continue;
+
+    const operational_complete = await isOperationalCompleteForComanda(row as Record<string, unknown>);
+    const scopes = computeComandaEditScopes(row as Record<string, unknown>, operational_complete, balance_due);
+    if (!scopes.caixa) continue;
+
+    count += 1;
+    total = round2(total + balance_due);
+  }
+  return { count, total: round2(total) };
 }
 
 /** Fecha comanda aberta quando saldo quitado e sem itens em aberto. */
@@ -5570,16 +5722,27 @@ async function enrichCancellationQueueRows(
           return [cid, { paid_total, balance_due, operational_complete: true, edit_scopes: null }];
         }
         let { paid_total, balance_due } = await computeComandaBalancePayload(cid, clinicId);
-        // Cura: recebível pago sem auto-close deixava comanda aberta “fantasma” no perfil.
+        // Cura: quitada sem auto-close, ou reembolsada/estornada sem anular a comanda —
+        // evitava fantasma em “Pendentes de dias anteriores” no caixa.
         if (String(row.status) === 'aberta' && balance_due <= 0.02) {
           try {
-            const closed = await tryAutoCloseComanda(cid, clinicId);
-            if (closed) {
-              row.status = 'fechada';
+            const voided = await tryVoidComandaAfterSaleFinanciallyEnded({
+              clinicId,
+              comandaId: cid,
+              reason: 'Cura automática: sem saldo cobrável na comanda',
+            });
+            if (voided.comanda_status === 'cancelada') {
+              row.status = 'cancelada';
               ({ paid_total, balance_due } = await computeComandaBalancePayload(cid, clinicId));
+            } else {
+              const closed = await tryAutoCloseComanda(cid, clinicId);
+              if (closed) {
+                row.status = 'fechada';
+                ({ paid_total, balance_due } = await computeComandaBalancePayload(cid, clinicId));
+              }
             }
           } catch (e) {
-            console.error('enrichComandaRows tryAutoCloseComanda', cid, e);
+            console.error('enrichComandaRows tryVoid/tryAutoCloseComanda', cid, e);
           }
         }
         const operational_complete = await isOperationalCompleteForComanda(row);

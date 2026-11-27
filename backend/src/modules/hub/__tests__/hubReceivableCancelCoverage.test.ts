@@ -3,6 +3,7 @@ import {
   isReissueCancel,
   isVoidSaleCancel,
   receivableBillsComandaItem,
+  receivableKeepsComandaChargeable,
   receivableListableOnComanda,
   receivableResidualCountsTowardBalance,
 } from '../hubReceivableCancelCoverage';
@@ -36,6 +37,15 @@ describe('hubReceivableCancelCoverage', () => {
     expect(receivableBillsComandaItem(row)).toBe(true);
     expect(receivableListableOnComanda(row)).toBe(true);
     expect(receivableResidualCountsTowardBalance(row)).toBe(false);
+    expect(receivableKeepsComandaChargeable(row)).toBe(false);
+  });
+
+  it('só pending/partially_paid/paid mantêm a comanda cobrável', () => {
+    expect(receivableKeepsComandaChargeable({ status: 'pending' })).toBe(true);
+    expect(receivableKeepsComandaChargeable({ status: 'partially_paid' })).toBe(true);
+    expect(receivableKeepsComandaChargeable({ status: 'paid' })).toBe(true);
+    expect(receivableKeepsComandaChargeable({ status: 'cancelled' })).toBe(false);
+    expect(receivableKeepsComandaChargeable({ status: 'refunded' })).toBe(false);
   });
 
   it('cancelled com devolução comercial permanece cobrindo itens', () => {

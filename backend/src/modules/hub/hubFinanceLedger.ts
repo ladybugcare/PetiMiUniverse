@@ -1247,22 +1247,34 @@ async function returnReceivableProductLinesTsFallback(opts: {
   const comandaId = (rec.comanda_id as string | null) ?? null;
   if (comandaId) {
     try {
-      const { refreshComandaFinancialStatus } = await import('./hubComandasController.js');
-      const { data: comandaRow } = await supabaseAdmin
-        .from('hub_comandas')
-        .select('*')
-        .eq('id', comandaId)
-        .eq('clinic_id', opts.clinicId)
-        .maybeSingle();
-      if (comandaRow) {
-        await refreshComandaFinancialStatus(
+      const {
+        refreshComandaFinancialStatus,
+        tryVoidComandaAfterSaleFinanciallyEnded,
+      } = await import('./hubComandasController.js');
+      // Venda zerada por devolução: anula a comanda (não deixar cobrável no caixa).
+      if (snap.suggestedStatus === 'refunded' || snap.suggestedStatus === 'cancelled') {
+        await tryVoidComandaAfterSaleFinanciallyEnded({
+          clinicId: opts.clinicId,
           comandaId,
-          opts.clinicId,
-          comandaRow as Record<string, unknown>,
-        );
+          reason: opts.reason.trim(),
+        });
+      } else {
+        const { data: comandaRow } = await supabaseAdmin
+          .from('hub_comandas')
+          .select('*')
+          .eq('id', comandaId)
+          .eq('clinic_id', opts.clinicId)
+          .maybeSingle();
+        if (comandaRow) {
+          await refreshComandaFinancialStatus(
+            comandaId,
+            opts.clinicId,
+            comandaRow as Record<string, unknown>,
+          );
+        }
       }
     } catch (e) {
-      console.warn('[hub_finance] refreshComandaFinancialStatus after product return', e);
+      console.warn('[hub_finance] comanda sync after product return', e);
     }
   }
 

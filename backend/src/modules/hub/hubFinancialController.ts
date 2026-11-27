@@ -16,10 +16,12 @@ import { validateProductSalePricing } from './productSalePriceRules';
 import { resolveAppliedSaleAmount } from './hubPricingResolve';
 import { streamPaymentReceiptPdf } from './hubPaymentReceiptPdf';
 import {
+  countOpenComandasPendingCaixa,
   fetchOpenComandaOriginKeysExported,
   leavePendingHandoffOpenComandasForUnit,
   refreshComandaFinancialStatus,
   tryAutoCloseComanda,
+  tryVoidComandaAfterSaleFinanciallyEnded,
 } from './hubComandasController';
 import {
   closeCashSession,
@@ -1945,7 +1947,21 @@ export const postHubFinancePaymentReverse = async (req: Request, res: Response) 
       .select('comanda_id')
       .eq('id', result.receivable_id)
       .maybeSingle();
-    await syncComandaFinancialAfterLedger((rec?.comanda_id as string | null) ?? null, clinic_id);
+    const comandaId = (rec?.comanda_id as string | null) ?? null;
+    // Reembolso total encerra a venda: anula a comanda para não voltar como pendência no caixa.
+    // Anulação (payment_reversal) mantém a cobrança viva (T10 — re-cobrar).
+    if (
+      mode === 'refund' &&
+      (result.receivable_status === 'refunded' || result.receivable_status === 'cancelled')
+    ) {
+      await tryVoidComandaAfterSaleFinanciallyEnded({
+        clinicId: clinic_id,
+        comandaId,
+        reason,
+      });
+    } else {
+      await syncComandaFinancialAfterLedger(comandaId, clinic_id);
+    }
 
     return res.json({
       ok: true,
@@ -2506,78 +2522,11 @@ async function applyComandaSideEffectsAfterReceivableCancel(opts: {
     return { comanda_status: currentStatus || null };
   }
 
-  let siblings: Array<Record<string, unknown>> = [];
-  {
-    const primary = await supabaseAdmin
-      .from('hub_receivables')
-      .select('id, status, returned_amount, cancel_rebill')
-      .eq('comanda_id', comandaId)
-      .eq('clinic_id', opts.clinicId)
-      .is('deleted_at', null);
-    if (primary.error && String(primary.error.message || '').includes('cancel_rebill')) {
-      const legacy = await supabaseAdmin
-        .from('hub_receivables')
-        .select('id, status, returned_amount')
-        .eq('comanda_id', comandaId)
-        .eq('clinic_id', opts.clinicId)
-        .is('deleted_at', null);
-      siblings = (legacy.data ?? []) as Array<Record<string, unknown>>;
-    } else {
-      siblings = (primary.data ?? []) as Array<Record<string, unknown>>;
-    }
-  }
-
-  const { receivableListableOnComanda } = await import('./hubReceivableCancelCoverage.js');
-  const stillActive = siblings.some((r) => receivableListableOnComanda(r));
-  if (stillActive) {
-    await refreshComandaFinancialStatus(comandaId, opts.clinicId, comandaRow as Record<string, unknown>);
-    return { comanda_status: currentStatus || null };
-  }
-
-  const now = new Date().toISOString();
-  const originType = String(comandaRow.origin_type ?? '');
-  const originId = comandaRow.origin_id as string | null;
-  const waiveReason = `Anulação financeira: ${opts.reason}`.slice(0, 2000);
-  if (originId) {
-    if (originType === 'grooming_session') {
-      await supabaseAdmin
-        .from('hub_grooming_sessions')
-        .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
-        .eq('id', originId)
-        .eq('clinic_id', opts.clinicId);
-    } else if (originType === 'encounter') {
-      await supabaseAdmin
-        .from('hub_encounters')
-        .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
-        .eq('id', originId)
-        .eq('clinic_id', opts.clinicId);
-    } else if (originType === 'appointment') {
-      await supabaseAdmin
-        .from('hub_appointments')
-        .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
-        .eq('id', originId)
-        .eq('clinic_id', opts.clinicId);
-    } else if (originType === 'quote') {
-      await supabaseAdmin
-        .from('hub_quotes')
-        .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
-        .eq('id', originId)
-        .eq('clinic_id', opts.clinicId);
-    } else if (originType === 'boarding_reservation') {
-      await supabaseAdmin
-        .from('hub_boarding_reservations')
-        .update({ billing_waived_at: now, billing_waive_reason: waiveReason })
-        .eq('id', originId)
-        .eq('clinic_id', opts.clinicId);
-    }
-  }
-
-  await supabaseAdmin
-    .from('hub_comandas')
-    .update({ status: 'cancelada', closed_at: now, financial_status: 'balanced' })
-    .eq('id', comandaId)
-    .eq('clinic_id', opts.clinicId);
-  return { comanda_status: 'cancelada' };
+  return tryVoidComandaAfterSaleFinanciallyEnded({
+    clinicId: opts.clinicId,
+    comandaId,
+    reason: opts.reason,
+  });
 }
 
 export const postHubFinanceReceivableCancel = async (req: Request, res: Response) => {
@@ -3313,31 +3262,24 @@ export const getHubFinanceCashSessionStatus = async (req: Request, res: Response
     const unit_id = unitParsed.data;
 
     const keys = await fetchActiveReceivableKeysExpanded(clinic_id).catch(() => new Set<string>());
-    const [cashSessionRes, pendingBillingResult, openComandasRes] = await Promise.all([
-      supabaseAdmin
-        .from('hub_cash_sessions')
-        .select('id, status, opened_at, opening_balance, closed_at')
-        .eq('clinic_id', clinic_id)
-        .eq('unit_id', unit_id)
-        .eq('status', 'open')
-        .maybeSingle(),
-      collectUnbilledItems(clinic_id, unit_id, keys, { includeAmounts: false }).catch(
-        () => [] as unknown[],
-      ),
-      supabaseAdmin
-        .from('hub_comandas')
-        .select('id, total_amount')
-        .eq('clinic_id', clinic_id)
-        .eq('unit_id', unit_id)
-        .eq('status', 'aberta')
-        .is('finance_handoff_at', null),
-    ]);
+    const cashSessionRes = await supabaseAdmin
+      .from('hub_cash_sessions')
+      .select('id, status, opened_at, opening_balance, closed_at')
+      .eq('clinic_id', clinic_id)
+      .eq('unit_id', unit_id)
+      .eq('status', 'open')
+      .maybeSingle();
 
-    const openComandasRows = openComandasRes.data;
-    const openComandasCount = (openComandasRows ?? []).length;
-    const openComandasTotal = round2(
-      (openComandasRows ?? []).reduce((sum, row) => sum + Number(row.total_amount ?? 0), 0),
-    );
+    const pendingBillingResult = await collectUnbilledItems(clinic_id, unit_id, keys, {
+      includeAmounts: false,
+    }).catch(() => [] as unknown[]);
+
+    const openComandasAgg = await countOpenComandasPendingCaixa(clinic_id, unit_id).catch(() => ({
+      count: 0,
+      total: 0,
+    }));
+    const openComandasCount = openComandasAgg.count;
+    const openComandasTotal = openComandasAgg.total;
 
     return res.json({
       cash_session: cashSessionRes.data ?? null,

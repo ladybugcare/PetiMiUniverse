@@ -61,6 +61,8 @@ const HubFinanceiroPage: React.FC = () => {
   const [flowPeriod, setFlowPeriod] = useState<{ from: string; to: string } | null>(null);
   const [flowLoading, setFlowLoading] = useState(false);
   const [openComandasCount, setOpenComandasCount] = useState(0);
+  const [openComandasTotal, setOpenComandasTotal] = useState(0);
+  const [cashSessionOpen, setCashSessionOpen] = useState<boolean | null>(null);
 
   const loadSummary = useCallback(async () => {
     if (!clinicId || !unitId) return;
@@ -84,8 +86,12 @@ const HubFinanceiroPage: React.FC = () => {
     try {
       const status = await hubFinancialApi.getCashSessionStatus(clinicId, unitId);
       setOpenComandasCount(status.open_comandas_count ?? 0);
+      setOpenComandasTotal(status.open_comandas_total ?? 0);
+      setCashSessionOpen(status.cash_session?.status === 'open');
     } catch {
       setOpenComandasCount(0);
+      setOpenComandasTotal(0);
+      setCashSessionOpen(null);
     }
   }, [clinicId, unitId]);
 
@@ -324,9 +330,12 @@ const HubFinanceiroPage: React.FC = () => {
         <div className="hub-finance-page__context-warning" role="alert">
           <AlertCircle size={16} strokeWidth={2} style={{ verticalAlign: 'middle', marginRight: 6 }} />
           Há {openComandasCount}{' '}
-          {openComandasCount === 1 ? 'comanda aberta' : 'comandas abertas'} no caixa que ainda não{' '}
-          {openComandasCount === 1 ? 'foi enviada' : 'foram enviadas'} ao financeiro — resolva no Caixa
-          (execução, cancelamento ou envio).{' '}
+          {openComandasCount === 1 ? 'comanda aberta' : 'comandas abertas'} nesta unidade
+          {openComandasTotal > 0.009 ? ` (${formatBrl(openComandasTotal)} a resolver)` : ''}{' '}
+          que ainda não {openComandasCount === 1 ? 'foi enviada' : 'foram enviadas'} ao financeiro.
+          {cashSessionOpen === false
+            ? ' O caixa está fechado — abra o turno no Caixa para cancelar, cobrar ou enviar.'
+            : ' Resolva no Caixa (cancelamento, cobrança ou envio).'}{' '}
           <Link className="hub-finance-page__dash-link" to="/hub/caixa">
             Ir para o Caixa
           </Link>

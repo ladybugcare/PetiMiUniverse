@@ -242,6 +242,7 @@ describe('isCaixaCarryoverPendingComanda', () => {
           finance_handoff_at: null,
           total_amount: 80,
           paid_total: 0,
+          balance_due: 80,
         },
         '2026-09-05',
       ),
@@ -271,6 +272,24 @@ describe('isCaixaCarryoverPendingComanda', () => {
           finance_handoff_at: null,
           total_amount: 80,
           paid_total: 0,
+          balance_due: 80,
+        },
+        '2026-09-05',
+      ),
+    ).toBe(false);
+  });
+
+  it('exclui venda estornada/reembolsada sem saldo a cobrar', () => {
+    expect(
+      isCaixaCarryoverPendingComanda(
+        {
+          status: 'aberta',
+          opened_at: '2026-09-04T10:00:00.000Z',
+          finance_handoff_at: null,
+          total_amount: 20,
+          paid_total: 0,
+          balance_due: 0,
+          edit_scopes: { caixa: true, financeiro: true, locked_reason: null },
         },
         '2026-09-05',
       ),

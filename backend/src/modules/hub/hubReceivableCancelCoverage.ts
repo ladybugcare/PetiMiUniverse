@@ -56,3 +56,13 @@ export function receivableResidualCountsTowardBalance(row: ReceivableCoverageRow
   if (isFinancialCancelWithoutReturn(row)) return false;
   return true;
 }
+
+/**
+ * Recebível que ainda “segura” a comanda como cobrança viva.
+ * `refunded` permanece listável na ficha, mas não deve impedir anular a comanda
+ * após estorno/reembolso total (senão a venda volta em “Pendentes de dias anteriores”).
+ */
+export function receivableKeepsComandaChargeable(row: ReceivableCoverageRow): boolean {
+  const status = String(row.status ?? '');
+  return status === 'pending' || status === 'partially_paid' || status === 'paid';
+}

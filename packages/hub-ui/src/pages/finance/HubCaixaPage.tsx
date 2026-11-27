@@ -32,7 +32,11 @@ import { hubComandaApi } from '../../api/hubComandaApi';
 import { ComandaCheckoutDrawer } from './ComandaCheckoutDrawer';
 import { CaixaMetricsRow } from './CaixaMetricsRow';
 import { CaixaSessionMovementsCard } from './CaixaSessionMovementsCard';
-import { isCaixaCarryoverPendingComanda, isCaixaOwnedDayBoardItem } from './hubComandaEditUtils';
+import {
+  canCaixaEditOpenComanda,
+  isCaixaCarryoverPendingComanda,
+  isCaixaOwnedDayBoardItem,
+} from './hubComandaEditUtils';
 import {
   buildCaixaSessionHistoryItems,
   sumDayBoardPendingAmount,
@@ -193,13 +197,16 @@ const HubCaixaPage: React.FC = () => {
       if (!open?.id) {
         setCashOpen(null);
         setCashSummary(null);
-        const [c, dayBoard, closedRes] = await Promise.all([
+        const [c, dayBoard, closedRes, comandasRes] = await Promise.all([
           hubFinancialApi.getPendingBillingCount(clinicId, unitId).catch(() => 0),
           hubFinancialApi.getDayBoard(clinicId, unitId, dayBoardDate).catch(() => [] as HubFinanceDayBoardItem[]),
           hubFinancialApi.listClosedCashSessions(clinicId, unitId, 10).catch(() => ({ sessions: [] })),
+          hubComandaApi
+            .listComandas({ clinic_id: clinicId, unit_id: unitId, status: 'aberta', enrich: true })
+            .catch(() => ({ comandas: [] })),
         ]);
         setPending(c);
-        setOpenComandas([]);
+        setOpenComandas(comandasRes.comandas ?? []);
         setDayBoardItems(dayBoard);
         setClosedSessions(closedRes.sessions ?? []);
         setAcceptedPaymentMethods([]);
@@ -320,6 +327,11 @@ const HubCaixaPage: React.FC = () => {
 
     return result;
   }, [dayBoardItems, dayBoardSearch, atendimentosStatusFilter]);
+
+  const pendingOpenComandasInUnit = useMemo(
+    () => openComandas.filter((c) => canCaixaEditOpenComanda(c)),
+    [openComandas],
+  );
 
   const extraComandas = useMemo(() => {
     if (atendimentosStatusFilter !== 'all' && atendimentosStatusFilter !== 'comanda_aberta') return [];
@@ -560,6 +572,15 @@ const HubCaixaPage: React.FC = () => {
           </div>
           <h2 className="hub-caixa-page__closed-title">Caixa fechado</h2>
           <p className="hub-caixa-page__closed-text">Inicie o turno para operar o caixa.</p>
+          {pendingOpenComandasInUnit.length > 0 ? (
+            <div className="hub-finance-page__context-warning" role="alert" style={{ marginTop: 16, maxWidth: 520 }}>
+              <AlertCircle size={16} strokeWidth={2} style={{ verticalAlign: 'middle', marginRight: 6 }} />
+              Há {pendingOpenComandasInUnit.length}{' '}
+              {pendingOpenComandasInUnit.length === 1 ? 'comanda aberta' : 'comandas abertas'} nesta unidade
+              {pendingOpenComandasInUnit.length === 1 ? '' : ''} (sem envio ao financeiro). Inicie o turno para
+              cancelar, cobrar ou enviar ao financeiro — o financeiro continuará mostrando este aviso até resolver.
+            </div>
+          ) : null}
           {hasPermission('hub.cash.session') && (
             <button
               type="button"
@@ -1043,7 +1064,7 @@ const HubCaixaPage: React.FC = () => {
             ) : sessionHistoryItems.length === 0 ? (
               <p className="hub-caixa-page__empty">Nenhuma movimentação ou cobrança no painel do dia.</p>
             ) : (
-              <div className="hub-caixa-page__card-scroll hub-caixa-page__history-scroll">
+              <div className="hub-caixa-page__card-body hub-caixa-page__history-scroll">
                 <CaixaSessionHistoryTimeline
                   items={sessionHistoryItems}
                   onSelect={onSelectSessionHistory}

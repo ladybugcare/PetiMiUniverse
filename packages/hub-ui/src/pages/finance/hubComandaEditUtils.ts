@@ -152,6 +152,11 @@ export function canCaixaEditOpenComanda(comanda: Record<string, unknown>): boole
   if (scopes) return scopes.caixa;
   if (String(comanda.status ?? '') !== 'aberta') return false;
   if (comanda.finance_handoff_at) return false;
+  // Preferir saldo real (ex.: venda reembolsada/estornada com bruto histórico ainda no total).
+  if (comanda.balance_due != null && Number(comanda.balance_due) <= BALANCE_EPSILON) {
+    const total = Number(comanda.total_amount ?? 0);
+    if (total > BALANCE_EPSILON) return false;
+  }
   const total = Number(comanda.total_amount ?? 0);
   const paid = Number(comanda.paid_total ?? 0);
   if (total > 0 && paid >= total - 0.02) return false;
@@ -169,6 +174,8 @@ export function isCaixaCarryoverPendingComanda(
   todayYmd: string,
 ): boolean {
   if (!canCaixaEditOpenComanda(comanda)) return false;
+  // Sem saldo a cobrar (estorno/reembolso total), não listar como pendência.
+  if (comanda.balance_due != null && Number(comanda.balance_due) <= BALANCE_EPSILON) return false;
   const openedAt = comanda.opened_at ? String(comanda.opened_at).slice(0, 10) : null;
   return Boolean(openedAt && openedAt < todayYmd);
 }
