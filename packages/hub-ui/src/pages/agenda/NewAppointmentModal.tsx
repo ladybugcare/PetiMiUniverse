@@ -259,7 +259,7 @@ export type NewAppointmentModalProps = {
   mode?: 'create' | 'edit';
   appointmentId?: string | null;
   seriesId?: string | null;
-  onUpdated?: (appointment: HubAppointment) => void;
+  onUpdated?: (appointment: HubAppointment, meta?: { updated_count?: number }) => void;
   /** Agendamentos já carregados na agenda — usados para avisar conflito antes de salvar. */
   existingAppointments?: AgendaAppointment[];
 };
@@ -2159,7 +2159,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       }
       resetForm();
       onClose();
-      onUpdated?.(result.appointment);
+      onUpdated?.(result.appointment, { updated_count: result.updated_count });
     } catch (e: unknown) {
       const msg = (e as { message?: string })?.message ?? 'Erro ao salvar agendamento';
       if (!confirmedOverlapRef.current && isScheduleConflictMessage(msg)) {

@@ -352,10 +352,18 @@ const HubAgendaPage: React.FC = () => {
     openAppointmentDetail(id);
   }, [searchParams, openAppointmentDetail]);
 
-  const handleAppointmentUpdated = useCallback((_appointment: HubAppointment) => {
+  const handleAppointmentUpdated = useCallback((
+    _appointment: HubAppointment,
+    meta?: { updated_count?: number },
+  ) => {
     bumpReload();
     setDetailMode('view');
-    showSuccess('Agendamento atualizado.');
+    const n = meta?.updated_count;
+    showSuccess(
+      typeof n === 'number' && n > 1
+        ? `${n} ocorrências foram atualizadas.`
+        : 'Agendamento atualizado.',
+    );
   }, [bumpReload, showSuccess]);
   const bumpPoll = useCallback(() => setPollTick((t) => t + 1), []);
 

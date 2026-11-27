@@ -29,6 +29,35 @@ export function shouldRewriteAppointmentServicesOnPatch(appointmentKind: string 
   return String(appointmentKind ?? '') !== 'pickup_route';
 }
 
+/** Papel do row no patch de série (future/all). */
+export type SeriesPatchTargetRole = 'main' | 'extra' | 'pickup_leg';
+
+/**
+ * Classifica um alvo da série:
+ * - main: ocorrência visível (banho/hotel/…) sem pai
+ * - extra: bloco adicional ligado por parent_appointment_id
+ * - pickup_leg: perna de Leva e Traz
+ */
+export function classifySeriesPatchTarget(opts: {
+  appointmentKind: string | null | undefined;
+  parentAppointmentId: string | null | undefined;
+}): SeriesPatchTargetRole {
+  if (String(opts.appointmentKind ?? '') === 'pickup_route') return 'pickup_leg';
+  if (opts.parentAppointmentId) return 'extra';
+  return 'main';
+}
+
+/**
+ * Só o agendamento principal da ocorrência recebe a lista de serviços do formulário.
+ * Pernas L&T e blocos extras mantêm as próprias linhas.
+ */
+export function shouldRewriteAppointmentServicesOnSeriesPatch(opts: {
+  appointmentKind: string | null | undefined;
+  parentAppointmentId: string | null | undefined;
+}): boolean {
+  return classifySeriesPatchTarget(opts) === 'main';
+}
+
 /** Reparte um total comercial em duas linhas com soma exacta. */
 export function splitMoneyTotalAcrossTwoLegs(total: number): [number, number] {
   const a = roundMoney2(total / 2);

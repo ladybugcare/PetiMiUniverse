@@ -81,7 +81,7 @@ export type AppointmentSidePanelProps = {
   canViewFinancial?: boolean;
   staffOptions: HubStaffMember[];
   serviceTypes: HubServiceType[];
-  onUpdated: (appointment: HubAppointment) => void;
+  onUpdated: (appointment: HubAppointment, meta?: { updated_count?: number }) => void;
   extraBlockChildren?: AgendaAppointment[];
   existingAppointments?: AgendaAppointment[];
   seriesEndingInfo?: HubSeriesEndingSoon | null;

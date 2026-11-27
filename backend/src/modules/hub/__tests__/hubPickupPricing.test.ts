@@ -1,8 +1,10 @@
 import {
+  classifySeriesPatchTarget,
   normalizePickupPriceScope,
   resolvePickupLegAmounts,
   shouldAttachPickupInMultipetBatch,
   shouldRewriteAppointmentServicesOnPatch,
+  shouldRewriteAppointmentServicesOnSeriesPatch,
   splitMoneyTotalAcrossTwoLegs,
 } from '../hubPickupPricing';
 import { resolveServiceLinePricing } from '../hubPricingResolve';
@@ -128,6 +130,45 @@ describe('shouldRewriteAppointmentServicesOnPatch', () => {
     expect(shouldRewriteAppointmentServicesOnPatch('pickup_route')).toBe(false);
     expect(shouldRewriteAppointmentServicesOnPatch('standard')).toBe(true);
     expect(shouldRewriteAppointmentServicesOnPatch(null)).toBe(true);
+  });
+});
+
+describe('classifySeriesPatchTarget / shouldRewriteAppointmentServicesOnSeriesPatch', () => {
+  test('main, extra e perna', () => {
+    expect(
+      classifySeriesPatchTarget({ appointmentKind: 'standard', parentAppointmentId: null }),
+    ).toBe('main');
+    expect(
+      classifySeriesPatchTarget({
+        appointmentKind: 'standard',
+        parentAppointmentId: 'parent-1',
+      }),
+    ).toBe('extra');
+    expect(
+      classifySeriesPatchTarget({
+        appointmentKind: 'pickup_route',
+        parentAppointmentId: 'parent-1',
+      }),
+    ).toBe('pickup_leg');
+
+    expect(
+      shouldRewriteAppointmentServicesOnSeriesPatch({
+        appointmentKind: 'standard',
+        parentAppointmentId: null,
+      }),
+    ).toBe(true);
+    expect(
+      shouldRewriteAppointmentServicesOnSeriesPatch({
+        appointmentKind: 'standard',
+        parentAppointmentId: 'extra-parent',
+      }),
+    ).toBe(false);
+    expect(
+      shouldRewriteAppointmentServicesOnSeriesPatch({
+        appointmentKind: 'pickup_route',
+        parentAppointmentId: null,
+      }),
+    ).toBe(false);
   });
 });
 
