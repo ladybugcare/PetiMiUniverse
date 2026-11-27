@@ -41,6 +41,9 @@ export type HubDayOpsSummary = {
     cash_open: boolean;
     cash_opened_at: string | null;
     pending_billing: number;
+    /** Comandas abertas sem finance_handoff_at na unidade. */
+    open_comandas_count?: number;
+    open_comandas_total?: number;
   };
   alerts?: {
     low_stock: number;

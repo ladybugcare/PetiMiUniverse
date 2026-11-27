@@ -13,7 +13,10 @@ const CLINIC_ID = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaa0001';
 const ITEM_ID = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbb0001';
 const LOT_ID = 'cccccccc-cccc-4ccc-8ccc-cccccccc0001';
 
-function stockFixture(movements: Record<string, unknown>[] = []) {
+function stockFixture(
+  movements: Record<string, unknown>[] = [],
+  opts?: { expiry_date?: string | null },
+) {
   configureSupabaseMock({
     tables: {
       hub_inventory_items: [
@@ -33,13 +36,22 @@ function stockFixture(movements: Record<string, unknown>[] = []) {
           clinic_id: CLINIC_ID,
           item_id: ITEM_ID,
           lot_code: 'L001',
-          expiry_date: '2027-01-01',
+          expiry_date: opts?.expiry_date === undefined ? '2027-01-01' : opts.expiry_date,
           received_at: '2026-01-01',
         },
       ],
       hub_stock_movements: movements,
     },
   });
+}
+
+function ymdOffset(days: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 describe('hubInventoryStockUtils', () => {
@@ -70,6 +82,57 @@ describe('hubInventoryStockUtils', () => {
     ]);
     const err = await validateLotStockForOut(CLINIC_ID, ITEM_ID, LOT_ID, 2);
     expect(err).toMatch(/insuficiente/i);
+  });
+
+  it('validateLotStockForOut rejeita lote vencido', async () => {
+    stockFixture(
+      [
+        {
+          clinic_id: CLINIC_ID,
+          item_id: ITEM_ID,
+          lot_id: LOT_ID,
+          movement_type: 'purchase_in',
+          qty: 5,
+        },
+      ],
+      { expiry_date: ymdOffset(-1) },
+    );
+    const err = await validateLotStockForOut(CLINIC_ID, ITEM_ID, LOT_ID, 1);
+    expect(err).toMatch(/lote vencido/i);
+  });
+
+  it('validateLotStockForOut aceita validade de hoje', async () => {
+    stockFixture(
+      [
+        {
+          clinic_id: CLINIC_ID,
+          item_id: ITEM_ID,
+          lot_id: LOT_ID,
+          movement_type: 'purchase_in',
+          qty: 5,
+        },
+      ],
+      { expiry_date: ymdOffset(0) },
+    );
+    const err = await validateLotStockForOut(CLINIC_ID, ITEM_ID, LOT_ID, 1);
+    expect(err).toBeNull();
+  });
+
+  it('validateLotStockForOut aceita expiry_date nulo', async () => {
+    stockFixture(
+      [
+        {
+          clinic_id: CLINIC_ID,
+          item_id: ITEM_ID,
+          lot_id: LOT_ID,
+          movement_type: 'purchase_in',
+          qty: 5,
+        },
+      ],
+      { expiry_date: null },
+    );
+    const err = await validateLotStockForOut(CLINIC_ID, ITEM_ID, LOT_ID, 1);
+    expect(err).toBeNull();
   });
 
   it('createEncounterStockOut registra encounter_out com colunas corretas', async () => {

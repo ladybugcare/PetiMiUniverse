@@ -395,8 +395,10 @@ export const hubInventoryApi = {
     },
   },
   lots: {
-    list(clinicId: string) {
-      return apiRequest(`${base}/lots?clinic_id=${encodeURIComponent(clinicId)}`) as Promise<{ lots: HubInventoryLotRow[] }>;
+    list(clinicId: string, opts?: { forSale?: boolean }) {
+      const p = new URLSearchParams({ clinic_id: clinicId });
+      if (opts?.forSale) p.set('for_sale', '1');
+      return apiRequest(`${base}/lots?${p}`) as Promise<{ lots: HubInventoryLotRow[] }>;
     },
     expiring(clinicId: string, withinDays = 30, opts?: { byPolicy?: boolean; salePurpose?: string }) {
       const p = new URLSearchParams({

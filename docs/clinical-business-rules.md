@@ -370,6 +370,8 @@ Quando um agendamento ou atendimento é **cancelado na operação** e já existi
 3. A **fila «Ajustes por cancelamento»** no Caixa (`hub.financial.read`) concentra o trabalho; a resolução exige `hub.financial.write`: **reembolso** (estorno nos recebíveis), **crédito do tutor** (estorno + movimento de crédito) ou **manter cobrança** (pagamentos intactos, comanda fechada).
 4. Migração: `050_alter_hub_comandas_cancellation_resolution.sql` (item 50 do README `petimi_hub`).
 
+Se a comanda aberta da origem `appointment` **não tem pagamento**, o cancelamento/falta do agendamento **anula a comanda** (waive + `status: cancelada`), em vez de deixá-la cobrável.
+
 ### 5.7 Impactos financeiros
 
 - Central para receita; congelamento de itens após fechamento evita litígio.

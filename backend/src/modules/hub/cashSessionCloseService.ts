@@ -37,6 +37,30 @@ export function formatAutoCloseNotes(closedAt: Date = new Date()): string {
   return `Fechado automaticamente em ${date} às ${time} BRT — sem contagem física.`;
 }
 
+const CLOSE_NOTES_MAX = 3900;
+
+/** Anexa resumo de erros de handoff às notas de auto-close (auditoria). */
+export function appendHandoffErrorsToNotes(base: string, handoffErrors: string[]): string {
+  if (handoffErrors.length === 0) return base;
+  const summary = `Handoff com pendências (${handoffErrors.length}): ${handoffErrors.join('; ')}`;
+  const combined = `${base}\n${summary}`;
+  if (combined.length <= CLOSE_NOTES_MAX) return combined;
+  return `${combined.slice(0, CLOSE_NOTES_MAX - 1)}…`;
+}
+
+function resolveCloseNotes(opts: {
+  explicitNotes: string | null | undefined;
+  autoClosed: boolean;
+  handoffErrors: string[];
+}): string | null {
+  if (opts.explicitNotes !== undefined) {
+    if (opts.explicitNotes == null) return null;
+    return appendHandoffErrorsToNotes(opts.explicitNotes, opts.autoClosed ? opts.handoffErrors : []);
+  }
+  if (!opts.autoClosed) return null;
+  return appendHandoffErrorsToNotes(formatAutoCloseNotes(), opts.handoffErrors);
+}
+
 export type CashSessionRow = {
   id: string;
   clinic_id: string;
@@ -217,8 +241,8 @@ export type CloseCashSessionOpts = {
 
 /**
  * Handoff leave_pending + close atômico.
- * Manual: abortOnHandoffErrors=false (comportamento legado).
- * Auto: abortOnHandoffErrors=true.
+ * Manual e auto-close: handoff é best-effort (abortOnHandoffErrors=false por padrão no job).
+ * abortOnHandoffErrors=true só para caminhos que precisam falhar duro.
  */
 export async function closeCashSession(opts: CloseCashSessionOpts): Promise<CloseCashSessionResult> {
   const { data: sess, error: sErr } = await supabaseAdmin
@@ -259,12 +283,11 @@ export async function closeCashSession(opts: CloseCashSessionOpts): Promise<Clos
     }
   }
 
-  const notes =
-    opts.notes !== undefined
-      ? opts.notes
-      : opts.autoClosed
-        ? formatAutoCloseNotes()
-        : null;
+  const notes = resolveCloseNotes({
+    explicitNotes: opts.notes,
+    autoClosed: opts.autoClosed,
+    handoffErrors: autoHandoffErrors,
+  });
 
   const closed = await closeCashSessionAtomic({
     sessionId: opts.sessionId,
@@ -366,7 +389,8 @@ export async function runAutoCloseOverdueJob(opts: {
         clinicId: cand.clinic_id,
         closingBalance: null,
         autoClosed: true,
-        abortOnHandoffErrors: true,
+        // Gaveta fecha mesmo com handoff clínico falho; erros ficam em notes + auto_handoff_errors.
+        abortOnHandoffErrors: false,
       });
       if (result.already_closed) {
         skippedCount++;
@@ -389,6 +413,9 @@ export async function runAutoCloseOverdueJob(opts: {
         opened_at: cand.opened_at,
         status: 'closed',
         auto_handoff_count: result.auto_handoff_count,
+        ...(result.auto_handoff_errors.length > 0
+          ? { reason: `handoff_errors:${result.auto_handoff_errors.length}` }
+          : {}),
       });
     } catch (e: unknown) {
       skippedCount++;

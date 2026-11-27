@@ -1810,6 +1810,30 @@ export const completeHubEncounter = async (req: Request, res: Response) => {
       status: string;
     };
 
+    if (bf.status === 'cancelled') {
+      return res.status(409).json({
+        error: 'Não é possível finalizar um atendimento cancelado.',
+      });
+    }
+
+    if (bf.hub_appointment_id) {
+      const { data: linkedAppt, error: apptErr } = await supabaseAdmin
+        .from('hub_appointments')
+        .select('status')
+        .eq('id', bf.hub_appointment_id)
+        .eq('clinic_id', clinic_id.data)
+        .is('deleted_at', null)
+        .maybeSingle();
+      if (apptErr) return res.status(500).json({ error: apptErr.message });
+      const apptStatus = String((linkedAppt as { status?: string } | null)?.status ?? '');
+      if (apptStatus === 'cancelled' || apptStatus === 'no_show') {
+        return res.status(409).json({
+          error:
+            'Não é possível finalizar: o agendamento foi cancelado ou marcado como falta.',
+        });
+      }
+    }
+
     const billingId = await resolveBillingIdentity({
       pet_id: bf.pet_id,
       guardian_id: bf.guardian_id,
@@ -1850,11 +1874,17 @@ export const completeHubEncounter = async (req: Request, res: Response) => {
       .update({ status: 'completed', completed_at: now })
       .eq('id', id.data)
       .eq('clinic_id', clinic_id.data)
+      .in('status', ['waiting', 'in_progress'])
       .is('deleted_at', null)
       .select(ENCOUNTER_SELECT)
       .maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
-    if (!data) return res.status(404).json({ error: 'Atendimento não encontrado' });
+    if (!data) {
+      // Race: cancel∥complete — encounter já não está waiting/in_progress.
+      return res.status(409).json({
+        error: 'Não é possível finalizar este atendimento (cancelado ou já concluído).',
+      });
+    }
 
     const enc = data as Record<string, unknown>;
     const resolvedPetId = (enc.pet_id as string | null) ?? billingId.pet_id;

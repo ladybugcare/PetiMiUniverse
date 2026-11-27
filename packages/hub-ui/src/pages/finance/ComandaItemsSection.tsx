@@ -5,6 +5,7 @@ import type { HubInventoryItem, HubInventoryLotRow } from '../../api/hubInventor
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import type { HubComandaPendingPriceApproval } from '../../api/hubComandaApi';
 import type { ComandaItemDraft } from './comandaItemDraft';
+import { isLotExpired } from '../../utils/inventoryLotExpiry';
 
 function fmtBrl(n: number): string {
   return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -146,7 +147,9 @@ export const ComandaItemsSection: React.FC<Props> = ({
 
   const lotOptionsForItem = (inventoryItemId: string | null): HubComboboxOption[] => {
     if (!inventoryItemId) return [{ value: '', label: '— Lote —' }];
-    const lots = inventoryLots.filter((lot) => lot.item_id === inventoryItemId);
+    const lots = inventoryLots.filter(
+      (lot) => lot.item_id === inventoryItemId && !isLotExpired(lot.expiry_date),
+    );
     return [
       { value: '', label: '— Lote —' },
       ...lots.map((lot) => ({

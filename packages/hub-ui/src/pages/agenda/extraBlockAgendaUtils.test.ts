@@ -1,5 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { isExtraBlockChildHiddenFromGrid } from './extraBlockAgendaUtils';
+import type { AgendaAppointment, AgendaStatus } from './agendaModel';
+import {
+  excludeLockedAgendaExtraBlocks,
+  findExtraBlockChildren,
+  isExtraBlockChildHiddenFromGrid,
+} from './extraBlockAgendaUtils';
+
+function miniAppt(
+  partial: Partial<AgendaAppointment> &
+    Pick<AgendaAppointment, 'id' | 'start' | 'end' | 'status'>,
+): AgendaAppointment {
+  return {
+    serviceName: 'Serviço',
+    group: 'banho_tosa',
+    agendaColor: null,
+    professionalId: null,
+    professionalName: '—',
+    resourceLabel: '—',
+    unitName: 'Unidade',
+    petName: 'Pipoca',
+    guardianName: 'Tutor',
+    petId: 'pet-1',
+    guardianId: 'gu-1',
+    appointment_kind: 'standard',
+    ...partial,
+  };
+}
 
 describe('isExtraBlockChildHiddenFromGrid', () => {
   const hotelParent = {
@@ -54,5 +80,55 @@ describe('isExtraBlockChildHiddenFromGrid', () => {
 
   it('não oculta agendamento sem pai', () => {
     expect(isExtraBlockChildHiddenFromGrid(hotelParent, [hotelParent])).toBe(false);
+  });
+});
+
+describe('excludeLockedAgendaExtraBlocks / findExtraBlockChildren (edit)', () => {
+  const parent = miniAppt({
+    id: 'parent-1',
+    start: new Date(2026, 5, 1, 10, 0),
+    end: new Date(2026, 5, 1, 11, 0),
+    status: 'confirmed',
+  });
+  const openChild = miniAppt({
+    id: 'child-open',
+    parent_appointment_id: 'parent-1',
+    start: new Date(2026, 5, 1, 11, 0),
+    end: new Date(2026, 5, 1, 12, 0),
+    status: 'confirmed',
+  });
+  const paidChild = miniAppt({
+    id: 'child-paid',
+    parent_appointment_id: 'parent-1',
+    start: new Date(2026, 5, 1, 12, 0),
+    end: new Date(2026, 5, 1, 13, 0),
+    status: 'paid',
+  });
+
+  it('findExtraBlockChildren inclui filhos pagos (lista bruta)', () => {
+    const found = findExtraBlockChildren(parent, [parent, openChild, paidChild]);
+    expect(found.map((a) => a.id)).toEqual(['child-open', 'child-paid']);
+  });
+
+  it('excludeLockedAgendaExtraBlocks remove pago/finalizado/cancelado/falta', () => {
+    const locked: AgendaStatus[] = ['done', 'cancelled', 'paid', 'no_show'];
+    const children = locked.map((status, i) =>
+      miniAppt({
+        id: `locked-${status}`,
+        parent_appointment_id: 'parent-1',
+        start: new Date(2026, 5, 1, 11 + i, 0),
+        end: new Date(2026, 5, 1, 12 + i, 0),
+        status,
+      }),
+    );
+    const filtered = excludeLockedAgendaExtraBlocks([openChild, ...children]);
+    expect(filtered.map((a) => a.id)).toEqual(['child-open']);
+  });
+
+  it('edit path: filho paid no mesmo dia não entra nos extras', () => {
+    const forEdit = excludeLockedAgendaExtraBlocks(
+      findExtraBlockChildren(parent, [parent, openChild, paidChild]),
+    );
+    expect(forEdit.map((a) => a.id)).toEqual(['child-open']);
   });
 });

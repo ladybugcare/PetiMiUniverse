@@ -1,4 +1,4 @@
-import type { AgendaAppointment } from './agendaModel';
+import { isLockedAgendaStatus, type AgendaAppointment } from './agendaModel';
 import type { NewAppointmentInitial } from './NewAppointmentModal';
 
 function toYmd(d: Date): string {
@@ -53,6 +53,13 @@ export function findExtraBlockChildren(
         (parent.series_id ? a.series_id === parent.series_id : true),
     )
     .sort((a, b) => a.start.getTime() - b.start.getTime());
+}
+
+/** Remove blocos já encerrados (pago/finalizado/cancelado/falta) — uso no formulário de edição. */
+export function excludeLockedAgendaExtraBlocks(
+  children: AgendaAppointment[],
+): AgendaAppointment[] {
+  return children.filter((a) => !isLockedAgendaStatus(a.status));
 }
 
 export function mapExtraBlocksToInitial(

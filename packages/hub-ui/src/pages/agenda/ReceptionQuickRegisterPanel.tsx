@@ -26,6 +26,8 @@ import {
   type CoatTypeValue,
   type PetBodyPorteValue,
 } from '../../utils/hubServiceTypesPricingMatrix';
+import { isValidBrTaxId } from '../../utils/formatBrTaxId';
+import { requiredFieldPtProps } from '../../utils/requiredFieldPt';
 
 export type QuickRegisterGuardianResult = { id: string; full_name: string };
 export type QuickRegisterPetResult = {
@@ -271,6 +273,10 @@ export const ReceptionQuickRegisterPanel: React.FC<Props> = ({
         setError(isCompany ? 'Informe o CNPJ.' : 'Informe o CPF.');
         return;
       }
+      if (!isValidBrTaxId(taxId)) {
+        setError(isCompany ? 'CNPJ inválido.' : 'CPF inválido.');
+        return;
+      }
     } else if (!guardianId) {
       setError('Tutor não identificado. Feche e selecione o tutor no agendamento.');
       return;
@@ -421,19 +427,22 @@ export const ReceptionQuickRegisterPanel: React.FC<Props> = ({
                 </button>
               </div>
 
-              <div className="nam-field">
-                <label className="nam-label" htmlFor="rqr-name">
-                  {isCompany ? 'Nome fantasia' : 'Nome completo'}
-                </label>
-                <input
-                  id="rqr-name"
-                  className="nam-input"
-                  value={fullName}
-                  onChange={(e) => setFullName(e.target.value)}
-                  autoComplete={isCompany ? 'organization' : 'name'}
-                  placeholder={isCompany ? 'Nome da empresa' : 'Nome completo do tutor'}
-                />
-              </div>
+                <div className="nam-field">
+                  <label className="nam-label" htmlFor="rqr-name">
+                    {isCompany ? 'Nome fantasia' : 'Nome completo'}
+                  </label>
+                  <input
+                    id="rqr-name"
+                    className="nam-input"
+                    value={fullName}
+                    onChange={(e) => setFullName(e.target.value)}
+                    autoComplete={isCompany ? 'organization' : 'name'}
+                    placeholder={isCompany ? 'Nome da empresa' : 'Nome completo do tutor'}
+                    {...requiredFieldPtProps(
+                      isCompany ? 'Informe o nome fantasia.' : 'Informe o nome do tutor.',
+                    )}
+                  />
+                </div>
 
               {isCompany ? (
                 <div className="nam-field">
@@ -461,6 +470,7 @@ export const ReceptionQuickRegisterPanel: React.FC<Props> = ({
                     value={phone}
                     onChange={setPhone}
                     onBlur={() => void checkDuplicateGuardian()}
+                    {...requiredFieldPtProps('Informe o telefone.')}
                   />
                 </div>
                 <div className="nam-field">
@@ -475,6 +485,7 @@ export const ReceptionQuickRegisterPanel: React.FC<Props> = ({
                     onChange={setTaxId}
                     onBlur={() => void checkDuplicateGuardian()}
                     placeholder={isCompany ? '00.000.000/0000-00' : '000.000.000-00'}
+                    {...requiredFieldPtProps(isCompany ? 'Informe o CNPJ.' : 'Informe o CPF.')}
                   />
                 </div>
               </div>

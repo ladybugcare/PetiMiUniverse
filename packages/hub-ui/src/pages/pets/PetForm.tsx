@@ -365,6 +365,7 @@ export const PetForm: React.FC<PetFormProps> = ({
           searchPlaceholder="Buscar tutor…"
           allowCreate={false}
           clearable={false}
+          enterCommitsUniqueMatch={false}
           ariaLabel="Tutor principal"
         />
       </div>
@@ -381,6 +382,7 @@ export const PetForm: React.FC<PetFormProps> = ({
           placeholder="— nenhum —"
           searchPlaceholder="Buscar tutor…"
           allowCreate={false}
+          enterCommitsUniqueMatch={false}
           ariaLabel="Tutor secundário"
         />
       </div>

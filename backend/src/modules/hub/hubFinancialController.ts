@@ -3,8 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import { resolveStaffIdForUser } from './hubStaffResolve';
-import { computeBalances } from './hubInventoryController';
-import { createSaleStockOut, restoreProductStockForReceivableLines } from './hubInventoryStockUtils';
+import {
+  createSaleStockOut,
+  restoreProductStockForReceivableLines,
+  validateLotStockForOut,
+} from './hubInventoryStockUtils';
 import {
   computeStockReturnStatus,
   isProductStockLine,
@@ -1667,19 +1670,9 @@ export const postHubFinanceReceivableProductLine = async (req: Request, res: Res
     if (itemErr || !item || item.clinic_id !== clinic_id || item.deleted_at || item.active === false) {
       return res.status(404).json({ error: 'Produto não encontrado ou inativo' });
     }
-    const { data: lot, error: lotErr } = await supabaseAdmin
-      .from('hub_inventory_lots')
-      .select('id, clinic_id, item_id')
-      .eq('id', lot_id)
-      .maybeSingle();
-    if (lotErr || !lot || lot.clinic_id !== clinic_id || lot.item_id !== item_id) {
-      return res.status(400).json({ error: 'Lote inválido para este produto' });
-    }
-
-    const { byLot } = await computeBalances(clinic_id);
-    const available = Number(byLot.get(lot_id) ?? 0);
-    if (available < quantity) {
-      return res.status(400).json({ error: `Quantidade insuficiente no lote (disponível: ${available})` });
+    const stockErr = await validateLotStockForOut(clinic_id, item_id, lot_id, quantity);
+    if (stockErr) {
+      return res.status(400).json({ error: stockErr });
     }
 
     const unitSale = round2(unit_sale_amount || Number(item.sale_amount ?? 0));

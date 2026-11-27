@@ -206,6 +206,7 @@ const HospAdmitForm: React.FC<Props> = ({
                 ariaLabel="Selecionar tutor"
                 disabled={submitting}
                 allowCreate={false}
+                enterCommitsUniqueMatch={false}
               />
             )}
           </div>

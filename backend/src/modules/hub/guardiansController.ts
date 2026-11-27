@@ -23,7 +23,10 @@ function normalizeGuardianTaxId(raw: string | null | undefined): string {
 }
 
 const taxIdCreateSchema = z
-  .string()
+  .string({
+    required_error: 'CPF/CNPJ é obrigatório',
+    invalid_type_error: 'CPF/CNPJ é obrigatório',
+  })
   .trim()
   .min(1, 'CPF/CNPJ é obrigatório')
   .max(32, 'CPF/CNPJ muito longo')
@@ -32,7 +35,10 @@ const taxIdCreateSchema = z
   });
 
 const phoneCreateSchema = z
-  .string()
+  .string({
+    required_error: 'Telefone é obrigatório',
+    invalid_type_error: 'Telefone é obrigatório',
+  })
   .trim()
   .min(1, 'Telefone é obrigatório')
   .max(40, 'Telefone muito longo')

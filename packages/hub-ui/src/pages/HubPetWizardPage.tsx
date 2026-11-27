@@ -244,13 +244,11 @@ const HubPetWizardPage: React.FC = () => {
       if (!state.species.trim()) return 'Indique a espécie.';
       if (!state.isSRD && !state.breed.trim()) return 'Indique a raça ou active SRD.';
       if (!state.sex) return 'selecione o sexo.';
+      if (!state.neutered) return 'Indique se o pet é castrado.';
       if (!state.birth_date.trim()) return 'Indique a data de nascimento.';
     }
     if (step === 1) {
       if (!state.primary_guardian_id) return 'selecione o tutor principal.';
-    }
-    if (step === 2) {
-      if (!state.neutered) return 'Indique se o pet é castrado.';
     }
     return null;
   };

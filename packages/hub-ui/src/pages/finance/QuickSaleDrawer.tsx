@@ -22,6 +22,7 @@ import {
 import { isValidBrTaxId } from '../../utils/formatBrTaxId';
 import { isValidBrPhone } from '../../utils/formatBrPhone';
 import { normalizeProductQtyInput } from './quickSaleQty';
+import { isLotExpired } from '../../utils/inventoryLotExpiry';
 import '../clientes/clientes.css';
 import './hub-finance-page.css';
 
@@ -68,9 +69,10 @@ function matchInventoryByCode(items: HubInventoryItem[], code: string): HubInven
 }
 
 function pickLotWithStock(lots: HubInventoryLotRow[], itemId: string): HubInventoryLotRow | undefined {
+  const sellable = lots.filter((l) => l.item_id === itemId && !isLotExpired(l.expiry_date));
   return (
-    lots.find((l) => l.item_id === itemId && Number(l.qty_on_hand ?? 0) > 0) ??
-    lots.find((l) => l.item_id === itemId)
+    sellable.find((l) => Number(l.qty_on_hand ?? 0) > 0) ??
+    sellable[0]
   );
 }
 
@@ -173,7 +175,7 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
       setServiceTypes(svcRes.service_types ?? []);
       setInventoryItems(invRes.items ?? []);
       try {
-        const lotsRes = await hubInventoryApi.lots.list(clinicId);
+        const lotsRes = await hubInventoryApi.lots.list(clinicId, { forSale: true });
         setInventoryLots(lotsRes.lots ?? []);
       } catch {
         setInventoryLots([]);
@@ -764,6 +766,7 @@ export const QuickSaleDrawer: React.FC<Props> = ({ open, unitId, onClose, onOpen
                     searchPlaceholder="Nome, telefone ou CPF"
                     ariaLabel="Tutor"
                     triggerIcon={<User size={18} strokeWidth={2} aria-hidden />}
+                    enterCommitsUniqueMatch={false}
                   />
                 </div>
 

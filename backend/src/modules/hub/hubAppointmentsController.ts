@@ -12,7 +12,12 @@ import {
   shouldRewriteAppointmentServicesOnPatch,
   type PickupPriceScope,
 } from './hubPickupPricing';
+import {
+  resolveSeriesScopedSchedulePatch,
+  shiftTimestampToDate,
+} from './hubSeriesSchedulePatch';
 import { canTransitionToNoShow } from './hubNoShowUtils';
+import { manualAppointmentStatusError } from './hubAppointmentManualStatus';
 import {
   PET_BODY_SIZE_TIERS,
   requiresCoatPricing,
@@ -24,11 +29,14 @@ import {
   type ServiceTypePricingRow,
 } from './hubPricingResolve';
 import {
-  maybeFlagComandaCancellationPending,
   financialAdjustmentFlagsForAppointments,
   openComandaIdsForAppointments,
   syncOpenComandasAfterAppointmentOperationalComplete,
 } from './hubComandasController';
+import {
+  handleComandaAfterOperationalCancel,
+  type ComandaOperationalCancelEffect,
+} from './hubComandaOperationalCancel';
 import { hasPackageBalanceForServices, listActivePackageBalances } from './hubPackagesService';
 import { normalizeSeriesBillingForInsert } from './hubSeriesBillingService';
 import {
@@ -58,6 +66,7 @@ import {
 } from './hubSpecialPrices';
 import { upsertSpecialPriceFromAppointment } from './hubSpecialPricesController';
 import { syncSurgeryForAppointmentSafe } from './hubSurgeryFromAppointment';
+import { cancelLinkedOpenEncountersForAppointments } from './hubClinicalAppointmentMirror';
 import { isResourceScheduleConflict } from './hubResourceConflict';
 import { resolveResourceSnapshot } from './hubResourcesService';
 import {
@@ -842,14 +851,6 @@ async function refreshSnapshotsForAppointment(
 
 // ── Recurrence helpers ──────────────────────────────────────────────────────
 
-function shiftTimestampToDate(originalTs: string, newDate: string): string {
-  // keep time portion from originalTs, apply to newDate
-  const orig = new Date(originalTs);
-  const [y, m, d] = newDate.split('-').map(Number);
-  orig.setUTCFullYear(y!, m! - 1, d!);
-  return orig.toISOString();
-}
-
 /** UUID determinístico por data — agrupa irmãos multi-pet na mesma visita recorrente. */
 function visitGroupIdForOccurrence(baseGroupId: string, occDate: string): string {
   const hash = createHash('sha256').update(`${baseGroupId}:${occDate}`).digest();
@@ -1389,13 +1390,18 @@ async function syncExtraBlocksForParent(
 ): Promise<{ error?: string; status?: number; code?: string }> {
   const { data: existingChildren, error: childErr } = await supabaseAdmin
     .from('hub_appointments')
-    .select('id')
+    .select('id, status')
     .eq('clinic_id', clinicId)
     .eq('parent_appointment_id', parentId)
     .is('deleted_at', null);
   if (childErr) return { error: childErr.message, status: 500 };
 
-  const existingChildIds = (existingChildren ?? []).map((r: { id: string }) => r.id);
+  const LOCKED_EXTRA_BLOCK_STATUSES = new Set(['done', 'paid', 'cancelled', 'no_show']);
+  const existingChildRows = (existingChildren ?? []) as Array<{ id: string; status: string | null }>;
+  const existingChildIds = existingChildRows.map((r) => r.id);
+  const lockedChildIds = new Set(
+    existingChildRows.filter((r) => LOCKED_EXTRA_BLOCK_STATUSES.has(String(r.status ?? ''))).map((r) => r.id),
+  );
   const keepIds = new Set<string>();
 
   const apptOverride = (parentRow.pricing_porte_tier as string | null) ?? null;
@@ -1559,6 +1565,8 @@ async function syncExtraBlocksForParent(
   const now = new Date().toISOString();
   for (const childId of existingChildIds) {
     if (keepIds.has(childId)) continue;
+    // Filtrado no UI de edição: não soft-deletar filhos já encerrados omitidos do payload.
+    if (lockedChildIds.has(childId)) continue;
     await supabaseAdmin
       .from('hub_appointments')
       .update({ deleted_at: now })
@@ -1736,6 +1744,10 @@ export const createHubAppointment = async (req: Request, res: Response) => {
     const b = parsed.data;
     if (new Date(b.ends_at) <= new Date(b.starts_at)) {
       return res.status(400).json({ error: 'ends_at deve ser posterior a starts_at' });
+    }
+    const createStatusErr = manualAppointmentStatusError(b.status ?? null, { mode: 'create' });
+    if (createStatusErr) {
+      return res.status(400).json({ error: createStatusErr });
     }
     // Kind preliminar (walk-in etc.); pode virar pickup_route após carregar o serviço principal.
     let resolvedAppointmentKind: AppointmentKind = b.appointment_kind ?? 'standard';
@@ -3081,6 +3093,16 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       }
     }
 
+    if (b.status !== undefined) {
+      const statusErr = manualAppointmentStatusError(b.status, {
+        mode: 'patch',
+        currentStatus: String((existing as Record<string, unknown>).status ?? ''),
+      });
+      if (statusErr) {
+        return res.status(400).json({ error: statusErr });
+      }
+    }
+
     if (isStructuralAppointmentPatch(b) && !isAppointmentStructurallyEditable(existing as Record<string, unknown>)) {
       return res.status(409).json({
         error: 'Agendamento não pode ser editado após iniciado ou após o horário agendado.',
@@ -3227,8 +3249,13 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
     if (b.hub_staff_member_id !== undefined) patch.hub_staff_member_id = b.hub_staff_member_id;
     if (b.pet_id !== undefined) patch.pet_id = b.pet_id;
     if (b.guardian_id !== undefined) patch.guardian_id = b.guardian_id;
-    if (b.starts_at !== undefined) patch.starts_at = b.starts_at;
-    if (b.ends_at !== undefined) patch.ends_at = b.ends_at;
+    // Em future/all o horário é resolvido por ocorrência (não copiar timestamp absoluto).
+    const seriesScopedSchedule =
+      scope !== 'this' && (b.starts_at !== undefined || b.ends_at !== undefined);
+    if (!seriesScopedSchedule) {
+      if (b.starts_at !== undefined) patch.starts_at = b.starts_at;
+      if (b.ends_at !== undefined) patch.ends_at = b.ends_at;
+    }
     if (b.status !== undefined) patch.status = b.status;
     if (resourceTouched) {
       patch.hub_resource_id = nextResourceId;
@@ -3259,12 +3286,29 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
     }
 
     // determine IDs to update based on scope
-    let targetIds: string[] = [id];
+    type SeriesTargetRow = {
+      id: string;
+      starts_at: string;
+      ends_at: string;
+      series_occurrence_date: string | null;
+      appointment_kind: string | null;
+    };
+    let targetRows: SeriesTargetRow[] = [
+      {
+        id,
+        starts_at: (existing as Record<string, unknown>).starts_at as string,
+        ends_at: (existing as Record<string, unknown>).ends_at as string,
+        series_occurrence_date:
+          ((existing as Record<string, unknown>).series_occurrence_date as string | null) ?? null,
+        appointment_kind:
+          ((existing as Record<string, unknown>).appointment_kind as string | null) ?? null,
+      },
+    ];
     const seriesId = (existing as Record<string, unknown>).series_id as string | null;
     if (seriesId && scope !== 'this') {
       let q = supabaseAdmin
         .from('hub_appointments')
-        .select('id, starts_at')
+        .select('id, starts_at, ends_at, series_occurrence_date, appointment_kind')
         .eq('clinic_id', b.clinic_id)
         .eq('series_id', seriesId)
         .is('deleted_at', null);
@@ -3272,8 +3316,18 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
         q = q.gte('starts_at', (existing as Record<string, unknown>).starts_at as string);
       }
       const { data: seriesRows } = await q;
-      targetIds = (seriesRows ?? []).map((r: Record<string, unknown>) => r.id as string);
+      targetRows = (seriesRows ?? []).map((r: Record<string, unknown>) => ({
+        id: r.id as string,
+        starts_at: r.starts_at as string,
+        ends_at: r.ends_at as string,
+        series_occurrence_date: (r.series_occurrence_date as string | null) ?? null,
+        appointment_kind: (r.appointment_kind as string | null) ?? null,
+      }));
     }
+    const targetIds = targetRows.map((r) => r.id);
+    const targetRowById = new Map(targetRows.map((r) => [r.id, r]));
+    const anchorOldStartsAt = (existing as Record<string, unknown>).starts_at as string;
+    const anchorOldEndsAt = (existing as Record<string, unknown>).ends_at as string;
 
     let patchServicePayload: {
       normLines: Array<{
@@ -3365,22 +3419,40 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
     }
 
     for (const tid of targetIds) {
-      const { data: kindRow } = await supabaseAdmin
-        .from('hub_appointments')
-        .select('appointment_kind')
-        .eq('id', tid)
-        .eq('clinic_id', b.clinic_id)
-        .maybeSingle();
-      const appointmentKind = (kindRow as { appointment_kind?: string } | null)?.appointment_kind;
+      const targetMeta = targetRowById.get(tid);
+      if (!targetMeta) continue;
+      const appointmentKind = targetMeta.appointment_kind;
       const isPickupRouteLeg = !shouldRewriteAppointmentServicesOnPatch(appointmentKind);
 
-      // Pernas de L&T compartilham series_id: só propagar status (ex.: cancelar série).
-      // Nunca regravar hub_service_type_id / serviços do banho nelas.
+      const schedulePatch =
+        b.starts_at !== undefined || b.ends_at !== undefined
+          ? resolveSeriesScopedSchedulePatch({
+              scope: scope as 'this' | 'future' | 'all',
+              targetId: tid,
+              anchorId: id,
+              appointmentKind,
+              rowStartsAt: targetMeta.starts_at,
+              rowEndsAt: targetMeta.ends_at,
+              rowOccurrenceDate: targetMeta.series_occurrence_date,
+              patchStartsAt: b.starts_at,
+              patchEndsAt: b.ends_at,
+              anchorOldStartsAt,
+              anchorOldEndsAt,
+            })
+          : null;
+
+      // Pernas de L&T: status + horário relativo; nunca regravar serviços do banho.
       if (isPickupRouteLeg) {
-        if (patch.status !== undefined) {
+        const legPatch: Record<string, unknown> = {};
+        if (patch.status !== undefined) legPatch.status = patch.status;
+        if (schedulePatch) {
+          legPatch.starts_at = schedulePatch.starts_at;
+          legPatch.ends_at = schedulePatch.ends_at;
+        }
+        if (Object.keys(legPatch).length > 0) {
           const { error: pErr } = await supabaseAdmin
             .from('hub_appointments')
-            .update({ status: patch.status })
+            .update(legPatch)
             .eq('id', tid)
             .eq('clinic_id', b.clinic_id);
           if (pErr) return res.status(500).json({ error: pErr.message });
@@ -3388,10 +3460,16 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
         continue;
       }
 
-      if (Object.keys(patch).length > 0) {
+      const rowPatch: Record<string, unknown> = { ...patch };
+      if (schedulePatch) {
+        rowPatch.starts_at = schedulePatch.starts_at;
+        rowPatch.ends_at = schedulePatch.ends_at;
+      }
+
+      if (Object.keys(rowPatch).length > 0) {
         const { error: pErr } = await supabaseAdmin
           .from('hub_appointments')
-          .update(patch)
+          .update(rowPatch)
           .eq('id', tid)
           .eq('clinic_id', b.clinic_id);
         if (pErr) return res.status(500).json({ error: pErr.message });
@@ -3497,6 +3575,7 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       }
     }
 
+    const comandaEffects: ComandaOperationalCancelEffect[] = [];
     if (patch.status === 'cancelled' || patch.status === 'no_show') {
       const terminalStatus = patch.status as 'cancelled' | 'no_show';
       const cascadedLegIds: string[] = [];
@@ -3541,8 +3620,26 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
         }
       }
 
-      for (const tid of [...targetIds, ...cascadedLegIds]) {
-        void maybeFlagComandaCancellationPending(b.clinic_id, 'appointment', tid);
+      const waiveReason =
+        terminalStatus === 'no_show'
+          ? 'Falta registrada no agendamento'
+          : 'Cancelamento operacional do agendamento';
+      const allApptIds = [...targetIds, ...cascadedLegIds];
+      const cancelledEncounterIds = await cancelLinkedOpenEncountersForAppointments({
+        clinicId: b.clinic_id,
+        appointmentIds: allApptIds,
+      });
+      for (const tid of allApptIds) {
+        const effect = await handleComandaAfterOperationalCancel(b.clinic_id, 'appointment', tid, {
+          waiveReason,
+        });
+        comandaEffects.push(effect);
+      }
+      for (const encounterId of cancelledEncounterIds) {
+        const effect = await handleComandaAfterOperationalCancel(b.clinic_id, 'encounter', encounterId, {
+          waiveReason,
+        });
+        comandaEffects.push(effect);
       }
     }
 
@@ -3589,7 +3686,27 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
       const { scheduleReceptionSync } = await import('./receptionSync');
       scheduleReceptionSync(b.clinic_id, petId);
     }
-    return res.json({ appointment: enriched, updated_count: targetIds.length });
+    const cancelledIds = comandaEffects
+      .filter((e): e is Extract<ComandaOperationalCancelEffect, { kind: 'cancelled' }> => e.kind === 'cancelled')
+      .map((e) => e.comandaId);
+    const pendingAdjustmentIds = comandaEffects
+      .filter(
+        (e): e is Extract<ComandaOperationalCancelEffect, { kind: 'pending_adjustment' }> =>
+          e.kind === 'pending_adjustment',
+      )
+      .map((e) => e.comandaId);
+    return res.json({
+      appointment: enriched,
+      updated_count: targetIds.length,
+      ...(comandaEffects.length > 0
+        ? {
+            comanda_effects: {
+              cancelled_ids: cancelledIds,
+              pending_adjustment_ids: pendingAdjustmentIds,
+            },
+          }
+        : {}),
+    });
   } catch (e: unknown) {
     console.error('patchHubAppointment', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro ao atualizar agendamento' });

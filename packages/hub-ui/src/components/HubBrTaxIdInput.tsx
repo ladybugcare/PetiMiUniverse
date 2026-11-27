@@ -45,6 +45,10 @@ export const HubBrTaxIdInput: React.FC<HubBrTaxIdInputProps> = ({
     maxLength={maxLength}
     value={value}
     disabled={disabled}
-    onChange={(e) => onChange(formatBrTaxIdInput(e.target.value, mode))}
+    onChange={(e) => {
+      // Limpa validity custom (requiredFieldPtProps) ao digitar — evita msg nativa em inglês residual.
+      e.currentTarget.setCustomValidity('');
+      onChange(formatBrTaxIdInput(e.target.value, mode));
+    }}
   />
 );

@@ -1,6 +1,10 @@
 import { supabaseAdmin } from '../../config/supabase.js';
 import { computeBalances } from './hubInventoryController.js';
 import {
+  isLotExpired,
+  LOT_EXPIRED_SALE_MSG,
+} from './hubInventoryExpiryUtils.js';
+import {
   notifyLowStockIfCrossed,
   notifyNearlyEmptyLotIfCrossed,
 } from './hubInventoryStockAlerts.js';
@@ -77,6 +81,9 @@ export async function validateLotStockForOut(
   const lot = await assertClinicInventoryLot(clinicId, lotId);
   if (!lot) return 'Lote inválido para esta clínica.';
   if (lot.item_id !== itemId) return 'Lote não pertence ao item de estoque selecionado.';
+  if (isLotExpired(lot.expiry_date)) {
+    return LOT_EXPIRED_SALE_MSG;
+  }
   const { byLot } = precomputedBalances ?? (await computeBalances(clinicId));
   const available = byLot.get(lotId) ?? 0;
   if (available < qty) {

@@ -12,6 +12,7 @@ import { HubCheckbox } from '../../components/HubCheckbox';
 import { HubDateField } from '../../components/HubDateField';
 import { HubCancelButton } from '../../components/HubCancelButton';
 import { useAlert } from '../../components/AlertProvider';
+import { isLotExpired, LOT_EXPIRED_CREATE_MSG } from '../../utils/inventoryLotExpiry';
 import HubEstoqueFilterChips from './HubEstoqueFilterChips';
 import '../clientes/clientes.css';
 import '../clientes/clientes-drawer.css';
@@ -186,6 +187,17 @@ const HubEstoqueMovementDrawer: React.FC<HubEstoqueMovementDrawerProps> = ({
     if (isIn && lotMode === 'new' && !receivedAt) {
       showError('Informe a data de entrada do lote');
       return;
+    }
+    if (isIn && lotMode === 'new' && isLotExpired(expiryDate || null)) {
+      showError(LOT_EXPIRED_CREATE_MSG);
+      return;
+    }
+    if (isIn && needsExistingLot && lotId) {
+      const selectedLot = lotsForItem.find((l) => l.id === lotId);
+      if (selectedLot && isLotExpired(selectedLot.expiry_date)) {
+        showError(LOT_EXPIRED_CREATE_MSG);
+        return;
+      }
     }
 
     setSaving(true);

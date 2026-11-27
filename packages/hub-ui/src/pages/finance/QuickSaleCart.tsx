@@ -5,6 +5,7 @@ import type { HubInventoryItem, HubInventoryLotRow } from '../../api/hubInventor
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import { computeLineTotal, parseMoney, type ComandaItemDraft } from './comandaItemDraft';
 import { normalizeProductQtyInput } from './quickSaleQty';
+import { isLotExpired } from '../../utils/inventoryLotExpiry';
 
 type Props = {
   items: ComandaItemDraft[];
@@ -69,7 +70,9 @@ export const QuickSaleCart: React.FC<Props> = ({
   }, [serviceTypes]);
 
   const lotsForItem = (itemId: string | null) =>
-    itemId ? inventoryLots.filter((l) => l.item_id === itemId) : [];
+    itemId
+      ? inventoryLots.filter((l) => l.item_id === itemId && !isLotExpired(l.expiry_date))
+      : [];
 
   const lotOptions = (itemId: string | null): HubComboboxOption[] => {
     const lots = lotsForItem(itemId);

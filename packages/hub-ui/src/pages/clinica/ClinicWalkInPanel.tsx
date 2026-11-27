@@ -316,6 +316,7 @@ const ClinicWalkInPanel: React.FC<Props> = ({
                     triggerIcon={<User size={18} strokeWidth={2} aria-hidden />}
                     ariaLabel="Selecionar tutor"
                     allowCreate={false}
+                    enterCommitsUniqueMatch={false}
                   />
                 )}
               </div>

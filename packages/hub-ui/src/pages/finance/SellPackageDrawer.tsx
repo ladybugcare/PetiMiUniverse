@@ -578,6 +578,7 @@ export const SellPackageDrawer: React.FC<Props> = ({
               ariaLabel="Tutor"
               disabled={lockGuardian && Boolean(initialGuardianId)}
               triggerIcon={<User size={18} strokeWidth={2} aria-hidden />}
+              enterCommitsUniqueMatch={false}
             />
             {lockGuardian && initialGuardianId ? (
               <p className="hub-clientes__muted hub-sell-package__hint">Tutor preenchido a partir do perfil.</p>

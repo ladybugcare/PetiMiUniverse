@@ -28,7 +28,7 @@ export type EncerrarTurnoDrawerProps = {
   methodsTotal: number;
   /** True enquanto o resumo da sessão ainda está sendo carregado/atualizado. */
   dataLoading?: boolean;
-  onClosed: () => void;
+  onClosed: (result?: { handoffErrors?: string[] }) => void;
 };
 
 export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
@@ -49,6 +49,8 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
   const [busy, setBusy] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [handoffDone, setHandoffDone] = useState(false);
+  /** Erros de handoff não-skippáveis — aviso persistente; não bloqueiam o fechamento da gaveta. */
+  const [handoffErrors, setHandoffErrors] = useState<string[]>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -58,6 +60,17 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [open, busy, onClose]);
+
+  useEffect(() => {
+    if (!open) {
+      setStep('resumo');
+      setCloseBal('');
+      setErrorMsg(null);
+      setHandoffDone(false);
+      setHandoffErrors([]);
+      setBusy(false);
+    }
+  }, [open]);
 
   if (!open) return null;
 
@@ -96,9 +109,11 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
     try {
       const result = await enviarPendentesAoFinanceiro(clinicId, unitId);
       if (!result.success) {
-        setErrorMsg(`Falha em ${result.errors.length} item(ns):\n${result.errors.join('\n')}`);
+        setHandoffErrors(result.errors);
+        setHandoffDone(false);
         return;
       }
+      setHandoffErrors([]);
       setHandoffDone(true);
       setStep('gaveta');
     } catch (e) {
@@ -116,6 +131,7 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
     }
     setBusy(true);
     setErrorMsg(null);
+    let closeHandoffErrors = handoffErrors;
     try {
       if (openComandasCount > 0 && !handoffDone) {
         if (!unitId) {
@@ -125,21 +141,64 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
         }
         const result = await enviarPendentesAoFinanceiro(clinicId, unitId);
         if (!result.success) {
-          setErrorMsg(`Falha ao enviar ${result.errors.length} comanda(s):\n${result.errors.join('\n')}`);
-          setBusy(false);
-          return;
+          closeHandoffErrors = result.errors;
+          setHandoffErrors(result.errors);
+        } else {
+          closeHandoffErrors = [];
+          setHandoffErrors([]);
+          setHandoffDone(true);
         }
       }
-      await hubFinancialApi.closeCashSession(cashSession.id, {
+      const closed = await hubFinancialApi.closeCashSession(cashSession.id, {
         clinic_id: clinicId,
         closing_balance: v,
       });
-      onClosed();
+      const apiErrors = (closed.auto_handoff_errors ?? []).filter(Boolean);
+      const merged =
+        apiErrors.length > 0
+          ? Array.from(new Set([...closeHandoffErrors, ...apiErrors]))
+          : closeHandoffErrors;
+      onClosed(merged.length > 0 ? { handoffErrors: merged } : undefined);
     } catch (e) {
       setErrorMsg((e as Error)?.message || 'Erro ao fechar caixa.');
       setBusy(false);
     }
   };
+
+  const handoffPendingAlert =
+    handoffErrors.length > 0 ? (
+      <div
+        role="alert"
+        style={{
+          marginBottom: 16,
+          padding: '12px 14px',
+          borderRadius: 10,
+          background: '#fff7ed',
+          border: '1px solid #fdba74',
+          color: '#9a3412',
+          fontSize: 13,
+          lineHeight: 1.45,
+        }}
+      >
+        <div style={{ fontWeight: 700, marginBottom: 6 }}>
+          <AlertCircle size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} aria-hidden />
+          {handoffErrors.length} comanda(s) não foram enviadas ao financeiro — precisam ser
+          resolvidas no Caixa
+        </div>
+        <p style={{ margin: '0 0 8px', color: '#7c2d12' }}>
+          Você pode fechar a gaveta mesmo assim. As comandas continuam abertas até marcar a
+          execução, cancelar ou enviar ao financeiro.
+        </p>
+        <ul style={{ margin: 0, paddingLeft: 18, whiteSpace: 'pre-line' }}>
+          {handoffErrors.slice(0, 8).map((err) => (
+            <li key={err}>{err}</li>
+          ))}
+          {handoffErrors.length > 8 ? (
+            <li>…e mais {handoffErrors.length - 8}</li>
+          ) : null}
+        </ul>
+      </div>
+    ) : null;
 
   const stepLabel = { resumo: '1', pendencias: '2', gaveta: '3' }[step];
 
@@ -249,6 +308,8 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
             {errorMsg}
           </div>
         )}
+
+        {(step === 'pendencias' || step === 'gaveta') && handoffPendingAlert}
 
         {/* ── Passo 1: Resumo ── */}
         {step === 'resumo' && (
@@ -460,7 +521,11 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
                   marginBottom: 10,
                 }}
               >
-                {busy ? 'Enviando pendentes…' : 'Enviar pendentes ao financeiro'}
+                {busy
+                  ? 'Enviando pendentes…'
+                  : handoffErrors.length > 0
+                    ? 'Tentar enviar novamente'
+                    : 'Enviar pendentes ao financeiro'}
               </button>
             ) : null}
 
@@ -485,7 +550,11 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
                 gap: 8,
               }}
             >
-              Próximo <ArrowRight size={16} />
+              {handoffErrors.length > 0 ? (
+                <>Continuar mesmo assim <ArrowRight size={16} /></>
+              ) : (
+                <>Próximo <ArrowRight size={16} /></>
+              )}
             </button>
           </>
         )}
@@ -593,7 +662,11 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
                 cursor: closeInformedNum == null || busy ? 'not-allowed' : 'pointer',
               }}
             >
-              {busy ? 'Fechando caixa…' : 'Fechar caixa'}
+              {busy
+                ? 'Fechando caixa…'
+                : handoffErrors.length > 0
+                  ? 'Fechar mesmo assim'
+                  : 'Fechar caixa'}
             </button>
           </>
         )}

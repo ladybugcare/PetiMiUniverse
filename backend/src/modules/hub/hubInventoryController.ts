@@ -4,6 +4,12 @@ import { supabaseAdmin } from '../../config/supabase';
 import { notifyLowStockIfCrossed, notifyExpiryAlertIfNeeded } from './hubInventoryStockAlerts';
 import { parseOptionalEan } from './inventoryEan';
 import {
+  inventoryTodayYmd,
+  isLotExpired,
+  LOT_EXPIRED_CREATE_MSG,
+  LOT_EXPIRED_SALE_MSG,
+} from './hubInventoryExpiryUtils';
+import {
   isNearlyEmptyLotBalance,
   roundStockQty,
   stockUnitIsConsumption,
@@ -123,11 +129,7 @@ async function assertClinicLot(clinicId: string, lotId: string) {
 }
 
 function todayYmdLocal(): string {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return inventoryTodayYmd();
 }
 
 /**
@@ -701,6 +703,10 @@ export const createHubInventoryItem = async (req: Request, res: Response) => {
     });
     if (content.error) return res.status(400).json({ error: content.error });
 
+    if (d.initial_lot && d.initial_lot.qty > 0 && isLotExpired(d.initial_lot.expiry_date)) {
+      return res.status(400).json({ error: LOT_EXPIRED_CREATE_MSG });
+    }
+
     const row = {
       clinic_id: d.clinic_id,
       item_kind: d.item_kind,
@@ -1241,6 +1247,12 @@ export const createHubStockMovement = async (req: Request, res: Response) => {
       if (!lotId) return res.status(400).json({ error: 'lot_id é obrigatório para saídas' });
       const lot = await assertClinicLot(d.clinic_id, lotId);
       if (!lot || lot.item_id !== d.item_id) return res.status(400).json({ error: 'Lote inválido para este item' });
+      if (
+        (d.movement_type === 'sale_out' || d.movement_type === 'encounter_out') &&
+        isLotExpired(lot.expiry_date as string | null)
+      ) {
+        return res.status(400).json({ error: LOT_EXPIRED_SALE_MSG });
+      }
       const available = byLot.get(lotId) ?? 0;
       if (available < d.qty) {
         return res.status(400).json({ error: `Quantidade insuficiente no lote (disponível: ${available})` });
@@ -1248,6 +1260,9 @@ export const createHubStockMovement = async (req: Request, res: Response) => {
     }
 
     if (sign > 0 && !lotId && d.new_lot) {
+      if (isLotExpired(d.new_lot.expiry_date)) {
+        return res.status(400).json({ error: LOT_EXPIRED_CREATE_MSG });
+      }
       const { data: lot, error: lotErr } = await supabaseAdmin
         .from('hub_inventory_lots')
         .insert([
@@ -1275,6 +1290,9 @@ export const createHubStockMovement = async (req: Request, res: Response) => {
     if (sign > 0 && lotId) {
       const lot = await assertClinicLot(d.clinic_id, lotId);
       if (!lot || lot.item_id !== d.item_id) return res.status(400).json({ error: 'Lote inválido para este item' });
+      if (isLotExpired(lot.expiry_date as string | null)) {
+        return res.status(400).json({ error: LOT_EXPIRED_CREATE_MSG });
+      }
     }
 
     const userId = req.user?.id ?? null;
@@ -1564,12 +1582,14 @@ export const listHubNearlyEmptyLots = async (req: Request, res: Response) => {
   }
 };
 
-/** Lista lotes com quantidade > 0 (vista inventário). */
+/** Lista lotes com quantidade > 0 (vista inventário). `for_sale=1` exclui vencidos. */
 export const listHubInventoryLots = async (req: Request, res: Response) => {
   try {
     const parsed = uuidStr.safeParse(req.query.clinic_id);
     if (!parsed.success) return res.status(400).json({ error: 'clinic_id inválido' });
     const clinic_id = parsed.data;
+    const forSale = req.query.for_sale === '1' || req.query.for_sale === 'true';
+    const todayYmd = inventoryTodayYmd();
     const { data: lots, error } = await supabaseAdmin
       .from('hub_inventory_lots')
       .select('id, item_id, lot_code, expiry_date, received_at')
@@ -1594,7 +1614,8 @@ export const listHubInventoryLots = async (req: Request, res: Response) => {
         qty_on_hand: byLot.get(l.id as string) ?? 0,
         item: itemMap.get(l.item_id as string) ?? null,
       }))
-      .filter((l) => l.qty_on_hand > 0 && l.item);
+      .filter((l) => l.qty_on_hand > 0 && l.item)
+      .filter((l) => !forSale || !isLotExpired(l.expiry_date as string | null, todayYmd));
     return res.json({ lots: enriched });
   } catch (e) {
     console.error('[hub_inventory] list lots', e);

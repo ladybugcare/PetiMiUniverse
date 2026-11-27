@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, HeartPulse, Info, Dog, X } from 'lucide-react';
+import { HeartPulse, Info, Dog } from 'lucide-react';
 import type { PetWizardState } from '../types';
 import { PetBehaviorTagsPicker } from '../../PetBehaviorTagsPicker';
 import { PetClinicalFlagsPicker } from '../../PetClinicalFlagsPicker';
@@ -17,50 +17,11 @@ export const PetWizardStepHealth: React.FC<Props> = ({ state, update }) => {
           <HeartPulse size={22} strokeWidth={2} />
         </span>
         <div>
-          <h3 className="pet-wizard__block-title">Saúde permanente</h3>
-          <p className="pet-wizard__block-sub">
-            Castrado e alertas clínicos ficam na ficha do pet e aparecem na clínica, no banho e tosa e no hotel.
-          </p>
-        </div>
-      </div>
-
-      <div className="pet-wizard__fields">
-        <div className="pet-wizard__field--full">
-          <label className="pet-wizard__label">
-            Castrado(a)? <span className="req">*</span>
-          </label>
-          <div className="pet-wizard__seg">
-            {(
-              [
-                ['Y', 'Sim', Check],
-                ['N', 'Não', X],
-              ] as const
-            ).map(([v, lab, Icon]) => (
-              <button
-                key={v}
-                type="button"
-                className={`pet-wizard__seg-btn pet-wizard__seg-btn--neuter pet-wizard__seg-btn--neuter-${v.toLowerCase()} ${
-                  state.neutered === v ? 'pet-wizard__seg-btn--on' : ''
-                }`}
-                onClick={() => update({ neutered: v })}
-              >
-                <Icon size={18} strokeWidth={2.25} aria-hidden />
-                {lab}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="pet-wizard__basics-divider" />
-
-      <div className="pet-wizard__block-head">
-        <span className="pet-wizard__block-head-icon" aria-hidden>
-          <HeartPulse size={22} strokeWidth={2} />
-        </span>
-        <div>
           <h3 className="pet-wizard__block-title">Alertas clínicos</h3>
-          <p className="pet-wizard__block-sub">Alergia, cardiopata, agressivo e demais flags da clínica.</p>
+          <p className="pet-wizard__block-sub">
+            Alergia, cardiopata, agressivo e demais flags da clínica. Ficam na ficha do pet e aparecem na
+            clínica, no banho e tosa e no hotel.
+          </p>
         </div>
       </div>
 

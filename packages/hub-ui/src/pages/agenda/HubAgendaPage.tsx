@@ -69,7 +69,7 @@ import {
   isPartnerCareLocation,
 } from './agendaModel';
 import { mapHubAppointmentToAgenda, buildDuplicateAppointmentInitial, buildSeriesRenewalInitial } from './mapHubAgenda';
-import { findExtraBlockChildren } from './extraBlockAgendaUtils';
+import { excludeLockedAgendaExtraBlocks, findExtraBlockChildren } from './extraBlockAgendaUtils';
 import { AgendaAppointmentCard } from './AgendaAppointmentCard';
 import { AgendaToolbar } from './AgendaToolbar';
 import { AgendaFiltersBar, type AgendaFilterChip } from './AgendaFiltersBar';
@@ -1141,7 +1141,7 @@ const HubAgendaPage: React.FC = () => {
 
   const selectedExtraBlockChildren = useMemo(() => {
     if (!selected) return [];
-    return findExtraBlockChildren(selected, allAppointments);
+    return excludeLockedAgendaExtraBlocks(findExtraBlockChildren(selected, allAppointments));
   }, [selected, allAppointments]);
 
   const seriesEndingMap = useMemo(() => {
@@ -1570,8 +1570,21 @@ const HubAgendaPage: React.FC = () => {
   const patchAppointmentStatus = async (status: AgendaStatus) => {
     if (!clinicId || !selected || !canWrite) return;
     try {
-      await hubAgendaApi.patch(selected.id, { clinic_id: clinicId, status });
+      const result = await hubAgendaApi.patch(selected.id, { clinic_id: clinicId, status });
       bumpReload();
+      if (status === 'cancelled' || status === 'no_show') {
+        const cancelledCount = result.comanda_effects?.cancelled_ids?.length ?? 0;
+        const pendingCount = result.comanda_effects?.pending_adjustment_ids?.length ?? 0;
+        const base = status === 'no_show' ? 'Falta registrada.' : 'Agendamento cancelado.';
+        if (cancelledCount > 0) {
+          showInfo(`${base} Comanda sem pagamento foi anulada.`, 'Agenda');
+        } else if (pendingCount > 0) {
+          showInfo(`${base} Há ajuste financeiro pendente no caixa.`, 'Agenda');
+        } else {
+          showInfo(base, 'Agenda');
+        }
+        return;
+      }
       showInfo('Atendimento atualizado.', 'Agenda');
     } catch (e: unknown) {
       showError((e as Error)?.message || 'Erro ao atualizar');
@@ -1581,17 +1594,22 @@ const HubAgendaPage: React.FC = () => {
   const handleAppointmentStatusChange = useCallback(
     async (status: AgendaStatus) => {
       if (!selected || !canWrite) return;
+      const openClinicalEncounter =
+        selected.hubEncounterStatus === 'waiting' || selected.hubEncounterStatus === 'in_progress';
       if (status === 'cancelled' && selected.status !== 'cancelled') {
         showConfirm(
-          'Cancelar este atendimento?',
+          openClinicalEncounter
+            ? 'Há um atendimento clínico em andamento. Cancelar o agendamento também cancela esse atendimento.'
+            : 'Cancelar este atendimento?',
           () => void patchAppointmentStatus('cancelled'),
           'Cancelar',
         );
         return;
       }
       if (status === 'no_show' && selected.status !== 'no_show') {
-        const msg =
-          selected.status === 'in_progress'
+        const msg = openClinicalEncounter
+          ? 'Há um atendimento clínico em andamento. Registrar falta também cancela esse atendimento. Continuar?'
+          : selected.status === 'in_progress'
             ? 'O atendimento já está em andamento. Registrar falta mesmo assim?'
             : 'Registrar falta deste atendimento?';
         showConfirm(msg, () => void patchAppointmentStatus('no_show'), 'Marcar falta');
@@ -1776,9 +1794,13 @@ const HubAgendaPage: React.FC = () => {
   }, [selected, allAppointments, openCreateModal, closeAppointmentDetail]);
 
   const requestCancelSelected = useCallback(() => {
-    if (!canWrite) return;
+    if (!canWrite || !selected) return;
+    const openClinicalEncounter =
+      selected.hubEncounterStatus === 'waiting' || selected.hubEncounterStatus === 'in_progress';
     showConfirm(
-      'Cancelar este atendimento?',
+      openClinicalEncounter
+        ? 'Há um atendimento clínico em andamento. Cancelar o agendamento também cancela esse atendimento.'
+        : 'Cancelar este atendimento?',
       () => void patchAppointmentStatus('cancelled'),
       'Cancelar',
     );

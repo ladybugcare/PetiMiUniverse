@@ -292,3 +292,41 @@ export async function setLinkedAppointmentStatus(opts: {
     console.error('setLinkedAppointmentStatus', opts.appointmentId, (e as Error)?.message);
   }
 }
+
+/**
+ * Espelho inverso de setLinkedAppointmentStatus(cancelled):
+ * cancelar/falta na agenda cancela atendimentos clínicos ainda abertos (waiting/in_progress).
+ * Não mexe em encounters completed/cancelled.
+ */
+export async function cancelLinkedOpenEncountersForAppointments(opts: {
+  clinicId: string;
+  appointmentIds: string[];
+}): Promise<string[]> {
+  const ids = [...new Set(opts.appointmentIds.filter(Boolean))];
+  if (ids.length === 0) return [];
+  try {
+    const { data: openRows, error: listErr } = await supabaseAdmin
+      .from('hub_encounters')
+      .select('id')
+      .eq('clinic_id', opts.clinicId)
+      .in('hub_appointment_id', ids)
+      .in('status', ['waiting', 'in_progress'])
+      .is('deleted_at', null);
+    if (listErr) throw new Error(listErr.message);
+    const encounterIds = (openRows ?? []).map((r) => (r as { id: string }).id).filter(Boolean);
+    if (encounterIds.length === 0) return [];
+
+    const { error: updErr } = await supabaseAdmin
+      .from('hub_encounters')
+      .update({ status: 'cancelled' })
+      .in('id', encounterIds)
+      .eq('clinic_id', opts.clinicId)
+      .in('status', ['waiting', 'in_progress'])
+      .is('deleted_at', null);
+    if (updErr) throw new Error(updErr.message);
+    return encounterIds;
+  } catch (e: unknown) {
+    console.error('cancelLinkedOpenEncountersForAppointments', (e as Error)?.message);
+    return [];
+  }
+}

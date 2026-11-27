@@ -197,22 +197,26 @@ describe('cashSessionCloseService — auto-close overdue', () => {
     expect(openCount).toBe(0);
   });
 
-  it('falha crítica no handoff não marca a sessão como fechada', async () => {
+  it('handoff com erro ainda fecha a sessão (best-effort) e registra pendências nas notes', async () => {
     leavePendingMock.mockResolvedValue({
       handoff_count: 0,
       skipped_count: 0,
       results: [],
-      errors: ['abcd1234: Comanda não está aberta'],
+      errors: ['abcd1234: Marque a execução do serviço antes de cobrar.'],
     });
     configureSupabaseMock({
       tables: baseTables([cashSession({ opened_at: daysAgoIso(1) })]),
     });
     const result = await runAutoCloseOverdueJob({});
-    expect(result.closed_count).toBe(0);
-    expect(result.errors.length).toBeGreaterThan(0);
+    expect(result.closed_count).toBe(1);
+    expect(result.errors).toEqual([]);
     const sess = getMockSupabaseClient()._state.tables.hub_cash_sessions?.[0];
-    expect(sess?.status).toBe('open');
-    expect(sess?.auto_closed).toBe(false);
+    expect(sess?.status).toBe('closed');
+    expect(sess?.auto_closed).toBe(true);
+    expect(String(sess?.notes ?? '')).toMatch(/Fechado automaticamente/);
+    expect(String(sess?.notes ?? '')).toMatch(/Handoff com pendências/);
+    expect(String(sess?.notes ?? '')).toMatch(/Marque a execução/);
+    expect(result.sessions[0]?.reason).toBe('handoff_errors:1');
   });
 
   it('dry_run não escreve nada (nem handoff nem close)', async () => {
@@ -246,7 +250,7 @@ describe('cashSessionCloseService — auto-close overdue', () => {
       clinicId: TEST_CLINIC_ID,
       closingBalance: null,
       autoClosed: true,
-      abortOnHandoffErrors: true,
+      abortOnHandoffErrors: false,
     });
     const results = await Promise.allSettled([manual, auto]);
     const fulfilled = results.filter((r) => r.status === 'fulfilled') as PromiseFulfilledResult<{

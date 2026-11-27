@@ -31,6 +31,7 @@ import {
 
 import { applyClinicalFlagUpsert, resolveProfileSource } from './hubPetHealthProfile';
 import {
+  isAppointmentTerminalCancelled,
   syncOpenComandasAfterEncounterChargeableChange,
   syncOpenComandasAfterEncounterCompleted,
 } from './hubComandasController';
@@ -2658,18 +2659,25 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
     if (linkedEncounterId && !hasActiveHospitalization) {
       const { data: enc } = await supabaseAdmin
         .from('hub_encounters')
-        .select('id, status, completed_at')
+        .select('id, status, completed_at, hub_appointment_id')
         .eq('id', linkedEncounterId)
         .eq('clinic_id', clinic_id)
         .is('deleted_at', null)
         .maybeSingle();
-      if (enc && !['completed', 'cancelled'].includes(String(enc.status ?? ''))) {
+      const encApptId =
+        ((enc as { hub_appointment_id?: string | null } | null)?.hub_appointment_id as string | null) ??
+        null;
+      const apptTerminal = await isAppointmentTerminalCancelled(clinic_id, encApptId);
+      if (apptTerminal) {
+        // Agenda cancelada/falta: não completar encounter nem abrir comanda.
+      } else if (enc && !['completed', 'cancelled'].includes(String(enc.status ?? ''))) {
         const nowIso = new Date().toISOString();
         await supabaseAdmin
           .from('hub_encounters')
           .update({ status: 'completed', completed_at: nowIso })
           .eq('id', linkedEncounterId)
-          .eq('clinic_id', clinic_id);
+          .eq('clinic_id', clinic_id)
+          .in('status', ['waiting', 'in_progress']);
         void syncOpenComandasAfterEncounterCompleted(clinic_id, linkedEncounterId);
       } else if (enc && enc.status === 'completed' && !enc.completed_at) {
         await supabaseAdmin

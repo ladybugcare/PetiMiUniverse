@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { usePermissions, getStoredClinicId } from '@petimi/web-core';
-import { TrendingUp } from 'lucide-react';
+import { AlertCircle, TrendingUp } from 'lucide-react';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
 import { HubTabs } from '../../components/HubTabs';
@@ -60,6 +60,7 @@ const HubFinanceiroPage: React.FC = () => {
   const [flowDays, setFlowDays] = useState<HubFinanceCashFlowDay[]>([]);
   const [flowPeriod, setFlowPeriod] = useState<{ from: string; to: string } | null>(null);
   const [flowLoading, setFlowLoading] = useState(false);
+  const [openComandasCount, setOpenComandasCount] = useState(0);
 
   const loadSummary = useCallback(async () => {
     if (!clinicId || !unitId) return;
@@ -74,6 +75,19 @@ const HubFinanceiroPage: React.FC = () => {
       setSummaryLoading(false);
     }
   }, [clinicId, unitId, showError]);
+
+  const loadOpenComandasAlert = useCallback(async () => {
+    if (!clinicId || !unitId) {
+      setOpenComandasCount(0);
+      return;
+    }
+    try {
+      const status = await hubFinancialApi.getCashSessionStatus(clinicId, unitId);
+      setOpenComandasCount(status.open_comandas_count ?? 0);
+    } catch {
+      setOpenComandasCount(0);
+    }
+  }, [clinicId, unitId]);
 
   const loadCancellationCount = useCallback(async () => {
     if (!clinicId || !unitId) {
@@ -160,8 +174,19 @@ const HubFinanceiroPage: React.FC = () => {
     if (!clinicId || !unitId) return;
     void loadSummary();
     void loadCancellationCount();
+    void loadOpenComandasAlert();
     if (tab === 'cashflow') void loadCashFlow();
-  }, [permLoading, hasPermission, clinicId, unitId, tab, loadSummary, loadCancellationCount, loadCashFlow]);
+  }, [
+    permLoading,
+    hasPermission,
+    clinicId,
+    unitId,
+    tab,
+    loadSummary,
+    loadCancellationCount,
+    loadOpenComandasAlert,
+    loadCashFlow,
+  ]);
 
   const switchTab = useCallback(
     (next: FinanceTab) => {
@@ -294,6 +319,19 @@ const HubFinanceiroPage: React.FC = () => {
           ) : null}
         </div>
       </div>
+
+      {openComandasCount > 0 ? (
+        <div className="hub-finance-page__context-warning" role="alert">
+          <AlertCircle size={16} strokeWidth={2} style={{ verticalAlign: 'middle', marginRight: 6 }} />
+          Há {openComandasCount}{' '}
+          {openComandasCount === 1 ? 'comanda aberta' : 'comandas abertas'} no caixa que ainda não{' '}
+          {openComandasCount === 1 ? 'foi enviada' : 'foram enviadas'} ao financeiro — resolva no Caixa
+          (execução, cancelamento ou envio).{' '}
+          <Link className="hub-finance-page__dash-link" to="/hub/caixa">
+            Ir para o Caixa
+          </Link>
+        </div>
+      ) : null}
 
       <HubTabs
         ariaLabel="Seções financeiras"

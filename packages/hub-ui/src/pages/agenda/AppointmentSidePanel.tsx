@@ -50,7 +50,7 @@ import {
 } from './appointmentPanelActions';
 import { resolveOperationalModuleForAppointment } from './walkInUtils';
 import { mapAgendaToAppointmentInitial } from './mapHubAgenda';
-import { mapExtraBlocksToInitial } from './extraBlockAgendaUtils';
+import { excludeLockedAgendaExtraBlocks, mapExtraBlocksToInitial } from './extraBlockAgendaUtils';
 import { NewAppointmentModal } from './NewAppointmentModal';
 import { PetBehaviorTagsDisplay } from '../pets/PetBehaviorTagsDisplay';
 import {
@@ -327,7 +327,7 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
         seriesId={appt.series_id ?? null}
         initial={{
           ...mapAgendaToAppointmentInitial(appt),
-          extra_blocks: mapExtraBlocksToInitial(extraBlockChildren),
+          extra_blocks: mapExtraBlocksToInitial(excludeLockedAgendaExtraBlocks(extraBlockChildren)),
         }}
         onClose={onBackToView}
         onCreated={() => undefined}

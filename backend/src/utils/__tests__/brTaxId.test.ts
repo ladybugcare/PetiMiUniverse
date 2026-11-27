@@ -23,6 +23,11 @@ describe('brTaxId', () => {
     expect(isValidBrTaxId('262.904.498-00')).toBe(true);
   });
 
+  it('rejeita CPF curto como 123', () => {
+    expect(isValidCpf('123')).toBe(false);
+    expect(isValidBrTaxId('123')).toBe(false);
+  });
+
   it('aceita CNPJ válido conhecido', () => {
     expect(isValidCnpj('11222333000181')).toBe(true);
   });

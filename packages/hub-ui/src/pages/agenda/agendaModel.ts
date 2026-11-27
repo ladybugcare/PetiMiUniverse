@@ -131,27 +131,52 @@ export function isPartnerCareLocation(
 /** Statuses já encerrados — não permitem remarcar por arraste nem no painel. */
 const LOCKED_AGENDA_STATUSES: AgendaStatus[] = ['done', 'cancelled', 'paid', 'no_show'];
 
+/** Statuses selecionáveis no combo «Situação» do modal (Pago/Finalizado/Cancelado/Falta vêm de outros fluxos). */
+export const MANUAL_SITUACAO_STATUSES: AgendaStatus[] = [
+  'pending_confirm',
+  'confirmed',
+  'checked_in',
+  'in_progress',
+];
+
+/** Statuses em que o backend ainda aceita patch estrutural (antes do horário). */
+const STRUCTURAL_EDITABLE_AGENDA_STATUSES: AgendaStatus[] = ['pending_confirm', 'confirmed'];
+
+/** Mensagem alinhada a `isAppointmentStructurallyEditable` no backend. */
+export const AGENDA_STRUCTURAL_EDIT_BLOCK_MESSAGE =
+  'Agendamento não pode ser editado após iniciado ou após o horário agendado.';
+
+export function isLockedAgendaStatus(status: AgendaStatus): boolean {
+  return LOCKED_AGENDA_STATUSES.includes(status);
+}
+
 /**
- * Motivo pelo qual o agendamento não pode ser remarcado/editado, ou `null` se pode.
- * Aberto (inclui passado e “Aguardando” / em atendimento) continua editável até encerrar.
+ * Motivo pelo qual o agendamento não pode ser remarcado/editado estruturalmente, ou `null` se pode.
+ * Alinhado ao backend: só `pending_confirm`/`confirmed` e `starts_at` ainda no futuro.
  */
 export function agendaAppointmentEditBlockReason(
-  appt: Pick<AgendaAppointment, 'status'>,
-  opts: { canWrite: boolean },
+  appt: Pick<AgendaAppointment, 'status' | 'start'>,
+  opts: { canWrite: boolean; now?: Date },
 ): string | null {
   if (!opts.canWrite) return 'Você não tem permissão para remarcar';
   if (LOCKED_AGENDA_STATUSES.includes(appt.status)) {
     return `Não é possível remarcar com status “${STATUS_META[appt.status].label}”`;
   }
+  if (!STRUCTURAL_EDITABLE_AGENDA_STATUSES.includes(appt.status)) {
+    return AGENDA_STRUCTURAL_EDIT_BLOCK_MESSAGE;
+  }
+  const now = opts.now ?? new Date();
+  if (appt.start.getTime() <= now.getTime()) {
+    return AGENDA_STRUCTURAL_EDIT_BLOCK_MESSAGE;
+  }
   return null;
 }
 
-/** Agendamento ainda aberto (não finalizado/cancelado/pago) e com permissão de escrita. */
+/** Pode remarcar/editar estruturalmente (status + horário futuros) com permissão de escrita. */
 export function canEditAgendaAppointment(
   appt: Pick<AgendaAppointment, 'status' | 'start'>,
   opts: { canWrite: boolean; now?: Date },
 ): boolean {
-  void opts.now;
   return agendaAppointmentEditBlockReason(appt, opts) === null;
 }
 

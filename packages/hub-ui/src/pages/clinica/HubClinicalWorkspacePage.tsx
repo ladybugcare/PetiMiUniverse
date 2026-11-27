@@ -1363,6 +1363,7 @@ function HubEncounterGuardianPicker({
           onChange={setGuardianId}
           placeholder="Buscar tutor…"
           allowCreate={false}
+          enterCommitsUniqueMatch={false}
         />
       </div>
       <button

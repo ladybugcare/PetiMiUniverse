@@ -12,6 +12,7 @@ import {
   ArrowRight,
   CalendarDays,
   Car,
+  Coins,
   Hotel,
   Package,
   Receipt,
@@ -389,6 +390,7 @@ const HubTodayDashboardPage: React.FC = () => {
   const finance = summary?.finance;
   const hasAttention =
     Boolean(finance?.cash_open) ||
+    (finance?.open_comandas_count ?? 0) > 0 ||
     (finance?.pending_billing ?? 0) > 0 ||
     (alerts?.overdue_receivables_count ?? 0) > 0 ||
     (alerts?.overdue_payables_count ?? 0) > 0 ||
@@ -560,6 +562,26 @@ const HubTodayDashboardPage: React.FC = () => {
                             minute: '2-digit',
                           })}`
                         : 'Sessão em aberto'}
+                    </div>
+                  </div>
+                  <Link className="hub-dash__alert-cta" to="/hub/caixa">
+                    Ver Caixa <ArrowRight size={14} />
+                  </Link>
+                </div>
+              ) : null}
+
+              {canFinancial && (finance?.open_comandas_count ?? 0) > 0 ? (
+                <div className="hub-dash__alert-card">
+                  <Coins size={20} strokeWidth={1.75} aria-hidden />
+                  <div>
+                    <div className="hub-dash__alert-title">Comandas abertas no caixa</div>
+                    <div className="hub-dash__alert-meta">
+                      {finance?.open_comandas_count}{' '}
+                      {(finance?.open_comandas_count ?? 0) === 1 ? 'comanda' : 'comandas'} sem envio ao
+                      financeiro
+                      {(finance?.open_comandas_total ?? 0) > 0
+                        ? ` · ${formatBrl(finance?.open_comandas_total ?? 0)}`
+                        : ''}
                     </div>
                   </div>
                   <Link className="hub-dash__alert-cta" to="/hub/caixa">

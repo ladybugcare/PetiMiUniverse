@@ -116,7 +116,15 @@ import {
   normalizeServiceGroupSlug,
   serviceGroupLabel,
 } from '../../utils/serviceTypeSlug';
-import { STATUS_META, type AgendaAppointment, type AgendaStatus } from './agendaModel';
+import {
+  AGENDA_STRUCTURAL_EDIT_BLOCK_MESSAGE,
+  agendaAppointmentEditBlockReason,
+  isLockedAgendaStatus,
+  MANUAL_SITUACAO_STATUSES,
+  STATUS_META,
+  type AgendaAppointment,
+  type AgendaStatus,
+} from './agendaModel';
 import { ReceptionQuickRegisterPanel, type QuickRegisterSaveResult } from './ReceptionQuickRegisterPanel';
 import { resolveWalkInAppointmentKind } from './walkInUtils';
 import {
@@ -432,7 +440,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   existingAppointments = [],
 }) => {
   const clinicId = getStoredClinicId() ?? '';
-  const { showAlert } = useAlert();
+  const { showAlert, showInfo } = useAlert();
   const isEditMode = mode === 'edit';
   const isClinicalRoutine = !isEditMode && layoutVariant === 'clinical_routine';
   const isWalkIn = !isEditMode && layoutVariant === 'walk_in';
@@ -1825,14 +1833,18 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
         }
       : undefined;
 
+  const statusLocked = Boolean(isEditMode && initial?.status && isLockedAgendaStatus(initial.status));
   const statusComboOptions = useMemo<HubComboboxOption[]>(() => {
     const statusIcon = <CheckCircle2 size={18} strokeWidth={2} aria-hidden />;
-    return Object.entries(STATUS_META).map(([v, m]) => ({
+    const values = statusLocked && initial?.status
+      ? ([initial.status] as AgendaStatus[])
+      : MANUAL_SITUACAO_STATUSES;
+    return values.map((v) => ({
       value: v,
-      label: m.label,
+      label: STATUS_META[v].label,
       icon: statusIcon,
     }));
-  }, []);
+  }, [statusLocked, initial?.status]);
 
   // ── Service chips ─────────────────────────────────────────────────────────
   const addService = useCallback(
@@ -2098,10 +2110,26 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
   };
 
   // ── Submit ────────────────────────────────────────────────────────────────
+  const structuralEditBlockReason = (): string | null => {
+    if (!isEditMode) return null;
+    if (!initial?.starts_at || !initial.status) {
+      return AGENDA_STRUCTURAL_EDIT_BLOCK_MESSAGE;
+    }
+    return agendaAppointmentEditBlockReason(
+      { status: initial.status, start: new Date(initial.starts_at) },
+      { canWrite: true },
+    );
+  };
+
   const submitPatch = async (scope: 'this' | 'future' | 'all') => {
     if (!clinicId || !appointmentId) return;
     const payload = pendingPatchPayloadRef.current;
     if (!payload) return;
+    const structuralReason = structuralEditBlockReason();
+    if (structuralReason) {
+      setSaveError(structuralReason);
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     try {
@@ -2116,6 +2144,19 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       pendingPatchPayloadRef.current = null;
       confirmedOverlapRef.current = false;
       setSeriesScopePickerOpen(false);
+      const nextStatus = scopedPayload.status;
+      if (nextStatus === 'cancelled' || nextStatus === 'no_show') {
+        const cancelledCount = result.comanda_effects?.cancelled_ids?.length ?? 0;
+        const pendingCount = result.comanda_effects?.pending_adjustment_ids?.length ?? 0;
+        const base = nextStatus === 'no_show' ? 'Falta registrada.' : 'Agendamento cancelado.';
+        if (cancelledCount > 0) {
+          showInfo(`${base} Comanda sem pagamento foi anulada.`, 'Agenda');
+        } else if (pendingCount > 0) {
+          showInfo(`${base} Há ajuste financeiro pendente no caixa.`, 'Agenda');
+        } else {
+          showInfo(base, 'Agenda');
+        }
+      }
       resetForm();
       onClose();
       onUpdated?.(result.appointment);
@@ -2380,6 +2421,15 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       }
     }
 
+    // Antes do conflito local: alinhar ao 409 estrutural do backend (evita diálogo de overlap inútil).
+    {
+      const structuralReason = structuralEditBlockReason();
+      if (structuralReason) {
+        setSaveError(structuralReason);
+        return;
+      }
+    }
+
     const editScheduleUnchanged =
       isEditMode &&
       Boolean(initial?.starts_at) &&
@@ -2570,14 +2620,15 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
 
       if (isEditMode) {
         const extraBlocksPayload = buildExtraBlocksApiPayload(extraBlocks, dateYmd, endsAt);
-        const patchPayload = {
+        const patchPayload: Parameters<typeof hubAgendaApi.patch>[1] = {
           clinic_id: clinicId,
           hub_staff_member_id: staffId || null,
           pet_id: petId || null,
           guardian_id: guardianId || null,
           starts_at: startsAt,
           ends_at: endsAt,
-          status: status as HubAppointmentStatus,
+          // Encerrado: não reenviar status (Pago/Finalizado/etc. não são editáveis no combo).
+          ...(statusLocked ? {} : { status: status as HubAppointmentStatus }),
           resource_label: resourceLabel || null,
           hub_resource_id: hubResourceId,
           title: title || null,
@@ -3437,6 +3488,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                       searchPlaceholder={GUARDIAN_SEARCH_PLACEHOLDER}
                       triggerIcon={<User size={18} strokeWidth={2} aria-hidden />}
                       ariaLabel="Selecionar tutor"
+                      enterCommitsUniqueMatch={false}
                     />
                   )}
                 </div>
@@ -3760,6 +3812,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                   value={status}
                   onChange={(v) => setStatus(v as AgendaStatus)}
                   clearable={false}
+                  disabled={statusLocked}
                   triggerIcon={<CheckCircle2 size={18} strokeWidth={2} aria-hidden />}
                   ariaLabel="Selecionar situação"
                 />
@@ -3794,6 +3847,7 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
                     searchPlaceholder={GUARDIAN_SEARCH_PLACEHOLDER}
                     triggerIcon={<User size={18} strokeWidth={2} aria-hidden />}
                     ariaLabel="Selecionar tutor"
+                    enterCommitsUniqueMatch={false}
                   />
                 )}
               </div>

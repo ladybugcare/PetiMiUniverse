@@ -3889,49 +3889,21 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
         return res.status(400).json({ error: 'Informe waive_reason (motivo) para cancelar' });
       }
       const originType = String(comanda.origin_type);
-      const originId = comanda.origin_id as string;
-      if (originType !== 'manual') {
+      const originId = (comanda.origin_id as string | null) ?? null;
+      if (originType !== 'manual' && originId) {
         const keys = await fetchActiveReceivableKeys(clinic_id);
         if (keys.has(`${originType}:${originId}`)) {
           return res.status(409).json({ error: 'Já existe cobrança; não é possível cancelar comanda desta forma' });
         }
       }
-      const now = new Date().toISOString();
-      if (originType === 'grooming_session') {
-        await supabaseAdmin
-          .from('hub_grooming_sessions')
-          .update({ billing_waived_at: now, billing_waive_reason: waive_reason })
-          .eq('id', originId)
-          .eq('clinic_id', clinic_id);
-      } else if (originType === 'encounter') {
-        await supabaseAdmin
-          .from('hub_encounters')
-          .update({ billing_waived_at: now, billing_waive_reason: waive_reason })
-          .eq('id', originId)
-          .eq('clinic_id', clinic_id);
-      } else if (originType === 'appointment') {
-        await supabaseAdmin
-          .from('hub_appointments')
-          .update({ billing_waived_at: now, billing_waive_reason: waive_reason })
-          .eq('id', originId)
-          .eq('clinic_id', clinic_id);
-      } else if (originType === 'quote') {
-        await supabaseAdmin
-          .from('hub_quotes')
-          .update({ billing_waived_at: now, billing_waive_reason: waive_reason })
-          .eq('id', originId)
-          .eq('clinic_id', clinic_id);
-      } else if (originType === 'boarding_reservation') {
-        await supabaseAdmin
-          .from('hub_boarding_reservations')
-          .update({ billing_waived_at: now, billing_waive_reason: waive_reason })
-          .eq('id', originId)
-          .eq('clinic_id', clinic_id);
-      } else if (originType === 'manual') {
-        /* comanda manual: sem entidade operacional a dispensar */
-      }
-      await reversePackageRedemptionsForComanda(clinic_id, comandaId);
-      await supabaseAdmin.from('hub_comandas').update({ status: 'cancelada', closed_at: now }).eq('id', comandaId);
+      const { waiveOriginAndCancelOpenComanda } = await import('./hubComandaOperationalCancel.js');
+      await waiveOriginAndCancelOpenComanda({
+        clinicId: clinic_id,
+        comandaId,
+        originType,
+        originId,
+        waiveReason: waive_reason,
+      });
       return res.json({ ok: true, comanda: { ...comanda, status: 'cancelada' } });
     }
 
@@ -5089,6 +5061,27 @@ export async function syncOpenComandasAfterEncounterChargeableChange(
   }
 }
 
+/** Agenda cancelled/no_show — não completar encounter nem abrir comanda. */
+export async function isAppointmentTerminalCancelled(
+  clinicId: string,
+  appointmentId: string | null | undefined,
+): Promise<boolean> {
+  if (!appointmentId) return false;
+  const { data, error } = await supabaseAdmin
+    .from('hub_appointments')
+    .select('status')
+    .eq('id', appointmentId)
+    .eq('clinic_id', clinicId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (error) {
+    console.error('isAppointmentTerminalCancelled', error.message);
+    return false;
+  }
+  const st = String((data as { status?: string } | null)?.status ?? '');
+  return st === 'cancelled' || st === 'no_show';
+}
+
 async function ensureOpenComandaForCompletedEncounter(
   clinicId: string,
   encounterId: string,
@@ -5096,6 +5089,8 @@ async function ensureOpenComandaForCompletedEncounter(
   caseId: string | null,
 ): Promise<void> {
   try {
+    if (await isAppointmentTerminalCancelled(clinicId, appointmentId)) return;
+
     const keys = await fetchActiveReceivableKeys(clinicId);
     if (keys.has(`encounter:${encounterId}`)) return;
     if (appointmentId && keys.has(`appointment:${appointmentId}`)) return;
@@ -5181,6 +5176,8 @@ async function ensureOpenComandaForCompletedEncounter(
 
 export async function syncOpenComandasAfterEncounterCompleted(clinicId: string, encounterId: string): Promise<void> {
   const { ids, appointmentId, caseId } = await listOpenComandaIdsForEncounter(clinicId, encounterId);
+  // Agenda cancelada/falta: não sincronizar nem abrir comanda (visita operacionalmente encerrada).
+  if (await isAppointmentTerminalCancelled(clinicId, appointmentId)) return;
   if (ids.length > 0) {
     for (const id of ids) {
       await syncAndTryAutoCloseComanda(clinicId, id);

@@ -17,7 +17,7 @@ describe('resolveComboboxEnterCommit', () => {
     ).toBe('Dipirona');
   });
 
-  it('confirma único resultado filtrado', () => {
+  it('confirma único resultado filtrado com ≥3 caracteres', () => {
     expect(
       resolveComboboxEnterCommit({
         query: 'Amo',
@@ -25,6 +25,27 @@ describe('resolveComboboxEnterCommit', () => {
         allowCreate: false,
       }),
     ).toBe('Amoxicilina');
+  });
+
+  it('não confirma único resultado com query curta', () => {
+    expect(
+      resolveComboboxEnterCommit({
+        query: 'Am',
+        filtered: [opts[0]!],
+        allowCreate: false,
+      }),
+    ).toBeNull();
+  });
+
+  it('não confirma único resultado quando enterCommitsUniqueMatch=false', () => {
+    expect(
+      resolveComboboxEnterCommit({
+        query: 'Amo',
+        filtered: [opts[0]!],
+        allowCreate: false,
+        enterCommitsUniqueMatch: false,
+      }),
+    ).toBeNull();
   });
 
   it('cria texto livre quando allowCreate e sem match', () => {

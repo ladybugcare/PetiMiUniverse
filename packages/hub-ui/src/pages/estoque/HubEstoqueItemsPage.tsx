@@ -33,6 +33,7 @@ import {
 } from './estoqueShared';
 import { stockUnitRequiresContent, stockUnitShowsContentFields } from './inventoryContentUtils';
 import { filterItemsBySalePurpose } from '../../utils/inventorySalePurpose';
+import { isLotExpired, LOT_EXPIRED_CREATE_MSG } from '../../utils/inventoryLotExpiry';
 import { usesClinicalStockScope } from '../finance/hubRelatoriosConfig';
 import '../clientes/clientes.css';
 import '../clientes/clientes-drawer.css';
@@ -493,9 +494,14 @@ const HubEstoqueItemsPage: React.FC = () => {
         showError('Data de entrada é obrigatória para registrar a quantidade inicial.');
         return;
       }
+      const expiry = form.initial_expiry_date.trim() || null;
+      if (isLotExpired(expiry)) {
+        showError(LOT_EXPIRED_CREATE_MSG);
+        return;
+      }
       initial_lot = {
         received_at: form.initial_received_at,
-        expiry_date: form.initial_expiry_date.trim() || null,
+        expiry_date: expiry,
         qty: q,
         lot_code: form.initial_lot_code.trim() || null,
       };

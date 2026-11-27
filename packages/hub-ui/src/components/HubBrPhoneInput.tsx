@@ -30,6 +30,9 @@ export const HubBrPhoneInput: React.FC<HubBrPhoneInputProps> = ({
     maxLength={maxLength}
     value={value}
     disabled={disabled}
-    onChange={(e) => onChange(formatBrPhoneInput(e.target.value))}
+    onChange={(e) => {
+      e.currentTarget.setCustomValidity('');
+      onChange(formatBrPhoneInput(e.target.value));
+    }}
   />
 );

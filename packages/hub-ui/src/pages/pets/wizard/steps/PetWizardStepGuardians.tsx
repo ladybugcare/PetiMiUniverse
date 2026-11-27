@@ -39,6 +39,7 @@ export const PetWizardStepGuardians: React.FC<Props> = ({ state, update, guardia
             searchPlaceholder="Buscar tutor…"
             allowCreate={false}
             clearable={false}
+            enterCommitsUniqueMatch={false}
             ariaLabel="Tutor principal"
           />
         </div>
@@ -55,6 +56,7 @@ export const PetWizardStepGuardians: React.FC<Props> = ({ state, update, guardia
             placeholder="— Nenhum —"
             searchPlaceholder="Buscar tutor…"
             allowCreate={false}
+            enterCommitsUniqueMatch={false}
             ariaLabel="Tutor secundário"
           />
         </div>

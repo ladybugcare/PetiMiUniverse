@@ -94,7 +94,7 @@ const HubCaixaPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { hasPermission, loading: permLoading } = usePermissions();
-  const { showError, showSuccess } = useAlert();
+  const { showError, showSuccess, showWarning } = useAlert();
   const clinicId = getStoredClinicId();
   const unitId = useSelectedUnitId();
 
@@ -1874,9 +1874,17 @@ const HubCaixaPage: React.FC = () => {
           // Não travar em "Aguardando dados…" se o load falhou depois de abrir a sessão:
           // cashOpen pode existir com cashSummary ainda null (Promise.all rejeitou).
           dataLoading={(loading || refreshing) && cashSummary == null}
-          onClosed={async () => {
+          onClosed={async (result) => {
             setShowEncerrarTurno(false);
-            showSuccess('Caixa fechado com sucesso.');
+            const n = result?.handoffErrors?.length ?? 0;
+            if (n > 0) {
+              showWarning(
+                `${n} comanda(s) continuam abertas no caixa e precisam ser resolvidas (execução, cancelamento ou envio ao financeiro).`,
+                'Caixa fechado com pendências',
+              );
+            } else {
+              showSuccess('Caixa fechado com sucesso.');
+            }
             await load();
           }}
         />

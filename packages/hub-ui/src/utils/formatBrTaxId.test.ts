@@ -46,4 +46,9 @@ describe('formatBrTaxId', () => {
     expect(isValidBrTaxId('111.111.111-11')).toBe(false);
     expect(isValidBrTaxId('262.904.498-00')).toBe(true);
   });
+
+  it('isValidBrTaxId rejeita CPF curto como 123', () => {
+    expect(isValidBrTaxId('123')).toBe(false);
+    expect(isValidBrTaxId('')).toBe(false);
+  });
 });

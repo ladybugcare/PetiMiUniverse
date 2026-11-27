@@ -181,6 +181,8 @@ export async function loadDayOpsSummaryClient(
             cash_open: cash.cash_session?.status === 'open',
             cash_opened_at: cash.cash_session?.opened_at ?? null,
             pending_billing: cash.pending_billing_count ?? dash.pending_billing_count ?? 0,
+            open_comandas_count: cash.open_comandas_count ?? 0,
+            open_comandas_total: cash.open_comandas_total ?? 0,
           };
           summary.alerts = {
             ...(summary.alerts ?? { low_stock: 0, vaccines_due: 0, overdue_receivables_count: 0, overdue_receivables_total: 0 }),

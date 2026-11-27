@@ -142,7 +142,7 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
         hubComandaApi.getComandaDetail(comandaId, clinicId),
         hubServiceTypesApi.list(clinicId),
         hubInventoryApi.items.list(clinicId).catch(() => ({ items: [] as HubInventoryItem[] })),
-        hubInventoryApi.lots.list(clinicId).catch(() => ({ lots: [] as HubInventoryLotRow[] })),
+        hubInventoryApi.lots.list(clinicId, { forSale: true }).catch(() => ({ lots: [] as HubInventoryLotRow[] })),
       ]);
       setPayload(detail);
       setServiceTypes(stRes.service_types);

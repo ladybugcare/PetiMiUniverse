@@ -399,12 +399,26 @@ export const hubAgendaApi = {
     id: string,
     payload: PatchHubAppointmentPayload,
     opts?: { scope?: 'this' | 'future' | 'all' },
-  ): Promise<{ appointment: HubAppointment; updated_count: number }> {
+  ): Promise<{
+    appointment: HubAppointment;
+    updated_count: number;
+    comanda_effects?: {
+      cancelled_ids: string[];
+      pending_adjustment_ids: string[];
+    };
+  }> {
     const scope = opts?.scope ?? 'this';
     return apiRequest(`${basePath}/${encodeURIComponent(id)}?scope=${scope}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
-    }) as Promise<{ appointment: HubAppointment; updated_count: number }>;
+    }) as Promise<{
+      appointment: HubAppointment;
+      updated_count: number;
+      comanda_effects?: {
+        cancelled_ids: string[];
+        pending_adjustment_ids: string[];
+      };
+    }>;
   },
 
   async upsertCalendarBlock(payload: {

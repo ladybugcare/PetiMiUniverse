@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   useAuth,
@@ -65,6 +65,7 @@ const HubGuardiansPage: React.FC = () => {
   const [mainTab, setMainTab] = useState<MainTab>('tutores');
   const [searchQ, setSearchQ] = useState('');
   const debouncedQ = useDebounced(searchQ, 350);
+  const listRequestSeq = useRef(0);
   const [bondFilter, setBondFilter] = useState<'all' | 'primary' | 'secondary'>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'inactive'>('all');
   const [careLocationFilter, setCareLocationFilter] = useState<'all' | 'own_unit' | 'partner_clinic'>('all');
@@ -103,6 +104,7 @@ const HubGuardiansPage: React.FC = () => {
 
   const loadList = useCallback(async () => {
     if (!clinicId || !accessAllowed) return;
+    const seq = ++listRequestSeq.current;
     begin();
     try {
       const { guardians } = await hubGuardiansApi.list(clinicId, true, {
@@ -111,12 +113,15 @@ const HubGuardiansPage: React.FC = () => {
         q: debouncedQ || undefined,
         careLocationKind: careLocationFilter === 'all' ? undefined : careLocationFilter,
       });
+      // Ignora resposta atrasada de busca anterior (digitar rápido).
+      if (seq !== listRequestSeq.current) return;
       setGuardiansRaw(guardians);
       succeed();
     } catch (e: unknown) {
+      if (seq !== listRequestSeq.current) return;
       showError((e as Error)?.message || 'Erro ao carregar clientes');
     } finally {
-      finish();
+      if (seq === listRequestSeq.current) finish();
     }
   }, [clinicId, accessAllowed, kindParam, statusFilter, careLocationFilter, debouncedQ, showError, begin, succeed, finish]);
 

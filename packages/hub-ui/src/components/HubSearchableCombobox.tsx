@@ -37,6 +37,11 @@ export type HubSearchableComboboxProps = {
   clearable?: boolean;
   /** Valores já escolhidos noutro contexto (ex.: serviços já adicionados ao bloco). Mostram check no painel. */
   markedValues?: readonly string[];
+  /**
+   * Enter confirma o único resultado filtrado (ex.: medicamento).
+   * Desligar em pickers de tutor/pet para não selecionar o resultado da busca anterior ao digitar rápido.
+   */
+  enterCommitsUniqueMatch?: boolean;
 };
 
 function norm(s: string): string {
@@ -65,6 +70,8 @@ export function resolveComboboxEnterCommit(opts: {
   query: string;
   filtered: HubComboboxOption[];
   allowCreate: boolean;
+  /** Default true — ver `enterCommitsUniqueMatch` no componente. */
+  enterCommitsUniqueMatch?: boolean;
 }): string | null {
   const qTrim = opts.query.trim();
   if (!qTrim) return null;
@@ -72,7 +79,11 @@ export function resolveComboboxEnterCommit(opts: {
     (o) => norm(o.label) === norm(qTrim) || norm(o.value) === norm(qTrim),
   );
   if (exact) return exact.value;
-  if (opts.filtered.length === 1) return opts.filtered[0]!.value;
+  const uniqueOk = opts.enterCommitsUniqueMatch !== false;
+  // Exige ≥3 chars para reduzir seleção acidental com 1 letra da busca anterior.
+  if (uniqueOk && opts.filtered.length === 1 && qTrim.length >= 3) {
+    return opts.filtered[0]!.value;
+  }
   if (opts.allowCreate) return qTrim;
   return null;
 }
@@ -94,6 +105,7 @@ export const HubSearchableCombobox: React.FC<HubSearchableComboboxProps> = ({
   ariaLabel,
   clearable = true,
   markedValues,
+  enterCommitsUniqueMatch = true,
 }) => {
   const uid = useId();
   const listId = `${id}-list-${uid}`;
@@ -231,6 +243,7 @@ export const HubSearchableCombobox: React.FC<HubSearchableComboboxProps> = ({
                 query,
                 filtered,
                 allowCreate,
+                enterCommitsUniqueMatch,
               });
               if (next != null) commit(next);
             }

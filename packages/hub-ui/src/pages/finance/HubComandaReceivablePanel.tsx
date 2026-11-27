@@ -60,6 +60,7 @@ import {
   type MerchandiseReturnValue,
 } from './HubMerchandiseReturnSection';
 import { formatComandaOriginLabel } from './comandaListPreview';
+import { isLotExpired } from '../../utils/inventoryLotExpiry';
 import { HubPaymentReversalForm, type PaymentReversalMode } from './HubPaymentReversalForm';
 import {
   HubReceivableCancelIntentField,
@@ -935,7 +936,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     try {
       const [invRes, lotsRes] = await Promise.all([
         hubInventoryApi.items.list(clinicId, false, 'product'),
-        hubInventoryApi.lots.list(clinicId),
+        hubInventoryApi.lots.list(clinicId, { forSale: true }),
       ]);
       const sellable = (invRes.items ?? []).filter((p) => {
         if (p.deleted_at || p.active === false) return false;
@@ -954,9 +955,9 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     setAddProductItemId(itemId);
     const inv = inventoryItems.find((p) => p.id === itemId);
     setAddProductUnitAmount(inv ? String(inv.sale_amount ?? 0) : '');
+    const forItem = inventoryLots.filter((l) => l.item_id === itemId && !isLotExpired(l.expiry_date));
     const lot =
-      inventoryLots.find((l) => l.item_id === itemId && Number(l.qty_on_hand ?? 0) > 0) ??
-      inventoryLots.find((l) => l.item_id === itemId);
+      forItem.find((l) => Number(l.qty_on_hand ?? 0) > 0) ?? forItem[0];
     setAddProductLotId(lot?.id ?? '');
   };
 
@@ -1008,7 +1009,7 @@ export const HubComandaReceivablePanel: React.FC<HubComandaReceivablePanelProps>
     return [
       { value: '', label: '— Lote —' },
       ...inventoryLots
-        .filter((l) => l.item_id === addProductItemId)
+        .filter((l) => l.item_id === addProductItemId && !isLotExpired(l.expiry_date))
         .map((l) => ({
           value: l.id,
           label: `${l.lot_code || 'Sem lote'} · ${Number(l.qty_on_hand ?? 0)}`,
