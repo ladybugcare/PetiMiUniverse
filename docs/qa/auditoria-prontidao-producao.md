@@ -771,3 +771,137 @@ Não misturar este pacote com deploy de staging nem com a suíte E2E inteira no 
 - Testes executados: nenhum (leitura apenas).
 - Pendência: reproduzir P0-02 e P1-01 numa base de staging **depois** que houver correção, não como parte deste PR.
 - Não fazer a partir daqui: `railway up`, suíte E2E completa, mudança de código “já que o relatório apontou”. Cada correção é um PR de produto com o teste da seção 5.
+
+---
+
+## 10. Reverificação — 27 de novembro de 2026 (noite)
+
+Leitura de código apenas. A suíte **não** foi executada. Os achados originais (seções 1 a 9) permanecem como registro da base `63229b61`. Esta seção diz o que mudou depois.
+
+### O que foi lido
+
+| Ref | Onde está | O que entrou |
+| --- | --- | --- |
+| `origin/main` `82e8320e` | produção / `main` | PR [#21](https://github.com/ladybugcare/PetiMiUniverse/pull/21) (`86e44989`, vacina exige lote). Também `aefa9fa7` (alerta de comanda fantasma e aviso com caixa fechado) e `fbb503f7` (Zod 4 no tutor). |
+| `origin/staging` `3b3a36c0` | homologação; contém o `main` acima | PR [#22](https://github.com/ladybugcare/PetiMiUniverse/pull/22) (`ee3e2b9b`, série + Leva e Traz). `25d7e910` (saldo dos pagamentos pendentes; o PR [#23](https://github.com/ladybugcare/PetiMiUniverse/pull/23) foi fechado nessa linha, não no `main`). `162f6308` (presença única, lote na vacina, alerta de validade). `5c3204fb` (execução no Caixa). `3b3a36c0` (conferência de caixa, dia de São Paulo nos relatórios). |
+
+O `main` **não** tem os commits que estão só no `staging`. Status abaixo é o do código em `origin/staging` `3b3a36c0`, que é onde as mudanças da Beatriz foram integradas. A coluna “no main” diz se o mesmo caminho já está em `82e8320e`.
+
+Nenhum P0 ou P1 **novo** apareceu nesse intervalo. O que continua aberto já estava na auditoria (P1-03).
+
+### Tabela
+
+| ID | Status em staging `3b3a36c0` | No main `82e8320e` |
+| --- | --- | --- |
+| P0-01 Vacina sem lote | CORRIGIDO | CORRIGIDO (PR #21) |
+| P0-02 Série + Leva e Traz | CORRIGIDO | NÃO CORRIGIDO |
+| P0-03 Pagamentos pendentes | CORRIGIDO | NÃO CORRIGIDO |
+| P1-01 Fechar turno / dia seguinte | CORRIGIDO | NÃO CORRIGIDO |
+| P1-02 PIX/cartão com sessão fechada | CORRIGIDO | NÃO CORRIGIDO |
+| P1-03 Dashboard “hoje” | NÃO CORRIGIDO | NÃO CORRIGIDO |
+| P1-04 Três faturamentos e dia UTC | CORRIGIDO | NÃO CORRIGIDO |
+| P1-05 Encaixe duplicado | CORRIGIDO | NÃO CORRIGIDO |
+| P1-06 Papel Financeiro invertido | CORRIGIDO | NÃO CORRIGIDO |
+
+### P0-01 — CORRIGIDO
+
+Commit `86e44989` / PR #21, também em `162f6308` no staging.
+
+- API: `createHubVaccination` devolve 400 “Selecione o lote da vacina no estoque.” quando `source = in_clinic` e há `hub_inventory_item_id` sem lote (`hubClinicalModulesController.ts`, por volta das linhas 868–876 em staging). Lote vencido ou sem saldo continua em `validateLotStockForOut`. A baixa `encounter_out` segue; se falha, o registro da vacina é apagado.
+- UI: o botão só habilita com item e lote (`HubVaccinationForm.tsx`, `canSubmit`). O texto “registrar sem baixa” saiu. A lista pede `for_sale=1`, então lote vencido não entra no combo (isso também cobre o antigo P2-01 na tela da vacina).
+- Checkout e handoff: `vaccinationComandaLineMissingLot` recusa linha de vacina com item e sem lote (`comandaStockOut.ts`; chamadas no `hubComandasController.ts` por volta de 4331 e 4898). Vacina legada sem lote pode receber lote no patch e aí gera `encounter_out` se o prontuário ainda não tiver movimento (por volta de 6941).
+
+O que resta: vacina `in_clinic` **sem** item de estoque ainda grava (preço nulo, sem baixa). O formulário atual não oferece esse caminho. A baixa e o insert do prontuário continuam em passos separados, com rollback em JavaScript se a saída falha — o furo do P0 (cobrar sem baixar) não passa mais nesse fluxo.
+
+### P0-02 — CORRIGIDO
+
+PR #22 / `ee3e2b9b`. Migração `180_hub_replace_appointment_services.sql`. **Não está no main.**
+
+- `classifySeriesPatchTarget` / `shouldRewriteAppointmentServicesOnSeriesPatch` (`hubPickupPricing.ts`): serviço do formulário só regrava o card principal. Bloco extra (`parent_appointment_id`) e perna `pickup_route` não recebem essa lista.
+- Troca das linhas do principal passa por `replaceAppointmentServices` → RPC `hub_replace_appointment_services` (delete+insert na mesma função). O fallback sequencial só vale em teste ou com a variável de ambiente.
+- Pernas são realinhadas pelo delta do pai (`realignPickupLegsForParent`), sem recriar serviço.
+- `shiftTimestampToDate` grava o relógio de America/Sao_Paulo (`hubSeriesSchedulePatch.ts`), não o calendário UTC. Isso vale também na criação da série, então a perna do primeiro dia não cai no dia civil anterior por causa do `Z`.
+- `updated_count` conta só os principais. A agenda mostra “N ocorrências foram atualizadas.” quando N > 1 (`HubAgendaPage.tsx`, `handleAppointmentUpdated`; o modal repassa `result.updated_count`).
+
+O que resta, sem reabrir o “3 Banhos”: o objeto `patch` (tipo principal, profissional, notas, porte) ainda é aplicado ao bloco extra no mesmo loop. As **linhas** de serviço do extra não são substituídas, e o rótulo do card vem dessas linhas. Se a RPC não estiver aplicada no banco, a produção devolve erro em vez de apagar serviço e falhar no meio (o fallback sequencial não liga fora de teste). Vários dias ainda não são uma transação só: o dia 2 pode falhar depois de o dia 1 já ter gravado.
+
+### P0-03 — CORRIGIDO
+
+`25d7e910` no staging (PR #23 não está no `main`).
+
+- `listHubFinanceReceivables` anexa `balance_amount` com `attachReceivableBalanceFields` → `balanceDue` / `netPaidEffective` (`hubFinancialController.ts` na listagem; helper em `hubReceivableFinancialBalance.ts`). Entra pagamento `posted` e reembolso de linha.
+- `HubRelatoriosPendingPayments.tsx`: totais, ordenação, aging e o valor da linha usam `outstanding()`, que prefere `balance_amount`.
+
+O que resta: se a API não mandar o campo (cliente antigo), a tela cai de novo em `final_amount`. A listagem ainda inclui `unit_id` nulo quando se filtra unidade — isso era divergência de filtro, não o valor cheio.
+
+### P1-01 — CORRIGIDO
+
+`5c3204fb` e `3b3a36c0`, mais o fuso em `paymentYmdSaoPaulo` no abrir caixa. **Não está no main** (o `aefa9fa7` do main só mexe no aviso de comanda e na visibilidade com gaveta fechada).
+
+- Painel do dia tem “Marcar execução” para agendamento, banho, consulta e internação (`FinanceDayBoardTable.tsx`; `dayBoardItemSupportsMarkExecution`). O formulário grava `executed_by_staff_id` via `PATCH /finance/appointment-service-lines/:lineId` (`hubServiceExecutionController.ts`).
+- A trava de cobrança só exige executor quando existe regra de comissão naquela linha (`assertServiceLinesHaveExecutor` agora dá `continue` se `matchRuleForLine` não acha regra). Bate com o que o formulário pré-seleciona (`commission_requires_executor`).
+- “Marcar sem cobrança” também está no Financeiro (`FinanceDayBoardSection.tsx`, `onWaiveFromBoard`), não só no Caixa.
+- `handleClose` tem `finally { setBusy(false) }` e **não** repete o handoff na tela; o comentário no drawer diz que o handoff único é o do `closeCashSession`. Timeout do cliente confere se a gaveta já fechou.
+- “Dia anterior” no banner (`isPreviousDaySaoPaulo`) e no 409 de abrir turno (`paymentYmdSaoPaulo`) usam America/Sao_Paulo, o mesmo fuso do auto-close.
+
+O que resta: ainda só existe um turno `open` por unidade — o de ontem precisa ser encerrado antes do de hoje. O close segue com `abortOnHandoffErrors: false` (comanda pendente não impede fechar; o erro volta em `auto_handoff_errors`). Sessão de banho sem `hub_appointment_id` não tem linha para marcar (404 “Sessão sem agendamento vinculado”).
+
+### P1-02 — CORRIGIDO
+
+`hubFinanceLedger.ts` em staging: meio que não é dinheiro **ignora** `cash_session_id` e grava `null`. Não há mais 409 de “sessão fechada” para PIX/cartão. `ComandaCheckoutDrawer.tsx` só envia o id quando `line.method === 'cash'` (por volta das linhas 576, 600 e 614).
+
+No `main` o comentário antigo continua: se o cliente mandar o id, a sessão precisa estar `open`. Esse fix **não** está no `main`.
+
+O que resta: dinheiro sem sessão aberta continua 409, como deve ser.
+
+### P1-03 — NÃO CORRIGIDO
+
+`getHubDayOpsSummary` em staging (`hubDayOpsSummaryController.ts`) ainda:
+
+- soma em aberto como `final_amount − posted`, sem reembolso de linha (por volta de 422–437);
+- soma vencido com `final_amount` cheio (por volta de 459–465);
+- inclui recebível e pagamento com `unit_id` nulo;
+- filtra `payment_date` com `YYYY-MM-DDT00:00:00.000Z` (`fromUtc` / `toUtc`, linhas 61–62 e 416), embora `dayBoundsFromYmdSaoPaulo` já seja calculado e **não** seja usado nesse bloco.
+
+Os relatórios financeiros mudaram de dia (P1-04). O card de hoje do Dashboard, não. Continua podendo divergir do Financeiro no parcial, no reembolso de linha, na unidade vazia e entre 21h e meia-noite.
+
+### P1-04 — CORRIGIDO
+
+`3b3a36c0` e `hubReportPeriod.ts`.
+
+- `utcDayStartIso` / `utcDayEndIso` agora delegam a `reportDayStartIso` / `reportDayEndIso`: `YYYY-MM-DDT00:00:00-03:00` até `23:59:59.999-03:00`. O nome da função antiga ficou; o corte é o dia civil de São Paulo. Pagamento das 22h BRT permanece no mesmo dia do relatório.
+- A resposta de recebimentos declara `kind: recebido_bruto`, `timezone` e nota de que taxa e líquido são informativos e não alteram o total (`getHubFinanceRevenueReport`).
+- A visão financeira rotula “Recebido bruto”, mostra taxa e líquido, e o CSV não chama mais isso de “Faturamento recebido” (`HubRelatoriosFinanceOverview.tsx`). Ticket e top de serviços continuam sendo outras contas (cobrança), com nota própria.
+
+O que resta: são números diferentes de propósito (cobrado × recebido × margem). O risco antigo era a tela tratá-los como o mesmo “faturamento” e cortar o dia em UTC. Isso, nos relatórios, foi separado. O Dashboard (P1-03) não entrou nessa troca.
+
+### P1-05 — CORRIGIDO
+
+`162f6308` e migração `181_uniq_hub_open_presence_per_pet.sql`.
+
+- Encaixe clínico consulta presença aberta do pet e responde 409 (`checkInHubClinicalWalkIn`, `allow_duplicate_open !== true`).
+- Walk-in de banho faz o mesmo (`createHubGroomingSession`) e trata violação do índice único.
+- Índices parciais: sessão de banho aberta, walk-in de banho, walk-in clínico e encounter aberto, por pet.
+
+O que resta: a API aceita `allow_duplicate_open: true` depois de confirmação explícita na UI (agenda, clínica, cockpit). Sem essa flag, o segundo encaixe não grava. Dois cliques no mesmo instante esbarram no índice.
+
+### P1-06 — CORRIGIDO
+
+`packages/web-core/src/permissions.ts` no staging alinha `CFINANCE` ao backend: tem `hub.payments.reverse` e `hub.financial.adjust`, **não** tem `hub.cash.session`. `CMANAGER` tem reverse, adjust e `hub.cash.session` nos dois mapas.
+
+No `main` o drift descrito na seção 3 continua.
+
+### Veredito desta reverificação
+
+**`main` (`82e8320e`): NO-GO.** Só o P0-01 entrou. Série com Leva e Traz, pagamentos pendentes, turno do dia seguinte, PIX com sessão fechada, relatórios, encaixe duplicado e o papel Financeiro seguem como na auditoria original.
+
+**`staging` (`3b3a36c0`): GO COM CONDIÇÕES**, desde que as migrações 180 e 181 estejam aplicadas no banco de homologação.
+
+Condições:
+
+1. Não usar o card financeiro do Dashboard (“hoje”) como número de caixa ou de cobrança até o P1-03 usar o mesmo saldo, a mesma unidade e o mesmo dia de São Paulo dos relatórios.
+2. Não promover esse staging a produção enquanto o `main` não receber P0-02, P0-03 e os P1 acima. Quem opera em `hub.petmi.app` a partir do `main` ainda está no NO-GO.
+3. Conferir uma série com Leva e Traz em homologação (o código fecha o caso; esta reverificação não rodou o teste nem o ambiente).
+4. O piloto ainda não deve desligar o sistema antigo no primeiro dia: o Dashboard mente, e o `main` não tem o restante.
+
+Nenhum P0/P1 novo foi introduzido pelas mudanças lidas. O P1-03 é o mesmo furo, não uma regressão.
