@@ -180,6 +180,96 @@ export function isCaixaCarryoverPendingComanda(
   return Boolean(openedAt && openedAt < todayYmd);
 }
 
+/** Classificação da conferência de carryover (duas filas + executor). */
+export type CaixaCarryoverConferenceKind = 'operational_incomplete' | 'needs_executor' | 'ready';
+
+export function resolveCaixaCarryoverConferenceKind(
+  comanda: Record<string, unknown>,
+): CaixaCarryoverConferenceKind {
+  if (comanda.operational_complete === false) return 'operational_incomplete';
+  if (comanda.handoff_block_code === 'COMMISSION_EXECUTOR_REQUIRED') return 'needs_executor';
+  return 'ready';
+}
+
+export function caixaCarryoverConferenceLabel(kind: CaixaCarryoverConferenceKind): string {
+  switch (kind) {
+    case 'operational_incomplete':
+      return 'Operação incompleta';
+    case 'needs_executor':
+      return 'Falta executor';
+    default:
+      return 'Pronta para cobrança';
+  }
+}
+
+/** Deep link para o módulo operacional da origem (conferência). */
+export function resolveComandaOperationalHref(
+  comanda: Record<string, unknown>,
+  opts?: { markExecution?: boolean },
+): string | null {
+  const originType = String(comanda.origin_type ?? '');
+  const originId = comanda.origin_id ? String(comanda.origin_id) : '';
+  if (!originId) {
+    if (originType === 'grooming_session') return '/hub/banho-tosa';
+    if (originType === 'appointment') return '/hub/appointments';
+    if (originType === 'boarding_reservation') return '/hub/hotel-creche';
+    if (originType === 'encounter') return '/hub/clinica';
+    return null;
+  }
+  switch (originType) {
+    case 'encounter':
+      return `/hub/clinica/atendimentos/${originId}`;
+    case 'grooming_session':
+      return `/hub/banho-tosa?session=${encodeURIComponent(originId)}`;
+    case 'appointment': {
+      // Agenda escuta appointment_id (+ date) e abre o painel do agendamento.
+      const q = new URLSearchParams({ appointment_id: originId });
+      const opened = comanda.opened_at ? String(comanda.opened_at).slice(0, 10) : '';
+      const starts = comanda.starts_at ? String(comanda.starts_at).slice(0, 10) : '';
+      const dateYmd = /^\d{4}-\d{2}-\d{2}$/.test(starts)
+        ? starts
+        : /^\d{4}-\d{2}-\d{2}$/.test(opened)
+          ? opened
+          : '';
+      if (dateYmd) q.set('date', dateYmd);
+      if (opts?.markExecution) q.set('mark_execution', '1');
+      return `/hub/appointments?${q.toString()}`;
+    }
+    case 'boarding_reservation':
+      return `/hub/hotel-creche?reservation=${encodeURIComponent(originId)}`;
+    case 'hospitalization':
+      return `/hub/clinica/internacoes/${originId}`;
+    default:
+      return null;
+  }
+}
+
+/** Rótulo do botão de deep link operacional (evita setinha sem contexto). */
+export function resolveComandaOperationalActionLabel(comanda: Record<string, unknown>): string {
+  const originType = String(comanda.origin_type ?? '');
+  switch (originType) {
+    case 'appointment':
+      return 'Abrir na agenda';
+    case 'grooming_session':
+      return 'Abrir Banho & Tosa';
+    case 'boarding_reservation':
+      return 'Abrir Hotel & Creche';
+    case 'encounter':
+    case 'hospitalization':
+      return 'Abrir na clínica';
+    default:
+      return 'Abrir operação';
+  }
+}
+
+/** Carryover elegível a handoff em lote (pronta + saldo). */
+export function canHandoffCarryoverComanda(comanda: Record<string, unknown>): boolean {
+  if (!canCaixaEditOpenComanda(comanda)) return false;
+  if (resolveCaixaCarryoverConferenceKind(comanda) !== 'ready') return false;
+  if (comanda.balance_due != null && Number(comanda.balance_due) <= BALANCE_EPSILON) return false;
+  return true;
+}
+
 export function isDayBoardViewOnly(item: HubFinanceDayBoardItem): boolean {
   return isDayBoardPaidAndComplete(item);
 }

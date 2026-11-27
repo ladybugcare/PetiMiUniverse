@@ -30,10 +30,17 @@ import {
 import {
   canHandoffExistingReceivables,
   computeBalanceDueFromParts,
+  formatHandoffResultForNotes,
+  isSkippableLeavePendingHandoffCode,
   isSkippableLeavePendingHandoffError,
   openLinesHeaderDiscount,
+  type LeavePendingHandoffCode,
 } from './comandaFinanceHandoff';
-export { isSkippableLeavePendingHandoffError } from './comandaFinanceHandoff';
+export {
+  isSkippableLeavePendingHandoffError,
+  isSkippableLeavePendingHandoffCode,
+  formatHandoffResultForNotes,
+} from './comandaFinanceHandoff';
 import { notifyHubCancellationPending } from './hubNotifyEvents';
 import { isMissingPostgrestRelation } from '../../utils/supabaseSchemaErrors.js';
 import {
@@ -250,6 +257,7 @@ import {
 } from './boardingBilling';
 import { isBoardingStatusReadyForComanda } from './boardingOperational';
 import { isGroomingServiceOperationallyDone } from './groomingStages';
+import { classifyComandaOperationalComplete } from './comandaOperationalStatus';
 import {
   dropAppointmentLinesReplacedByHospitalization,
   loadHospitalizationComandaItems,
@@ -558,18 +566,32 @@ async function findLatestClosedGroomingSessionIdForAppointment(
   clinicId: string,
   appointmentId: string
 ): Promise<string | null> {
+  // Pronto/entregue já são faturáveis; closed permanece no fim da fila de preferência.
   const { data, error } = await supabaseAdmin
     .from('hub_grooming_sessions')
-    .select('id')
+    .select('id, grooming_stage, ready_at, delivered_at, closed_at')
     .eq('clinic_id', clinicId)
     .eq('hub_appointment_id', appointmentId)
-    .eq('grooming_stage', 'closed')
+    .in('grooming_stage', ['ready', 'delivered', 'closed'])
     .is('deleted_at', null)
     .order('closed_at', { ascending: false, nullsFirst: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(10);
   if (error) throw new Error(error.message);
-  return (data?.id as string) ?? null;
+  const rows = (data ?? []) as Array<{
+    id: string;
+    grooming_stage?: string | null;
+    ready_at?: string | null;
+    delivered_at?: string | null;
+    closed_at?: string | null;
+  }>;
+  const scored = rows
+    .filter((r) => isGroomingServiceOperationallyDone(String(r.grooming_stage ?? '')))
+    .map((r) => ({
+      id: r.id,
+      at: r.closed_at ?? r.delivered_at ?? r.ready_at ?? '',
+    }))
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  return scored[0]?.id ?? null;
 }
 
 async function findLatestCompletedEncounterIdForAppointment(
@@ -670,21 +692,22 @@ async function isOperationalCompleteForComanda(comanda: Record<string, unknown>)
   const originId = comanda.origin_id as string | null;
   const clinicId = comanda.clinic_id as string;
   if (!originId) return true;
-  if (originType === 'quote') return true;
-  if (originType === 'manual') return true;
-  if (originType === 'package') return true;
+  if (originType === 'quote' || originType === 'manual' || originType === 'package') return true;
   if (originType === 'appointment') {
     // Encounter clínico aberto → serviço em andamento (mesmo se a agenda já estiver "paid" por cobrança antecipada).
     const openEncId = await findLatestEncounterIdForAppointment(clinicId, originId, { anyOpen: true });
-    if (openEncId) return false;
     const { data: appt } = await supabaseAdmin
       .from('hub_appointments')
       .select('status')
       .eq('id', originId)
       .eq('clinic_id', clinicId)
       .maybeSingle();
-    const st = String(appt?.status ?? '');
-    return st === 'done' || st === 'paid';
+    return classifyComandaOperationalComplete({
+      originType,
+      originId,
+      appointmentStatus: (appt?.status as string | null) ?? null,
+      hasOpenEncounter: Boolean(openEncId),
+    });
   }
   if (originType === 'grooming_session') {
     const { data: s } = await supabaseAdmin
@@ -694,8 +717,11 @@ async function isOperationalCompleteForComanda(comanda: Record<string, unknown>)
       .eq('clinic_id', clinicId)
       .is('deleted_at', null)
       .maybeSingle();
-    // Pronto = serviço concluído (custódia/retirada pode continuar em ready).
-    return isGroomingServiceOperationallyDone(String(s?.grooming_stage ?? ''));
+    return classifyComandaOperationalComplete({
+      originType,
+      originId,
+      groomingStage: (s?.grooming_stage as string | null) ?? null,
+    });
   }
   if (originType === 'encounter') {
     const { data: e } = await supabaseAdmin
@@ -705,7 +731,11 @@ async function isOperationalCompleteForComanda(comanda: Record<string, unknown>)
       .eq('clinic_id', clinicId)
       .is('deleted_at', null)
       .maybeSingle();
-    return String(e?.status ?? '') === 'completed';
+    return classifyComandaOperationalComplete({
+      originType,
+      originId,
+      encounterStatus: (e?.status as string | null) ?? null,
+    });
   }
   if (originType === 'boarding_reservation') {
     const { data: r } = await supabaseAdmin
@@ -715,7 +745,11 @@ async function isOperationalCompleteForComanda(comanda: Record<string, unknown>)
       .eq('clinic_id', clinicId)
       .is('deleted_at', null)
       .maybeSingle();
-    return String(r?.status ?? '') === 'checked_out';
+    return classifyComandaOperationalComplete({
+      originType,
+      originId,
+      boardingStatus: (r?.status as string | null) ?? null,
+    });
   }
   return true;
 }
@@ -1618,7 +1652,10 @@ async function buildComandaItemsFromGroomingSession(
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!session || session.clinic_id !== clinicId) throw new Error('NOT_FOUND');
-  if (session.grooming_stage !== 'closed') throw new Error('NOT_READY');
+  // Pronto / entregue / encerrado — serviço do salão concluído (custódia pode continuar em ready).
+  if (!isGroomingServiceOperationallyDone(String(session.grooming_stage ?? ''))) {
+    throw new Error('NOT_READY');
+  }
   if (session.billing_waived_at) throw new Error('WAIVED');
   const guardianId = session.guardian_id as string | null;
   if (!guardianId) throw new Error('NO_GUARDIAN');
@@ -2665,7 +2702,7 @@ async function buildDesiredComandaSnapshot(
       .maybeSingle();
     if (error) throw new Error(error.message);
     if (!session) throw new Error('NOT_FOUND');
-    if (String(session.grooming_stage) === 'closed') {
+    if (isGroomingServiceOperationallyDone(String(session.grooming_stage ?? ''))) {
       return await buildComandaItemsFromGroomingSession(clinicId, oid);
     }
     const apptId = (session.hub_appointment_id as string | null) ?? null;
@@ -2976,7 +3013,7 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
         .maybeSingle();
       if (sessErr) throw new Error(sessErr.message);
       if (!sess) throw new Error('NOT_FOUND');
-      if (String(sess.grooming_stage) === 'closed') {
+      if (isGroomingServiceOperationallyDone(String(sess.grooming_stage ?? ''))) {
         built = await buildComandaItemsFromGroomingSession(clinic_id, effectiveOriginId);
       } else {
         const apptId = sess.hub_appointment_id as string | null;
@@ -3304,6 +3341,19 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
   } = balancePayload;
   const operational_complete = await isOperationalCompleteForComanda(comandaRow);
   const edit_scopes = computeComandaEditScopes(comandaRow, operational_complete, balance_due);
+  let handoff_block_code: string | null = null;
+  if (operational_complete) {
+    const executorCheck = await assertServiceLinesHaveExecutor(
+      clinicId,
+      (items ?? []).map((it) => ({
+        origin_type: (it.origin_type as string | null) ?? null,
+        origin_id: (it.origin_id as string | null) ?? null,
+        line_kind: (it.item_kind as string | null) ?? null,
+        description: (it.description as string | null) ?? null,
+      })),
+    );
+    if (!executorCheck.ok) handoff_block_code = 'COMMISSION_EXECUTOR_REQUIRED';
+  }
 
   // Enriquecer com nomes de tutor/pet
   const guardianId = comandaRow.guardian_id as string | null;
@@ -3466,6 +3516,7 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
     card_net_total: cardFeeTotals.card_net_total,
     card_without_fee_gross_total: cardFeeTotals.card_without_fee_gross_total,
     operational_complete,
+    handoff_block_code,
     edit_scopes,
     allowed_guardians: allowedGuardians,
     package_balances_by_item_id: packageBalancesByItemId,
@@ -3988,7 +4039,13 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
     }
 
     if (action === 'leave_pending') {
-      detail = await maybeSyncEmptyComandaForHandoff(comandaId, clinic_id, detail, req.user?.id ?? null);
+      const syncOutcome = await maybeSyncEmptyComandaForHandoff(
+        comandaId,
+        clinic_id,
+        detail,
+        req.user?.id ?? null,
+      );
+      detail = syncOutcome.detail;
       comanda = detail.comanda as Record<string, unknown>;
     }
 
@@ -4569,24 +4626,51 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
   }
 };
 
+type SyncEmptyHandoffOutcome = {
+  detail: Awaited<ReturnType<typeof getHubComandaDetailPayload>>;
+  syncCode?: LeavePendingHandoffCode;
+  syncError?: string;
+};
+
 /** Sincroniza a origem quando o handoff não encontra itens em aberto (comanda aberta cedo). */
 async function maybeSyncEmptyComandaForHandoff(
   comandaId: string,
   clinicId: string,
   detail: Awaited<ReturnType<typeof getHubComandaDetailPayload>>,
   actorUserId: string | null,
-): Promise<Awaited<ReturnType<typeof getHubComandaDetailPayload>>> {
+): Promise<SyncEmptyHandoffOutcome> {
   const originType = String((detail.comanda as Record<string, unknown>).origin_type ?? '');
-  if (!originType || originType === 'manual') return detail;
-  if ((detail.open_item_ids as string[]).length > 0) return detail;
-  if (canHandoffExistingReceivables(detail)) return detail;
+  if (!originType || originType === 'manual') return { detail };
+  if ((detail.open_item_ids as string[]).length > 0) return { detail };
+  if (canHandoffExistingReceivables(detail)) return { detail };
   try {
-    return await applySyncComandaFromOrigin(clinicId, comandaId, {
+    const synced = await applySyncComandaFromOrigin(clinicId, comandaId, {
       actor_user_id: actorUserId,
       edit_context: 'caixa',
     });
-  } catch {
-    return detail;
+    return { detail: synced };
+  } catch (e: unknown) {
+    const msg = String((e as Error)?.message ?? e ?? '');
+    if (msg === 'NOT_READY' || msg.includes('NOT_READY')) {
+      const opDone = Boolean((detail as { operational_complete?: boolean }).operational_complete);
+      if (!opDone) {
+        return {
+          detail,
+          syncCode: 'OPERATIONAL_NOT_READY',
+          syncError: 'Operação ainda não concluída — sincronize após finalizar o serviço',
+        };
+      }
+      return {
+        detail,
+        syncCode: 'SYNC_NOT_READY',
+        syncError: 'Origem ainda não está pronta para sincronizar itens',
+      };
+    }
+    return {
+      detail,
+      syncCode: 'SYNC_NOT_READY',
+      syncError: msg || 'Falha ao sincronizar itens da origem',
+    };
   }
 }
 
@@ -4596,8 +4680,8 @@ export type LeavePendingHandoffResult = {
   /** Comanda sem valor a faturar / já enviada — não é falha dura. */
   skipped?: boolean;
   error?: string;
-  /** Código estável para a UI (ex.: COMMISSION_EXECUTOR_REQUIRED). */
-  code?: string;
+  /** Código estável para a UI / auto-close (ex.: COMMISSION_EXECUTOR_REQUIRED). */
+  code?: LeavePendingHandoffCode | string;
 };
 
 /**
@@ -4629,17 +4713,24 @@ export async function leavePendingHandoffComanda(
     let detail = await getHubComandaDetailPayload(comandaId, clinicId);
     let comanda = detail.comanda as Record<string, unknown>;
     if (String(comanda.status) !== 'aberta') {
-      return { comanda_id: comandaId, receivable_ids: [], error: 'Comanda não está aberta' };
+      return {
+        comanda_id: comandaId,
+        receivable_ids: [],
+        error: 'Comanda não está aberta',
+        code: 'COMANDA_NOT_OPEN',
+      };
     }
     if (comanda.finance_handoff_at) {
       return {
         comanda_id: comandaId,
         receivable_ids: (detail.active_receivable_ids as string[]) ?? [],
         skipped: true,
+        code: 'ALREADY_HANDED_OFF',
       };
     }
 
-    detail = await maybeSyncEmptyComandaForHandoff(comandaId, clinicId, detail, userId);
+    const syncOutcome = await maybeSyncEmptyComandaForHandoff(comandaId, clinicId, detail, userId);
+    detail = syncOutcome.detail;
     comanda = detail.comanda as Record<string, unknown>;
 
     const items = (detail.items as Record<string, unknown>[]).filter((it) =>
@@ -4651,11 +4742,31 @@ export async function leavePendingHandoffComanda(
         const ids = await applyFinanceHandoffOnly(comandaId, clinicId, detail, dueDate);
         return { comanda_id: comandaId, receivable_ids: ids };
       }
+      if (syncOutcome.syncCode) {
+        return {
+          comanda_id: comandaId,
+          receivable_ids: [],
+          skipped: true,
+          error: syncOutcome.syncError ?? 'Origem ainda não está pronta para sincronizar itens',
+          code: syncOutcome.syncCode,
+        };
+      }
+      const opDone = Boolean((detail as { operational_complete?: boolean }).operational_complete);
+      if (!opDone) {
+        return {
+          comanda_id: comandaId,
+          receivable_ids: [],
+          skipped: true,
+          error: 'Operação ainda não concluída — sem itens em aberto para enviar ao financeiro',
+          code: 'OPERATIONAL_NOT_READY',
+        };
+      }
       return {
         comanda_id: comandaId,
         receivable_ids: [],
         skipped: true,
         error: 'Não há itens em aberto para enviar ao financeiro',
+        code: 'NO_OPEN_ITEMS',
       };
     }
 
@@ -4706,6 +4817,7 @@ export async function leavePendingHandoffComanda(
         receivable_ids: [],
         skipped: true,
         error: 'Nenhum recebível gerado (valores zerados)',
+        code: 'ZERO_AMOUNT',
       };
     }
 
@@ -4870,6 +4982,7 @@ export async function leavePendingHandoffComanda(
       comanda_id: comandaId,
       receivable_ids: [],
       error: (e as Error)?.message ?? 'Erro ao processar comanda',
+      code: 'HANDOFF_ERROR',
     };
   }
 }
@@ -4908,14 +5021,39 @@ export async function leavePendingHandoffOpenComandasForUnit(
     results.push(result);
     if (result.skipped) {
       skippedCount++;
+      // Skips com código (ex.: OPERATIONAL_NOT_READY) entram nas notes do auto-close.
+      if (result.code && result.code !== 'ALREADY_HANDED_OFF' && result.code !== 'NO_OPEN_ITEMS' && result.code !== 'ZERO_AMOUNT') {
+        errors.push(
+          formatHandoffResultForNotes({
+            comandaId,
+            code: result.code,
+            error: result.error,
+          }),
+        );
+      }
       continue;
     }
     if (result.error) {
-      if (isSkippableLeavePendingHandoffError(result.error)) {
+      if (isSkippableLeavePendingHandoffCode(result.code) || isSkippableLeavePendingHandoffError(result.error)) {
         skippedCount++;
+        if (result.code && result.code !== 'NO_OPEN_ITEMS' && result.code !== 'ZERO_AMOUNT') {
+          errors.push(
+            formatHandoffResultForNotes({
+              comandaId,
+              code: result.code,
+              error: result.error,
+            }),
+          );
+        }
         continue;
       }
-      errors.push(`${comandaId.slice(0, 8)}: ${result.error}`);
+      errors.push(
+        formatHandoffResultForNotes({
+          comandaId,
+          code: result.code ?? 'HANDOFF_ERROR',
+          error: result.error,
+        }),
+      );
       continue;
     }
     handoffCount++;
@@ -5402,10 +5540,8 @@ const listComandasQuerySchema = z
       .enum(['true', 'false'])
       .optional()
       .transform((v) => v === 'true'),
-    enrich: z
-      .enum(['true', 'false'])
-      .optional()
-      .transform((v) => v === 'true'),
+    /** true = enrich completo; light = sem cura/operacional DB (caixa listagem). */
+    enrich: z.enum(['true', 'false', 'light']).optional(),
   })
   .strict();
 
@@ -5711,37 +5847,279 @@ async function reverseAllComandaPayments(
   return { totalReversed, restoredCustomerCredit };
 }
 
+/**
+ * Enrich leve do caixa: operacional + saldo aproximado + bloqueio de executor em lote
+ * (sem cura N+1). Usado por listComandas?enrich=light.
+ */
+async function batchLightComandaConference(
+  clinicId: string,
+  rows: Record<string, unknown>[],
+  itemRows: Array<Record<string, unknown>>,
+): Promise<
+  Map<
+    string,
+    {
+      paid_total: number;
+      balance_due: number;
+      operational_complete: boolean;
+      handoff_block_code: string | null;
+      edit_scopes: ReturnType<typeof computeComandaEditScopes> | null;
+      /** Status/estágio da origem (appointment.status, grooming stage, etc.). */
+      origin_status: string | null;
+    }
+  >
+> {
+  const out = new Map<
+    string,
+    {
+      paid_total: number;
+      balance_due: number;
+      operational_complete: boolean;
+      handoff_block_code: string | null;
+      edit_scopes: ReturnType<typeof computeComandaEditScopes> | null;
+      origin_status: string | null;
+    }
+  >();
+  if (!rows.length) return out;
+
+  const comandaIds = rows.map((r) => r.id as string);
+  const apptIds: string[] = [];
+  const groomIds: string[] = [];
+  const encIds: string[] = [];
+  const boardIds: string[] = [];
+  for (const r of rows) {
+    const ot = String(r.origin_type ?? '');
+    const oid = (r.origin_id as string | null) ?? null;
+    if (!oid) continue;
+    if (ot === 'appointment') apptIds.push(oid);
+    else if (ot === 'grooming_session') groomIds.push(oid);
+    else if (ot === 'encounter') encIds.push(oid);
+    else if (ot === 'boarding_reservation') boardIds.push(oid);
+  }
+
+  const unique = (ids: string[]) => [...new Set(ids)];
+  const [apptRes, groomRes, encRes, boardRes, openEncRes, recvRes] = await Promise.all([
+    unique(apptIds).length
+      ? supabaseAdmin
+          .from('hub_appointments')
+          .select('id, status')
+          .eq('clinic_id', clinicId)
+          .in('id', unique(apptIds))
+      : Promise.resolve({ data: [] as Array<{ id: string; status: string }> }),
+    unique(groomIds).length
+      ? supabaseAdmin
+          .from('hub_grooming_sessions')
+          .select('id, grooming_stage')
+          .eq('clinic_id', clinicId)
+          .in('id', unique(groomIds))
+          .is('deleted_at', null)
+      : Promise.resolve({ data: [] as Array<{ id: string; grooming_stage: string }> }),
+    unique(encIds).length
+      ? supabaseAdmin
+          .from('hub_encounters')
+          .select('id, status')
+          .eq('clinic_id', clinicId)
+          .in('id', unique(encIds))
+          .is('deleted_at', null)
+      : Promise.resolve({ data: [] as Array<{ id: string; status: string }> }),
+    unique(boardIds).length
+      ? supabaseAdmin
+          .from('hub_boarding_reservations')
+          .select('id, status')
+          .eq('clinic_id', clinicId)
+          .in('id', unique(boardIds))
+          .is('deleted_at', null)
+      : Promise.resolve({ data: [] as Array<{ id: string; status: string }> }),
+    unique(apptIds).length
+      ? supabaseAdmin
+          .from('hub_encounters')
+          .select('id, hub_appointment_id, status')
+          .eq('clinic_id', clinicId)
+          .in('hub_appointment_id', unique(apptIds))
+          .is('deleted_at', null)
+          .neq('status', 'cancelled')
+          .neq('status', 'completed')
+      : Promise.resolve({
+          data: [] as Array<{ id: string; hub_appointment_id: string; status: string }>,
+        }),
+    comandaIds.length
+      ? supabaseAdmin
+          .from('hub_receivables')
+          .select('id, comanda_id, status')
+          .eq('clinic_id', clinicId)
+          .in('comanda_id', comandaIds)
+          .neq('status', 'cancelled')
+          .is('deleted_at', null)
+      : Promise.resolve({ data: [] as Array<{ id: string; comanda_id: string; status: string }> }),
+  ]);
+
+  const apptStatus = new Map((apptRes.data ?? []).map((r) => [String(r.id), String(r.status ?? '')]));
+  const groomStage = new Map(
+    (groomRes.data ?? []).map((r) => [String(r.id), String(r.grooming_stage ?? '')]),
+  );
+  const encStatus = new Map((encRes.data ?? []).map((r) => [String(r.id), String(r.status ?? '')]));
+  const boardStatus = new Map((boardRes.data ?? []).map((r) => [String(r.id), String(r.status ?? '')]));
+  const openEncByAppt = new Set(
+    (openEncRes.data ?? [])
+      .map((r) => (r.hub_appointment_id ? String(r.hub_appointment_id) : ''))
+      .filter(Boolean),
+  );
+
+  const recIds = (recvRes.data ?? []).map((r) => r.id as string);
+  const paidByComanda = new Map<string, number>();
+  if (recIds.length > 0) {
+    const { data: pays } = await supabaseAdmin
+      .from('hub_payments')
+      .select('receivable_id, amount')
+      .in('receivable_id', recIds)
+      .eq('status', 'posted');
+    const paidByRec = new Map<string, number>();
+    for (const p of pays ?? []) {
+      const rid = String(p.receivable_id);
+      paidByRec.set(rid, round2((paidByRec.get(rid) ?? 0) + Number(p.amount ?? 0)));
+    }
+    for (const r of recvRes.data ?? []) {
+      const cid = String(r.comanda_id);
+      paidByComanda.set(
+        cid,
+        round2((paidByComanda.get(cid) ?? 0) + (paidByRec.get(String(r.id)) ?? 0)),
+      );
+    }
+  }
+
+  // Executor em lote (mesma regra do assertServiceLinesHaveExecutor).
+  const executorBlocked = new Set<string>();
+  {
+    const checkItems = itemRows.map((it) => ({
+      comanda_id: String(it.comanda_id ?? ''),
+      origin_type: (it.origin_type as string | null) ?? null,
+      origin_id: (it.origin_id as string | null) ?? null,
+      line_kind: (it.item_kind as string | null) ?? (it.line_kind as string | null) ?? null,
+      description: (it.description as string | null) ?? null,
+    }));
+    const flat = checkItems.map(({ origin_type, origin_id, line_kind, description }) => ({
+      origin_type,
+      origin_id,
+      line_kind,
+      description,
+    }));
+    const result = await assertServiceLinesHaveExecutor(clinicId, flat);
+    if (!result.ok) {
+      const missingIds = new Set(result.missing.map((m) => m.origin_id));
+      for (const it of checkItems) {
+        const oid = it.origin_id ? String(it.origin_id) : '';
+        const isApptSvc =
+          String(it.origin_type ?? '') === 'appointment_service' ||
+          String(it.line_kind ?? '') === 'appointment_service';
+        if (it.comanda_id && isApptSvc && oid && missingIds.has(oid)) {
+          executorBlocked.add(it.comanda_id);
+        }
+      }
+    }
+  }
+
+  for (const r of rows) {
+    const cid = r.id as string;
+    const ot = String(r.origin_type ?? '');
+    const oid = (r.origin_id as string | null) ?? null;
+    const operational_complete = classifyComandaOperationalComplete({
+      originType: ot,
+      originId: oid,
+      appointmentStatus: oid ? apptStatus.get(oid) ?? null : null,
+      hasOpenEncounter: Boolean(oid && openEncByAppt.has(oid)),
+      groomingStage: oid ? groomStage.get(oid) ?? null : null,
+      encounterStatus: oid ? encStatus.get(oid) ?? null : null,
+      boardingStatus: oid ? boardStatus.get(oid) ?? null : null,
+    });
+    const paid_total = paidByComanda.get(cid) ?? 0;
+    const total_amount = Number(r.total_amount ?? 0);
+    const balance_due = round2(Math.max(0, total_amount - paid_total));
+    const handoff_block_code =
+      operational_complete && executorBlocked.has(cid) ? 'COMMISSION_EXECUTOR_REQUIRED' : null;
+    const edit_scopes = computeComandaEditScopes(r, operational_complete, balance_due);
+    let origin_status: string | null = null;
+    if (oid) {
+      if (ot === 'appointment') origin_status = apptStatus.get(oid) ?? null;
+      else if (ot === 'grooming_session') origin_status = groomStage.get(oid) ?? null;
+      else if (ot === 'encounter') origin_status = encStatus.get(oid) ?? null;
+      else if (ot === 'boarding_reservation') origin_status = boardStatus.get(oid) ?? null;
+    }
+    out.set(cid, {
+      paid_total,
+      balance_due,
+      operational_complete,
+      handoff_block_code,
+      edit_scopes,
+      origin_status,
+    });
+  }
+  return out;
+}
+
 async function enrichCancellationQueueRows(
   clinicId: string,
-  rows: Record<string, unknown>[]
+  rows: Record<string, unknown>[],
+  opts?: { skipHeal?: boolean; lightConference?: boolean },
 ): Promise<Record<string, unknown>[]> {
   if (!rows.length) return rows;
+  const skipHeal = Boolean(opts?.skipHeal);
+  const lightConference = Boolean(opts?.lightConference);
   const guIds = [...new Set(rows.map((r) => r.guardian_id).filter(Boolean))] as string[];
   const headerPetIds = [...new Set(rows.map((r) => r.pet_id).filter(Boolean))] as string[];
   const comandaIds = rows.map((r) => r.id as string);
 
-  const [guRes, itemsRes, enrichedByComanda] = await Promise.all([
+  const [guRes, itemsRes] = await Promise.all([
     guIds.length
       ? supabaseAdmin.from('hub_guardians').select('id, full_name').in('id', guIds)
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
     comandaIds.length
       ? supabaseAdmin
           .from('hub_comanda_items')
-          .select('comanda_id, pet_id, description, sort_order')
+          .select('comanda_id, pet_id, description, sort_order, origin_type, origin_id, item_kind')
           .in('comanda_id', comandaIds)
           .order('sort_order', { ascending: true })
       : Promise.resolve({ data: [] as Record<string, unknown>[] }),
-    Promise.all(
+  ]);
+
+  type ComandaEnrichment = {
+    paid_total: number;
+    balance_due: number;
+    operational_complete: boolean;
+    handoff_block_code: string | null;
+    edit_scopes: ReturnType<typeof computeComandaEditScopes> | null;
+    origin_status?: string | null;
+  };
+
+  let enrichedByComanda: Array<[string, ComandaEnrichment]>;
+  if (lightConference) {
+    const lightMap = await batchLightComandaConference(
+      clinicId,
+      rows,
+      (itemsRes.data ?? []) as Array<Record<string, unknown>>,
+    );
+    enrichedByComanda = [...lightMap.entries()];
+  } else {
+    enrichedByComanda = await Promise.all(
       comandaIds.map(async (cid) => {
         const row = rows.find((r) => r.id === cid);
         if (!row) {
           const { paid_total, balance_due } = await computeComandaBalancePayload(cid, clinicId);
-          return [cid, { paid_total, balance_due, operational_complete: true, edit_scopes: null }];
+          return [
+            cid,
+            {
+              paid_total,
+              balance_due,
+              operational_complete: true,
+              handoff_block_code: null,
+              edit_scopes: null,
+            },
+          ] as [string, ComandaEnrichment];
         }
         let { paid_total, balance_due } = await computeComandaBalancePayload(cid, clinicId);
         // Cura: quitada sem auto-close, ou reembolsada/estornada sem anular a comanda —
         // evitava fantasma em “Pendentes de dias anteriores” no caixa.
-        if (String(row.status) === 'aberta' && balance_due <= 0.02) {
+        // skipHeal=true no enrich leve do caixa (listagem) — cura fica no detalhe/handoff.
+        if (!skipHeal && String(row.status) === 'aberta' && balance_due <= 0.02) {
           try {
             const voided = await tryVoidComandaAfterSaleFinanciallyEnded({
               clinicId,
@@ -5763,11 +6141,37 @@ async function enrichCancellationQueueRows(
           }
         }
         const operational_complete = await isOperationalCompleteForComanda(row);
+        let handoff_block_code: string | null = null;
+        if (operational_complete) {
+          const itemsForExec = ((itemsRes.data ?? []) as Array<Record<string, unknown>>).filter(
+            (it) => String(it.comanda_id) === cid,
+          );
+          const executorCheck = await assertServiceLinesHaveExecutor(
+            clinicId,
+            itemsForExec.map((it) => ({
+              origin_type: (it.origin_type as string | null) ?? null,
+              origin_id: (it.origin_id as string | null) ?? null,
+              line_kind: (it.item_kind as string | null) ?? null,
+              description: (it.description as string | null) ?? null,
+            })),
+          );
+          if (!executorCheck.ok) handoff_block_code = 'COMMISSION_EXECUTOR_REQUIRED';
+        }
         const edit_scopes = computeComandaEditScopes(row, operational_complete, balance_due);
-        return [cid, { paid_total, balance_due, operational_complete, edit_scopes }];
-      })
-    ),
-  ]);
+        return [
+          cid,
+          {
+            paid_total,
+            balance_due,
+            operational_complete,
+            handoff_block_code,
+            edit_scopes,
+            origin_status: null,
+          },
+        ] as [string, ComandaEnrichment];
+      }),
+    );
+  }
 
   const itemsByComanda = new Map<string, Array<{ pet_id: string | null; description: string }>>();
   const itemPetIds = new Set<string>();
@@ -5790,13 +6194,7 @@ async function enrichCancellationQueueRows(
 
   const guMap = new Map((guRes.data ?? []).map((g) => [g.id as string, g]));
   const petMap = new Map((petRes.data ?? []).map((p) => [p.id as string, p]));
-  type ComandaEnrichment = {
-    paid_total: number;
-    balance_due: number;
-    operational_complete: boolean;
-    edit_scopes: ReturnType<typeof computeComandaEditScopes> | null;
-  };
-  const enrichedMap = new Map<string, ComandaEnrichment>(enrichedByComanda as [string, ComandaEnrichment][]);
+  const enrichedMap = new Map<string, ComandaEnrichment>(enrichedByComanda);
 
   return rows.map((r) => {
     const cid = r.id as string;
@@ -5837,7 +6235,9 @@ async function enrichCancellationQueueRows(
       paid_total: extra?.paid_total ?? 0,
       balance_due: extra?.balance_due ?? 0,
       operational_complete: extra?.operational_complete ?? true,
+      handoff_block_code: extra?.handoff_block_code ?? null,
       edit_scopes: extra?.edit_scopes ?? null,
+      origin_status: extra?.origin_status ?? null,
     };
   });
 }
@@ -5961,8 +6361,14 @@ export const listHubComandas = async (req: Request, res: Response) => {
       return res.status(500).json({ error: error.message });
     }
     const rows = (data ?? []) as Record<string, unknown>[];
-    const shouldEnrich = cancellation_pending || enrich;
-    const comandas = shouldEnrich ? await enrichCancellationQueueRows(clinic_id, rows) : rows;
+    const enrichMode = cancellation_pending ? 'true' : enrich ?? 'false';
+    const shouldEnrich = enrichMode === 'true' || enrichMode === 'light';
+    const comandas = shouldEnrich
+      ? await enrichCancellationQueueRows(clinic_id, rows, {
+          skipHeal: enrichMode === 'light',
+          lightConference: enrichMode === 'light',
+        })
+      : rows;
     return res.json({ comandas });
   } catch (e: unknown) {
     console.error('listHubComandas', e);

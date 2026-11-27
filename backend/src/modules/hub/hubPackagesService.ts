@@ -728,6 +728,8 @@ export async function createPackageBalancesOnCheckout(input: {
 export async function listActivePackageBalances(input: {
   clinicId: string;
   guardianId?: string;
+  /** Escopo do day board: só tutores da listagem (evita varrer a clínica inteira). */
+  guardianIds?: string[];
   petId?: string;
   hubServiceTypeId?: string;
   /** Inclui cancelled (gestão / estorno). Redeem e checkout continuam só com active. */
@@ -745,6 +747,7 @@ export async function listActivePackageBalances(input: {
     q = q.eq('status', 'active').gt('sessions_remaining', 0);
   }
   if (input.guardianId) q = q.eq('guardian_id', input.guardianId);
+  else if (input.guardianIds?.length) q = q.in('guardian_id', input.guardianIds);
   if (input.petId) q = q.or(`pet_id.eq.${input.petId},pet_id.is.null`);
   if (input.hubServiceTypeId) q = q.eq('hub_service_type_id', input.hubServiceTypeId);
   const { data, error } = await q.order('expires_at', { ascending: true, nullsFirst: false }).order('purchased_at', { ascending: true });

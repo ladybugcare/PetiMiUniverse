@@ -88,7 +88,13 @@ export const HubRelatoriosTopClients: React.FC<Props> = ({ clinicId, unitId, per
     <div className="hub-relatorios__overview">
       <div className="hub-relatorios__overview-toolbar">
         <p className="hub-relatorios__overview-period">
-          Período analisado: <strong>{periodLabel}</strong>
+          Período analisado (dia civil São Paulo): <strong>{periodLabel}</strong>
+          {data?.notes ? (
+            <>
+              {' '}
+              · <span className="hub-clientes__muted">{data.notes}</span>
+            </>
+          ) : null}
         </p>
         <HubRelatoriosExportButton
           onClick={onExport}
@@ -114,11 +120,11 @@ export const HubRelatoriosTopClients: React.FC<Props> = ({ clinicId, unitId, per
         </div>
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Faturamento</div>
+            <div className="hub-servicos__metric-label">Recebido bruto</div>
             <div className="hub-servicos__metric-value">
               {formatBrl(data?.summary.total_revenue ?? 0)}
             </div>
-            <div className="hub-servicos__metric-sub">Total de pagamentos no período</div>
+            <div className="hub-servicos__metric-sub">Ranking por pagamentos posted</div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>
             <CircleDollarSign size={20} strokeWidth={2} />
@@ -126,9 +132,9 @@ export const HubRelatoriosTopClients: React.FC<Props> = ({ clinicId, unitId, per
         </div>
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Ticket médio</div>
+            <div className="hub-servicos__metric-label">Média por cliente</div>
             <div className="hub-servicos__metric-value">{formatBrl(ticketAvg)}</div>
-            <div className="hub-servicos__metric-sub">Por cliente que pagou</div>
+            <div className="hub-servicos__metric-sub">Recebido bruto ÷ clientes que pagaram</div>
           </div>
           <div className="hub-servicos__metric-icon hub-servicos__metric-icon--muted" aria-hidden>
             <Trophy size={20} strokeWidth={2} />
@@ -158,7 +164,7 @@ export const HubRelatoriosTopClients: React.FC<Props> = ({ clinicId, unitId, per
           <div className="hub-relatorios__panel-head">
             <div>
               <h2 id="relatorios-top-share-title" className="hub-relatorios__section-title">
-                Top 5 por faturamento
+                Top 5 por recebido bruto
               </h2>
               <p className="hub-relatorios__panel-sub">Participação relativa entre os maiores pagadores</p>
             </div>

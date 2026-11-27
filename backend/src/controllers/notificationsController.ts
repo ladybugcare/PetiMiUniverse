@@ -41,6 +41,7 @@ interface NotificationData {
     | 'hub_pet_arrived'
     | 'hub_payment_due'
     | 'hub_cancellation_pending'
+    | 'hub_caixa_conference'
     | 'hub_stock_alert'
     | 'hub_boarding_checkin'
     | 'hub_boarding_checkout'

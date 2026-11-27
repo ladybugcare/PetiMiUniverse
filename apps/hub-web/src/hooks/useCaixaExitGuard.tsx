@@ -1,25 +1,68 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useBlocker } from 'react-router-dom';
-import { enviarPendentesAoFinanceiro } from '@petimi/hub-ui';
+import {
+  caixaExitPromptCopy,
+  enviarPendentesAoFinanceiro,
+  isPreviousDaySaoPaulo,
+  shouldPromptCaixaExitOnLeave,
+  type CaixaExitPromptDecision,
+  type HubPublicBusinessHours,
+} from '@petimi/hub-ui';
 import { useHubCashSession } from '../contexts/HubCashSessionContext';
 import { useHubUnit } from '../contexts/HubUnitContext';
+import { hubClinicPublicProfileApi } from '../services/hubClinicPublicProfileApi';
 
 /**
  * Intercepta navegação para fora de /hub/caixa* quando o caixa está aberto
- * e há pendências. Renderiza um modal de saída com três opções.
- * Deve ser montado dentro de HubAppShell (acesso ao router e ao contexto).
- *
- * UX: o modal de opções aparece na hora (sem overlay “Verificando…”).
- * Se o status local estiver fresco, confia nele. Se estiver velho, revalida
- * em background e libera a saída automaticamente se for falso positivo
- * (ex.: turno acabou de fechar e o contexto ainda não atualizou).
+ * com pendências **e** estamos perto/fora do fechamento (ou turno de dia anterior).
+ * No meio do expediente não bloqueia — pendências são esperadas.
  */
 export function useCaixaExitGuard() {
-  const { isOpen, pendingBillingCount, refresh, isStatusFresh } = useHubCashSession();
+  const { isOpen, pendingBillingCount, openedAt, refresh, isStatusFresh } = useHubCashSession();
   const { clinicId, selectedUnit } = useHubUnit();
   const unitId = selectedUnit?.id ?? null;
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [handoffError, setHandoffError] = useState<string | null>(null);
+  const [businessHours, setBusinessHours] = useState<HubPublicBusinessHours | null>(null);
+  const [promptDecision, setPromptDecision] = useState<CaixaExitPromptDecision>({
+    prompt: false,
+    reason: 'none',
+    closeHm: null,
+  });
+
+  const isPreviousDay = isPreviousDaySaoPaulo(openedAt);
+
+  useEffect(() => {
+    if (!clinicId) {
+      setBusinessHours(null);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await hubClinicPublicProfileApi.getEditor(clinicId);
+        if (cancelled) return;
+        setBusinessHours((res.profile?.business_hours as HubPublicBusinessHours) ?? null);
+      } catch {
+        if (!cancelled) setBusinessHours(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId]);
+
+  const evaluatePrompt = useCallback(
+    (now = new Date()) =>
+      shouldPromptCaixaExitOnLeave({
+        isOpen,
+        pendingBillingCount,
+        isPreviousDay,
+        businessHours,
+        now,
+      }),
+    [isOpen, pendingBillingCount, isPreviousDay, businessHours],
+  );
 
   const shouldBlock = useCallback(
     ({
@@ -32,16 +75,21 @@ export function useCaixaExitGuard() {
       const leavingCaixa =
         currentLocation.pathname.startsWith('/hub/caixa') &&
         !nextLocation.pathname.startsWith('/hub/caixa');
-      return leavingCaixa && isOpen && pendingBillingCount > 0;
+      if (!leavingCaixa) return false;
+      return evaluatePrompt().prompt;
     },
-    [isOpen, pendingBillingCount],
+    [evaluatePrompt],
   );
 
   const blocker = useBlocker(shouldBlock);
   const isBlocked = blocker.state === 'blocked';
 
+  useEffect(() => {
+    if (blocker.state !== 'blocked') return;
+    setPromptDecision(evaluatePrompt());
+  }, [blocker.state, evaluatePrompt]);
+
   // Revalida só quando o status local pode estar atrasado (ex.: pós-fechamento).
-  // Nunca bloqueia a UI com “Verificando…” — o modal de opções já está visível.
   useEffect(() => {
     if (blocker.state !== 'blocked') return;
     if (isStatusFresh()) return;
@@ -92,6 +140,11 @@ export function useCaixaExitGuard() {
     blocker.proceed?.();
   }, [blocker]);
 
+  const copy = useMemo(
+    () => caixaExitPromptCopy(promptDecision.reason, promptDecision.closeHm),
+    [promptDecision.reason, promptDecision.closeHm],
+  );
+
   const ExitGuardModal: React.FC = useCallback(() => {
     if (!isBlocked) return null;
 
@@ -125,12 +178,12 @@ export function useCaixaExitGuard() {
             id="caixa-exit-guard-title"
             style={{ margin: '0 0 10px', fontSize: 17, fontWeight: 700, color: '#1a1a1a' }}
           >
-            Caixa aberto com pendências
+            {copy.title}
           </h2>
           <p style={{ margin: '0 0 20px', fontSize: 14, color: '#555', lineHeight: 1.5 }}>
-            O caixa está aberto e há{' '}
-            <strong>{pendingBillingCount} item(ns)</strong> pendente(s) de cobrança.
-            O que deseja fazer antes de sair?
+            {copy.bodyLead} Há{' '}
+            <strong>{pendingBillingCount} item(ns)</strong> pendente(s) de cobrança. O que deseja
+            fazer antes de sair?
           </p>
           {handoffError && (
             <p
@@ -211,6 +264,8 @@ export function useCaixaExitGuard() {
     handleStay,
     handleHandoffAndLeave,
     handleLeaveAnyway,
+    copy.title,
+    copy.bodyLead,
   ]);
 
   return { ExitGuardModal };

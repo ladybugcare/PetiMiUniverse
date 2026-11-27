@@ -110,6 +110,8 @@ export type HubComandaDetailResponse = {
   card_net_total?: number;
   card_without_fee_gross_total?: number;
   operational_complete?: boolean;
+  /** Bloqueio estável de handoff (ex.: COMMISSION_EXECUTOR_REQUIRED). */
+  handoff_block_code?: string | null;
   edit_scopes?: HubComandaEditScopes;
   allowed_guardians?: HubComandaAllowedGuardian[];
   pets?: HubPublicComandaPet[];
@@ -304,15 +306,19 @@ export const hubComandaApi = {
     status?: 'aberta' | 'fechada' | 'cancelada';
     hub_case_id?: string;
     cancellation_pending?: boolean;
-    /** Quando true, inclui guardian/pet/pets/item_labels/paid_total em cada comanda. */
-    enrich?: boolean;
+    /**
+     * true = enrich completo (cura + operacional).
+     * 'light' = guardian/pet/labels + saldo aproximado, sem N+1 (caixa).
+     */
+    enrich?: boolean | 'light';
   }): Promise<{ comandas: Array<Record<string, unknown>> }> {
     const q = new URLSearchParams({ clinic_id: params.clinic_id });
     if (params.unit_id) q.set('unit_id', params.unit_id);
     if (params.status) q.set('status', params.status);
     if (params.hub_case_id) q.set('hub_case_id', params.hub_case_id);
     if (params.cancellation_pending) q.set('cancellation_pending', 'true');
-    if (params.enrich) q.set('enrich', 'true');
+    if (params.enrich === 'light') q.set('enrich', 'light');
+    else if (params.enrich) q.set('enrich', 'true');
     return apiRequest(`${base}?${q}`) as Promise<{ comandas: Array<Record<string, unknown>> }>;
   },
 

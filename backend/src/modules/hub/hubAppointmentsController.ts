@@ -27,6 +27,11 @@ import {
   openClinicalPresenceConflictPayload,
 } from './hubClinicalOpenPresence';
 import {
+  findOpenGroomingPresenceForPet,
+  openGroomingPresenceConflictPayload,
+} from './hubGroomingOpenPresence';
+import { isOpenPresenceUniqueViolation } from './hubOpenPresenceUnique';
+import {
   PET_BODY_SIZE_TIERS,
   requiresCoatPricing,
   resolveServiceLinePricing,
@@ -1881,6 +1886,17 @@ export const createHubAppointment = async (req: Request, res: Response) => {
       }
     }
 
+    // Encaixe B&T: bloqueia segundo walk-in/sessão aberta do mesmo pet.
+    if (resolvedAppointmentKind === 'walk_in' && b.pet_id && b.allow_duplicate_open !== true) {
+      const open = await findOpenGroomingPresenceForPet({
+        clinicId: b.clinic_id,
+        petId: b.pet_id,
+      });
+      if (open) {
+        return res.status(409).json(openGroomingPresenceConflictPayload(open));
+      }
+    }
+
     const mainGroupErr = validateHomogeneousServiceGroups(normLines, stMap);
     if (mainGroupErr) return res.status(400).json({ error: mainGroupErr });
     for (const block of b.extra_blocks ?? []) {
@@ -2392,7 +2408,29 @@ export const createHubAppointment = async (req: Request, res: Response) => {
         .insert(insert)
         .select('id')
         .single();
-      if (apptErr) return res.status(500).json({ error: apptErr.message });
+      if (apptErr) {
+        if (isOpenPresenceUniqueViolation(apptErr) && b.pet_id) {
+          if (
+            resolvedAppointmentKind === 'clinical_walk_in' ||
+            resolvedAppointmentKind === 'clinical_emergency'
+          ) {
+            const open = await findOpenClinicalPresenceForPet({
+              clinicId: b.clinic_id,
+              petId: b.pet_id,
+            });
+            if (open) return res.status(409).json(openClinicalPresenceConflictPayload(open));
+          }
+          if (resolvedAppointmentKind === 'walk_in') {
+            const open = await findOpenGroomingPresenceForPet({
+              clinicId: b.clinic_id,
+              petId: b.pet_id,
+            });
+            if (open) return res.status(409).json(openGroomingPresenceConflictPayload(open));
+          }
+          return res.status(409).json({ error: apptErr.message, code: 'PET_OPEN_PRESENCE' });
+        }
+        return res.status(500).json({ error: apptErr.message });
+      }
       const apptId = (apptRow as { id: string }).id;
       createdIds.push(apptId);
 

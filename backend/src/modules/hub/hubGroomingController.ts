@@ -27,6 +27,13 @@ import {
   fetchHubPetsMapByIds,
   resolvePrimaryPetIdsByGuardians,
 } from './hubDayBoardPets';
+import {
+  findOpenGroomingPresenceForPet,
+  openGroomingPresenceConflictPayload,
+  PET_OPEN_GROOMING_CODE,
+  PET_OPEN_GROOMING_MSG,
+} from './hubGroomingOpenPresence';
+import { isOpenPresenceUniqueViolation } from './hubOpenPresenceUnique';
 
 const uuidStr = z.string().uuid();
 const GROOMING_SERVICE_GROUP = 'banho_tosa';
@@ -804,6 +811,7 @@ const openFromAppointmentSchema = z
     clinic_id: uuidStr,
     hub_appointment_id: uuidStr,
     grooming_stage: groomingStageSchema.optional(),
+    allow_duplicate_open: z.boolean().optional(),
   })
   .strict();
 
@@ -838,6 +846,17 @@ export const openHubGroomingSessionFromAppointment = async (req: Request, res: R
     if (apptErr) return res.status(500).json({ error: apptErr.message });
     if (!appt) return res.status(404).json({ error: 'Agendamento não encontrado' });
     if (!appt.pet_id) return res.status(400).json({ error: 'Agendamento sem pet associado' });
+
+    if (parsed.data.allow_duplicate_open !== true) {
+      const open = await findOpenGroomingPresenceForPet({
+        clinicId: clinic_id,
+        petId: appt.pet_id as string,
+        excludeAppointmentId: hub_appointment_id,
+      });
+      if (open) {
+        return res.status(409).json(openGroomingPresenceConflictPayload(open));
+      }
+    }
 
     // Check-in operacional entra direto na fila (caminho enxuto do dia a dia).
     const targetStage: GroomingStage = parsed.data.grooming_stage ?? 'queued';
@@ -901,7 +920,21 @@ export const openHubGroomingSessionFromAppointment = async (req: Request, res: R
       })
       .select(SESSION_SELECT)
       .single();
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+      if (isOpenPresenceUniqueViolation(error) && appt.pet_id) {
+        const open = await findOpenGroomingPresenceForPet({
+          clinicId: clinic_id,
+          petId: appt.pet_id as string,
+          excludeAppointmentId: hub_appointment_id,
+        });
+        if (open) return res.status(409).json(openGroomingPresenceConflictPayload(open));
+        return res.status(409).json({
+          error: PET_OPEN_GROOMING_MSG,
+          code: PET_OPEN_GROOMING_CODE,
+        });
+      }
+      return res.status(500).json({ error: error.message });
+    }
 
     await logGroomingEvent({
       clinic_id,
@@ -927,6 +960,7 @@ const createSessionSchema = z
     unit_id: uuidStr.optional().nullable(),
     hub_staff_member_id: uuidStr,
     operational_notes: z.string().trim().max(8000).optional().nullable(),
+    allow_duplicate_open: z.boolean().optional(),
   })
   .strict();
 
@@ -939,6 +973,16 @@ export const createHubGroomingSession = async (req: Request, res: Response) => {
 
     if (!(await assertPetInClinic(b.clinic_id, b.pet_id))) {
       return res.status(400).json({ error: 'Pet inválido' });
+    }
+
+    if (b.allow_duplicate_open !== true) {
+      const open = await findOpenGroomingPresenceForPet({
+        clinicId: b.clinic_id,
+        petId: b.pet_id,
+      });
+      if (open) {
+        return res.status(409).json(openGroomingPresenceConflictPayload(open));
+      }
     }
 
     const now = new Date().toISOString();
@@ -956,7 +1000,20 @@ export const createHubGroomingSession = async (req: Request, res: Response) => {
       })
       .select(SESSION_SELECT)
       .single();
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+      if (isOpenPresenceUniqueViolation(error)) {
+        const open = await findOpenGroomingPresenceForPet({
+          clinicId: b.clinic_id,
+          petId: b.pet_id,
+        });
+        if (open) return res.status(409).json(openGroomingPresenceConflictPayload(open));
+        return res.status(409).json({
+          error: PET_OPEN_GROOMING_MSG,
+          code: PET_OPEN_GROOMING_CODE,
+        });
+      }
+      return res.status(500).json({ error: error.message });
+    }
 
     await logGroomingEvent({
       clinic_id: b.clinic_id,

@@ -73,6 +73,12 @@ export interface HubComandaDetailLayoutProps {
   isAberta: boolean;
   /** false = origem operacional ainda em andamento (ex.: consulta clínica não finalizada). */
   operationalComplete?: boolean;
+  /** Deep link para finalizar/avançar a origem no módulo operacional. */
+  operationalHref?: string | null;
+  /** Bloqueio de handoff (ex.: COMMISSION_EXECUTOR_REQUIRED). */
+  handoffBlockCode?: string | null;
+  /** Abre MarkExecutionModal no detalhe (quando a origem exige executor). */
+  onMarkExecution?: () => void;
   mode?: 'caixa' | 'financeiro';
   readOnlyBanner?: React.ReactNode;
   selectedGuardianId: string | null;
@@ -116,6 +122,9 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
   saving,
   isAberta,
   operationalComplete = true,
+  operationalHref = null,
+  handoffBlockCode = null,
+  onMarkExecution,
   mode = 'caixa',
   readOnlyBanner,
   selectedGuardianId,
@@ -172,7 +181,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
       ? `/hub/financeiro/comanda/${comandaId}/pronto-para-envio`
       : `/hub/caixa/comanda/${comandaId}/pronto-para-envio`;
 
-  const showStickyActions = Boolean(onCheckout || (canEdit && onSave));
+  const showStickyActions = Boolean(onCheckout || (canEdit && onSave) || (canEdit && onSendToFinancial));
 
   return (
     <div
@@ -195,8 +204,43 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
 
         {isAberta && operationalComplete === false ? (
           <div className="hub-quote-detail__banner" role="status">
-            Atendimento ainda não finalizado — novos itens do vet podem entrar nesta comanda. Prefira
-            cobrar o saldo depois da conclusão, ou cobre agora ciente de que a comanda permanece aberta.
+            Atendimento ainda não finalizado — novos itens do operacional podem entrar nesta comanda.
+            Prefira cobrar ou enviar ao financeiro depois da conclusão.
+            {operationalHref ? (
+              <>
+                {' '}
+                <Link to={operationalHref} className="hub-clientes__link">
+                  Abrir operação
+                </Link>
+              </>
+            ) : null}
+          </div>
+        ) : null}
+
+        {isAberta && operationalComplete !== false && handoffBlockCode === 'COMMISSION_EXECUTOR_REQUIRED' ? (
+          <div className="hub-quote-detail__banner" role="status">
+            Falta marcar a execução do serviço (executor) antes de cobrar ou enviar ao financeiro.
+            {onMarkExecution ? (
+              <>
+                {' '}
+                <button
+                  type="button"
+                  className="hub-clientes__link"
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    padding: 0,
+                    cursor: 'pointer',
+                    font: 'inherit',
+                  }}
+                  onClick={onMarkExecution}
+                >
+                  Marcar execução
+                </button>
+              </>
+            ) : (
+              <> Use «Marcar execução» no painel do caixa.</>
+            )}
           </div>
         ) : null}
 
@@ -223,6 +267,17 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
               >
                 <Coins size={18} strokeWidth={2} aria-hidden />
                 {checkoutLabel}
+              </button>
+            ) : null}
+            {mode === 'caixa' && canEdit && onSendToFinancial ? (
+              <button
+                type="button"
+                className="hub-quote-detail__btn hub-quote-detail__btn--outline"
+                disabled={saving}
+                onClick={onSendToFinancial}
+              >
+                <Send size={18} strokeWidth={2} aria-hidden />
+                Enviar ao financeiro
               </button>
             ) : null}
             {canEdit && onSave ? (
@@ -544,6 +599,17 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
                 onClick={onSave}
               >
                 Salvar
+              </button>
+            ) : null}
+            {mode === 'caixa' && canEdit && onSendToFinancial ? (
+              <button
+                type="button"
+                className="hub-quote-detail__btn hub-quote-detail__btn--outline"
+                disabled={saving}
+                onClick={onSendToFinancial}
+              >
+                <Send size={18} strokeWidth={2} aria-hidden />
+                Enviar ao financeiro
               </button>
             ) : null}
             {onCheckout ? (

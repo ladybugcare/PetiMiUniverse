@@ -407,6 +407,7 @@ import {
   postHubFinanceCashSessionClose,
   postHubFinanceCashSessionsAutoCloseOverdue,
   postHubFinanceHandoffPending,
+  postHubFinanceEscalateConference,
   getHubFinanceCashSessionOpen,
   getHubFinanceCashSessionStatus,
   listHubFinanceCashSessionsClosed,
@@ -2115,13 +2116,13 @@ router.post(
 router.get(
   '/finance/service-execution-lines',
   authenticateUser,
-  requirePermission('hub.financial.write'), requireCoreOpsWrite,
+  requirePermission(['hub.financial.write', 'hub.receivables.create']), requireCoreOpsWrite,
   getHubFinanceServiceExecutionLines
 );
 router.patch(
   '/finance/appointment-service-lines/:lineId',
   authenticateUser,
-  requirePermission('hub.financial.write'), requireCoreOpsWrite,
+  requirePermission(['hub.financial.write', 'hub.receivables.create']), requireCoreOpsWrite,
   patchHubFinanceAppointmentServiceLine
 );
 router.post(
@@ -2236,6 +2237,12 @@ router.post(
   authenticateUser,
   requirePermission('hub.cash.session'), requireCoreOpsWrite,
   postHubFinanceHandoffPending
+);
+router.post(
+  '/finance/escalate-conference',
+  authenticateUser,
+  requirePermission('hub.cash.session'), requireCoreOpsWrite,
+  postHubFinanceEscalateConference
 );
 router.get(
   '/finance/cash-sessions/:id/summary',

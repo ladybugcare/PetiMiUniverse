@@ -82,7 +82,8 @@ export const HUB_REPORTS: readonly HubReportDefinition[] = [
     id: 'finance-overview',
     category: 'financeiro',
     title: 'Visão financeira',
-    description: 'Faturamento, ticket médio, serviços mais vendidos e aging de recebíveis.',
+    description:
+      'Recebido bruto, ticket histórico, serviços mais vendidos e a receber (aging) — domínios distintos.',
     permissionsAny: ['hub.financial.read'],
     unitMode: 'required',
     requiresUnit: true,
@@ -184,7 +185,7 @@ export const HUB_REPORTS: readonly HubReportDefinition[] = [
     id: 'top-clients',
     category: 'clientes',
     title: 'Top clientes',
-    description: 'Ranking de tutores por faturamento (pagamentos) no período.',
+    description: 'Ranking de tutores por recebido bruto (pagamentos posted) no período.',
     permissionsAny: ['hub.financial.read'],
     unitMode: 'required',
     requiresUnit: true,

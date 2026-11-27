@@ -163,13 +163,19 @@ export const hubGroomingApi = {
     ) as Promise<GroomingSessionDrawerResponse>;
   },
 
-  openFromAppointment(clinicId: string, hubAppointmentId: string, groomingStage?: GroomingStage) {
+  openFromAppointment(
+    clinicId: string,
+    hubAppointmentId: string,
+    groomingStage?: GroomingStage,
+    opts?: { allowDuplicateOpen?: boolean },
+  ) {
     return apiRequest(`${groomingBase}/sessions/open-from-appointment`, {
       method: 'POST',
       body: JSON.stringify({
         clinic_id: clinicId,
         hub_appointment_id: hubAppointmentId,
         ...(groomingStage ? { grooming_stage: groomingStage } : {}),
+        ...(opts?.allowDuplicateOpen === true ? { allow_duplicate_open: true } : {}),
       }),
     }) as Promise<{ session: GroomingSession; created: boolean }>;
   },
@@ -181,6 +187,7 @@ export const hubGroomingApi = {
     guardian_id?: string | null;
     unit_id?: string | null;
     operational_notes?: string | null;
+    allow_duplicate_open?: boolean;
   }) {
     return apiRequest(`${groomingBase}/sessions`, {
       method: 'POST',

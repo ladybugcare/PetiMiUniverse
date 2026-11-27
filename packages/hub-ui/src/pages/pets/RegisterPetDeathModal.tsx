@@ -7,6 +7,7 @@ import { HubTimeField } from '../../components/HubTimeField';
 import { HubSearchableCombobox } from '../../components/HubSearchableCombobox';
 import type { HubComboboxOption } from '../../components/HubSearchableCombobox';
 import { useAlert } from '../../components/AlertProvider';
+import { HubClinicalTermsQuickList } from '../../components/clinical/HubClinicalTermsQuickList';
 import { hubPetsApi, type HubPet, type HubPetDeathPending } from '../../api/hubPetsApi';
 import {
   DEATH_TYPE_OPTIONS,
@@ -245,6 +246,15 @@ export const RegisterPetDeathModal: React.FC<RegisterPetDeathModalProps> = ({
             placeholder="Selecione a classificação…"
           />
         </div>
+
+        {deathType === 'euthanasia' && clinicId ? (
+          <HubClinicalTermsQuickList
+            clinicId={clinicId}
+            categories={['eutanasia']}
+            title="Termo de eutanásia"
+            hint="Abra ou baixe o PDF para imprimir ou mostrar ao tutor. O assinado pode ir depois em Anexos."
+          />
+        ) : null}
 
         <div className="hub-clientes__field">
           <label className="hub-clientes__label" htmlFor="pet-death-cause">

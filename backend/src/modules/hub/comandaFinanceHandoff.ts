@@ -59,12 +59,55 @@ export function canHandoffExistingReceivables(detail: ComandaHandoffDetail): boo
   );
 }
 
+/** Códigos estáveis de skip/falha no handoff leave_pending (UI + auto-close). */
+export const LEAVE_PENDING_HANDOFF_CODES = [
+  'ALREADY_HANDED_OFF',
+  'COMANDA_NOT_OPEN',
+  'NO_OPEN_ITEMS',
+  'ZERO_AMOUNT',
+  'SYNC_NOT_READY',
+  'OPERATIONAL_NOT_READY',
+  'COMMISSION_EXECUTOR_REQUIRED',
+  'HANDOFF_ERROR',
+] as const;
+
+export type LeavePendingHandoffCode = (typeof LEAVE_PENDING_HANDOFF_CODES)[number];
+
+const SKIPPABLE_HANDOFF_CODES = new Set<LeavePendingHandoffCode>([
+  'ALREADY_HANDED_OFF',
+  'NO_OPEN_ITEMS',
+  'ZERO_AMOUNT',
+  'SYNC_NOT_READY',
+  'OPERATIONAL_NOT_READY',
+]);
+
 /** Erros de leave_pending sem valor a faturar — não devem falhar o lote/encerrar turno. */
 export function isSkippableLeavePendingHandoffError(message: string): boolean {
   const normalized = message.toLowerCase();
   return (
     normalized.includes('não há itens em aberto para faturar') ||
     normalized.includes('não há itens em aberto para enviar ao financeiro') ||
-    normalized.includes('nenhum recebível gerado (valores zerados)')
+    normalized.includes('nenhum recebível gerado (valores zerados)') ||
+    normalized.includes('origem ainda não está pronta') ||
+    normalized.includes('operação ainda não concluída')
   );
+}
+
+export function isSkippableLeavePendingHandoffCode(
+  code: LeavePendingHandoffCode | string | null | undefined,
+): boolean {
+  if (!code) return false;
+  return SKIPPABLE_HANDOFF_CODES.has(code as LeavePendingHandoffCode);
+}
+
+/** Formato curto para notes de auto-close: `abc12345:CODE:mensagem`. */
+export function formatHandoffResultForNotes(opts: {
+  comandaId: string;
+  code?: string | null;
+  error?: string | null;
+}): string {
+  const shortId = opts.comandaId.slice(0, 8);
+  const code = opts.code?.trim() || 'HANDOFF_ERROR';
+  const msg = (opts.error ?? '').replace(/\s+/g, ' ').trim();
+  return msg ? `${shortId}:${code}:${msg}` : `${shortId}:${code}`;
 }

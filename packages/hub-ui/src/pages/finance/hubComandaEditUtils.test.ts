@@ -3,8 +3,12 @@ import type { HubComandaDetailResponse } from '../../api/hubComandaApi';
 import type { HubFinanceDayBoardItem } from '../../api/hubFinancialApi';
 import {
   canSendToFinanceiroHandoff,
+  canHandoffCarryoverComanda,
   isCaixaCarryoverPendingComanda,
   isCaixaOwnedDayBoardItem,
+  resolveCaixaCarryoverConferenceKind,
+  resolveComandaOperationalHref,
+  caixaCarryoverConferenceLabel,
   isOriginOperationallyComplete,
   resolveComandaCheckoutCTA,
   resolveDayBoardCheckoutLabel,
@@ -293,6 +297,71 @@ describe('isCaixaCarryoverPendingComanda', () => {
         },
         '2026-09-05',
       ),
+    ).toBe(false);
+  });
+});
+
+describe('resolveCaixaCarryoverConferenceKind', () => {
+  it('separa operação incompleta de pronta', () => {
+    expect(resolveCaixaCarryoverConferenceKind({ operational_complete: false })).toBe(
+      'operational_incomplete',
+    );
+    expect(resolveCaixaCarryoverConferenceKind({ operational_complete: true })).toBe('ready');
+    expect(
+      resolveCaixaCarryoverConferenceKind({
+        operational_complete: true,
+        handoff_block_code: 'COMMISSION_EXECUTOR_REQUIRED',
+      }),
+    ).toBe('needs_executor');
+    expect(caixaCarryoverConferenceLabel('ready')).toBe('Pronta para cobrança');
+  });
+
+  it('monta deep link operacional', () => {
+    expect(resolveComandaOperationalHref({ origin_type: 'encounter', origin_id: 'enc-1' })).toBe(
+      '/hub/clinica/atendimentos/enc-1',
+    );
+    expect(
+      resolveComandaOperationalHref({ origin_type: 'grooming_session', origin_id: 'gs-1' }),
+    ).toBe('/hub/banho-tosa?session=gs-1');
+    expect(
+      resolveComandaOperationalHref({
+        origin_type: 'appointment',
+        origin_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+        opened_at: '2026-11-26T15:00:00.000Z',
+      }),
+    ).toBe(
+      '/hub/appointments?appointment_id=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee&date=2026-11-26',
+    );
+    expect(
+      resolveComandaOperationalHref(
+        {
+          origin_type: 'appointment',
+          origin_id: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+          opened_at: '2026-11-26T15:00:00.000Z',
+        },
+        { markExecution: true },
+      ),
+    ).toContain('mark_execution=1');
+  });
+
+  it('só permite lote quando pronta', () => {
+    expect(
+      canHandoffCarryoverComanda({
+        status: 'aberta',
+        finance_handoff_at: null,
+        balance_due: 80,
+        operational_complete: true,
+        edit_scopes: { caixa: true, financeiro: true, locked_reason: null },
+      }),
+    ).toBe(true);
+    expect(
+      canHandoffCarryoverComanda({
+        status: 'aberta',
+        finance_handoff_at: null,
+        balance_due: 80,
+        operational_complete: false,
+        edit_scopes: { caixa: true, financeiro: true, locked_reason: null },
+      }),
     ).toBe(false);
   });
 });

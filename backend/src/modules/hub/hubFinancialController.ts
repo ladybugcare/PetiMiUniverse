@@ -30,6 +30,7 @@ import {
   runAutoCloseOverdueJob,
   verifyCronSecret,
 } from './cashSessionCloseService';
+import { loadCashSessionShiftBreakdown } from './cashSessionShiftBreakdown';
 import {
   FinanceLedgerError,
   fetchPostedAndLineRefundByReceivableIds,
@@ -72,6 +73,13 @@ import {
 } from './hubPaymentMethods';
 import { aggregateCardFeeTotals } from './hubCardMachineFees';
 import {
+  REPORT_TIMEZONE,
+  reportDayEndIso,
+  reportDayStartIso,
+  ymdSaoPauloFromIso,
+  ymdTodaySaoPaulo,
+} from './hubReportPeriod';
+import {
   buildBoardingComandaLine,
   buildBoardingExtraLines,
   estimateBoardingStayTotal,
@@ -81,8 +89,10 @@ import {
   type DayBoardBilling,
 } from './boardingBilling';
 import { isBoardingStatusReadyForComanda } from './boardingOperational';
+import { isGroomingServiceOperationallyDone } from './groomingStages';
 import {
   HOSPITALIZATION_CLOSED_STATUSES,
+  estimateHospitalizationBillingAmount,
   isHospitalizationClosed,
   loadHospitalizationComandaItems,
   resolveHospitalizationBillingOrigin,
@@ -104,7 +114,7 @@ import {
   type ManualDayBoardLine,
 } from './hubFinanceDayBoardManual';
 import { financeSourceTypeSchema, receivableSourceTypeSchema } from './hubFinanceSchemas';
-import { notifyHubPaymentDue } from './hubNotifyEvents';
+import { notifyHubCaixaConference, notifyHubPaymentDue } from './hubNotifyEvents';
 import { syncChargeBundleStatusForReceivable } from './hubChargeBundlesService';
 import { applyPackageCoverageToEstimate, hasPackageBalanceForServices, listActivePackageBalances } from './hubPackagesService';
 import {
@@ -1091,8 +1101,10 @@ export const postHubFinanceReceivable = async (req: Request, res: Response) => {
         .eq('id', source_id!)
         .maybeSingle();
       if (sErr || !s || s.clinic_id !== clinic_id) return res.status(404).json({ error: 'Sessão não encontrada' });
-      if (s.grooming_stage !== 'closed') {
-        return res.status(409).json({ error: 'Só é possível gerar cobrança com sessão encerrada (closed)' });
+      if (!isGroomingServiceOperationallyDone(String(s.grooming_stage ?? ''))) {
+        return res.status(409).json({
+          error: 'Só é possível gerar cobrança com sessão pronta, entregue ou encerrada',
+        });
       }
       if (s.billing_waived_at) return res.status(409).json({ error: 'Sessão marcada sem cobrança' });
     } else if (source_type === 'encounter') {
@@ -3337,6 +3349,42 @@ export const postHubFinanceHandoffPending = async (req: Request, res: Response) 
   }
 };
 
+const escalateConferenceBodySchema = z
+  .object({
+    clinic_id: uuidStr,
+    unit_id: uuidStr,
+    pending_count: z.coerce.number().int().min(0).max(500).optional(),
+    note: z.string().trim().max(500).optional().nullable(),
+    cash_session_id: uuidStr.optional().nullable(),
+  })
+  .strict();
+
+/**
+ * POST /finance/escalate-conference
+ * Avisa CADMIN/CMANAGER da conferência pendente — não bloqueia o fechamento da gaveta.
+ */
+export const postHubFinanceEscalateConference = async (req: Request, res: Response) => {
+  try {
+    const parsed = escalateConferenceBodySchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ error: 'Dados inválidos', details: parsed.error.flatten() });
+    }
+    const { clinic_id, unit_id, pending_count, note, cash_session_id } = parsed.data;
+    const notified = await notifyHubCaixaConference({
+      clinicId: clinic_id,
+      unitId: unit_id,
+      pendingCount: pending_count ?? 0,
+      note: note ?? null,
+      sessionId: cash_session_id ?? null,
+      excludeUserIds: req.user?.id ? [req.user.id] : [],
+    });
+    return res.json({ notified });
+  } catch (e: unknown) {
+    console.error('postHubFinanceEscalateConference', e);
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
+  }
+};
+
 export const listHubFinanceCashSessionsClosed = async (req: Request, res: Response) => {
   try {
     const clinicParsed = uuidStr.safeParse(req.query.clinic_id);
@@ -3558,6 +3606,30 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
       })),
     );
 
+    const unitId = String(session.unit_id ?? '');
+    const openedAt = String(session.opened_at ?? '');
+    let shiftWindow: { from: string; to: string } | null = null;
+    let shiftReceivedTotal: number | null = null;
+    let shiftTotalsByMethod: Record<string, number> | null = null;
+    let shiftBySector: Array<{ service_group: string; total: number; share_pct: number }> | null =
+      null;
+    if (unitId && openedAt) {
+      const shift = await loadCashSessionShiftBreakdown({
+        clinicId: clinicId.data,
+        unitId,
+        openedAt,
+        closedAt: sessionClosed ? (session.closed_at as string | null) : null,
+      });
+      if ('error' in shift) {
+        console.warn('getHubFinanceCashSessionSummary shift breakdown', shift.error);
+      } else {
+        shiftWindow = shift.window;
+        shiftReceivedTotal = shift.received_total;
+        shiftTotalsByMethod = shift.totals_by_method;
+        shiftBySector = shift.by_sector;
+      }
+    }
+
     return res.json({
       cash_session: session,
       payments: paymentsEnriched,
@@ -3580,6 +3652,11 @@ export const getHubFinanceCashSessionSummary = async (req: Request, res: Respons
         card_fee_total: cardFeeTotals.card_fee_total,
         card_net_total: cardFeeTotals.card_net_total,
         card_without_fee_gross_total: cardFeeTotals.card_without_fee_gross_total,
+        /** Recebido na unidade no período do turno (todos os métodos; não é saldo da gaveta). */
+        shift_window: shiftWindow,
+        shift_received_total: shiftReceivedTotal,
+        shift_totals_by_method: shiftTotalsByMethod,
+        shift_by_sector: shiftBySector,
       },
     });
   } catch (e: unknown) {
@@ -3671,21 +3748,22 @@ async function collectUnbilledItems(
     .from('hub_grooming_sessions')
     .select(
       `
-      id, unit_id, closed_at, guardian_id, hub_staff_member_id, grooming_stage, billing_waived_at, hub_appointment_id,
+      id, unit_id, closed_at, ready_at, delivered_at, guardian_id, hub_staff_member_id, grooming_stage, billing_waived_at, hub_appointment_id,
       pet:hub_pets(id, name),
       guardian:hub_guardians(id, full_name)
     `
     )
     .eq('clinic_id', clinicId)
-    .eq('grooming_stage', 'closed')
+    .in('grooming_stage', ['ready', 'delivered', 'closed'])
     .is('deleted_at', null)
     .is('billing_waived_at', null)
-    .order('closed_at', { ascending: false })
+    .order('closed_at', { ascending: false, nullsFirst: false })
     .limit(200);
   if (unitId) gq = gq.eq('unit_id', unitId);
   const { data: groomRows, error: gErr } = await gq;
   if (gErr) throw new Error(gErr.message);
   for (const row of groomRows ?? []) {
+    if (!isGroomingServiceOperationallyDone(String(row.grooming_stage ?? ''))) continue;
     if (keys.has(`grooming_session:${row.id}`)) continue;
     if (comandaOpenKeys.has(`grooming_session:${row.id}`)) continue;
     if (billedViaComandaKeys.has(`grooming_session:${row.id}`)) continue;
@@ -3702,7 +3780,11 @@ async function collectUnbilledItems(
       source_type: 'grooming_session',
       source_id: row.id as string,
       origin_label: 'Banho e Tosa',
-      completed_at: (row.closed_at as string) ?? null,
+      completed_at:
+        (row.closed_at as string) ??
+        (row.delivered_at as string) ??
+        (row.ready_at as string) ??
+        null,
       unit_id: (row.unit_id as string) ?? null,
       guardian: g ? (Array.isArray(g) ? g[0] : g) : null,
       pet: pet ? (Array.isArray(pet) ? pet[0] : pet) : null,
@@ -4028,15 +4110,16 @@ async function collectUnbilledItems(
 
       let estimated_amount = 0;
       if (includeAmounts) {
-        const hosp = await loadHospitalizationComandaItems({
-          clinicId,
-          hospitalizationId: row.id as string,
-          encounterId: origin.origin_type === 'encounter' ? origin.origin_id : null,
-          appointmentId: origin.origin_type === 'appointment' ? origin.origin_id : hospInput.hub_appointment_id,
-          defaultPetId: (row.pet_id as string | null) ?? null,
+        estimated_amount = estimateHospitalizationBillingAmount({
+          id: row.id as string,
+          pet_id: (row.pet_id as string | null) ?? null,
+          status: String(row.status ?? ''),
+          admitted_at: String(row.admitted_at ?? ''),
+          discharged_at: (row.discharged_at as string | null) ?? null,
+          daily_hub_service_type_id: (row.daily_hub_service_type_id as string | null) ?? null,
+          daily_unit_amount: row.daily_unit_amount == null ? null : Number(row.daily_unit_amount),
         });
-        if (hosp.subtotal <= 0.009 && hosp.items.length === 0) continue;
-        estimated_amount = hosp.subtotal;
+        if (estimated_amount <= 0.009) continue;
       }
 
       const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
@@ -4128,7 +4211,8 @@ export const getHubFinancePendingBillingCount = async (req: Request, res: Respon
     if (!unitScope.ok) return res.status(unitScope.status).json({ error: unitScope.error });
     const unit_id = unitScope.unitId ?? undefined;
     const keys = await fetchActiveReceivableKeysExpanded(clinic_id);
-    const items = await collectUnbilledItems(clinic_id, unit_id, keys);
+    // Contagem só — sem buildPreview N+1 (caixa chama isto em todo load).
+    const items = await collectUnbilledItems(clinic_id, unit_id, keys, { includeAmounts: false });
     return res.json({ pending_billing_count: items.length });
   } catch (e: unknown) {
     console.error('getHubFinancePendingBillingCount', e);
@@ -4146,14 +4230,88 @@ async function fetchBillingStatusBatch(
   const result = new Map<string, DayBoardBilling>();
   if (!originKeys.length) return result;
 
-  // Carrega todas as comandas não canceladas para as origens
+  const linkedSourceKeys = new Map<string, string[]>();
+  const pushLinkedSourceKey = (a: string, b: string) => {
+    const list = linkedSourceKeys.get(a) ?? [];
+    if (!list.includes(b)) list.push(b);
+    linkedSourceKeys.set(a, list);
+  };
+
+  const originIdSet = new Set(originKeys.map((k) => k.origin_id));
+  const appointmentIdsForAlias = originKeys
+    .filter((k) => k.origin_type === 'appointment')
+    .map((k) => k.origin_id);
+  const boardingIdsForAlias = originKeys
+    .filter((k) => k.origin_type === 'boarding_reservation')
+    .map((k) => k.origin_id);
+  const groomingIdsForAlias = originKeys
+    .filter((k) => k.origin_type === 'grooming_session')
+    .map((k) => k.origin_id);
+
+  // Aliases em paralelo (boarding / grooming / encounter ↔ appointment).
+  const needBoardingAlias = boardingIdsForAlias.length > 0 || appointmentIdsForAlias.length > 0;
+  const needGroomingAlias = groomingIdsForAlias.length > 0 || appointmentIdsForAlias.length > 0;
+  const [boardingLinks, groomingLinks, encAliasRes] = await Promise.all([
+    needBoardingAlias
+      ? import('./boardingOriginKeys').then(({ fetchBoardingAppointmentLinks }) =>
+          fetchBoardingAppointmentLinks(clinicId, {
+            boardingIds: boardingIdsForAlias,
+            appointmentIds: appointmentIdsForAlias,
+          }),
+        )
+      : Promise.resolve(null),
+    needGroomingAlias
+      ? import('./groomingOriginKeys').then(({ fetchGroomingAppointmentLinks }) =>
+          fetchGroomingAppointmentLinks(clinicId, {
+            sessionIds: groomingIdsForAlias,
+            appointmentIds: appointmentIdsForAlias,
+          }),
+        )
+      : Promise.resolve(null),
+    appointmentIdsForAlias.length > 0
+      ? supabaseAdmin
+          .from('hub_encounters')
+          .select('id, hub_appointment_id')
+          .eq('clinic_id', clinicId)
+          .in('hub_appointment_id', appointmentIdsForAlias)
+          .is('deleted_at', null)
+      : Promise.resolve({ data: [] as Array<{ id: string; hub_appointment_id: string | null }> }),
+  ]);
+
+  if (boardingLinks) {
+    for (const [boardingId, apptId] of boardingLinks.appointmentByBoardingId) {
+      originIdSet.add(boardingId);
+      originIdSet.add(apptId);
+      pushLinkedSourceKey(`boarding_reservation:${boardingId}`, `appointment:${apptId}`);
+      pushLinkedSourceKey(`appointment:${apptId}`, `boarding_reservation:${boardingId}`);
+    }
+  }
+  if (groomingLinks) {
+    for (const [sessionId, apptId] of groomingLinks.appointmentBySessionId) {
+      originIdSet.add(sessionId);
+      originIdSet.add(apptId);
+      pushLinkedSourceKey(`grooming_session:${sessionId}`, `appointment:${apptId}`);
+      pushLinkedSourceKey(`appointment:${apptId}`, `grooming_session:${sessionId}`);
+    }
+  }
+  for (const enc of encAliasRes.data ?? []) {
+    const apptId = enc.hub_appointment_id as string | null;
+    if (!apptId) continue;
+    originIdSet.add(enc.id as string);
+    pushLinkedSourceKey(`appointment:${apptId}`, `encounter:${enc.id as string}`);
+    pushLinkedSourceKey(`encounter:${enc.id as string}`, `appointment:${apptId}`);
+  }
+
+  const scopedOriginIds = [...originIdSet];
+
+  // Comandas só das origens do período (e aliases), não o histórico inteiro da clínica.
   const { data: comandas } = await supabaseAdmin
     .from('hub_comandas')
     .select('id, origin_type, origin_id, status, finance_handoff_at')
     .eq('clinic_id', clinicId)
     .neq('status', 'cancelada')
     .is('deleted_at', null)
-    .not('origin_id', 'is', null);
+    .in('origin_id', scopedOriginIds);
 
   const comandaByKey = new Map<string, { id: string; status: string; finance_handoff_at: string | null }>();
   for (const c of comandas ?? []) {
@@ -4165,85 +4323,44 @@ async function fetchBillingStatusBatch(
     });
   }
 
-  const appointmentIdsWithoutComanda = originKeys
-    .filter((k) => k.origin_type === 'appointment' && !comandaByKey.has(`appointment:${k.origin_id}`))
-    .map((k) => k.origin_id);
-  if (appointmentIdsWithoutComanda.length > 0) {
-    const { data: encs } = await supabaseAdmin
-      .from('hub_encounters')
-      .select('id, hub_appointment_id')
+  for (const [a, list] of linkedSourceKeys) {
+    const aComanda = comandaByKey.get(a);
+    for (const b of list) {
+      const bComanda = comandaByKey.get(b);
+      if (!aComanda && bComanda) comandaByKey.set(a, bComanda);
+      if (!bComanda && aComanda) comandaByKey.set(b, aComanda);
+    }
+  }
+
+  const comandaIds = [...new Set([...comandaByKey.values()].map((c) => c.id))];
+
+  // Recebíveis só por source_id do período ou comanda_id resolvido (duas queries — evita OR frágil).
+  const receivableSelect = 'id, source_type, source_id, comanda_id, status, due_date, final_amount';
+  const [recvBySourceRes, recvByComandaRes] = await Promise.all([
+    supabaseAdmin
+      .from('hub_receivables')
+      .select(receivableSelect)
       .eq('clinic_id', clinicId)
-      .in('hub_appointment_id', appointmentIdsWithoutComanda)
-      .is('deleted_at', null);
-    for (const enc of encs ?? []) {
-      const apptId = enc.hub_appointment_id as string | null;
-      if (!apptId) continue;
-      const encComanda = comandaByKey.get(`encounter:${enc.id as string}`);
-      if (encComanda) comandaByKey.set(`appointment:${apptId}`, encComanda);
-    }
+      .is('deleted_at', null)
+      .neq('status', 'cancelled')
+      .in('source_id', scopedOriginIds),
+    comandaIds.length > 0
+      ? supabaseAdmin
+          .from('hub_receivables')
+          .select(receivableSelect)
+          .eq('clinic_id', clinicId)
+          .is('deleted_at', null)
+          .neq('status', 'cancelled')
+          .in('comanda_id', comandaIds)
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>>, error: null }),
+  ]);
+  if (recvBySourceRes.error) throw new Error(recvBySourceRes.error.message);
+  if (recvByComandaRes.error) throw new Error(recvByComandaRes.error.message);
+  const receivablesById = new Map<string, Record<string, unknown>>();
+  for (const r of [...(recvBySourceRes.data ?? []), ...(recvByComandaRes.data ?? [])]) {
+    receivablesById.set(String(r.id), r as Record<string, unknown>);
   }
-
-  // Alias Hotel/Creche ↔ agendamento: comanda appointment conta para boarding_reservation e vice-versa.
-  const linkedSourceKeys = new Map<string, string[]>();
-  const pushLinkedSourceKey = (a: string, b: string) => {
-    const list = linkedSourceKeys.get(a) ?? [];
-    if (!list.includes(b)) list.push(b);
-    linkedSourceKeys.set(a, list);
-  };
-  const boardingIdsForAlias = originKeys
-    .filter((k) => k.origin_type === 'boarding_reservation')
-    .map((k) => k.origin_id);
-  const appointmentIdsForAlias = originKeys
-    .filter((k) => k.origin_type === 'appointment')
-    .map((k) => k.origin_id);
-  if (boardingIdsForAlias.length || appointmentIdsForAlias.length) {
-    const { fetchBoardingAppointmentLinks } = await import('./boardingOriginKeys');
-    const links = await fetchBoardingAppointmentLinks(clinicId, {
-      boardingIds: boardingIdsForAlias,
-      appointmentIds: appointmentIdsForAlias,
-    });
-    for (const [boardingId, apptId] of links.appointmentByBoardingId) {
-      const boardKey = `boarding_reservation:${boardingId}`;
-      const apptKey = `appointment:${apptId}`;
-      const boardComanda = comandaByKey.get(boardKey);
-      const apptComanda = comandaByKey.get(apptKey);
-      if (!boardComanda && apptComanda) comandaByKey.set(boardKey, apptComanda);
-      if (!apptComanda && boardComanda) comandaByKey.set(apptKey, boardComanda);
-      pushLinkedSourceKey(boardKey, apptKey);
-      pushLinkedSourceKey(apptKey, boardKey);
-    }
-  }
-
-  // Alias Banho & Tosa ↔ agendamento: day-board prefere grooming_session, mas a comanda
-  // pode ter nascido como appointment (ou o inverso) — sem isso a linha fica "Sem cobrança".
-  const groomingIdsForAlias = originKeys
-    .filter((k) => k.origin_type === 'grooming_session')
-    .map((k) => k.origin_id);
-  if (groomingIdsForAlias.length || appointmentIdsForAlias.length) {
-    const { fetchGroomingAppointmentLinks } = await import('./groomingOriginKeys');
-    const links = await fetchGroomingAppointmentLinks(clinicId, {
-      sessionIds: groomingIdsForAlias,
-      appointmentIds: appointmentIdsForAlias,
-    });
-    for (const [sessionId, apptId] of links.appointmentBySessionId) {
-      const sessionKey = `grooming_session:${sessionId}`;
-      const apptKey = `appointment:${apptId}`;
-      const sessionComanda = comandaByKey.get(sessionKey);
-      const apptComanda = comandaByKey.get(apptKey);
-      if (!sessionComanda && apptComanda) comandaByKey.set(sessionKey, apptComanda);
-      if (!apptComanda && sessionComanda) comandaByKey.set(apptKey, sessionComanda);
-      pushLinkedSourceKey(sessionKey, apptKey);
-      pushLinkedSourceKey(apptKey, sessionKey);
-    }
-  }
-
-  // Carrega recebíveis ativos por source_key e comanda_id
-  const { data: receivables } = await supabaseAdmin
-    .from('hub_receivables')
-    .select('id, source_type, source_id, comanda_id, status, due_date, final_amount')
-    .eq('clinic_id', clinicId)
-    .is('deleted_at', null)
-    .neq('status', 'cancelled');
+  const receivables = [...receivablesById.values()];
 
   const receivableRowsBySourceKey = new Map<
     string,
@@ -4550,36 +4667,176 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
 
     const items: DayBoardItem[] = [];
     const originKeys: Array<{ origin_type: string; origin_id: string }> = [];
+    const dayBoardT0 = Date.now();
 
-    // ── 1. Agendamentos (por período ou por IDs em aberto) ──
+    // ── Origens em paralelo (agenda / B&T / walk-in / hotel / internação) ──
     const openAppointmentIds = openIdsByType.get('appointment') ?? [];
-    let apptRows: Array<Record<string, unknown>> | null = null;
-    if (!openMode || openAppointmentIds.length > 0) {
-      let aq = supabaseAdmin
-        .from('hub_appointments')
-        .select(
-          `id, unit_id, starts_at, ends_at, status, guardian_id, pet_id, billing_waived_at, title, hub_service_type_id,
+    const openGroomingIds = openIdsByType.get('grooming_session') ?? [];
+    const openEncounterIds = openIdsByType.get('encounter') ?? [];
+    const openBoardingIds = new Set(openIdsByType.get('boarding_reservation') ?? []);
+
+    const apptSelect = `id, unit_id, starts_at, ends_at, status, guardian_id, pet_id, billing_waived_at, title, hub_service_type_id,
           parent_appointment_id, visit_group_id, appointment_kind,
           pet:hub_pets(id, name),
           guardian:hub_guardians(id, full_name),
-          appointment_services:hub_appointment_services(id, hub_service_type_id, sale_amount_applied, service_type:hub_service_types(name, service_group, sale_amount))`
-        )
+          appointment_services:hub_appointment_services(id, hub_service_type_id, sale_amount_applied, service_type:hub_service_types(name, service_group, sale_amount))`;
+    const groomSelect = `id, unit_id, created_at, closed_at, grooming_stage, guardian_id, pet_id, billing_waived_at, hub_appointment_id,
+            pet:hub_pets(id, name),
+            guardian:hub_guardians(id, full_name)`;
+    const doneSelect = `${groomSelect}, ready_at, delivered_at`;
+    const encSelect = `id, unit_id, created_at, status, guardian_id, billing_waived_at, hub_appointment_id,
+          pet:hub_pets(id, name),
+          guardian:hub_guardians(id, full_name)`;
+    const boardingSelect = `id, unit_id, hub_appointment_id, expected_check_in, expected_check_out, checked_in_at, checked_out_at, status, guardian_id, pet_id, mode, daily_rate_cents,
+          pet:hub_pets(id, name),
+          guardian:hub_guardians(id, full_name)`;
+    const hospSelect = `id, unit_id, status, admitted_at, discharged_at, guardian_id, pet_id, hub_encounter_id, hub_appointment_id,
+           daily_hub_service_type_id, daily_unit_amount, billing_waived_at,
+           pet:hub_pets(id, name),
+           guardian:hub_guardians(id, full_name)`;
+
+    const emptyRows = Promise.resolve({
+      data: [] as Array<Record<string, unknown>>,
+      error: null as { message: string } | null,
+    });
+
+    const buildApptQ = () => {
+      if (openMode && openAppointmentIds.length === 0) return emptyRows;
+      let aq = supabaseAdmin
+        .from('hub_appointments')
+        .select(apptSelect)
         .eq('clinic_id', clinic_id)
         .not('status', 'in', '("cancelled","no_show")')
         .is('deleted_at', null)
         .order('starts_at', { ascending: true });
-      if (openMode) {
-        aq = aq.in('id', openAppointmentIds);
-      } else {
-        aq = aq.gte('starts_at', dayStart).lte('starts_at', dayEnd);
-      }
+      if (openMode) aq = aq.in('id', openAppointmentIds);
+      else aq = aq.gte('starts_at', dayStart).lte('starts_at', dayEnd);
       if (unit_id) aq = aq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
-      const apptRes = await aq;
-      if (apptRes.error) throw new Error(apptRes.error.message);
-      apptRows = (apptRes.data as Array<Record<string, unknown>> | null) ?? [];
-    } else {
-      apptRows = [];
+      return aq;
+    };
+
+    const buildGroomOpenQ = () => {
+      if (!openMode || openGroomingIds.length === 0) return emptyRows;
+      let gq = supabaseAdmin
+        .from('hub_grooming_sessions')
+        .select(groomSelect)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .neq('grooming_stage', 'cancelled')
+        .in('id', openGroomingIds)
+        .order('created_at', { ascending: true });
+      if (unit_id) gq = gq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+      return gq;
+    };
+
+    const buildGroomWalkInQ = () => {
+      if (openMode) return emptyRows;
+      let walkInQ = supabaseAdmin
+        .from('hub_grooming_sessions')
+        .select(groomSelect)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .neq('grooming_stage', 'cancelled')
+        .is('hub_appointment_id', null)
+        .gte('created_at', dayStart)
+        .lte('created_at', dayEnd)
+        .order('created_at', { ascending: true });
+      if (unit_id) walkInQ = walkInQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+      return walkInQ;
+    };
+
+    const buildGroomDoneQ = () => {
+      if (openMode) return emptyRows;
+      let doneQ = supabaseAdmin
+        .from('hub_grooming_sessions')
+        .select(doneSelect)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .in('grooming_stage', ['ready', 'delivered', 'closed'])
+        .or(
+          `and(closed_at.gte.${dayStart},closed_at.lte.${dayEnd}),and(ready_at.gte.${dayStart},ready_at.lte.${dayEnd}),and(delivered_at.gte.${dayStart},delivered_at.lte.${dayEnd})`,
+        )
+        .order('closed_at', { ascending: true, nullsFirst: false });
+      if (unit_id) doneQ = doneQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+      return doneQ;
+    };
+
+    const buildEncQ = () => {
+      if (openMode && openEncounterIds.length === 0) return emptyRows;
+      let eq = supabaseAdmin
+        .from('hub_encounters')
+        .select(encSelect)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .not('status', 'in', '("cancelled")')
+        .order('created_at', { ascending: true });
+      if (openMode) eq = eq.in('id', openEncounterIds);
+      else eq = eq.is('hub_appointment_id', null).gte('created_at', dayStart).lte('created_at', dayEnd);
+      if (unit_id) eq = eq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+      return eq;
+    };
+
+    const buildBoardingQ = () => {
+      if (openMode && openBoardingIds.size === 0) return emptyRows;
+      let bq = supabaseAdmin
+        .from('hub_boarding_reservations')
+        .select(boardingSelect)
+        .eq('clinic_id', clinic_id)
+        .is('deleted_at', null)
+        .not('status', 'in', '("cancelled")')
+        .order('expected_check_out', { ascending: true });
+      if (openMode) bq = bq.in('id', [...openBoardingIds]);
+      else {
+        bq = bq.or(
+          `and(expected_check_in.gte.${dayStart},expected_check_in.lte.${dayEnd}),and(expected_check_out.gte.${dayStart},expected_check_out.lte.${dayEnd})`,
+        );
+      }
+      if (unit_id) bq = bq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+      return bq;
+    };
+
+    const buildHospQ = () => {
+      if (openMode) return emptyRows;
+      let hq = supabaseAdmin
+        .from('hub_hospitalizations')
+        .select(hospSelect)
+        .eq('clinic_id', clinic_id)
+        .in('status', [...HOSPITALIZATION_CLOSED_STATUSES])
+        .is('deleted_at', null)
+        .is('billing_waived_at', null)
+        .not('discharged_at', 'is', null)
+        .gte('discharged_at', dayStart)
+        .lte('discharged_at', dayEnd)
+        .order('discharged_at', { ascending: true });
+      if (unit_id) hq = hq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
+      return hq;
+    };
+
+    const [apptRes, groomOpenRes, groomWalkInRes, groomDoneRes, encRes, boardingRes, hospRes] =
+      await Promise.all([
+        buildApptQ(),
+        buildGroomOpenQ(),
+        buildGroomWalkInQ(),
+        buildGroomDoneQ(),
+        buildEncQ(),
+        buildBoardingQ(),
+        buildHospQ(),
+      ]);
+
+    if (apptRes.error) throw new Error(apptRes.error.message);
+    if (groomOpenRes.error) throw new Error(groomOpenRes.error.message);
+    if (groomWalkInRes.error) throw new Error(groomWalkInRes.error.message);
+    if (groomDoneRes.error) throw new Error(groomDoneRes.error.message);
+    if (encRes.error) throw new Error(encRes.error.message);
+    if (boardingRes.error) throw new Error(boardingRes.error.message);
+    if (hospRes.error && !String(hospRes.error.message || '').includes('hub_hospitalizations')) {
+      throw new Error(hospRes.error.message);
     }
+
+    let apptRows: Array<Record<string, unknown>> | null =
+      (apptRes.data as Array<Record<string, unknown>> | null) ?? [];
+
+    // ── 1. Agendamentos (processar) ──
 
     const appointmentServiceTypeIds = new Set<string>();
     for (const row of apptRows ?? []) {
@@ -4718,89 +4975,99 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       });
     }
 
-    // ── 2. Sessões B&T (walk-ins do dia + encerradas do dia c/ agenda, ou IDs em aberto) ──
-    // Antes só entravam walk-ins (hub_appointment_id null): banho da agenda encerrado
-    // ficava só no relatório "Cobrança não gerada" e o Caixa via appointment com valor sem adicional.
-    const openGroomingIds = openIdsByType.get('grooming_session') ?? [];
+    // ── 2. Sessões B&T (walk-ins do dia + prontas/entregues/encerradas, ou IDs em aberto) ──
     let groomRows: Array<Record<string, unknown>> = [];
     if (openMode) {
-      if (openGroomingIds.length > 0) {
-        let gq = supabaseAdmin
-          .from('hub_grooming_sessions')
-          .select(
-            `id, unit_id, created_at, closed_at, grooming_stage, guardian_id, pet_id, billing_waived_at, hub_appointment_id,
-            pet:hub_pets(id, name),
-            guardian:hub_guardians(id, full_name)`
-          )
-          .eq('clinic_id', clinic_id)
-          .is('deleted_at', null)
-          .neq('grooming_stage', 'cancelled')
-          .in('id', openGroomingIds)
-          .order('created_at', { ascending: true });
-        if (unit_id) gq = gq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
-        const groomRes = await gq;
-        if (groomRes.error) throw new Error(groomRes.error.message);
-        groomRows = (groomRes.data as Array<Record<string, unknown>> | null) ?? [];
-      }
+      groomRows = (groomOpenRes.data as Array<Record<string, unknown>> | null) ?? [];
     } else {
-      const groomSelect = `id, unit_id, created_at, closed_at, grooming_stage, guardian_id, pet_id, billing_waived_at, hub_appointment_id,
-          pet:hub_pets(id, name),
-          guardian:hub_guardians(id, full_name)`;
-      let walkInQ = supabaseAdmin
-        .from('hub_grooming_sessions')
-        .select(groomSelect)
-        .eq('clinic_id', clinic_id)
-        .is('deleted_at', null)
-        .neq('grooming_stage', 'cancelled')
-        .is('hub_appointment_id', null)
-        .gte('created_at', dayStart)
-        .lte('created_at', dayEnd)
-        .order('created_at', { ascending: true });
-      let closedQ = supabaseAdmin
-        .from('hub_grooming_sessions')
-        .select(groomSelect)
-        .eq('clinic_id', clinic_id)
-        .is('deleted_at', null)
-        .eq('grooming_stage', 'closed')
-        .gte('closed_at', dayStart)
-        .lte('closed_at', dayEnd)
-        .order('closed_at', { ascending: true });
-      if (unit_id) {
-        walkInQ = walkInQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
-        closedQ = closedQ.or(`unit_id.eq.${unit_id},unit_id.is.null`);
-      }
-      const [walkInRes, closedRes] = await Promise.all([walkInQ, closedQ]);
-      if (walkInRes.error) throw new Error(walkInRes.error.message);
-      if (closedRes.error) throw new Error(closedRes.error.message);
       const byId = new Map<string, Record<string, unknown>>();
-      for (const row of [...(walkInRes.data ?? []), ...(closedRes.data ?? [])]) {
+      for (const row of [...(groomWalkInRes.data ?? []), ...(groomDoneRes.data ?? [])]) {
         byId.set(String(row.id), row as Record<string, unknown>);
       }
       groomRows = [...byId.values()];
     }
 
     const groomingLinkedAppointmentIds = new Set<string>();
-    for (const row of groomRows) {
-      if (row.billing_waived_at) continue;
+    const groomActiveRows = (groomRows ?? []).filter((row) => !row.billing_waived_at);
+    // Prévia B&T em lote (2 queries) — evita N× buildPreviewForGroomingSession no day board.
+    const groomApptIds = [
+      ...new Set(
+        groomActiveRows
+          .map((r) => (r.hub_appointment_id as string | null) ?? null)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const groomSessionIds = groomActiveRows.map((r) => String(r.id));
+    const apptServicesByAppt = new Map<
+      string,
+      Array<{ name: string; amount: number; kind: 'service' }>
+    >();
+    const extrasBySession = new Map<string, Array<{ name: string; amount: number; kind: 'service' }>>();
+    if (groomApptIds.length > 0 || groomSessionIds.length > 0) {
+      const [svcRes, extrasRes] = await Promise.all([
+        groomApptIds.length > 0
+          ? supabaseAdmin
+              .from('hub_appointment_services')
+              .select(
+                'appointment_id, sale_amount_applied, hub_service_types(name, sale_amount)',
+              )
+              .in('appointment_id', groomApptIds)
+          : Promise.resolve({ data: [] as Array<Record<string, unknown>>, error: null }),
+        groomSessionIds.length > 0
+          ? supabaseAdmin
+              .from('hub_grooming_session_extras')
+              .select('hub_grooming_session_id, name_snapshot, sale_amount_snapshot')
+              .eq('clinic_id', clinic_id)
+              .in('hub_grooming_session_id', groomSessionIds)
+              .is('deleted_at', null)
+          : Promise.resolve({ data: [] as Array<Record<string, unknown>>, error: null }),
+      ]);
+      if (!svcRes.error) {
+        for (const row of svcRes.data ?? []) {
+          const apptId = String(row.appointment_id ?? '');
+          if (!apptId) continue;
+          const st = row.hub_service_types as
+            | { name?: string; sale_amount?: number | null }
+            | { name?: string; sale_amount?: number | null }[]
+            | null;
+          const stRow = Array.isArray(st) ? st[0] : st;
+          const amount = resolveAppliedSaleAmount(row.sale_amount_applied, stRow?.sale_amount);
+          const list = apptServicesByAppt.get(apptId) ?? [];
+          list.push({
+            name: String(stRow?.name ?? 'Serviço'),
+            amount: round2(amount),
+            kind: 'service',
+          });
+          apptServicesByAppt.set(apptId, list);
+        }
+      }
+      if (!extrasRes.error) {
+        for (const row of extrasRes.data ?? []) {
+          const sid = String(row.hub_grooming_session_id ?? '');
+          if (!sid) continue;
+          const amount = round2(Number(row.sale_amount_snapshot ?? 0));
+          const list = extrasBySession.get(sid) ?? [];
+          list.push({
+            name: String(row.name_snapshot || 'Adicional'),
+            amount,
+            kind: 'service',
+          });
+          extrasBySession.set(sid, list);
+        }
+      }
+    }
+    for (const row of groomActiveRows) {
       const id = row.id as string;
       const apptId = (row.hub_appointment_id as string | null) ?? null;
       if (apptId) groomingLinkedAppointmentIds.add(apptId);
       const pet = row.pet as { id: string; name: string } | { id: string; name: string }[] | null;
       const petObj = pet ? (Array.isArray(pet) ? (pet[0] ?? null) : pet) : null;
       const g = row.guardian as { id: string; full_name: string } | { id: string; full_name: string }[] | null;
-      let estimated = 0;
-      let services: Array<{ name: string; amount: number; kind?: 'service' | 'product' | 'fee' | null }> = [];
-      try {
-        const pv = await buildPreviewForGroomingSession(clinic_id, id);
-        estimated = pv.subtotal;
-        services = pv.lines.map((line) => ({
-          name: String(line.description ?? 'Serviço'),
-          amount: round2(Number(line.line_total ?? 0)),
-          kind: 'service' as const,
-        }));
-      } catch {
-        // Mantém zero se a prévia falhar — billing/enrichment ainda aplica.
-      }
+      const services = [
+        ...(apptId ? apptServicesByAppt.get(apptId) ?? [] : []),
+        ...(extrasBySession.get(id) ?? []),
+      ];
+      const estimated = round2(services.reduce((s, sv) => s + Number(sv.amount ?? 0), 0));
       const startsAt =
         (row.closed_at as string | null) ?? (row.created_at as string | null) ?? null;
       originKeys.push({ origin_type: 'grooming_session', origin_id: id });
@@ -4846,30 +5113,8 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
     }
 
     // ── 3. Encounters walk-in (período ou IDs em aberto) ──
-    const openEncounterIds = openIdsByType.get('encounter') ?? [];
-    let encRows: Array<Record<string, unknown>> | null = [];
-    if (!openMode || openEncounterIds.length > 0) {
-      let eq = supabaseAdmin
-        .from('hub_encounters')
-        .select(
-          `id, unit_id, created_at, status, guardian_id, billing_waived_at, hub_appointment_id,
-          pet:hub_pets(id, name),
-          guardian:hub_guardians(id, full_name)`
-        )
-        .eq('clinic_id', clinic_id)
-        .is('deleted_at', null)
-        .not('status', 'in', '("cancelled")')
-        .order('created_at', { ascending: true });
-      if (openMode) {
-        eq = eq.in('id', openEncounterIds);
-      } else {
-        eq = eq.is('hub_appointment_id', null).gte('created_at', dayStart).lte('created_at', dayEnd);
-      }
-      if (unit_id) eq = eq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
-      const encRes = await eq;
-      if (encRes.error) throw new Error(encRes.error.message);
-      encRows = (encRes.data as Array<Record<string, unknown>> | null) ?? [];
-    }
+    const encRows: Array<Record<string, unknown>> | null =
+      (encRes.data as Array<Record<string, unknown>> | null) ?? [];
 
     for (const row of encRows ?? []) {
       if (row.billing_waived_at) continue;
@@ -4907,29 +5152,8 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       items.filter((i) => i.origin_type === 'appointment').map((i) => i.origin_id)
     );
     const boardingIdsInBoard = new Set<string>();
-    const openBoardingIds = new Set(openIdsByType.get('boarding_reservation') ?? []);
-
-    let boardingRowsAll: Array<Record<string, unknown>> | null = [];
-    if (!openMode || openBoardingIds.size > 0) {
-      let bq = supabaseAdmin
-        .from('hub_boarding_reservations')
-        .select(
-          `id, unit_id, hub_appointment_id, expected_check_in, expected_check_out, checked_in_at, checked_out_at, status, guardian_id, pet_id, mode, daily_rate_cents,
-          pet:hub_pets(id, name),
-          guardian:hub_guardians(id, full_name)`
-        )
-        .eq('clinic_id', clinic_id)
-        .is('deleted_at', null)
-        .not('status', 'in', '("cancelled")')
-        .order('expected_check_out', { ascending: true });
-      if (openMode) {
-        bq = bq.in('id', [...openBoardingIds]);
-      }
-      if (unit_id) bq = bq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
-      const boardingRes = await bq;
-      if (boardingRes.error) throw new Error(boardingRes.error.message);
-      boardingRowsAll = (boardingRes.data as Array<Record<string, unknown>> | null) ?? [];
-    }
+    const boardingRowsAll: Array<Record<string, unknown>> | null =
+      (boardingRes.data as Array<Record<string, unknown>> | null) ?? [];
 
     for (const row of boardingRowsAll ?? []) {
       const id = row.id as string;
@@ -4993,27 +5217,6 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
 
     // ── 4a. Internações com alta no período → origem explícita (gap C) ──
     if (!openMode) {
-      let hq = supabaseAdmin
-        .from('hub_hospitalizations')
-        .select(
-          `id, unit_id, status, admitted_at, discharged_at, guardian_id, pet_id, hub_encounter_id, hub_appointment_id,
-           daily_hub_service_type_id, daily_unit_amount, billing_waived_at,
-           pet:hub_pets(id, name),
-           guardian:hub_guardians(id, full_name)`
-        )
-        .eq('clinic_id', clinic_id)
-        .in('status', [...HOSPITALIZATION_CLOSED_STATUSES])
-        .is('deleted_at', null)
-        .is('billing_waived_at', null)
-        .not('discharged_at', 'is', null)
-        .gte('discharged_at', dayStart)
-        .lte('discharged_at', dayEnd)
-        .order('discharged_at', { ascending: true });
-      if (unit_id) hq = hq.or(`unit_id.eq.${unit_id},unit_id.is.null`);
-      const hospRes = await hq;
-      if (hospRes.error && !String(hospRes.error.message || '').includes('hub_hospitalizations')) {
-        throw new Error(hospRes.error.message);
-      }
       const hospRows = (hospRes.data as Array<Record<string, unknown>> | null) ?? [];
 
       const seenBoardKeys = new Set(items.map((i) => `${i.origin_type}:${i.origin_id}`));
@@ -5025,21 +5228,16 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
         });
         if (!origin) continue;
 
-        const encId = origin.origin_type === 'encounter' ? origin.origin_id : null;
-        const apptId =
-          origin.origin_type === 'appointment'
-            ? origin.origin_id
-            : ((row.hub_appointment_id as string | null) ?? null);
-
-        const hospEstimate = (
-          await loadHospitalizationComandaItems({
-            clinicId: clinic_id,
-            hospitalizationId: row.id as string,
-            encounterId: encId,
-            appointmentId: apptId,
-            defaultPetId: (row.pet_id as string | null) ?? null,
-          })
-        ).subtotal;
+        // Estimativa sync (diária) — evita N+1 de loadHospitalizationComandaItems no day board.
+        const hospEstimate = estimateHospitalizationBillingAmount({
+          id: row.id as string,
+          pet_id: (row.pet_id as string | null) ?? null,
+          status: String(row.status ?? ''),
+          admitted_at: String(row.admitted_at ?? ''),
+          discharged_at: (row.discharged_at as string | null) ?? null,
+          daily_hub_service_type_id: (row.daily_hub_service_type_id as string | null) ?? null,
+          daily_unit_amount: row.daily_unit_amount == null ? null : Number(row.daily_unit_amount),
+        });
 
         // Se a origem cobrável já está no board, só anexa estimativa (evita duplicar linha).
         const existing = items.find(
@@ -5383,10 +5581,22 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       }
     }
 
-    const clinicBalances = await listActivePackageBalances({ clinicId: clinic_id });
     const appointmentIds = items.filter((i) => i.origin_type === 'appointment').map((i) => i.origin_id);
-    const seriesCoverage = await findSeriesInvoiceCoverageForAppointments(appointmentIds);
-    const periodicPendingIds = await findPeriodicInvoiceSeriesAppointments(appointmentIds);
+    const guardianIdsForPkg = [
+      ...new Set(
+        items
+          .map((i) => i.guardian_id)
+          .filter((id): id is string => Boolean(id)),
+      ),
+    ];
+    const apptRowById = new Map((apptRows ?? []).map((r) => [String(r.id), r]));
+    const [clinicBalances, seriesCoverage, periodicPendingIds] = await Promise.all([
+      guardianIdsForPkg.length > 0
+        ? listActivePackageBalances({ clinicId: clinic_id, guardianIds: guardianIdsForPkg })
+        : Promise.resolve([] as Awaited<ReturnType<typeof listActivePackageBalances>>),
+      findSeriesInvoiceCoverageForAppointments(appointmentIds),
+      findPeriodicInvoiceSeriesAppointments(appointmentIds),
+    ]);
 
     for (const item of items) {
       item.coverage_kind = 'none';
@@ -5421,7 +5631,7 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
 
       const serviceTypeIds: string[] = [];
       if (item.origin_type === 'appointment') {
-        const apptRow = (apptRows ?? []).find((r) => r.id === item.origin_id);
+        const apptRow = apptRowById.get(item.origin_id);
         const svcs = (apptRow?.appointment_services as Array<{ hub_service_type_id?: string }> | null) ?? [];
         for (const s of svcs) {
           if (s.hub_service_type_id) serviceTypeIds.push(s.hub_service_type_id);
@@ -5431,9 +5641,9 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
           if (primary) serviceTypeIds.push(primary);
         }
       } else {
+        const apptRow = apptRowById.get(item.origin_id);
+        const svcs = (apptRow?.appointment_services as Array<{ hub_service_type_id?: string }> | null) ?? [];
         for (let idx = 0; idx < item.services.length; idx++) {
-          const apptRow = (apptRows ?? []).find((r) => r.id === item.origin_id);
-          const svcs = (apptRow?.appointment_services as Array<{ hub_service_type_id?: string }> | null) ?? [];
           const st = svcs[idx]?.hub_service_type_id;
           if (st) serviceTypeIds.push(st);
         }
@@ -5483,6 +5693,12 @@ export const getHubFinanceDayBoard = async (req: Request, res: Response) => {
       return ta - tb;
     });
 
+    if (process.env.NODE_ENV !== 'production') {
+      console.info(
+        `[day-board] ${Date.now() - dayBoardT0}ms items=${filteredItems.length} open=${openMode} date=${dateYmd}`,
+      );
+    }
+
     return res.json({
       items: filteredItems,
       date: dateYmd,
@@ -5522,14 +5738,13 @@ function resolveOpenOriginLabel(originType: string): string {
   }
 }
 
-/** Início do dia UTC (YYYY-MM-DD) → ISO start */
+/** Início/fim do dia civil dos relatórios = America/Sao_Paulo (não UTC). */
 function utcDayStartIso(dateYmd: string): string {
-  return `${dateYmd}T00:00:00.000Z`;
+  return reportDayStartIso(dateYmd);
 }
 
-/** Fim do dia UTC */
 function utcDayEndIso(dateYmd: string): string {
-  return `${dateYmd}T23:59:59.999Z`;
+  return reportDayEndIso(dateYmd);
 }
 
 function addDaysYmd(ymd: string, delta: number): string {
@@ -5542,11 +5757,7 @@ function addDaysYmd(ymd: string, delta: number): string {
 }
 
 function ymdTodayUtc(): string {
-  const dt = new Date();
-  const yy = dt.getUTCFullYear();
-  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(dt.getUTCDate()).padStart(2, '0');
-  return `${yy}-${mm}-${dd}`;
+  return ymdTodaySaoPaulo();
 }
 
 export type FinanceDateBasis = 'payment_date' | 'created_at' | 'competence_date' | 'due_date';
@@ -5892,8 +6103,8 @@ export const getHubFinanceCashFlow = async (req: Request, res: Response) => {
         payDateCol === 'created_at'
           ? String((p as { created_at?: string }).created_at ?? p.payment_date ?? '')
           : String(p.payment_date ?? '');
-      const key = rawDate.slice(0, 10);
-      if (!key) continue;
+      if (!rawDate) continue;
+      const key = ymdSaoPauloFromIso(rawDate);
       payByDay.set(key, round2((payByDay.get(key) ?? 0) + Number(p.amount ?? 0)));
     }
 
@@ -5909,7 +6120,7 @@ export const getHubFinanceCashFlow = async (req: Request, res: Response) => {
     const witByDay = new Map<string, number>();
     const depByDay = new Map<string, number>();
     for (const row of movRows) {
-      const key = (row.created_at as string).slice(0, 10);
+      const key = ymdSaoPauloFromIso(row.created_at as string);
       const amt = Number(row.amount ?? 0);
       if (row.movement_type === 'withdrawal') {
         witByDay.set(key, round2((witByDay.get(key) ?? 0) + amt));
@@ -5951,7 +6162,7 @@ export const getHubFinanceRevenueReport = async (req: Request, res: Response) =>
     const payDateCol = date_basis === 'created_at' ? 'created_at' : 'payment_date';
     const { data: payments, error } = await supabaseAdmin
       .from('hub_payments')
-      .select('amount, payment_method, payment_date, created_at, receivable_id')
+      .select('amount, payment_method, payment_date, created_at, receivable_id, card_fee_amount, net_amount')
       .eq('clinic_id', clinic_id)
       .eq('status', 'posted')
       .gte(payDateCol, fromIso)
@@ -5969,21 +6180,50 @@ export const getHubFinanceRevenueReport = async (req: Request, res: Response) =>
     }
     const by_method: Record<string, number> = {};
     let total = 0;
+    const feeRows: Array<{
+      payment_method: string;
+      amount: number;
+      card_fee_amount: number | null;
+      net_amount: number | null;
+    }> = [];
     for (const p of payments ?? []) {
       if (!unitMatchesSelected(unitByRec.get(p.receivable_id as string), unit_id)) continue;
       const amount = Number(p.amount ?? 0);
       const method = String(p.payment_method ?? 'unknown');
       by_method[method] = round2((by_method[method] ?? 0) + amount);
       total = round2(total + amount);
+      const feeRaw = (p as { card_fee_amount?: unknown }).card_fee_amount;
+      const netRaw = (p as { net_amount?: unknown }).net_amount;
+      feeRows.push({
+        payment_method: method,
+        amount,
+        card_fee_amount:
+          feeRaw == null || !Number.isFinite(Number(feeRaw)) ? null : Number(feeRaw),
+        net_amount: netRaw == null || !Number.isFinite(Number(netRaw)) ? null : Number(netRaw),
+      });
     }
+    const feeTotals = aggregateCardFeeTotals(feeRows);
+    const nonCardGross = round2(
+      feeRows
+        .filter((r) => r.payment_method !== 'credit_card' && r.payment_method !== 'debit_card')
+        .reduce((s, r) => s + r.amount, 0),
+    );
+    const net_after_fees_total = round2(
+      nonCardGross + feeTotals.card_net_total + feeTotals.card_without_fee_gross_total,
+    );
     return res.json({
       period: { from: fromYmd, to: toYmd },
       date_basis: payDateCol === 'created_at' ? 'created_at' : 'payment_date',
-      kind: 'recebimentos',
+      kind: 'recebido_bruto',
+      domain: 'caixa_registrado',
+      timezone: REPORT_TIMEZONE,
+      competence: `${payDateCol} (dia civil ${REPORT_TIMEZONE})`,
       total,
+      card_fee_total: feeTotals.card_fee_total,
+      net_after_fees_total,
       by_method,
       notes:
-        'Recebimentos (pagamentos posted). Não é receita líquida comercial. Unidade estrita — registros sem unidade ficam fora deste total.',
+        'Recebido bruto = Σ hub_payments.amount (posted). Não é cobrado comercial nem margem. Taxa estimada da maquininha e líquido após taxa são informativos e não alteram o total. Unidade estrita — registros sem unidade ficam fora deste total.',
     });
   } catch (e: unknown) {
     console.error('getHubFinanceRevenueReport', e);
@@ -6044,7 +6284,7 @@ export const getHubFinanceRevenueSeries = async (req: Request, res: Response) =>
     const payByDay = new Map<string, number>();
     for (const p of payPeriod ?? []) {
       if (!unitMatchesSelected(unitByRec.get(p.receivable_id as string), unit_id)) continue;
-      const key = (p.payment_date as string).slice(0, 10);
+      const key = ymdSaoPauloFromIso(p.payment_date as string);
       payByDay.set(key, round2((payByDay.get(key) ?? 0) + Number(p.amount ?? 0)));
     }
 
@@ -6107,6 +6347,8 @@ export const getHubFinanceTicketAverageReport = async (req: Request, res: Respon
     return res.json({
       period: { from: fromYmd, to: toYmd },
       kind: 'historical_commercial_ticket',
+      domain: 'comercial',
+      timezone: REPORT_TIMEZONE,
       receivables_count: ticket.sales_count,
       total: ticket.total_at_sale,
       ticket_average: ticket.ticket_average,
@@ -6115,7 +6357,7 @@ export const getHubFinanceTicketAverageReport = async (req: Request, res: Respon
       competence: ticket.competence,
       formula: ticket.formula,
       notes:
-        'Ticket histórico do período da cobrança (net_amount_at_sale ÷ nº de cobranças). Devoluções posteriores não alteram. Período só com devoluções → ticket N/A. Unidade estrita.',
+        'Ticket histórico (domínio comercial): net_amount_at_sale ÷ nº de cobranças no dia civil America/Sao_Paulo da cobrança. Devoluções posteriores não alteram. Período só com devoluções → ticket N/A. Unidade estrita. Não confundir com recebido bruto.',
     });
   } catch (e: unknown) {
     console.error('getHubFinanceTicketAverageReport', e);
@@ -6168,7 +6410,16 @@ export const getHubFinanceTopServicesReport = async (req: Request, res: Response
       byService.set(serviceId, cur);
     }
     const items = [...byService.values()].sort((a, b) => b.total - a.total).slice(0, 20);
-    return res.json({ period: { from: fromYmd, to: toYmd }, items });
+    return res.json({
+      period: { from: fromYmd, to: toYmd },
+      kind: 'top_services_line_total',
+      domain: 'comercial',
+      timezone: REPORT_TIMEZONE,
+      competence: `receivable.created_at (dia civil ${REPORT_TIMEZONE})`,
+      notes:
+        'Σ line_total das linhas de serviço na data da cobrança. Não abate devolução comercial nem usa net_amount_at_sale. Não é recebido bruto.',
+      items,
+    });
   } catch (e: unknown) {
     console.error('getHubFinanceTopServicesReport', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
@@ -6422,8 +6673,12 @@ export const getHubFinanceAgingReport = async (req: Request, res: Response) => {
     }
     return res.json({
       as_of: asOf,
+      kind: 'aging_a_receber',
+      domain: 'a_receber',
+      timezone: REPORT_TIMEZONE,
       buckets,
-      notes: 'Totais = saldo a receber (final − pago líquido efetivo). Unidade estrita.',
+      notes:
+        'A receber = saldo em aberto (final − pago líquido efetivo). Domínio distinto de recebido bruto e de cobrado comercial. Unidade estrita.',
     });
   } catch (e: unknown) {
     console.error('getHubFinanceAgingReport', e);
@@ -6954,7 +7209,7 @@ export const getHubFinanceMyCommissionsReport = async (req: Request, res: Respon
   }
 };
 
-/** Top clientes por faturamento (pagamentos) no período. */
+/** Top clientes por recebido bruto (pagamentos posted) no período. */
 export const getHubFinanceTopClientsReport = async (req: Request, res: Response) => {
   try {
     const parsed = await parsePeriodQueryAuthorized(req);
@@ -7035,6 +7290,12 @@ export const getHubFinanceTopClientsReport = async (req: Request, res: Response)
 
     return res.json({
       period: { from: fromYmd, to: toYmd },
+      kind: 'top_clients_recebido_bruto',
+      domain: 'caixa_registrado',
+      timezone: REPORT_TIMEZONE,
+      competence: `payment_date (dia civil ${REPORT_TIMEZONE})`,
+      notes:
+        'Ranking por recebido bruto (pagamentos posted). Não é cobrado comercial nem ticket histórico.',
       summary: {
         clients_with_payments: ranked.length,
         total_revenue: grandTotal,

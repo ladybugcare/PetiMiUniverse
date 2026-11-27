@@ -74,8 +74,23 @@ Sessão por unidade (no máximo **uma** `open` por `unit_id`, índice parcial ú
 ### Datas e relatórios
 
 - Pagamentos persistem `payment_date` (efetivo) e `created_at` (registro); recebíveis aceitam `competence_date` opcional (sem fallback silencioso para `created_at`).
-- Relatórios de fluxo de caixa e faturamento aceitam `date_basis=payment_date|created_at`.
+- Relatórios de fluxo de caixa e recebido bruto aceitam `date_basis=payment_date|created_at`.
+- **Dia civil dos relatórios** = `America/Sao_Paulo` (início 00:00 / fim 23:59:59.999 −03:00). Pagamento às 22h BRT entra no dia civil brasileiro, não no próximo dia UTC.
 - Totais de reembolso usam só `adjustment_type = refund`; anulações entram em acertos (`payment_reversal`).
+
+### Glossário de relatórios (não misturar)
+
+| Termo | Domínio | Fonte | Competência | Não inclui |
+|--------|---------|--------|-------------|------------|
+| **Cobrado** | Comercial | `hub_receivables` / linhas (`net_amount_at_sale`, `line_total`) | `receivable.created_at` (dia SP) | Pagamentos posteriores; devolução posterior no ticket histórico |
+| **Recebido bruto** | Caixa registrado | `hub_payments.amount` com `status = posted` | `payment_date` ou `created_at` (dia SP) | Receita líquida comercial; margem |
+| **Taxa estimada** | Informativo | `hub_payments.card_fee_amount` | Mesmo período do recebido | Não vira `hub_expenses` automático; **não** reduz o KPI principal |
+| **Recebido líquido (taxa)** | Informativo | `net_amount` / bruto − taxa | Mesmo período do recebido | Não substitui o recebido bruto na UI |
+| **A receber** | Saldo | Recebíveis `pending` / `partially_paid` | `as_of` (aging) | Movimentação de caixa do dia |
+| **Margem** | Comercial líquido − CMV | Product sales (`unit_cost_amount`) | Cobrança + devoluções comerciais | Recebido bruto |
+| **Comissão** | Fórmula própria | Snapshots de comissão | Ver relatório de comissões | Recebido bruto / ticket |
+
+**Proibido** chamar pagamento `posted` de “faturamento”. Top clientes ranqueia por **recebido bruto**. Top serviços soma `line_total` na data da cobrança e **não** abate devolução comercial. Saldo físico da gaveta (dinheiro + suprimento − sangria) é outro domínio — cartão não entra na gaveta.
 
 ### Estorno vs reembolso
 

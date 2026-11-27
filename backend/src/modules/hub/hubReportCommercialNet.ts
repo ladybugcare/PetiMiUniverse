@@ -14,6 +14,7 @@ import {
   commercialReturnForLines,
   round2Money,
 } from './hubReceivableFinancialBalance.js';
+import { reportDayEndIso, reportDayStartIso } from './hubReportPeriod.js';
 
 export const REPORT_PAGE_SIZE = 1000;
 
@@ -21,13 +22,7 @@ export function round2Report(n: number): number {
   return round2Money(n);
 }
 
-export function reportDayStartIso(ymd: string): string {
-  return `${ymd}T00:00:00.000Z`;
-}
-
-export function reportDayEndIso(ymd: string): string {
-  return `${ymd}T23:59:59.999Z`;
-}
+export { reportDayStartIso, reportDayEndIso };
 
 export type ReportUnitFilter =
   | { mode: 'unit'; unitId: string }
@@ -595,7 +590,7 @@ export function computeHistoricalTicketAverage(headers: ReceivableHeaderRow[]): 
     ticket_average: count > 0 ? round2Report(total / count) : null,
     reliable_snapshot_count: reliable,
     legacy_incomplete_count: legacy,
-    competence: 'receivable.created_at (data da cobrança gerada)',
+    competence: 'receivable.created_at (data da cobrança gerada, dia civil America/Sao_Paulo)',
     formula:
       'Σ net_amount_at_sale ÷ nº de cobranças do período; devoluções posteriores não alteram o ticket do período da venda',
   };

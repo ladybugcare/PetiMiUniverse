@@ -6,12 +6,14 @@ import {
   ChevronDown,
   ChevronUp,
   Coins,
+  ExternalLink,
   Lock,
   Unlock,
   Package,
   Pencil,
   RotateCcw,
   Search,
+  SendHorizonal,
   ShoppingBag,
   User,
   X,
@@ -33,11 +35,17 @@ import { hubComandaApi } from '../../api/hubComandaApi';
 import { ComandaCheckoutDrawer } from './ComandaCheckoutDrawer';
 import { CaixaMetricsRow } from './CaixaMetricsRow';
 import { CaixaSessionMovementsCard } from './CaixaSessionMovementsCard';
+import { CaixaShiftBreakdown } from './CaixaShiftBreakdown';
 import {
+  caixaCarryoverConferenceLabel,
   canCaixaEditOpenComanda,
+  canHandoffCarryoverComanda,
   isCaixaCarryoverPendingComanda,
   isCaixaOwnedDayBoardItem,
+  resolveCaixaCarryoverConferenceKind,
 } from './hubComandaEditUtils';
+import { ClientesPagination } from '../clientes/ClientesPagination';
+import { enviarPendentesAoFinanceiro } from './caixaHandoffUtils';
 import {
   buildCaixaSessionHistoryItems,
   sumDayBoardPendingAmount,
@@ -70,7 +78,8 @@ import {
   formatComandaListTitle,
   formatComandaOriginLabel,
 } from './comandaListPreview';
-import { MarkExecutionModal } from './MarkExecutionModal';
+import { MarkExecutionModal, type MarkExecutionTarget } from './MarkExecutionModal';
+import { CaixaConferencePanel } from './CaixaConferencePanel';
 import '../clientes/clientes.css';
 import '../pets/pets-page.css';
 import '../servicos/servicos-page.css';
@@ -99,7 +108,7 @@ const HubCaixaPage: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { hasPermission, loading: permLoading } = usePermissions();
-  const { showError, showSuccess, showWarning } = useAlert();
+  const { showError, showSuccess, showWarning, showConfirm } = useAlert();
   const clinicId = getStoredClinicId();
   const unitId = useSelectedUnitId();
 
@@ -130,6 +139,12 @@ const HubCaixaPage: React.FC = () => {
     return 'all';
   });
   const [dayBoardSearch, setDayBoardSearch] = useState(() => searchParams.get('q')?.trim() ?? '');
+  const [dayBoardPage, setDayBoardPage] = useState(1);
+  const [dayBoardPageSize, setDayBoardPageSize] = useState(25);
+  const [carryoverPage, setCarryoverPage] = useState(1);
+  const [carryoverPageSize, setCarryoverPageSize] = useState(25);
+  const [openComandasBusy, setOpenComandasBusy] = useState(false);
+  const [handoffReadyBusy, setHandoffReadyBusy] = useState(false);
 
   // Drawers
   const [checkoutComandaId, setCheckoutComandaId] = useState<string | null>(null);
@@ -154,7 +169,10 @@ const HubCaixaPage: React.FC = () => {
   const [viewedClosedSessionId, setViewedClosedSessionId] = useState<string | null>(null);
   const [closedSessionSummary, setClosedSessionSummary] = useState<HubCashSessionSummary | null>(null);
   const [closedSessionBusy, setClosedSessionBusy] = useState(false);
-  const [markExecutionItem, setMarkExecutionItem] = useState<HubFinanceDayBoardItem | null>(null);
+  const [markExecutionItem, setMarkExecutionItem] = useState<
+    MarkExecutionTarget | HubFinanceDayBoardItem | null
+  >(null);
+  const [conferenceComanda, setConferenceComanda] = useState<Record<string, unknown> | null>(null);
 
   // Sessão de dia anterior aberta (dia civil America/Sao_Paulo)
   const isPreviousDaySession = isPreviousDaySaoPaulo(cashOpen?.opened_at);
@@ -180,6 +198,25 @@ const HubCaixaPage: React.FC = () => {
     [clinicId, unitId, dayBoardDate]
   );
 
+  /** Carryover / comandas abertas — enrich leve (sem N+1 de cura/saldo). */
+  const loadOpenComandas = useCallback(async () => {
+    if (!clinicId || !unitId) return;
+    setOpenComandasBusy(true);
+    try {
+      const comandasRes = await hubComandaApi
+        .listComandas({ clinic_id: clinicId, unit_id: unitId, status: 'aberta', enrich: 'light' })
+        .catch(() => ({ comandas: [] as Array<Record<string, unknown>> }));
+      setOpenComandas(comandasRes.comandas ?? []);
+    } finally {
+      setOpenComandasBusy(false);
+    }
+  }, [clinicId, unitId]);
+
+  /** Após mutação de conferência / executor: carryover + day board. */
+  const refreshAfterConference = useCallback(async () => {
+    await Promise.all([loadOpenComandas(), loadDayBoard()]);
+  }, [loadOpenComandas, loadDayBoard]);
+
   const load = useCallback(async () => {
     if (!clinicId || !unitId) {
       finish();
@@ -191,48 +228,43 @@ const HubCaixaPage: React.FC = () => {
       setCashChecked(false);
     }
     try {
-      const cash = await hubFinancialApi.getCashSessionOpen(clinicId, unitId);
+      // Sessão + day board em paralelo — a listagem não espera o open da gaveta.
+      const [cash, dayBoard] = await Promise.all([
+        hubFinancialApi.getCashSessionOpen(clinicId, unitId),
+        hubFinancialApi
+          .getDayBoard(clinicId, unitId, dayBoardDate)
+          .catch(() => [] as HubFinanceDayBoardItem[]),
+      ]);
       const open = cash.cash_session ?? null;
       setCashChecked(true);
+      setDayBoardItems(dayBoard);
+      succeed();
+      void loadOpenComandas();
+      void hubFinancialApi
+        .getPendingBillingCount(clinicId, unitId)
+        .then((c) => setPending(c))
+        .catch(() => setPending(0));
+      void hubFinancialApi
+        .listClosedCashSessions(clinicId, unitId, 10)
+        .then((closedRes) => setClosedSessions(closedRes.sessions ?? []))
+        .catch(() => setClosedSessions([]));
       if (!open?.id) {
         setCashOpen(null);
         setCashSummary(null);
-        const [c, dayBoard, closedRes, comandasRes] = await Promise.all([
-          hubFinancialApi.getPendingBillingCount(clinicId, unitId).catch(() => 0),
-          hubFinancialApi.getDayBoard(clinicId, unitId, dayBoardDate).catch(() => [] as HubFinanceDayBoardItem[]),
-          hubFinancialApi.listClosedCashSessions(clinicId, unitId, 10).catch(() => ({ sessions: [] })),
-          hubComandaApi
-            .listComandas({ clinic_id: clinicId, unit_id: unitId, status: 'aberta', enrich: true })
-            .catch(() => ({ comandas: [] })),
-        ]);
-        setPending(c);
-        setOpenComandas(comandasRes.comandas ?? []);
-        setDayBoardItems(dayBoard);
-        setClosedSessions(closedRes.sessions ?? []);
         setAcceptedPaymentMethods([]);
-        succeed();
         return;
       }
       setCashOpen(open);
-      const [c, comandasRes, dayBoard, closedRes, summary] = await Promise.all([
-        hubFinancialApi.getPendingBillingCount(clinicId, unitId),
-        hubComandaApi.listComandas({ clinic_id: clinicId, unit_id: unitId, status: 'aberta', enrich: true }).catch(() => ({ comandas: [] })),
-        hubFinancialApi.getDayBoard(clinicId, unitId, dayBoardDate).catch(() => [] as HubFinanceDayBoardItem[]),
-        hubFinancialApi.listClosedCashSessions(clinicId, unitId, 10).catch(() => ({ sessions: [] })),
-        hubFinancialApi.getCashSessionSummary(open.id, clinicId),
-      ]);
-      setPending(c);
-      setOpenComandas(comandasRes.comandas ?? []);
-      setDayBoardItems(dayBoard);
-      setClosedSessions(closedRes.sessions ?? []);
-      setCashSummary(summary);
-      succeed();
+      void hubFinancialApi
+        .getCashSessionSummary(open.id, clinicId)
+        .then((summary) => setCashSummary(summary))
+        .catch(() => undefined);
     } catch (e) {
       showError((e as Error)?.message || 'Erro ao carregar caixa');
     } finally {
       finish();
     }
-  }, [clinicId, unitId, dayBoardDate, showError, begin, succeed, finish]);
+  }, [clinicId, unitId, dayBoardDate, showError, begin, succeed, finish, loadOpenComandas]);
 
   useEffect(() => {
     if (!permLoading && hasPermission('hub.financial.read')) void load();
@@ -269,6 +301,8 @@ const HubCaixaPage: React.FC = () => {
 
   useEffect(() => {
     setSelectedKeys(new Set());
+    setDayBoardPage(1);
+    setCarryoverPage(1);
   }, [dayBoardDate, atendimentosStatusFilter, dayBoardSearch]);
 
   useEffect(() => {
@@ -347,19 +381,37 @@ const HubCaixaPage: React.FC = () => {
     });
   }, [openComandas, atendimentosStatusFilter, dayBoardSearch]);
 
+  const readyCarryoverComandas = useMemo(
+    () => extraComandas.filter((c) => canHandoffCarryoverComanda(c)),
+    [extraComandas],
+  );
+
+  const dayBoardPaged = useMemo(() => {
+    const start = (dayBoardPage - 1) * dayBoardPageSize;
+    return dayBoardFiltered.slice(start, start + dayBoardPageSize);
+  }, [dayBoardFiltered, dayBoardPage, dayBoardPageSize]);
+
+  const extraComandasPaged = useMemo(() => {
+    const start = (carryoverPage - 1) * carryoverPageSize;
+    return extraComandas.slice(start, start + carryoverPageSize);
+  }, [extraComandas, carryoverPage, carryoverPageSize]);
+
   const expectedBalance = cashSummary?.summary.expected_balance ?? Number(cashOpen?.opening_balance ?? 0);
 
   const methodsEntries = useMemo(() => {
-    const totals = cashSummary?.summary.totals_by_method ?? {};
+    const totals =
+      cashSummary?.summary.shift_totals_by_method ?? cashSummary?.summary.totals_by_method ?? {};
     return acceptedPaymentMethods.map(
       (method) => [method, Number(totals[method] ?? 0)] as const,
     );
   }, [cashSummary, acceptedPaymentMethods]);
 
-  const methodsTotal = useMemo(
-    () => methodsEntries.reduce((sum, [, total]) => sum + Number(total), 0),
-    [methodsEntries],
-  );
+  const methodsTotal = useMemo(() => {
+    if (cashSummary?.summary.shift_received_total != null) {
+      return Number(cashSummary.summary.shift_received_total);
+    }
+    return methodsEntries.reduce((sum, [, total]) => sum + Number(total), 0);
+  }, [cashSummary, methodsEntries]);
 
   const dayBoardComandaIds = useMemo(
     () => new Set(dayBoardItems.map((item) => item.billing.comanda_id).filter(Boolean).map(String)),
@@ -904,6 +956,82 @@ const HubCaixaPage: React.FC = () => {
     }
   };
 
+  const onSendCarryoverToFinanceiro = async (comandaId: string) => {
+    if (!canCreateReceivable) {
+      showError('Sem permissão para enviar ao financeiro.');
+      return;
+    }
+    setDayBoardBusy(true);
+    try {
+      await hubComandaApi.checkoutBulk({
+        clinic_id: clinicId,
+        unit_id: unitId,
+        comanda_ids: [comandaId],
+        action: 'leave_pending',
+        due_date: ymdToday(),
+      });
+      showSuccess('Enviado ao financeiro como pendente.');
+      await loadOpenComandas();
+      await loadDayBoard();
+    } catch (e: unknown) {
+      showError((e as Error)?.message || 'Erro ao enviar ao financeiro');
+    } finally {
+      setDayBoardBusy(false);
+    }
+  };
+
+  const onHandoffReadyCarryoverBatch = () => {
+    if (!canCreateReceivable || !clinicId || !unitId) return;
+    if (readyCarryoverComandas.length === 0) {
+      showError('Nenhuma pendência pronta para enviar ao financeiro.');
+      return;
+    }
+    showConfirm(
+      `Enviar ${readyCarryoverComandas.length} ${
+        readyCarryoverComandas.length === 1 ? 'comanda pronta' : 'comandas prontas'
+      } ao financeiro?`,
+      async () => {
+        setHandoffReadyBusy(true);
+        try {
+          const ids = readyCarryoverComandas.map((c) => String(c.id));
+          const res = await hubComandaApi.checkoutBulk({
+            clinic_id: clinicId,
+            unit_id: unitId,
+            comanda_ids: ids,
+            action: 'leave_pending',
+            due_date: ymdToday(),
+          });
+          const failed = (res.results ?? []).filter((r) => r.error);
+          const okCount = (res.results ?? []).filter((r) => !r.error).length;
+          if (failed.length > 0) {
+            showError(failed.slice(0, 3).map((r) => r.error).join('; '));
+          } else {
+            showSuccess(okCount ? `${okCount} enviada(s) ao financeiro.` : 'Nada a enviar.');
+          }
+          await loadOpenComandas();
+          await loadDayBoard();
+        } catch (e: unknown) {
+          try {
+            const r = await enviarPendentesAoFinanceiro(clinicId, unitId);
+            if (!r.success) {
+              showError(r.errors[0] ?? 'Erro ao enviar ao financeiro');
+            } else {
+              showSuccess(
+                r.handoffCount ? `${r.handoffCount} enviada(s) ao financeiro.` : 'Nada a enviar.',
+              );
+            }
+            await loadOpenComandas();
+            await loadDayBoard();
+          } catch (err: unknown) {
+            showError((err as Error)?.message || (e as Error)?.message || 'Erro ao enviar ao financeiro');
+          }
+        } finally {
+          setHandoffReadyBusy(false);
+        }
+      },
+    );
+  };
+
   const closeSangriaPanel = () => {
     setShowSangriaPanel(false);
     setMovAmount('');
@@ -1173,68 +1301,164 @@ const HubCaixaPage: React.FC = () => {
             </div>
           </div>
         ) : null}
-        {loading && dayBoardItems.length === 0 && openComandas.length === 0 ? (
+        {loading && dayBoardItems.length === 0 && openComandas.length === 0 && !openComandasBusy ? (
           <HubLoading variant="block" label="Carregando ações pendentes…" />
-        ) : dayBoardFiltered.length === 0 && extraComandas.length === 0 ? (
+        ) : dayBoardFiltered.length === 0 && extraComandas.length === 0 && !openComandasBusy ? (
           <div className="hub-dayboard__empty">
             Nenhuma ação pendente encontrada para esta data nesta unidade.
           </div>
         ) : (
           <>
             {dayBoardFiltered.length > 0 && (
-              <FinanceDayBoardTable
-                mode="caixa"
-                items={dayBoardFiltered}
-                canCreateReceivable={canCreateReceivable}
-                canFinancialWrite={canFinancialWrite}
-                onOpenComanda={onOpenComanda}
-                onEditComanda={onEditComanda}
-                onViewComanda={onViewComanda}
-                onCheckout={onCheckoutFromBoard}
-                onSendToFinanceiro={onSendToFinanceiro}
-                onWaive={onWaiveFromBoard}
-                onMarkExecution={onMarkExecutionFromBoard}
-                onShareComanda={onShareComanda}
-                onCancelReceivable={onCancelReceivableFromBoard}
-                onRowClick={onEditComanda}
-                busy={dayBoardBusy}
-                selectionEnabled={canCreateReceivable}
-                selectedKeys={selectedKeys}
-                onToggleSelect={toggleSelect}
-                onToggleSelectAllSelectable={toggleSelectAllSelectable}
-              />
+              <>
+                <FinanceDayBoardTable
+                  mode="caixa"
+                  items={dayBoardPaged}
+                  canCreateReceivable={canCreateReceivable}
+                  canFinancialWrite={canFinancialWrite}
+                  onOpenComanda={onOpenComanda}
+                  onEditComanda={onEditComanda}
+                  onViewComanda={onViewComanda}
+                  onCheckout={onCheckoutFromBoard}
+                  onSendToFinanceiro={onSendToFinanceiro}
+                  onWaive={onWaiveFromBoard}
+                  onMarkExecution={onMarkExecutionFromBoard}
+                  onShareComanda={onShareComanda}
+                  onCancelReceivable={onCancelReceivableFromBoard}
+                  onRowClick={onEditComanda}
+                  busy={dayBoardBusy}
+                  selectionEnabled={canCreateReceivable}
+                  selectedKeys={selectedKeys}
+                  onToggleSelect={toggleSelect}
+                  onToggleSelectAllSelectable={toggleSelectAllSelectable}
+                />
+                {dayBoardFiltered.length > dayBoardPageSize ? (
+                  <ClientesPagination
+                    page={dayBoardPage}
+                    pageSize={dayBoardPageSize}
+                    total={dayBoardFiltered.length}
+                    entityLabel="ações"
+                    onPageChange={setDayBoardPage}
+                    onPageSizeChange={(n) => {
+                      setDayBoardPageSize(n);
+                      setDayBoardPage(1);
+                    }}
+                  />
+                ) : null}
+              </>
             )}
+
+            {openComandasBusy && extraComandas.length === 0 ? (
+              <HubLoading variant="block" label="Carregando pendentes de dias anteriores…" />
+            ) : null}
 
             {extraComandas.length > 0 && (
                 <div className="hub-dayboard__group" style={{ marginTop: 16 }}>
-                  <div className="hub-dayboard__group-header">
-                    <span className="hub-dayboard__group-name">Pendentes de dias anteriores</span>
+                  <div className="hub-dayboard__group-header" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                    <span className="hub-dayboard__group-name">
+                      Conferência — dias anteriores ({extraComandas.length})
+                    </span>
+                    {canCreateReceivable && readyCarryoverComandas.length > 0 ? (
+                      <button
+                        type="button"
+                        className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                        disabled={handoffReadyBusy || dayBoardBusy}
+                        onClick={onHandoffReadyCarryoverBatch}
+                      >
+                        <SendHorizonal size={14} strokeWidth={2} aria-hidden />
+                        Enviar prontos ao financeiro ({readyCarryoverComandas.length})
+                      </button>
+                    ) : null}
                   </div>
-                  <div className="hub-clientes__table-wrap" style={{ marginTop: 8 }}>
+                  <p className="hub-clientes__muted" style={{ margin: '6px 0 0', fontSize: 13, lineHeight: 1.45, maxWidth: 720 }}>
+                    Operação incompleta ou falta executor: abra a conferência no painel — com permissão você conclui o
+                    status e marca o executor sem sair do caixa. Prontas podem ir ao financeiro sem travar o turno.
+                  </p>
+                  <div className="hub-clientes__table-wrap" style={{ marginTop: 10 }}>
                     <table className="hub-clientes__table hub-finance-page__table">
                       <thead>
-                        <tr><th>Tutor / Pet</th><th>Origem</th><th className="hub-finance-page__th-num">Valor</th><th>Aberta em</th><th>Ações</th></tr>
+                        <tr>
+                          <th>Tutor / Pet</th>
+                          <th>Origem</th>
+                          <th>Situação</th>
+                          <th className="hub-finance-page__th-num">A receber</th>
+                          <th>Aberta em</th>
+                          <th>Ações</th>
+                        </tr>
                       </thead>
                       <tbody>
-                        {extraComandas.map((c) => {
+                        {extraComandasPaged.map((c) => {
                           const guardian = c.guardian as { full_name?: string } | null;
                           const pet = c.pet as { name?: string } | null;
                           const tutorPet = [guardian?.full_name, pet?.name].filter(Boolean).join(' / ') || '—';
                           const servicesTitle = formatComandaListTitle(c);
                           const originLabel = formatComandaOriginLabel(c.origin_type);
+                          const kind = resolveCaixaCarryoverConferenceKind(c);
+                          const amount = Number(c.balance_due ?? c.total_amount ?? 0);
+                          const badgeClass =
+                            kind === 'ready'
+                              ? 'hub-dayboard__badge hub-dayboard__badge--open'
+                              : kind === 'needs_executor'
+                                ? 'hub-dayboard__badge hub-dayboard__badge--warn'
+                                : 'hub-dayboard__badge hub-dayboard__badge--pending';
+                          const conferenceLabel =
+                            kind === 'needs_executor'
+                              ? 'Conferir executor'
+                              : kind === 'operational_incomplete'
+                                ? 'Conferir operação'
+                                : 'Conferir';
                           return (
                             <tr key={String(c.id)}>
                               <td>
-                                <div>{tutorPet}</div>
+                                <div style={{ fontWeight: 600 }}>{tutorPet}</div>
                                 <div className="hub-clientes__muted" style={{ fontSize: 12 }}>
                                   {servicesTitle}
                                 </div>
                               </td>
                               <td><span className="hub-clientes__muted">{originLabel}</span></td>
-                              <td className="hub-finance-page__td-num">{formatBrl(Number(c.total_amount ?? 0))}</td>
-                              <td>{c.opened_at ? new Date(String(c.opened_at)).toLocaleString('pt-BR') : '—'}</td>
                               <td>
-                                <div className="hub-dayboard__item-actions">
+                                <span className={badgeClass}>{caixaCarryoverConferenceLabel(kind)}</span>
+                              </td>
+                              <td className="hub-finance-page__td-num">{formatBrl(amount)}</td>
+                              <td>
+                                {c.opened_at
+                                  ? new Date(String(c.opened_at)).toLocaleDateString('pt-BR', {
+                                      day: '2-digit',
+                                      month: '2-digit',
+                                      year: 'numeric',
+                                    })
+                                  : '—'}
+                              </td>
+                              <td>
+                                <div
+                                  className="hub-dayboard__item-actions"
+                                  style={{ flexWrap: 'wrap', gap: 6, justifyContent: 'flex-end' }}
+                                >
+                                  {kind === 'operational_incomplete' || kind === 'needs_executor' ? (
+                                    <button
+                                      type="button"
+                                      className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                                      title={conferenceLabel}
+                                      aria-label={conferenceLabel}
+                                      onClick={() => setConferenceComanda(c)}
+                                    >
+                                      <ExternalLink size={14} strokeWidth={2} aria-hidden />
+                                      {conferenceLabel}
+                                    </button>
+                                  ) : null}
+                                  {canCreateReceivable && kind === 'ready' ? (
+                                    <button
+                                      type="button"
+                                      className="hub-clientes__btn hub-clientes__btn--ghost hub-clientes__btn--sm"
+                                      title="Enviar ao financeiro"
+                                      aria-label="Enviar ao financeiro"
+                                      disabled={dayBoardBusy}
+                                      onClick={() => void onSendCarryoverToFinanceiro(String(c.id))}
+                                    >
+                                      <SendHorizonal size={14} strokeWidth={2} aria-hidden />
+                                      Financeiro
+                                    </button>
+                                  ) : null}
                                   {canCreateReceivable && (
                                     <button
                                       type="button"
@@ -1250,8 +1474,8 @@ const HubCaixaPage: React.FC = () => {
                                     <button
                                       type="button"
                                       className="hub-dayboard__action-btn hub-dayboard__action-btn--primary"
-                                      title="Cobrar"
-                                      aria-label="Cobrar"
+                                      title="Cobrar agora"
+                                      aria-label="Cobrar agora"
                                       onClick={() => setCheckoutComandaId(String(c.id))}
                                     >
                                       <Coins size={15} strokeWidth={2} />
@@ -1265,6 +1489,19 @@ const HubCaixaPage: React.FC = () => {
                       </tbody>
                     </table>
                   </div>
+                  {extraComandas.length > carryoverPageSize ? (
+                    <ClientesPagination
+                      page={carryoverPage}
+                      pageSize={carryoverPageSize}
+                      total={extraComandas.length}
+                      entityLabel="pendentes"
+                      onPageChange={setCarryoverPage}
+                      onPageSizeChange={(n) => {
+                        setCarryoverPageSize(n);
+                        setCarryoverPage(1);
+                      }}
+                    />
+                  ) : null}
                 </div>
             )}
           </>
@@ -1439,6 +1676,13 @@ const HubCaixaPage: React.FC = () => {
                       Diferença:{' '}
                       <strong>{formatBrl(Number(closedSessionSummary.summary?.difference_amount ?? 0))}</strong>
                     </span>
+                  </div>
+                  <div style={{ marginTop: 14 }}>
+                    <CaixaShiftBreakdown
+                      summary={closedSessionSummary.summary}
+                      acceptedMethods={acceptedPaymentMethods}
+                      compact
+                    />
                   </div>
                   {(closedSessionSummary.post_close_adjustments ?? []).length > 0 ? (
                     <div style={{ marginTop: 12 }}>
@@ -1917,12 +2161,30 @@ const HubCaixaPage: React.FC = () => {
         />
       )}
 
+      <CaixaConferencePanel
+        open={!!conferenceComanda}
+        comanda={
+          conferenceComanda
+            ? (openComandas.find((c) => String(c.id) === String(conferenceComanda.id)) ??
+              conferenceComanda)
+            : null
+        }
+        onClose={() => setConferenceComanda(null)}
+        onRefresh={refreshAfterConference}
+        onCheckout={(id) => setCheckoutComandaId(id)}
+        onEditComanda={(id) => navigate(`/hub/caixa/comanda/${id}`)}
+        onSendToFinanceiro={(id) => void onSendCarryoverToFinanceiro(id)}
+        showError={showError}
+        showSuccess={showSuccess}
+        busy={dayBoardBusy || openComandasBusy}
+      />
+
       <MarkExecutionModal
         open={!!markExecutionItem}
         item={markExecutionItem}
         onClose={() => setMarkExecutionItem(null)}
         onDone={() => {
-          void loadDayBoard();
+          void refreshAfterConference();
         }}
         showError={showError}
         showSuccess={showSuccess}

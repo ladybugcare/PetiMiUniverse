@@ -30,7 +30,10 @@ import { setLinkedAppointmentStatus } from './hubClinicalAppointmentMirror';
 import {
   findOpenClinicalPresenceForPet,
   openClinicalPresenceConflictPayload,
+  PET_OPEN_CLINICAL_CODE,
+  PET_OPEN_CLINICAL_MSG,
 } from './hubClinicalOpenPresence';
+import { isOpenPresenceUniqueViolation } from './hubOpenPresenceUnique';
 
 /** Grava um snapshot versionado do documento clínico em hub_clinical_document_versions. */
 async function saveEncounterSnapshot(opts: {
@@ -385,6 +388,25 @@ async function createClinicalAgendaAppointment(params: {
     .select('id')
     .single();
   if (apptErr || !apptRow) {
+    if (apptErr && isOpenPresenceUniqueViolation(apptErr) && params.pet_id) {
+      const open = await findOpenClinicalPresenceForPet({
+        clinicId: params.clinic_id,
+        petId: params.pet_id,
+      });
+      if (open) {
+        const err = new Error(PET_OPEN_CLINICAL_MSG) as Error & {
+          status?: number;
+          payload?: ReturnType<typeof openClinicalPresenceConflictPayload>;
+        };
+        err.status = 409;
+        err.payload = openClinicalPresenceConflictPayload(open);
+        throw err;
+      }
+      const err = new Error(PET_OPEN_CLINICAL_MSG) as Error & { status?: number; code?: string };
+      err.status = 409;
+      err.code = PET_OPEN_CLINICAL_CODE;
+      throw err;
+    }
     throw new Error(apptErr?.message || 'Não foi possível criar o registro na agenda.');
   }
   const apptId = (apptRow as { id: string }).id;
@@ -1189,6 +1211,20 @@ export const checkInHubClinicalWalkIn = async (req: Request, res: Response) => {
 
     return res.status(201).json({ appointment_id: appointmentId });
   } catch (e: unknown) {
+    const conflict = e as Error & {
+      status?: number;
+      payload?: ReturnType<typeof openClinicalPresenceConflictPayload>;
+      code?: string;
+    };
+    if (conflict.status === 409 && conflict.payload) {
+      return res.status(409).json(conflict.payload);
+    }
+    if (conflict.status === 409) {
+      return res.status(409).json({
+        error: conflict.message || PET_OPEN_CLINICAL_MSG,
+        code: conflict.code || PET_OPEN_CLINICAL_CODE,
+      });
+    }
     console.error('checkInHubClinicalWalkIn', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro ao registrar encaixe clínico' });
   }
@@ -1350,6 +1386,20 @@ export const createHubEncounter = async (req: Request, res: Response) => {
           hub_partner_clinic_id: careResolved.value.hub_partner_clinic_id,
         });
       } catch (slotErr: unknown) {
+        const conflict = slotErr as Error & {
+          status?: number;
+          payload?: ReturnType<typeof openClinicalPresenceConflictPayload>;
+          code?: string;
+        };
+        if (conflict.status === 409 && conflict.payload) {
+          return res.status(409).json(conflict.payload);
+        }
+        if (conflict.status === 409) {
+          return res.status(409).json({
+            error: conflict.message || PET_OPEN_CLINICAL_MSG,
+            code: conflict.code || PET_OPEN_CLINICAL_CODE,
+          });
+        }
         return res.status(400).json({ error: (slotErr as Error).message || 'Erro ao criar encaixe na agenda' });
       }
     }
@@ -1372,7 +1422,18 @@ export const createHubEncounter = async (req: Request, res: Response) => {
     };
 
     const { data, error } = await supabaseAdmin.from('hub_encounters').insert(insert).select(ENCOUNTER_SELECT).single();
-    if (error) return res.status(500).json({ error: error.message });
+    if (error) {
+      if (isOpenPresenceUniqueViolation(error) && b.pet_id) {
+        const open = await findOpenClinicalPresenceForPet({
+          clinicId: b.clinic_id,
+          petId: b.pet_id,
+          excludeAppointmentId: effectiveApptId,
+        });
+        if (open) return res.status(409).json(openClinicalPresenceConflictPayload(open));
+        return res.status(409).json({ error: PET_OPEN_CLINICAL_MSG, code: PET_OPEN_CLINICAL_CODE });
+      }
+      return res.status(500).json({ error: error.message });
+    }
 
     if (effectiveApptId) {
       await supabaseAdmin

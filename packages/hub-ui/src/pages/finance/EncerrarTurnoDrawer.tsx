@@ -4,7 +4,12 @@ import type { HubCashSession, HubCashSessionSummary, HubFinanceDayBoardItem } fr
 import { hubFinancialApi } from '../../api/hubFinancialApi';
 import { HubLoading } from '../../components/HubLoading';
 import { enviarPendentesAoFinanceiro, contarComandasAbertasEditaveis } from './caixaHandoffUtils';
+import { CaixaShiftBreakdown } from './CaixaShiftBreakdown';
 import { sumDayBoardPendingAmount, sumOpenComandasPendingAmount } from './hubCaixaSessionHistory';
+import { canHandoffCarryoverComanda } from './hubComandaEditUtils';
+import { hubComandaApi } from '../../api/hubComandaApi';
+import { ymdSaoPaulo } from '../../utils/ymdSaoPaulo';
+import { isApiTimeoutError } from './batchChargeReconcile';
 
 function formatBrl(n: number): string {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(n);
@@ -51,6 +56,7 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
   const [handoffDone, setHandoffDone] = useState(false);
   /** Erros de handoff não-skippáveis — aviso persistente; não bloqueiam o fechamento da gaveta. */
   const [handoffErrors, setHandoffErrors] = useState<string[]>([]);
+  const [escalated, setEscalated] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -68,6 +74,7 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
       setErrorMsg(null);
       setHandoffDone(false);
       setHandoffErrors([]);
+      setEscalated(false);
       setBusy(false);
     }
   }, [open]);
@@ -82,6 +89,17 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
       sumOpenComandasPendingAmount(openComandas, dayBoardComandaIds),
   );
   const openComandasCount = contarComandasAbertasEditaveis(openComandas);
+  // Prontas = elegíveis a handoff (operacional ok + sem bloqueio de executor + saldo).
+  const readyComandas = openComandas.filter((c) => canHandoffCarryoverComanda(c));
+  const editableOpen = openComandas.filter((c) => {
+    const scopes = c.edit_scopes as { caixa?: boolean } | undefined;
+    if (scopes) return Boolean(scopes.caixa);
+    return String(c.status ?? '') === 'aberta' && !c.finance_handoff_at;
+  });
+  const readyIds = new Set(readyComandas.map((c) => String(c.id)));
+  const conferenceComandas = editableOpen.filter((c) => !readyIds.has(String(c.id)));
+  const readyCount = readyComandas.length;
+  const conferenceCount = conferenceComandas.length;
   const pendingBillingCount =
     openComandasCount +
     dayBoardItems.filter((i) => !i.billing.finance_handoff_at && i.billing.receivable_status !== 'paid').length;
@@ -98,8 +116,12 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
       : null;
 
   const unitId = String(cashSession.unit_id ?? '');
+  const shiftReceived =
+    cashSummary?.summary?.shift_received_total != null
+      ? Number(cashSummary.summary.shift_received_total)
+      : methodsTotal;
 
-  const handleHandoff = async () => {
+  const handleHandoffReady = async () => {
     if (!unitId) {
       setErrorMsg('Unidade da sessão de caixa não encontrada.');
       return;
@@ -107,9 +129,22 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
     setBusy(true);
     setErrorMsg(null);
     try {
-      const result = await enviarPendentesAoFinanceiro(clinicId, unitId);
-      if (!result.success) {
-        setHandoffErrors(result.errors);
+      if (readyCount === 0) {
+        setHandoffDone(true);
+        setStep('gaveta');
+        return;
+      }
+      // Só as prontas — incompletas ficam em conferência sem travar o turno.
+      const res = await hubComandaApi.checkoutBulk({
+        clinic_id: clinicId,
+        unit_id: unitId,
+        comanda_ids: readyComandas.map((c) => String(c.id)),
+        action: 'leave_pending',
+        due_date: ymdSaoPaulo(),
+      });
+      const failed = (res.results ?? []).filter((r) => r.error);
+      if (failed.length > 0) {
+        setHandoffErrors(failed.map((r) => r.error!).filter(Boolean));
         setHandoffDone(false);
         return;
       }
@@ -117,7 +152,45 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
       setHandoffDone(true);
       setStep('gaveta');
     } catch (e) {
-      setErrorMsg((e as Error)?.message || 'Erro ao enviar pendentes.');
+      try {
+        const result = await enviarPendentesAoFinanceiro(clinicId, unitId);
+        if (!result.success) {
+          setHandoffErrors(result.errors);
+          setHandoffDone(false);
+          return;
+        }
+        setHandoffErrors([]);
+        setHandoffDone(true);
+        setStep('gaveta');
+      } catch (err) {
+        setErrorMsg((err as Error)?.message || (e as Error)?.message || 'Erro ao enviar pendentes.');
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleEscalate = async () => {
+    if (!unitId) {
+      setErrorMsg('Unidade da sessão de caixa não encontrada.');
+      return;
+    }
+    setBusy(true);
+    setErrorMsg(null);
+    try {
+      await hubFinancialApi.escalateConference({
+        clinic_id: clinicId,
+        unit_id: unitId,
+        pending_count: conferenceCount || openComandasCount,
+        note:
+          conferenceCount > 0
+            ? `${conferenceCount} comanda(s) em conferência (operação incompleta ou falta executor).`
+            : 'Pendências de caixa para conferência.',
+        cash_session_id: cashSession.id,
+      });
+      setEscalated(true);
+    } catch (e) {
+      setErrorMsg((e as Error)?.message || 'Erro ao escalar ao gestor.');
     } finally {
       setBusy(false);
     }
@@ -133,10 +206,14 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
     setErrorMsg(null);
     try {
       // Handoff único no servidor (closeCashSession, abortOnHandoffErrors: false).
-      const closed = await hubFinancialApi.closeCashSession(cashSession.id, {
-        clinic_id: clinicId,
-        closing_balance: v,
-      });
+      const closed = await hubFinancialApi.closeCashSession(
+        cashSession.id,
+        {
+          clinic_id: clinicId,
+          closing_balance: v,
+        },
+        { openComandaCount: openComandas.length },
+      );
       const apiErrors = (closed.auto_handoff_errors ?? []).filter(Boolean);
       const merged =
         apiErrors.length > 0
@@ -144,6 +221,23 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
           : handoffErrors;
       onClosed(merged.length > 0 ? { handoffErrors: merged } : undefined);
     } catch (e) {
+      // Timeout do cliente: o servidor pode ter fechado depois do abort.
+      if (isApiTimeoutError(e)) {
+        try {
+          const open = await hubFinancialApi.getCashSessionOpen(clinicId, cashSession.unit_id);
+          if (!open.cash_session || open.cash_session.id !== cashSession.id) {
+            onClosed({
+              handoffErrors: [
+                ...handoffErrors,
+                'O fechamento demorou no servidor; a gaveta já aparece fechada. Confira comandas ainda abertas no próximo turno.',
+              ],
+            });
+            return;
+          }
+        } catch {
+          // segue para mensagem de timeout
+        }
+      }
       setErrorMsg((e as Error)?.message || 'Erro ao fechar caixa.');
     } finally {
       setBusy(false);
@@ -167,12 +261,11 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
       >
         <div style={{ fontWeight: 700, marginBottom: 6 }}>
           <AlertCircle size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} aria-hidden />
-          {handoffErrors.length} comanda(s) não foram enviadas ao financeiro — precisam ser
-          resolvidas no Caixa
+          {handoffErrors.length} comanda(s) ficaram em conferência
         </div>
         <p style={{ margin: '0 0 8px', color: '#7c2d12' }}>
-          Você pode fechar a gaveta mesmo assim. As comandas continuam abertas até marcar a
-          execução, cancelar ou enviar ao financeiro.
+          A gaveta pode fechar. Essas comandas seguem no Caixa para amanhã ou para o gestor —
+          não impedem o fechamento.
         </p>
         <ul style={{ margin: 0, paddingLeft: 18, whiteSpace: 'pre-line' }}>
           {handoffErrors.slice(0, 8).map((err) => (
@@ -329,53 +422,69 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
                 </div>
               </div>
             ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 28 }}>
-                {[
-                  {
-                    label: 'Total recebido',
-                    value: formatBrl(methodsTotal),
-                    tone: 'green',
-                  },
-                  {
-                    label: 'A receber no dia',
-                    value: formatBrl(dayPendingTotal),
-                    tone: dayPendingTotal > 0 ? 'amber' : 'green',
-                  },
-                  {
-                    label: 'Comandas abertas',
-                    value: openComandasCount > 0 ? `${openComandasCount} em aberto` : 'Nenhuma',
-                    tone: openComandasCount > 0 ? 'amber' : 'green',
-                  },
-                  {
-                    label: 'Saldo esperado da gaveta',
-                    value: formatBrl(expectedBalance),
-                    tone: 'neutral',
-                  },
-                ].map(({ label, value, tone }) => (
-                  <div
-                    key={label}
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'center',
-                      padding: '10px 14px',
-                      borderRadius: 10,
-                      background: tone === 'green' ? '#f0fdf4' : tone === 'amber' ? '#fffbeb' : '#fafafa',
-                      border: `1px solid ${tone === 'green' ? '#bbf7d0' : tone === 'amber' ? '#fde68a' : '#e5e5e5'}`,
-                    }}
-                  >
-                    <span style={{ fontSize: 13, color: '#555' }}>{label}</span>
-                    <strong
+              <>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
+                  {[
+                    {
+                      label: 'Total recebido no turno',
+                      value: formatBrl(shiftReceived),
+                      tone: 'green',
+                    },
+                    {
+                      label: 'A receber no dia',
+                      value: formatBrl(dayPendingTotal),
+                      tone: dayPendingTotal > 0 ? 'amber' : 'green',
+                    },
+                    {
+                      label: 'Comandas abertas',
+                      value: openComandasCount > 0 ? `${openComandasCount} em aberto` : 'Nenhuma',
+                      tone: openComandasCount > 0 ? 'amber' : 'green',
+                    },
+                    {
+                      label: 'Saldo esperado da gaveta',
+                      value: formatBrl(expectedBalance),
+                      tone: 'neutral',
+                    },
+                  ].map(({ label, value, tone }) => (
+                    <div
+                      key={label}
                       style={{
-                        fontSize: 14,
-                        color: tone === 'green' ? '#065f46' : tone === 'amber' ? '#92400e' : '#1a1a1a',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '10px 14px',
+                        borderRadius: 10,
+                        background: tone === 'green' ? '#f0fdf4' : tone === 'amber' ? '#fffbeb' : '#fafafa',
+                        border: `1px solid ${tone === 'green' ? '#bbf7d0' : tone === 'amber' ? '#fde68a' : '#e5e5e5'}`,
                       }}
                     >
-                      {value}
-                    </strong>
-                  </div>
-                ))}
-              </div>
+                      <span style={{ fontSize: 13, color: '#555' }}>{label}</span>
+                      <strong
+                        style={{
+                          fontSize: 14,
+                          color: tone === 'green' ? '#065f46' : tone === 'amber' ? '#92400e' : '#1a1a1a',
+                        }}
+                      >
+                        {value}
+                      </strong>
+                    </div>
+                  ))}
+                </div>
+                <div
+                  style={{
+                    marginBottom: 28,
+                    padding: '12px 14px',
+                    borderRadius: 12,
+                    border: '1px solid #e5e5e5',
+                    background: '#fafafa',
+                  }}
+                >
+                  <p style={{ margin: '0 0 12px', fontSize: 12, color: '#888' }}>
+                    Recebimentos da unidade desde a abertura do turno (inclui Pix e cartão).
+                  </p>
+                  <CaixaShiftBreakdown summary={cashSummary?.summary} />
+                </div>
+              </>
             )}
             <button
               type="button"
@@ -408,7 +517,7 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
           </>
         )}
 
-        {/* ── Passo 2: Pendências ── */}
+        {/* ── Passo 2: Pendências (duas filas) ── */}
         {step === 'pendencias' && (
           <>
             {openComandasCount === 0 && pendingBillingCount === 0 ? (
@@ -432,7 +541,46 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
               </div>
             ) : (
               <div style={{ marginBottom: 20 }}>
-                {openComandasCount > 0 && (
+                {readyCount > 0 && (
+                  <div
+                    style={{
+                      padding: '12px 16px',
+                      borderRadius: 10,
+                      background: '#f0fdf4',
+                      border: '1px solid #bbf7d0',
+                      marginBottom: 12,
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#065f46', marginBottom: 4 }}>
+                      <Coins size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} aria-hidden />
+                      {readyCount} pronta(s) para o financeiro
+                    </div>
+                    <p style={{ margin: 0, fontSize: 13, color: '#14532d', lineHeight: 1.5 }}>
+                      Podem ir agora como cobrança pendente (on-account).
+                    </p>
+                  </div>
+                )}
+                {conferenceCount > 0 && (
+                  <div
+                    style={{
+                      padding: '12px 16px',
+                      borderRadius: 10,
+                      background: '#fffbeb',
+                      border: '1px solid #fde68a',
+                      marginBottom: 12,
+                    }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#92400e', marginBottom: 4 }}>
+                      <AlertCircle size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} aria-hidden />
+                      {conferenceCount} em conferência
+                    </div>
+                    <p style={{ margin: 0, fontSize: 13, color: '#78350f', lineHeight: 1.5 }}>
+                      Operação incompleta ou falta executor — ficam no Caixa. Não travam o fechamento
+                      da gaveta; escale ao gestor se precisar.
+                    </p>
+                  </div>
+                )}
+                {readyCount === 0 && conferenceCount === 0 && openComandasCount > 0 && (
                   <div
                     style={{
                       padding: '12px 16px',
@@ -447,7 +595,7 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
                       {openComandasCount} comanda(s) abertas
                     </div>
                     <p style={{ margin: 0, fontSize: 13, color: '#78350f', lineHeight: 1.5 }}>
-                      Serão enviadas ao financeiro como cobrança pendente.
+                      Serão enviadas as que estiverem prontas; o restante fica em conferência.
                     </p>
                   </div>
                 )}
@@ -464,8 +612,7 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
                       {formatBrl(dayPendingTotal)} a receber no painel do dia
                     </div>
                     <p style={{ margin: 0, fontSize: 13, color: '#777', lineHeight: 1.5 }}>
-                      O fechamento envia só comandas abertas ao Financeiro. Atendimentos sem comanda
-                      continuam no Caixa até alguém abrir a comanda (Cobrar ou Mandar para o Financeiro).
+                      Atendimentos sem comanda continuam no Caixa até alguém abrir a comanda.
                     </p>
                   </div>
                 )}
@@ -485,12 +632,12 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
                 }}
               >
                 <CheckCircle size={16} aria-hidden />
-                Comandas enviadas ao financeiro com sucesso.
+                Prontas enviadas ao financeiro.
               </div>
-            ) : openComandasCount > 0 ? (
+            ) : readyCount > 0 || openComandasCount > 0 ? (
               <button
                 type="button"
-                onClick={() => void handleHandoff()}
+                onClick={() => void handleHandoffReady()}
                 disabled={busy}
                 style={{
                   width: '100%',
@@ -507,11 +654,49 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
                 }}
               >
                 {busy
-                  ? 'Enviando pendentes…'
+                  ? 'Enviando prontas…'
                   : handoffErrors.length > 0
-                    ? 'Tentar enviar novamente'
-                    : 'Enviar pendentes ao financeiro'}
+                    ? 'Tentar enviar prontas de novo'
+                    : readyCount > 0
+                      ? `Enviar ${readyCount} pronta(s) ao financeiro`
+                      : 'Enviar pendentes ao financeiro'}
               </button>
+            ) : null}
+
+            {(conferenceCount > 0 || handoffErrors.length > 0) && !escalated ? (
+              <button
+                type="button"
+                onClick={() => void handleEscalate()}
+                disabled={busy}
+                style={{
+                  width: '100%',
+                  padding: '11px 16px',
+                  borderRadius: 12,
+                  border: '1px solid #d1d5db',
+                  background: '#fff',
+                  color: '#374151',
+                  fontWeight: 600,
+                  fontSize: 14,
+                  cursor: busy ? 'not-allowed' : 'pointer',
+                  opacity: busy ? 0.6 : 1,
+                  marginBottom: 10,
+                }}
+              >
+                Escalar conferência ao gestor
+              </button>
+            ) : null}
+            {escalated ? (
+              <div
+                style={{
+                  marginBottom: 12,
+                  fontSize: 13,
+                  color: '#065f46',
+                  fontWeight: 600,
+                }}
+              >
+                <CheckCircle size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} aria-hidden />
+                Gestor avisado da conferência.
+              </div>
             ) : null}
 
             <button
@@ -535,8 +720,8 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
                 gap: 8,
               }}
             >
-              {handoffErrors.length > 0 ? (
-                <>Continuar mesmo assim <ArrowRight size={16} /></>
+              {conferenceCount > 0 || handoffErrors.length > 0 ? (
+                <>Fechar gaveta mesmo assim <ArrowRight size={16} /></>
               ) : (
                 <>Próximo <ArrowRight size={16} /></>
               )}

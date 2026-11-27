@@ -32,6 +32,8 @@ import { ComandaCheckoutDrawer } from './ComandaCheckoutDrawer';
 import { HubComandaReceivableDrawer } from './HubComandaReceivableDrawer';
 import { ComandaItemsSection } from './ComandaItemsSection';
 import HubComandaDetailLayout from './HubComandaDetailLayout';
+import { MarkExecutionModal, type MarkExecutionTarget } from './MarkExecutionModal';
+import { supportsMarkExecutionOrigin } from './caixaConferenceActions';
 import {
   apiItemToDraft,
   computeLineTotal,
@@ -51,6 +53,7 @@ import {
 import {
   canSendToFinanceiroHandoff,
   resolveComandaCheckoutCTA,
+  resolveComandaOperationalHref,
   resolveSendToFinanceiroConfirmMessage,
 } from './hubComandaEditUtils';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
@@ -116,6 +119,7 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
   const [catalogSearch, setCatalogSearch] = useState('');
   const [approvingPriceId, setApprovingPriceId] = useState<string | null>(null);
   const [timelinePayments, setTimelinePayments] = useState<HubComandaTimelinePayment[]>([]);
+  const [markExecutionTarget, setMarkExecutionTarget] = useState<MarkExecutionTarget | null>(null);
 
   const newItemCounterRef = useRef(0);
   const inventoryItemsRef = useRef(inventoryItems);
@@ -542,7 +546,13 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
         showSuccess('Comanda enviada ao financeiro.');
         navigate(`/hub/financeiro/comanda/${comandaId}`);
       } catch (e: unknown) {
-        showError((e as Error)?.message || 'Erro ao enviar ao financeiro');
+        const msg = (e as Error)?.message || 'Erro ao enviar ao financeiro';
+        const code = (e as { code?: string })?.code;
+        if (code === 'COMMISSION_EXECUTOR_REQUIRED' || /executor|execução|comiss/i.test(msg)) {
+          showError(`${msg} Use «Marcar execução» no painel do caixa para definir quem executou o serviço.`);
+        } else {
+          showError(msg);
+        }
       } finally {
         setSaving(false);
       }
@@ -912,6 +922,25 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
         saving={saving}
         isAberta={isAberta}
         operationalComplete={payload.operational_complete !== false}
+        operationalHref={
+          payload.operational_complete === false
+            ? resolveComandaOperationalHref(comandaRow as Record<string, unknown>)
+            : null
+        }
+        handoffBlockCode={payload.handoff_block_code ?? null}
+        onMarkExecution={
+          supportsMarkExecutionOrigin(String(comandaRow.origin_type ?? '')) &&
+          (canWrite || canApprovePrices) &&
+          comandaRow.origin_id
+            ? () =>
+                setMarkExecutionTarget({
+                  origin_type: String(comandaRow.origin_type),
+                  origin_id: String(comandaRow.origin_id),
+                  pet: pets[0] ?? null,
+                  guardian,
+                })
+            : undefined
+        }
         mode={mode}
         readOnlyBanner={readOnlyBanner}
         selectedGuardianId={guardian?.id ?? null}
@@ -982,6 +1011,17 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
           }}
         />
       )}
+
+      <MarkExecutionModal
+        open={!!markExecutionTarget}
+        item={markExecutionTarget}
+        onClose={() => setMarkExecutionTarget(null)}
+        onDone={() => {
+          void load();
+        }}
+        showError={showError}
+        showSuccess={showSuccess}
+      />
     </>
   );
 }

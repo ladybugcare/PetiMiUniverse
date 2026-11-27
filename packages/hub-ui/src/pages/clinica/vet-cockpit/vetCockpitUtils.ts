@@ -17,8 +17,15 @@ export function itemOperationalStatus(item: DayBoardItem): string {
   return base;
 }
 
-/** Cirurgia concluída aguardando destino (alta ambulatorial ou internação). */
-export function isSurgeryPendingDestination(item: DayBoardItem): boolean {
+/**
+ * Cirurgia concluída aguardando destino (alta ambulatorial ou internação).
+ * Se já houver internação ativa, o destino “internar” foi cumprido — não é limbo.
+ */
+export function isSurgeryPendingDestination(
+  item: DayBoardItem,
+  opts?: { hasActiveHospitalization?: boolean },
+): boolean {
+  if (opts?.hasActiveHospitalization) return false;
   return Boolean(item.surgery_id && item.surgery_status === 'completed' && !item.surgery_discharge_at);
 }
 

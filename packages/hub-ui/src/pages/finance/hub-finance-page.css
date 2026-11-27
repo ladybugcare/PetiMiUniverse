@@ -4293,6 +4293,11 @@
   color: #0369a1;
 }
 
+.hub-dayboard__badge--warn {
+  background: #ffedd5;
+  color: #9a3412;
+}
+
 .hub-dayboard__badge--none {
   background: var(--hc-surface-2, #fdfaf8);
   color: var(--hc-text-muted, #a0856b);

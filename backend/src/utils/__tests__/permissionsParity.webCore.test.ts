@@ -1,22 +1,52 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { PERMISSIONS as backendPermissions } from '../permissions';
-import { OPERATIONAL_AREA_PERMISSIONS as backendAreas } from '../operationalAreas';
+import {
+  HUB_OPERATIONAL_AREAS,
+  OPERATIONAL_AREA_PERMISSIONS as backendAreas,
+} from '../operationalAreas';
 
 /**
- * Paridade estrutural backend ↔ packages/web-core (cópias manuais).
- * Extrai chaves de role e áreas do fonte web-core para evitar import React no Jest do backend.
+ * Paridade backend ↔ packages/web-core (cópias manuais).
+ * Extrai listas do fonte web-core para evitar import React no Jest do backend.
+ * Falha se qualquer papel ou área divergir — API é a fonte da verdade.
  */
-function extractRoleKeys(src: string): string[] {
-  const roles: string[] = [];
-  const re = /^\s{2}(CADMIN|CMANAGER|CASSISTANT|CVET_INTERNAL|CGROOMER|CFINANCE|CSTAFF):\s*\[/gm;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(src))) roles.push(m[1]);
-  return roles;
+
+const ROLE_KEYS = [
+  'CADMIN',
+  'CMANAGER',
+  'CASSISTANT',
+  'CVET_INTERNAL',
+  'CGROOMER',
+  'CFINANCE',
+  'CSTAFF',
+] as const;
+
+function extractBracketBlock(src: string, key: string): string {
+  const re = new RegExp(`(?:^|\\n)\\s{2}${key}:\\s*\\[`, 'm');
+  const m = re.exec(src);
+  if (!m || m.index === undefined) {
+    throw new Error(`Bloco não encontrado: ${key}`);
+  }
+  const start = m.index + m[0].indexOf('[');
+  let depth = 0;
+  for (let i = start; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === '[') depth++;
+    else if (ch === ']') {
+      depth--;
+      if (depth === 0) return src.slice(start + 1, i);
+    }
+  }
+  throw new Error(`Bloco não fechado: ${key}`);
 }
 
 function extractPermissionStrings(block: string): string[] {
   return [...block.matchAll(/'([^']+)'/g)].map((x) => x[1]);
+}
+
+function sorted(list: readonly string[]): string[] {
+  return [...list].sort();
 }
 
 describe('paridade permissions web-core ↔ backend', () => {
@@ -29,28 +59,43 @@ describe('paridade permissions web-core ↔ backend', () => {
     '../../../../packages/web-core/src/operationalAreas.ts',
   );
 
+  const permsSrc = fs.readFileSync(webCorePermsPath, 'utf8');
+  const areasSrc = fs.readFileSync(webCoreAreasPath, 'utf8');
+
   it('mesmos papéis de clínica', () => {
-    const src = fs.readFileSync(webCorePermsPath, 'utf8');
-    const webRoles = extractRoleKeys(src).sort();
+    const webRoles = ROLE_KEYS.filter((role) =>
+      new RegExp(`(?:^|\\n)\\s{2}${role}:\\s*\\[`, 'm').test(permsSrc),
+    ).sort();
     const backendRoles = Object.keys(backendPermissions).sort();
     expect(webRoles).toEqual(backendRoles);
   });
 
-  it('CASSISTANT mantém hub.financial.read e hub.reports.read (sem alteração nesta fatia)', () => {
-    expect(backendPermissions.CASSISTANT.includes('hub.financial.read')).toBe(true);
-    expect(backendPermissions.CASSISTANT.includes('hub.reports.read')).toBe(true);
+  it.each(ROLE_KEYS)('lista de permissões idêntica para %s', (role) => {
+    const webList = extractPermissionStrings(extractBracketBlock(permsSrc, role));
+    expect(sorted(webList)).toEqual(sorted(backendPermissions[role]));
   });
 
-  it('áreas operacionais: caixa/financeiro concedem reports+financial; clinica concede commissions.read_own', () => {
-    expect(backendAreas.caixa.includes('hub.reports.read')).toBe(true);
-    expect(backendAreas.financeiro.includes('hub.financial.read')).toBe(true);
-    expect(backendAreas.clinica.includes('hub.commissions.read_own')).toBe(true);
-    expect(backendAreas.clinica.includes('hub.reports.read')).toBe(false);
+  it('CFINANCE: estorno/adjust sim; gaveta (cash.session) não', () => {
+    const webList = extractPermissionStrings(extractBracketBlock(permsSrc, 'CFINANCE'));
+    expect(webList).toContain('hub.payments.reverse');
+    expect(webList).toContain('hub.financial.adjust');
+    expect(webList).not.toContain('hub.cash.session');
+    expect(backendPermissions.CFINANCE).toContain('hub.payments.reverse');
+    expect(backendPermissions.CFINANCE).not.toContain('hub.cash.session');
+  });
 
-    const areasSrc = fs.readFileSync(webCoreAreasPath, 'utf8');
-    expect(areasSrc).toContain("'hub.commissions.read_own'");
-    expect(extractPermissionStrings(areasSrc)).toEqual(
-      expect.arrayContaining(['hub.reports.read', 'hub.financial.read', 'hub.commissions.read_own']),
+  it('CMANAGER: reverse e adjust presentes nos dois mapas', () => {
+    const webList = extractPermissionStrings(extractBracketBlock(permsSrc, 'CMANAGER'));
+    expect(webList).toEqual(
+      expect.arrayContaining(['hub.payments.reverse', 'hub.financial.adjust']),
     );
+    expect(backendPermissions.CMANAGER).toEqual(
+      expect.arrayContaining(['hub.payments.reverse', 'hub.financial.adjust']),
+    );
+  });
+
+  it.each([...HUB_OPERATIONAL_AREAS])('área operacional idêntica: %s', (area) => {
+    const webList = extractPermissionStrings(extractBracketBlock(areasSrc, area));
+    expect(sorted(webList)).toEqual(sorted(backendAreas[area]));
   });
 });

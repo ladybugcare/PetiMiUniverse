@@ -51,6 +51,7 @@ import { HubWorkspaceExamOrders } from './HubWorkspaceExamOrders';
 import { HubWorkspaceSpecialistReferrals } from './HubWorkspaceSpecialistReferrals';
 import { HubCwsStatusPills } from './HubCwsStatusPills';
 import { HubWorkspaceVaccinations } from '../../components/clinical/HubWorkspaceVaccinations';
+import { HubClinicalTermsQuickList } from '../../components/clinical/HubClinicalTermsQuickList';
 import { HubWorkspaceVaccineCard } from './HubWorkspaceVaccineCard';
 import { HubWorkspaceInClinicMedications } from '../../components/clinical/HubWorkspaceInClinicMedications';
 import { HubCwsTabbedCard, HubCwsTabPanel } from './HubCwsTabbedCard';
@@ -1427,8 +1428,13 @@ function HubWorkspaceAttachments({
 
   return (
     <>
+      <HubClinicalTermsQuickList
+        clinicId={clinicId}
+        title="Modelos de termos"
+        hint="Abra ou baixe o PDF para imprimir ou mostrar ao tutor. Depois de assinar em papel, envie o PDF assinado abaixo."
+      />
       {!readOnly && (
-        <div className="hub-clientes__form-stack" style={{ marginBottom: 16, maxWidth: 480 }}>
+        <div className="hub-clientes__form-stack" style={{ marginBottom: 16, marginTop: 16, maxWidth: 480 }}>
           <input
             className="hub-clientes__input"
             placeholder="Título do exame"

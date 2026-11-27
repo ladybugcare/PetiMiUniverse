@@ -178,6 +178,20 @@ describe('isSurgeryPendingDestination', () => {
     ).toBe(false);
     expect(isSurgeryPendingDestination({ kind: 'appointment_slot' })).toBe(false);
   });
+
+  it('não marca limbo quando já há internação ativa', () => {
+    expect(
+      isSurgeryPendingDestination(
+        {
+          kind: 'encounter',
+          surgery_id: 's1',
+          surgery_status: 'completed',
+          surgery_discharge_at: null,
+        },
+        { hasActiveHospitalization: true },
+      ),
+    ).toBe(false);
+  });
 });
 
 describe('itemOperationalStatus com cirurgia concluída', () => {

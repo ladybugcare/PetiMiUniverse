@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 import { getStoredClinicId } from '@petimi/web-core';
 import {
   Calendar,
+  CheckCircle2,
   Clock,
   User,
   Stethoscope,
@@ -61,6 +62,10 @@ import {
 } from '../../utils/hubServiceTypesPricingMatrix';
 import './new-appointment-modal.css';
 import '../pets/pets-page.css';
+import {
+  MarkExecutionModal,
+  type MarkExecutionTarget,
+} from '../finance/MarkExecutionModal';
 
 export type AppointmentSidePanelProps = {
   open: boolean;
@@ -79,9 +84,15 @@ export type AppointmentSidePanelProps = {
   onOpenInGrooming?: (appointmentId: string) => void | Promise<void>;
   onOpenInBoarding?: (appointmentId: string) => void | Promise<void>;
   canViewFinancial?: boolean;
+  /** hub.financial.write — marcar executor das linhas de serviço. */
+  canMarkExecution?: boolean;
+  /** Abre o painel de execução assim que o side panel monta (deep link do caixa). */
+  autoOpenMarkExecution?: boolean;
   staffOptions: HubStaffMember[];
   serviceTypes: HubServiceType[];
   onUpdated: (appointment: HubAppointment, meta?: { updated_count?: number }) => void;
+  /** Após marcar execução (ex.: limpar query mark_execution). */
+  onMarkExecutionDone?: () => void;
   extraBlockChildren?: AgendaAppointment[];
   existingAppointments?: AgendaAppointment[];
   seriesEndingInfo?: HubSeriesEndingSoon | null;
@@ -105,25 +116,47 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
   onOpenInGrooming,
   onOpenInBoarding,
   canViewFinancial = false,
+  canMarkExecution = false,
+  autoOpenMarkExecution = false,
   staffOptions,
   serviceTypes,
   onUpdated,
+  onMarkExecutionDone,
   extraBlockChildren = [],
   existingAppointments = [],
   seriesEndingInfo = null,
   onRenewSeries,
 }) => {
-  const { showError, showAlert } = useAlert();
+  const { showError, showSuccess, showAlert } = useAlert();
   const clinicId = getStoredClinicId();
   const [staffSaving, setStaffSaving] = useState(false);
   const [notesSaving, setNotesSaving] = useState(false);
   const [notesDraft, setNotesDraft] = useState(appt.notes ?? '');
   const [seriesStaffPickerOpen, setSeriesStaffPickerOpen] = useState(false);
+  const [markExecutionOpen, setMarkExecutionOpen] = useState(false);
   const pendingStaffIdRef = useRef<string | null>(null);
+  const autoMarkOpenedRef = useRef<string | null>(null);
 
   useEffect(() => {
     setNotesDraft(appt.notes ?? '');
   }, [appt.id, appt.notes]);
+
+  useEffect(() => {
+    if (!open || !canMarkExecution || !autoOpenMarkExecution) return;
+    if (autoMarkOpenedRef.current === appt.id) return;
+    autoMarkOpenedRef.current = appt.id;
+    setMarkExecutionOpen(true);
+  }, [open, canMarkExecution, autoOpenMarkExecution, appt.id]);
+
+  const markExecutionTarget = useMemo<MarkExecutionTarget>(
+    () => ({
+      origin_type: 'appointment',
+      origin_id: appt.id,
+      pet: appt.petName ? { name: appt.petName } : null,
+      guardian: appt.guardianName ? { full_name: appt.guardianName } : null,
+    }),
+    [appt.id, appt.petName, appt.guardianName],
+  );
 
   const editable = canEditAgendaAppointment(appt, { canWrite });
   const statusMeta = STATUS_META[appt.status];
@@ -339,9 +372,34 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
     );
   }
 
+  const footerUtilities = [...utilities];
+  // Conferência do caixa / dias anteriores: permitir concluir mesmo quando o CTA
+  // primário é “Abrir na fila/clínica”.
+  if (
+    canWrite &&
+    (appt.status === 'confirmed' || appt.status === 'checked_in' || appt.status === 'in_progress') &&
+    primary?.key !== 'complete'
+  ) {
+    footerUtilities.unshift({
+      key: 'complete-conference',
+      label: 'Concluir',
+      variant: 'secondary',
+      onClick: () => void onStatusChange('done'),
+    });
+  }
+  if (canMarkExecution) {
+    footerUtilities.push({
+      key: 'mark-execution',
+      label: 'Marcar execução',
+      variant: 'secondary',
+      icon: <CheckCircle2 size={16} aria-hidden />,
+      onClick: () => setMarkExecutionOpen(true),
+    });
+  }
+
   const footer = (
     <div className="hub-agenda-appt-panel__footer-actions">
-      {utilities.map((item) => (
+      {footerUtilities.map((item) => (
         <button
           key={item.key}
           type="button"
@@ -734,6 +792,22 @@ export const AppointmentSidePanel: React.FC<AppointmentSidePanelProps> = ({
         </div>
       </HubSidePanel>
       {seriesStaffOverlay}
+      {canMarkExecution ? (
+        <MarkExecutionModal
+          open={markExecutionOpen}
+          item={markExecutionTarget}
+          onClose={() => {
+            setMarkExecutionOpen(false);
+            onMarkExecutionDone?.();
+          }}
+          onDone={() => {
+            setMarkExecutionOpen(false);
+            onMarkExecutionDone?.();
+          }}
+          showError={showError}
+          showSuccess={showSuccess}
+        />
+      ) : null}
     </>
   );
 };

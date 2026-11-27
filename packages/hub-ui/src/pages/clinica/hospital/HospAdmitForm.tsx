@@ -13,6 +13,7 @@ import {
   HubClinicalServicePicker,
   type ClinicalServicePick,
 } from '../../../components/clinical/HubClinicalServicePicker';
+import { HubClinicalTermsQuickList } from '../../../components/clinical/HubClinicalTermsQuickList';
 import { HubCwsChoiceChips } from '../HubCwsChoiceChips';
 import { isCatSpecies, isDogSpecies } from '../anamnesisOptions';
 import { HOSP_ADMIT_REASON_OPTIONS, buildHospAdmitReason } from './hospDisplay';
@@ -397,6 +398,15 @@ const HospAdmitForm: React.FC<Props> = ({
             placeholder="Jejum, medicações em uso, restrições…"
           />
         </div>
+
+        {clinicId ? (
+          <HubClinicalTermsQuickList
+            clinicId={clinicId}
+            categories={['internacao']}
+            title="Termo de internação"
+            hint="Abra ou baixe o PDF para imprimir ou mostrar ao tutor. O assinado pode ir depois em Anexos do atendimento."
+          />
+        ) : null}
       </div>
     </div>
   );

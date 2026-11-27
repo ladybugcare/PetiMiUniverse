@@ -262,6 +262,17 @@ export {
   isSkippableFinanceHandoffError,
 } from './pages/finance/caixaHandoffUtils';
 export type { HandoffResult } from './pages/finance/caixaHandoffUtils';
+export {
+  shouldPromptCaixaExitOnLeave,
+  caixaExitPromptCopy,
+  CAIXA_EXIT_CLOSING_LEAD_MINUTES,
+  CAIXA_EXIT_FALLBACK_CLOSE_HM,
+} from './pages/finance/caixaExitGuardPolicy';
+export type {
+  CaixaExitPromptDecision,
+  CaixaExitPromptReason,
+} from './pages/finance/caixaExitGuardPolicy';
+export { ymdSaoPaulo, isPreviousDaySaoPaulo } from './utils/ymdSaoPaulo';
 export { default as HubCaixaPage } from './pages/finance/HubCaixaPage';
 export { default as HubComandaPage } from './pages/finance/HubComandaPage';
 export { default as HubComandaFinancePage } from './pages/finance/HubComandaFinancePage';

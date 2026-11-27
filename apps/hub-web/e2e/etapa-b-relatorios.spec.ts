@@ -14,7 +14,7 @@ const REPORTS = [
   { id: 'movement-by-sector', expectText: /Receita líquida|Data da cobrança/i },
   { id: 'commissions', expectText: /Comissão estimada/i },
   { id: 'sales-adjustments', expectText: /Cobranças geradas|Acertos financeiros/i },
-  { id: 'finance-overview', expectText: /Recebimentos|Ticket histórico/i },
+  { id: 'finance-overview', expectText: /Recebido bruto|Ticket histórico/i },
 ] as const;
 
 test.describe('Etapa B — relatórios (smoke UI)', () => {

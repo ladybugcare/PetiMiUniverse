@@ -196,6 +196,10 @@ const HubAgendaPage: React.FC = () => {
     hasPermission('boarding.reservations.manage') && hasPermission('hub.appointments.write');
   const canCreateReceivable = hasPermission('hub.receivables.create');
   const canViewFinancial = hasPermission('hub.financial.read');
+  const canMarkExecution = hasPermission('hub.financial.write');
+  const [autoOpenMarkExecution, setAutoOpenMarkExecution] = useState(
+    () => searchParams.get('mark_execution') === '1',
+  );
 
   const persisted = useMemo(() => loadPersistedFilters(), []);
 
@@ -335,22 +339,45 @@ const HubAgendaPage: React.FC = () => {
     setDetailOpen(false);
     setSelectedId(null);
     setDetailMode('view');
+    setAutoOpenMarkExecution(false);
     setSearchParams((prev) => {
-      if (!prev.has('appointment_id')) return prev;
+      if (!prev.has('appointment_id') && !prev.has('appointment') && !prev.has('mark_execution')) {
+        return prev;
+      }
       const next = new URLSearchParams(prev);
       next.delete('appointment_id');
+      next.delete('appointment');
+      next.delete('mark_execution');
       return next;
     }, { replace: true });
   }, [setSearchParams]);
 
-  /** Deep link: /hub/appointments?appointment_id=…&date=YYYY-MM-DD */
+  /** Deep link: /hub/appointments?appointment_id=…&date=YYYY-MM-DD (aceita também ?appointment=). */
   useEffect(() => {
-    const id = searchParams.get('appointment_id');
+    const id = searchParams.get('appointment_id') || searchParams.get('appointment');
     if (!id || !/^[0-9a-f-]{36}$/i.test(id)) return;
     const d = parseYmd(searchParams.get('date'));
-    if (d) setCursorDate(startOfDay(d));
+    if (d) {
+      setView('day');
+      setCursorDate(startOfDay(d));
+    }
+    if (searchParams.get('mark_execution') === '1') {
+      setAutoOpenMarkExecution(true);
+    }
+    // pendingFocusId garante abrir o painel depois que a lista do dia carregar.
+    setPendingFocusId(id);
     openAppointmentDetail(id);
   }, [searchParams, openAppointmentDetail]);
+
+  const clearMarkExecutionQuery = useCallback(() => {
+    setAutoOpenMarkExecution(false);
+    setSearchParams((prev) => {
+      if (!prev.has('mark_execution')) return prev;
+      const next = new URLSearchParams(prev);
+      next.delete('mark_execution');
+      return next;
+    }, { replace: true });
+  }, [setSearchParams]);
 
   const handleAppointmentUpdated = useCallback((
     _appointment: HubAppointment,
@@ -2729,6 +2756,12 @@ const HubAgendaPage: React.FC = () => {
             onOpenInGrooming={canGroomingWrite ? handleOpenInGrooming : undefined}
             onOpenInBoarding={canBoardingWrite ? handleOpenInBoarding : undefined}
             canViewFinancial={canViewFinancial}
+            canMarkExecution={canMarkExecution}
+            autoOpenMarkExecution={autoOpenMarkExecution}
+            onMarkExecutionDone={() => {
+              clearMarkExecutionQuery();
+              bumpReload();
+            }}
             staffOptions={fullStaff}
             serviceTypes={fullSvcTypes}
             onUpdated={handleAppointmentUpdated}

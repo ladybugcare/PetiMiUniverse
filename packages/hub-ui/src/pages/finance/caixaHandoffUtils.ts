@@ -15,7 +15,9 @@ export function isSkippableFinanceHandoffError(message: string): boolean {
   return (
     normalized.includes('não há itens em aberto para faturar') ||
     normalized.includes('não há itens em aberto para enviar ao financeiro') ||
-    normalized.includes('nenhum recebível gerado (valores zerados)')
+    normalized.includes('nenhum recebível gerado (valores zerados)') ||
+    normalized.includes('origem ainda não está pronta') ||
+    normalized.includes('operação ainda não concluída')
   );
 }
 

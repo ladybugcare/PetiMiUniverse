@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Download, Eye, FileText, MoreVertical, Plus, Upload } from 'lucide-react';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
@@ -221,6 +221,7 @@ const HubClinicalTermsPage: React.FC = () => {
   const { loading, refreshing, begin, succeed, finish } = useKeepContentLoad(clinicId);
   const [rows, setRows] = useState<HubClinicalTermTemplate[]>([]);
   const [includeInactive, setIncludeInactive] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState<HubTermCategory | ''>('');
   const [schemaHint, setSchemaHint] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [editing, setEditing] = useState<HubClinicalTermTemplate | null>(null);
@@ -255,6 +256,11 @@ const HubClinicalTermsPage: React.FC = () => {
       signal.cancelled = true;
     };
   }, [load]);
+
+  const filteredRows = useMemo(() => {
+    if (!categoryFilter) return rows;
+    return rows.filter((r) => r.category === categoryFilter);
+  }, [rows, categoryFilter]);
 
   const openCreate = () => {
     setEditing(null);
@@ -373,9 +379,9 @@ const HubClinicalTermsPage: React.FC = () => {
       <div className="hub-ct__intro">
         <h2 className="hub-ct__intro-title">Termos clínicos</h2>
         <p className="hub-ct__intro-text">
-          Biblioteca de modelos em PDF (castração, anestesia, etc.) para baixar, imprimir ou mostrar
-          ao tutor. A assinatura em papel fica fora do sistema; se precisar arquivar o assinado, use
-          Anexos no prontuário.
+          Biblioteca de modelos em PDF da clínica. Use estes modelos na cirurgia, internação e óbito
+          (abrir/imprimir/mostrar ao tutor). A assinatura em papel fica fora do sistema; o PDF
+          assinado vai em Anexos do atendimento.
         </p>
       </div>
 
@@ -386,9 +392,26 @@ const HubClinicalTermsPage: React.FC = () => {
       ) : null}
 
       <div className="hub-ct__toolbar">
-        <HubCheckbox checked={includeInactive} onChange={setIncludeInactive}>
-          Mostrar inativos
-        </HubCheckbox>
+        <div className="hub-ct__toolbar-filters">
+          <HubSearchableCombobox
+            id="ct-filter-category"
+            className="hub-combobox--clientes hub-ct__filter-category"
+            options={[{ value: '', label: 'Todas as categorias' }, ...CATEGORY_OPTIONS]}
+            value={categoryFilter}
+            onChange={(v) =>
+              setCategoryFilter(
+                HUB_TERM_CATEGORIES.includes(v as HubTermCategory) ? (v as HubTermCategory) : '',
+              )
+            }
+            placeholder="Categoria"
+            searchPlaceholder="Filtrar categoria…"
+            clearable
+            ariaLabel="Filtrar por categoria"
+          />
+          <HubCheckbox checked={includeInactive} onChange={setIncludeInactive}>
+            Mostrar inativos
+          </HubCheckbox>
+        </div>
         {canWrite ? (
           <button type="button" className="hub-clientes__btn hub-clientes__btn--primary" onClick={openCreate}>
             <Plus size={16} strokeWidth={2} />
@@ -405,6 +428,11 @@ const HubClinicalTermsPage: React.FC = () => {
           <FileText size={28} strokeWidth={1.5} />
           <p>Nenhum termo clínico cadastrado.</p>
         </div>
+      ) : filteredRows.length === 0 ? (
+        <div className="hub-ct__empty">
+          <FileText size={28} strokeWidth={1.5} />
+          <p>Nenhum termo nesta categoria.</p>
+        </div>
       ) : (
         <div className="hub-clientes__table-wrap hub-clientes__table-wrap--desktop">
           <table className="hub-clientes__table">
@@ -418,7 +446,7 @@ const HubClinicalTermsPage: React.FC = () => {
               </tr>
             </thead>
             <tbody>
-              {rows.map((row) => (
+              {filteredRows.map((row) => (
                 <tr
                   key={row.id}
                   className={!row.is_active ? 'hub-ct__row--inactive' : undefined}

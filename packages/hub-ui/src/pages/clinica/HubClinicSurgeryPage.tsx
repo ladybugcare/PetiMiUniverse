@@ -24,6 +24,7 @@ import {
   HubClinicalServicePicker,
   type ClinicalServicePick,
 } from '../../components/clinical/HubClinicalServicePicker';
+import { HubClinicalTermsQuickList } from '../../components/clinical/HubClinicalTermsQuickList';
 import { useMyStaffMember } from '../../hooks/useMyStaffMember';
 import { formatHospDateTime } from './hospital/hospDisplay';
 import { HubWorkspaceExamOrders } from './HubWorkspaceExamOrders';
@@ -521,6 +522,14 @@ const HubClinicSurgeryPage: React.FC = () => {
             </p>
           ) : null}
           <SurgDetailForm tab={section.id} draft={draft} staff={staffList} canWrite={canEdit} onChange={setDraft} />
+          {section.id === 'pre_op' && clinicId ? (
+            <HubClinicalTermsQuickList
+              clinicId={clinicId}
+              categories={['castracao', 'anestesia']}
+              title="Termos de castração e anestesia"
+              hint="Abra ou baixe o PDF para imprimir ou mostrar ao tutor. O assinado vai em Anexos do atendimento."
+            />
+          ) : null}
           {section.id === 'pre_op' ? (
             <div className="hub-surg-exams" ref={examsBlockRef}>
               <h3 className="hub-surg-exams__title">Exames pré-operatórios</h3>

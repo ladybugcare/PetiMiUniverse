@@ -135,7 +135,6 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
 
   const isSurgery = isDayBoardSurgery(item);
   const isHospitalization = isDayBoardHospitalization(item);
-  const pendingSurgeryDestination = isSurgeryPendingDestination(item);
   const primaryAction = resolveDayBoardPrimaryAction(item);
   const primaryLabel = dayBoardPrimaryActionLabel(primaryAction);
 
@@ -159,8 +158,10 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
     }
   };
 
-  const pendingDestinationFooter =
-    canWrite && pendingSurgeryDestination ? (
+  const renderPendingDestinationFooter = (hasActiveHospitalization: boolean) => {
+    if (!canWrite) return null;
+    if (!isSurgeryPendingDestination(item, { hasActiveHospitalization })) return null;
+    return (
       <div className="vet-cockpit-panel__footer">
         <p className="hub-clientes__muted" style={{ margin: '0 0 8px', gridColumn: '1 / -1' }}>
           Procedimento concluído — falta alta clínica ou internação.
@@ -188,9 +189,11 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
           </button>
         ) : null}
       </div>
-    ) : null;
+    );
+  };
 
   if (!context) {
+    const pendingDestinationFooter = renderPendingDestinationFooter(false);
     return (
       <div className="vet-cockpit-panel">
         {loading ? <HubLoading variant="block" label="Carregando paciente…" /> : (
@@ -219,6 +222,10 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
   const st = itemOperationalStatus(item);
   const encounterId = item.encounter_id ?? context.encounter?.id;
   const activeHospId = context.active_hospitalization?.id ?? null;
+  const pendingSurgeryDestination = isSurgeryPendingDestination(item, {
+    hasActiveHospitalization: Boolean(activeHospId),
+  });
+  const pendingDestinationFooter = renderPendingDestinationFooter(Boolean(activeHospId));
   const inProgress = st === 'in_progress' || st === 'awaiting_exams' || st === 'exams_returned';
   const writeActionsLocked = isFinalOperationalStatus(st);
   const writeActionsTitle = writeActionsLocked ? 'Disponível apenas durante o atendimento' : undefined;

@@ -20,6 +20,16 @@ describe('isGroomingServiceOperationallyDone', () => {
     expect(isGroomingServiceOperationallyDone('queued')).toBe(false);
     expect(isGroomingServiceOperationallyDone('finishing')).toBe(false);
   });
+
+  it('estágios faturáveis batem com o critério de sync da comanda', () => {
+    const billable = ['ready', 'delivered', 'closed'] as const;
+    for (const stage of billable) {
+      expect(isGroomingServiceOperationallyDone(stage)).toBe(true);
+    }
+    for (const stage of ['scheduled', 'checked_in', 'queued', 'in_service', 'finishing'] as const) {
+      expect(isGroomingServiceOperationallyDone(stage)).toBe(false);
+    }
+  });
 });
 
 describe('ensureGroomingAppointmentLinesExecuted', () => {

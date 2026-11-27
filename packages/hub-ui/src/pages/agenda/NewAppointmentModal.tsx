@@ -133,6 +133,11 @@ import {
   PET_OPEN_CLINICAL_CONFIRM_TITLE,
 } from '../../utils/petOpenClinicalPresence';
 import {
+  isPetOpenGroomingPresenceError,
+  PET_OPEN_GROOMING_CONFIRM_MESSAGE,
+  PET_OPEN_GROOMING_CONFIRM_TITLE,
+} from '../../utils/petOpenGroomingPresence';
+import {
   SCHEDULE_OVERLAP_ALL_DATES_MESSAGE,
   SCHEDULE_OVERLAP_CANCEL_TEXT,
   SCHEDULE_OVERLAP_CONFIRM_TEXT,
@@ -2903,13 +2908,14 @@ export const NewAppointmentModal: React.FC<NewAppointmentModalProps> = ({
       if (
         isWalkIn &&
         !confirmedDuplicateOpenRef.current &&
-        isPetOpenClinicalPresenceError(e)
+        (isPetOpenClinicalPresenceError(e) || isPetOpenGroomingPresenceError(e))
       ) {
+        const grooming = isPetOpenGroomingPresenceError(e);
         setSaving(false);
         showAlert({
           type: 'warning',
-          title: PET_OPEN_CLINICAL_CONFIRM_TITLE,
-          message: PET_OPEN_CLINICAL_CONFIRM_MESSAGE,
+          title: grooming ? PET_OPEN_GROOMING_CONFIRM_TITLE : PET_OPEN_CLINICAL_CONFIRM_TITLE,
+          message: grooming ? PET_OPEN_GROOMING_CONFIRM_MESSAGE : PET_OPEN_CLINICAL_CONFIRM_MESSAGE,
           showCancel: true,
           confirmText: 'Registrar mesmo assim',
           cancelText: 'Cancelar',

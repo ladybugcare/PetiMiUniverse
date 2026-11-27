@@ -405,3 +405,36 @@ export async function notifyHubSeriesEndingSoonBatch(opts: {
     console.error('notifyHubSeriesEndingSoonBatch', e);
   }
 }
+
+/** Conferência de caixa escalada ao gestor — CADMIN/CMANAGER + financeiro. */
+export async function notifyHubCaixaConference(opts: {
+  clinicId: string;
+  unitId?: string | null;
+  pendingCount: number;
+  note?: string | null;
+  sessionId?: string | null;
+  excludeUserIds?: readonly string[];
+}): Promise<number> {
+  const n = Math.max(0, Math.floor(Number(opts.pendingCount) || 0));
+  const note = (opts.note ?? '').trim();
+  const message =
+    n > 0
+      ? `${n} ${n === 1 ? 'pendência' : 'pendências'} de conferência no caixa${
+          note ? `: ${note}` : '.'
+        }`
+      : note || 'Há pendências de conferência no caixa para revisar.';
+  return hubNotifyStaff({
+    clinicId: opts.clinicId,
+    unitId: opts.unitId,
+    areas: ['financeiro', 'caixa'],
+    roles: ['CADMIN', 'CMANAGER'],
+    includeManagers: true,
+    excludeUserIds: opts.excludeUserIds,
+    type: 'hub_caixa_conference',
+    title: 'Conferência de caixa',
+    message,
+    link: '/hub/caixa',
+    entityType: opts.sessionId ? 'cash_session' : undefined,
+    entityId: opts.sessionId ?? undefined,
+  });
+}

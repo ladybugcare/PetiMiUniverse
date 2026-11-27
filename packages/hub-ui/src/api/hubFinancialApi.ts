@@ -475,6 +475,18 @@ export type HubCashSessionSummary = {
     card_fee_total?: number;
     card_net_total?: number;
     card_without_fee_gross_total?: number;
+    /**
+     * Recebido na unidade no período do turno (opened_at → closed_at|agora).
+     * Inclui PIX/cartão (independentes da gaveta). Preferir estes campos no resumo de fechamento.
+     */
+    shift_window?: { from: string; to: string } | null;
+    shift_received_total?: number | null;
+    shift_totals_by_method?: Record<string, number> | null;
+    shift_by_sector?: Array<{
+      service_group: string;
+      total: number;
+      share_pct: number;
+    }> | null;
   };
 };
 
@@ -522,13 +534,24 @@ export type HubCommissionPreviewResponse = {
 export type HubFinanceRevenueReport = {
   period: { from: string; to: string };
   date_basis?: 'payment_date' | 'created_at' | string;
+  kind?: string;
+  domain?: string;
+  timezone?: string;
+  competence?: string;
   total: number;
+  /** Taxa estimada da maquininha (informativo; não reduz o total). */
+  card_fee_total?: number;
+  /** Recebido líquido após taxa estimada (informativo). */
+  net_after_fees_total?: number;
   by_method: Record<string, number>;
+  notes?: string;
 };
 
 export type HubFinanceTicketAverageReport = {
   period: { from: string; to: string };
   kind?: string;
+  domain?: string;
+  timezone?: string;
   receivables_count: number;
   total: number;
   ticket_average: number | null;
@@ -541,6 +564,11 @@ export type HubFinanceTicketAverageReport = {
 
 export type HubFinanceTopServicesReport = {
   period: { from: string; to: string };
+  kind?: string;
+  domain?: string;
+  timezone?: string;
+  competence?: string;
+  notes?: string;
   items: Array<{ service_id: string; name: string; quantity: number; total: number }>;
 };
 
@@ -625,7 +653,11 @@ export type HubFinanceRevenueSeriesReport = {
 
 export type HubFinanceAgingReport = {
   as_of: string;
+  kind?: string;
+  domain?: string;
+  timezone?: string;
   buckets: Record<string, { count: number; total: number }>;
+  notes?: string;
 };
 
 export type HubFinanceSalesAdjustmentsReport = {
@@ -782,6 +814,11 @@ export type HubMyNoShowsReport = {
 
 export type HubFinanceTopClientsReport = {
   period: { from: string; to: string };
+  kind?: string;
+  domain?: string;
+  timezone?: string;
+  competence?: string;
+  notes?: string;
   summary: {
     clients_with_payments: number;
     total_revenue: number;
@@ -1384,15 +1421,20 @@ export const hubFinancialApi = {
 
   async closeCashSession(
     sessionId: string,
-    body: { clinic_id: string; closing_balance: number; notes?: string | null }
+    body: { clinic_id: string; closing_balance: number; notes?: string | null },
+    opts?: { /** Comandas abertas estimadas — o close faz handoff no servidor. */ openComandaCount?: number },
   ): Promise<{
     cash_session: HubCashSession;
     auto_handoff_count?: number;
     auto_handoff_errors?: string[];
   }> {
+    // Handoff + fechamento em série; 30s padrão aborta o cliente enquanto o servidor ainda fecha.
+    const n = Math.max(1, opts?.openComandaCount ?? 1);
+    const timeoutMs = Math.min(180_000, 45_000 + n * 8_000);
     const result = (await apiRequest(`${base}/cash-sessions/${encodeURIComponent(sessionId)}/close`, {
       method: 'POST',
       body: JSON.stringify(body),
+      timeoutMs,
     })) as {
       cash_session: HubCashSession;
       auto_handoff_count?: number;
@@ -1420,6 +1462,8 @@ export const hubFinancialApi = {
     return apiRequest(`${base}/handoff-pending`, {
       method: 'POST',
       body: JSON.stringify(body),
+      // Lote unitário no servidor — evita abort em 30s com muitas comandas.
+      timeoutMs: 180_000,
     }) as Promise<{
       handoff_count: number;
       skipped_count: number;
@@ -1427,6 +1471,19 @@ export const hubFinancialApi = {
       errors: string[];
       partial_errors: boolean;
     }>;
+  },
+
+  async escalateConference(body: {
+    clinic_id: string;
+    unit_id: string;
+    pending_count?: number;
+    note?: string | null;
+    cash_session_id?: string | null;
+  }): Promise<{ notified: number }> {
+    return apiRequest(`${base}/escalate-conference`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }) as Promise<{ notified: number }>;
   },
 
   async getDashboardSummary(

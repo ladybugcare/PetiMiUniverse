@@ -15,6 +15,7 @@ export type HubNotificationPrefsMap = Record<HubNotificationPrefCategory, boolea
 const TYPE_TO_CATEGORY: Record<HubStaffNotificationType, HubNotificationPrefCategory> = {
   hub_grooming_extra_request: 'acoes',
   hub_cancellation_pending: 'acoes',
+  hub_caixa_conference: 'acoes',
   hub_payment_due: 'acoes',
   hub_pet_ready: 'operacao',
   hub_pet_on_the_way: 'operacao',

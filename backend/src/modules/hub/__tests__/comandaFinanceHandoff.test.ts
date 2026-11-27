@@ -1,6 +1,8 @@
 import {
   canHandoffExistingReceivables,
   computeBalanceDueFromParts,
+  formatHandoffResultForNotes,
+  isSkippableLeavePendingHandoffCode,
   isSkippableLeavePendingHandoffError,
   openLinesHeaderDiscount,
 } from '../comandaFinanceHandoff';
@@ -105,9 +107,29 @@ describe('isSkippableLeavePendingHandoffError', () => {
     expect(isSkippableLeavePendingHandoffError('Não há itens em aberto para faturar')).toBe(true);
     expect(isSkippableLeavePendingHandoffError('Não há itens em aberto para enviar ao financeiro')).toBe(true);
     expect(isSkippableLeavePendingHandoffError('Nenhum recebível gerado (valores zerados)')).toBe(true);
+    expect(isSkippableLeavePendingHandoffError('Operação ainda não concluída — sincronize')).toBe(true);
   });
 
   it('não ignora falhas reais', () => {
     expect(isSkippableLeavePendingHandoffError('Comanda não está aberta')).toBe(false);
+  });
+});
+
+describe('isSkippableLeavePendingHandoffCode / formatHandoffResultForNotes', () => {
+  it('classifica códigos de conferência como skippáveis', () => {
+    expect(isSkippableLeavePendingHandoffCode('OPERATIONAL_NOT_READY')).toBe(true);
+    expect(isSkippableLeavePendingHandoffCode('SYNC_NOT_READY')).toBe(true);
+    expect(isSkippableLeavePendingHandoffCode('NO_OPEN_ITEMS')).toBe(true);
+    expect(isSkippableLeavePendingHandoffCode('COMMISSION_EXECUTOR_REQUIRED')).toBe(false);
+  });
+
+  it('formata notes com id curto + código', () => {
+    expect(
+      formatHandoffResultForNotes({
+        comandaId: 'abcdef12-3456-7890',
+        code: 'OPERATIONAL_NOT_READY',
+        error: 'Operação ainda não concluída',
+      }),
+    ).toBe('abcdef12:OPERATIONAL_NOT_READY:Operação ainda não concluída');
   });
 });

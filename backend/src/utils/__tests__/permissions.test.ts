@@ -17,8 +17,11 @@ describe('permissions', () => {
       expect(hasPermission('CASSISTANT', 'hub.receivables.create')).toBe(true);
     });
 
-    it('CFINANCE tem hub.cash.receive', () => {
+    it('CFINANCE estorna/ajusta e recebe; não opera gaveta', () => {
       expect(hasPermission('CFINANCE', 'hub.cash.receive')).toBe(true);
+      expect(hasPermission('CFINANCE', 'hub.payments.reverse')).toBe(true);
+      expect(hasPermission('CFINANCE', 'hub.financial.adjust')).toBe(true);
+      expect(hasPermission('CFINANCE', 'hub.cash.session')).toBe(false);
     });
 
     it('CVET_INTERNAL não vê caixa nem financeiro', () => {

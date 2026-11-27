@@ -150,8 +150,13 @@ export const HubRelatoriosFinanceOverview: React.FC<HubRelatoriosFinanceOverview
   const onExport = () => {
     const rows: Array<Array<string | number | null>> = [];
     rows.push(['Seção', 'Item', 'Quantidade', 'Valor']);
-    rows.push(['KPI', 'Faturamento recebido', '', revenue?.total ?? 0]);
-    rows.push(['KPI', 'Ticket médio', ticket?.receivables_count ?? 0, ticket?.ticket_average ?? 0]);
+    rows.push(['KPI', 'Recebido bruto', '', revenue?.total ?? 0]);
+    if ((revenue?.card_fee_total ?? 0) > 0.009) {
+      rows.push(['KPI', 'Taxa estimada (maquininha)', '', revenue?.card_fee_total ?? 0]);
+      rows.push(['KPI', 'Recebido líquido (após taxa)', '', revenue?.net_after_fees_total ?? 0]);
+    }
+    rows.push(['KPI', 'Ticket histórico', ticket?.receivables_count ?? 0, ticket?.ticket_average ?? 0]);
+    rows.push(['KPI', 'Total cobrado', ticket?.receivables_count ?? 0, ticket?.total ?? 0]);
     for (const [method, total] of Object.entries(revenue?.by_method ?? {})) {
       rows.push(['Forma de pagamento', paymentMethodLabel(method), '', total]);
     }
@@ -164,6 +169,10 @@ export const HubRelatoriosFinanceOverview: React.FC<HubRelatoriosFinanceOverview
     downloadCsv(reportCsvFilename('visao-financeira'), rows[0] as string[], rows.slice(1));
   };
 
+  const glossaryNotes = [revenue?.notes, ticket?.notes, topServices?.notes, aging?.notes]
+    .filter((n): n is string => Boolean(n && n.trim()))
+    .filter((n, i, arr) => arr.indexOf(n) === i);
+
   if (loading && !revenue) {
     return <HubLoading variant="block" label="Carregando relatório…" />;
   }
@@ -172,7 +181,13 @@ export const HubRelatoriosFinanceOverview: React.FC<HubRelatoriosFinanceOverview
     <div className="hub-relatorios__overview">
       <div className="hub-relatorios__overview-toolbar">
         <p className="hub-relatorios__overview-period">
-          Período analisado: <strong>{periodLabel}</strong>
+          Período analisado (dia civil São Paulo): <strong>{periodLabel}</strong>
+          {glossaryNotes[0] ? (
+            <>
+              {' '}
+              · <span className="hub-clientes__muted">{glossaryNotes[0]}</span>
+            </>
+          ) : null}
         </p>
         <div className="hub-payables__filters" role="group" aria-label="Base de data dos pagamentos">
           <button
@@ -198,9 +213,14 @@ export const HubRelatoriosFinanceOverview: React.FC<HubRelatoriosFinanceOverview
       <div className="hub-servicos__metrics hub-relatorios__kpi-row" aria-live="polite">
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Recebimentos</div>
+            <div className="hub-servicos__metric-label">Recebido bruto</div>
             <div className="hub-servicos__metric-value">{formatBrl(revenue?.total ?? 0)}</div>
-            <div className="hub-servicos__metric-sub">Pagamentos posted · {periodLabel}</div>
+            <div className="hub-servicos__metric-sub">
+              Pagamentos posted · não é cobrado comercial
+              {(revenue?.card_fee_total ?? 0) > 0.009
+                ? ` · taxa est. ${formatBrl(revenue?.card_fee_total ?? 0)} · líquido ${formatBrl(revenue?.net_after_fees_total ?? 0)}`
+                : ''}
+            </div>
           </div>
           <div className="hub-servicos__metric-icon" aria-hidden>
             <Wallet size={20} strokeWidth={2} />
@@ -229,7 +249,7 @@ export const HubRelatoriosFinanceOverview: React.FC<HubRelatoriosFinanceOverview
               {(ticket?.receivables_count ?? 0).toLocaleString('pt-BR')}
             </div>
             <div className="hub-servicos__metric-sub">
-              Total faturado {formatBrl(ticket?.total ?? 0)}
+              Total cobrado {formatBrl(ticket?.total ?? 0)}
             </div>
           </div>
           <div className="hub-servicos__metric-icon hub-servicos__metric-icon--muted" aria-hidden>
@@ -238,7 +258,7 @@ export const HubRelatoriosFinanceOverview: React.FC<HubRelatoriosFinanceOverview
         </div>
         <div className="hub-servicos__metric-card">
           <div className="hub-servicos__metric-card__text">
-            <div className="hub-servicos__metric-label">Em aberto (aging)</div>
+            <div className="hub-servicos__metric-label">A receber (aging)</div>
             <div className="hub-servicos__metric-value">{formatBrl(agingRows.openTotal)}</div>
             <div className="hub-servicos__metric-sub">
               {agingRows.openCount.toLocaleString('pt-BR')} títulos · base{' '}
@@ -261,13 +281,13 @@ export const HubRelatoriosFinanceOverview: React.FC<HubRelatoriosFinanceOverview
               <h2 id="relatorios-methods-title" className="hub-relatorios__section-title">
                 Formas de pagamento
               </h2>
-              <p className="hub-relatorios__panel-sub">Distribuição do faturamento recebido</p>
+              <p className="hub-relatorios__panel-sub">Distribuição do recebido bruto</p>
             </div>
           </div>
           {methodChart.length === 0 ? (
             <HubRelatoriosEmpty
               title="Sem pagamentos"
-              description="Não há faturamento recebido no período selecionado."
+              description="Não há recebido bruto no período selecionado."
             />
           ) : (
             <div className="hub-relatorios__panel-split">
@@ -316,7 +336,9 @@ export const HubRelatoriosFinanceOverview: React.FC<HubRelatoriosFinanceOverview
               <h2 id="relatorios-services-title" className="hub-relatorios__section-title">
                 Serviços mais vendidos
               </h2>
-              <p className="hub-relatorios__panel-sub">Top 8 por valor no período</p>
+              <p className="hub-relatorios__panel-sub">
+                Top 8 por line_total na data da cobrança (não abate devolução)
+              </p>
             </div>
           </div>
           {servicesChart.length === 0 ? (
@@ -366,8 +388,8 @@ export const HubRelatoriosFinanceOverview: React.FC<HubRelatoriosFinanceOverview
               Aging de recebíveis
             </h2>
             <p className="hub-relatorios__panel-sub">
-              Situação dos títulos em aberto em {formatDateBr(aging?.as_of)} (fim do período de
-              faturamento).
+              Situação dos títulos a receber em {formatDateBr(aging?.as_of)} (fim do período
+              analisado).
             </p>
           </div>
           <div className="hub-relatorios__panel-stat">
