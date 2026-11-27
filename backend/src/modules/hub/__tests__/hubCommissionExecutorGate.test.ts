@@ -6,6 +6,7 @@ import { configureSupabaseMock } from '../../../__tests__/helpers/supabaseTestDo
 import {
   assertServiceLinesHaveExecutor,
   backfillPickupLegCommissionStaff,
+  backfillServiceExecutorCommissionStaff,
 } from '../hubCommissionAccrual';
 
 const CLINIC = '11111111-1111-4111-8111-111111111111';
@@ -277,6 +278,73 @@ describe('backfillPickupLegCommissionStaff', () => {
     });
     const result = await backfillPickupLegCommissionStaff(CLINIC, ROUTE_ID);
     expect(result.updated).toBe(0);
+  });
+});
+
+describe('backfillServiceExecutorCommissionStaff', () => {
+  function receivableLinesTables(staffMembers: Record<string, unknown>[]) {
+    return {
+      hub_staff_members: staffMembers,
+      hub_receivable_lines: [
+        {
+          id: LINE_NULL,
+          clinic_id: CLINIC,
+          source_line_id: SVC_BANHO,
+          commission_staff_member_id: null,
+          commission_staff_source: 'none',
+          commission_rule_id: RULE_BANHO,
+          commission_original_amount: 5,
+        },
+        {
+          id: LINE_HAS_STAFF,
+          clinic_id: CLINIC,
+          source_line_id: SVC_BANHO,
+          commission_staff_member_id: STAFF_DRIVER,
+          commission_staff_source: 'service_executor',
+          commission_original_amount: 5,
+        },
+      ],
+    };
+  }
+
+  function receivableLines(): Array<Record<string, unknown>> {
+    const { getMockSupabaseClient } = require('../../../__tests__/helpers/supabaseTestDouble');
+    const client = getMockSupabaseClient() as {
+      _state?: { tables: Record<string, Array<Record<string, unknown>>> };
+    };
+    return client._state?.tables?.hub_receivable_lines ?? [];
+  }
+
+  it('cobrança feita sem executor: preenche staff null, mantém valor congelado e não sobrescreve staff existente', async () => {
+    configureSupabaseMock({
+      tables: receivableLinesTables([{ id: STAFF_EXEC, clinic_id: CLINIC, deleted_at: null }]),
+    });
+
+    const result = await backfillServiceExecutorCommissionStaff(CLINIC, [SVC_BANHO], STAFF_EXEC);
+    expect(result.updated).toBe(1);
+
+    const lines = receivableLines();
+    const filled = lines.find((l) => l.id === LINE_NULL);
+    const kept = lines.find((l) => l.id === LINE_HAS_STAFF);
+    expect(filled?.commission_staff_member_id).toBe(STAFF_EXEC);
+    expect(filled?.commission_staff_source).toBe('service_executor');
+    expect(filled?.commission_original_amount).toBe(5);
+    expect(kept?.commission_staff_member_id).toBe(STAFF_DRIVER);
+  });
+
+  it('profissional de outra clínica → updated 0', async () => {
+    configureSupabaseMock({
+      tables: receivableLinesTables([]),
+    });
+    const result = await backfillServiceExecutorCommissionStaff(CLINIC, [SVC_BANHO], STAFF_EXEC);
+    expect(result.updated).toBe(0);
+    expect(receivableLines().find((l) => l.id === LINE_NULL)?.commission_staff_member_id).toBeNull();
+  });
+
+  it('sem staff ou sem linhas → updated 0', async () => {
+    configureSupabaseMock({ tables: receivableLinesTables([]) });
+    expect((await backfillServiceExecutorCommissionStaff(CLINIC, [SVC_BANHO], null)).updated).toBe(0);
+    expect((await backfillServiceExecutorCommissionStaff(CLINIC, [], STAFF_EXEC)).updated).toBe(0);
   });
 });
 

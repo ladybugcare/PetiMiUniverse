@@ -3424,18 +3424,17 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
   const operational_complete = await isOperationalCompleteForComanda(comandaRow);
   const edit_scopes = computeComandaEditScopes(comandaRow, operational_complete, balance_due);
   let handoff_block_code: string | null = null;
-  if (operational_complete) {
-    const executorCheck = await assertServiceLinesHaveExecutor(
-      clinicId,
-      (items ?? []).map((it) => ({
-        origin_type: (it.origin_type as string | null) ?? null,
-        origin_id: (it.origin_id as string | null) ?? null,
-        line_kind: (it.item_kind as string | null) ?? null,
-        description: (it.description as string | null) ?? null,
-      })),
-    );
-    if (!executorCheck.ok) handoff_block_code = 'COMMISSION_EXECUTOR_REQUIRED';
-  }
+  const executorCheck = await assertServiceLinesHaveExecutor(
+    clinicId,
+    (items ?? []).map((it) => ({
+      origin_type: (it.origin_type as string | null) ?? null,
+      origin_id: (it.origin_id as string | null) ?? null,
+      line_kind: (it.item_kind as string | null) ?? null,
+      description: (it.description as string | null) ?? null,
+    })),
+  );
+  const executor_pending = !executorCheck.ok;
+  if (operational_complete && executor_pending) handoff_block_code = 'COMMISSION_EXECUTOR_REQUIRED';
 
   // Enriquecer com nomes de tutor/pet
   const guardianId = comandaRow.guardian_id as string | null;
@@ -3599,6 +3598,7 @@ async function getHubComandaDetailPayload(comandaId: string, clinicId: string) {
     card_without_fee_gross_total: cardFeeTotals.card_without_fee_gross_total,
     operational_complete,
     handoff_block_code,
+    executor_pending,
     edit_scopes,
     allowed_guardians: allowedGuardians,
     package_balances_by_item_id: packageBalancesByItemId,
@@ -4209,13 +4209,17 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'due_date obrigatório para deixar pendente' });
     }
 
-    const executorCheck = await assertServiceLinesHaveExecutor(clinic_id, items);
-    if (!executorCheck.ok) {
-      return res.status(409).json({
-        error: executorCheck.message,
-        code: 'COMMISSION_EXECUTOR_REQUIRED',
-        missing: executorCheck.missing,
-      });
+    // Receber agora não depende do executor: a comissão fica congelada sem profissional
+    // e é atribuída quando a execução for marcada (backfillServiceExecutorCommissionStaff).
+    if (action === 'leave_pending') {
+      const executorCheck = await assertServiceLinesHaveExecutor(clinic_id, items);
+      if (!executorCheck.ok) {
+        return res.status(409).json({
+          error: executorCheck.message,
+          code: 'COMMISSION_EXECUTOR_REQUIRED',
+          missing: executorCheck.missing,
+        });
+      }
     }
 
     const itemById = new Map(items.map((it) => [it.id as string, it]));
@@ -7575,14 +7579,16 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
 
         const guardianId = (detail.comanda as Record<string, unknown>).guardian_id as string;
         const subtotal = round2(items.reduce((s, it) => s + Number(it.line_total ?? 0), 0));
-        const bulkExecutorCheck = await assertServiceLinesHaveExecutor(clinic_id, items);
-        if (!bulkExecutorCheck.ok) {
-          results.push({
-            comanda_id: comandaId,
-            receivable_ids: [],
-            error: bulkExecutorCheck.message,
-          });
-          continue;
+        if (action !== 'receive_now') {
+          const bulkExecutorCheck = await assertServiceLinesHaveExecutor(clinic_id, items);
+          if (!bulkExecutorCheck.ok) {
+            results.push({
+              comanda_id: comandaId,
+              receivable_ids: [],
+              error: bulkExecutorCheck.message,
+            });
+            continue;
+          }
         }
         const manualSourceId = randomUUID();
 

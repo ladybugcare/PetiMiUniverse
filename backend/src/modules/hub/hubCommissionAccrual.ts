@@ -474,7 +474,7 @@ export async function assertServiceLinesHaveExecutor(
   return {
     ok: false,
     missing,
-    message: 'Marque a execução do serviço antes de cobrar.',
+    message: 'Marque a execução do serviço antes de faturar ou enviar ao financeiro.',
   };
 }
 
@@ -530,6 +530,35 @@ export async function backfillPickupLegCommissionStaff(
     })
     .eq('clinic_id', clinicId)
     .in('source_line_id', serviceIds)
+    .is('commission_staff_member_id', null)
+    .select('id');
+  if (updErr) throw new Error(updErr.message);
+  return { updated: (updatedRows ?? []).length };
+}
+
+/**
+ * Preenche `commission_staff_member_id` em linhas de serviço já cobradas sem executor
+ * (cobrança feita antes de marcar a execução). Não altera valor/regra congelados nem staff existente.
+ */
+export async function backfillServiceExecutorCommissionStaff(
+  clinicId: string,
+  serviceLineIds: string[],
+  staffId: string | null | undefined,
+): Promise<{ updated: number }> {
+  const ids = [...new Set(serviceLineIds.filter(Boolean))];
+  if (!staffId || ids.length === 0) return { updated: 0 };
+  if (!(await assertStaffInClinic(clinicId, staffId))) return { updated: 0 };
+
+  const now = new Date().toISOString();
+  const { data: updatedRows, error: updErr } = await supabaseAdmin
+    .from('hub_receivable_lines')
+    .update({
+      commission_staff_member_id: staffId,
+      commission_staff_source: 'service_executor',
+      commission_attributed_at: now,
+    })
+    .eq('clinic_id', clinicId)
+    .in('source_line_id', ids)
     .is('commission_staff_member_id', null)
     .select('id');
   if (updErr) throw new Error(updErr.message);

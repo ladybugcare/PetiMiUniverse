@@ -219,7 +219,7 @@ export const HubComandaDetailLayout: React.FC<HubComandaDetailLayoutProps> = ({
 
         {isAberta && operationalComplete !== false && handoffBlockCode === 'COMMISSION_EXECUTOR_REQUIRED' ? (
           <div className="hub-quote-detail__banner" role="status">
-            Falta marcar a execução do serviço (executor) antes de cobrar ou enviar ao financeiro.
+            Falta marcar a execução do serviço (executor). Já dá para cobrar; enviar ao financeiro exige o executor.
             {onMarkExecution ? (
               <>
                 {' '}

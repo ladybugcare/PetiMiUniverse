@@ -141,14 +141,24 @@ export const MarkExecutionForm: React.FC<MarkExecutionFormProps> = ({
     };
   }, [open, item, clinicId, focusLineId]);
 
+  const suggestedStaffId = useMemo(() => {
+    const ids = new Set(
+      lines.map((l) => l.suggested_staff_id).filter((id): id is string => Boolean(id)),
+    );
+    return ids.size === 1 ? [...ids][0]! : null;
+  }, [lines]);
+
   useEffect(() => {
     if (!open) return;
-    const preferred =
-      defaultStaffId && staffList.some((s) => s.id === defaultStaffId && s.active !== false)
-        ? defaultStaffId
+    const isActiveStaff = (id: string | null | undefined): id is string =>
+      Boolean(id) && staffList.some((s) => s.id === id && s.active !== false);
+    const preferred = isActiveStaff(defaultStaffId)
+      ? defaultStaffId
+      : isActiveStaff(suggestedStaffId)
+        ? suggestedStaffId
         : myStaffMember?.id;
     if (preferred) setStaffId(preferred);
-  }, [open, myStaffMember?.id, defaultStaffId, staffList]);
+  }, [open, myStaffMember?.id, defaultStaffId, suggestedStaffId, staffList]);
 
   const alreadyDone = lines.filter((l) => l.executed_by_staff_id);
   const allDone = lines.length > 0 && alreadyDone.length === lines.length;

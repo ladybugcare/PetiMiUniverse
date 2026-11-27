@@ -1,4 +1,5 @@
 import { supabaseAdmin } from '../../config/supabase';
+import { backfillServiceExecutorCommissionStaff } from './hubCommissionAccrual';
 
 const GROOMING_SERVICE_GROUP = 'banho_tosa';
 
@@ -64,5 +65,13 @@ export async function ensureGroomingAppointmentLinesExecuted(opts: {
     .update(patch)
     .in('id', idsToMark);
   if (uErr) throw new Error(uErr.message);
+
+  if (opts.executedByStaffId) {
+    try {
+      await backfillServiceExecutorCommissionStaff(opts.clinicId, idsToMark, opts.executedByStaffId);
+    } catch (bfErr) {
+      console.error('[groomingExecution] backfillServiceExecutorCommissionStaff', bfErr);
+    }
+  }
   return idsToMark.length;
 }

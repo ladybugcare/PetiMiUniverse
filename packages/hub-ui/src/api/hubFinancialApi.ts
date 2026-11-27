@@ -49,6 +49,8 @@ export type HubServiceExecutionLine = {
   executed_at: string | null;
   executed_by_staff_id: string | null;
   commission_requires_executor: boolean;
+  /** Responsável do agendamento — sugestão de executor. */
+  suggested_staff_id?: string | null;
 };
 
 export type HubFinanceDayBoardBilling = {

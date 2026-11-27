@@ -6,6 +6,7 @@ import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
 import {
+  backfillServiceExecutorCommissionStaff,
   loadActiveCommissionRules,
   matchRuleForLine,
 } from './hubCommissionAccrual';
@@ -142,14 +143,18 @@ export const getHubFinanceServiceExecutionLines = async (req: Request, res: Resp
 
     const { data: appts, error: apptErr } = await supabaseAdmin
       .from('hub_appointments')
-      .select('id, appointment_kind')
+      .select('id, appointment_kind, hub_staff_member_id')
       .eq('clinic_id', clinicId)
       .in('id', appointmentIds);
     if (apptErr) return res.status(500).json({ error: apptErr.message });
 
-    const eligibleApptIds = (appts ?? [])
-      .filter((a) => String(a.appointment_kind ?? '') !== 'pickup_route')
-      .map((a) => a.id as string);
+    const eligibleAppts = (appts ?? []).filter(
+      (a) => String(a.appointment_kind ?? '') !== 'pickup_route',
+    );
+    const eligibleApptIds = eligibleAppts.map((a) => a.id as string);
+    const responsibleByAppt = new Map(
+      eligibleAppts.map((a) => [a.id as string, (a.hub_staff_member_id as string | null) ?? null]),
+    );
 
     if (eligibleApptIds.length === 0) {
       return res.json({ lines: [], appointment_ids: appointmentIds });
@@ -186,6 +191,7 @@ export const getHubFinanceServiceExecutionLines = async (req: Request, res: Resp
         executed_at: (row.executed_at as string | null) ?? null,
         executed_by_staff_id: executedBy,
         commission_requires_executor: Boolean(rule) && !executedBy,
+        suggested_staff_id: responsibleByAppt.get(row.appointment_id as string) ?? null,
       };
     });
 
@@ -245,6 +251,14 @@ export const patchHubFinanceAppointmentServiceLine = async (req: Request, res: R
       .select('id, appointment_id, hub_service_type_id, executed_at, executed_by_staff_id')
       .maybeSingle();
     if (uErr) return res.status(500).json({ error: uErr.message });
+
+    if (executed && executed_by_staff_id) {
+      try {
+        await backfillServiceExecutorCommissionStaff(clinic_id, [lineId.data], executed_by_staff_id);
+      } catch (bfErr) {
+        console.error('[hubServiceExecution] backfillServiceExecutorCommissionStaff', bfErr);
+      }
+    }
 
     return res.json({ line: updated });
   } catch (e: unknown) {

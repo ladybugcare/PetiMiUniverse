@@ -112,6 +112,8 @@ export type HubComandaDetailResponse = {
   operational_complete?: boolean;
   /** Bloqueio estável de handoff (ex.: COMMISSION_EXECUTOR_REQUIRED). */
   handoff_block_code?: string | null;
+  /** Linhas com regra de comissão ainda sem executor (não bloqueia receber agora). */
+  executor_pending?: boolean;
   edit_scopes?: HubComandaEditScopes;
   allowed_guardians?: HubComandaAllowedGuardian[];
   pets?: HubPublicComandaPet[];

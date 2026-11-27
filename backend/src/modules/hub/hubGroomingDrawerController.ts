@@ -12,6 +12,7 @@ import { buildGroomingDisplayTags } from './groomingPetTags';
 import { HUB_DAY_BOARD_PET_SELECT } from './hubDayBoardPets';
 import { isGroomingServiceOperationallyDone } from './groomingStages';
 import { ensureGroomingAppointmentLinesExecuted } from './groomingExecution';
+import { backfillServiceExecutorCommissionStaff } from './hubCommissionAccrual';
 
 const uuidStr = z.string().uuid();
 const GROOMING_SERVICE_GROUP = 'banho_tosa';
@@ -482,6 +483,14 @@ export const patchHubGroomingAppointmentServiceLine = async (req: Request, res: 
       .select('id, appointment_id, hub_service_type_id, executed_at, executed_by_staff_id')
       .maybeSingle();
     if (uErr) return res.status(500).json({ error: uErr.message });
+
+    if (executed && executed_by_staff_id) {
+      try {
+        await backfillServiceExecutorCommissionStaff(clinic_id, [lineId.data], executed_by_staff_id);
+      } catch (bfErr) {
+        console.error('[hubGroomingDrawer] backfillServiceExecutorCommissionStaff', bfErr);
+      }
+    }
 
     return res.json({ line: updated });
   } catch (e: unknown) {

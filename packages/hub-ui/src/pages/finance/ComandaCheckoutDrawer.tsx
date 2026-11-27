@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Calendar, Download, MessageCircle, Printer } from 'lucide-react';
+import { usePermissions } from '@petimi/web-core';
 import { HubSidePanel } from '../../components/HubSidePanel';
 import { HubLoading } from '../../components/HubLoading';
 import { HubDateField } from '../../components/HubDateField';
@@ -60,6 +61,8 @@ import {
   schedulePetLabel,
   type PackageSaleScheduleContext,
 } from './packageSaleScheduleUtils';
+import { MarkExecutionForm, type MarkExecutionSavedResult } from './MarkExecutionForm';
+import { supportsMarkExecutionOrigin } from './caixaConferenceActions';
 
 function round2(n: number): number {
   return Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -111,6 +114,9 @@ export function ComandaCheckoutDrawer({
   ...rest
 }: ComandaCheckoutDrawerProps) {
   const navigate = useNavigate();
+  const { hasPermission } = usePermissions();
+  const canMarkExecution = hasPermission('hub.financial.write') || hasPermission('hub.receivables.create');
+  const [executionSaved, setExecutionSaved] = useState<MarkExecutionSavedResult | null>(null);
   const comandaIdProp = 'comandaId' in rest ? rest.comandaId : undefined;
   const originType = 'originType' in rest ? rest.originType : undefined;
   const originId = 'originId' in rest ? rest.originId : undefined;
@@ -200,10 +206,21 @@ export function ComandaCheckoutDrawer({
     }
   }, [clinicId, detail?.comanda?.id, mode]);
 
+  const refreshDetailAfterExecution = useCallback(async () => {
+    const cid = detail?.comanda?.id as string | undefined;
+    if (!cid) return;
+    try {
+      setDetail(await hubComandaApi.getComandaDetail(cid, clinicId));
+    } catch {
+      // Execução já foi salva; o detalhe atualiza na próxima abertura.
+    }
+  }, [clinicId, detail?.comanda?.id]);
+
   useEffect(() => {
     if (!open) {
       setDetail(null);
       setError(null);
+      setExecutionSaved(null);
       setSuccessState(null);
       setSuccessActionError(null);
       setReceivableDetail(null);
@@ -307,6 +324,21 @@ export function ComandaCheckoutDrawer({
   }, [receivableDetail, balanceDue, openItemsTotal]);
 
   const checkoutLocked = Boolean(detail?.edit_scopes && !detail.edit_scopes[mode]);
+
+  const comandaOriginType = String(detail?.comanda?.origin_type ?? '');
+  const comandaOriginId = String(detail?.comanda?.origin_id ?? '');
+  const executionTarget = useMemo(
+    () =>
+      comandaOriginType && comandaOriginId
+        ? { origin_type: comandaOriginType, origin_id: comandaOriginId }
+        : null,
+    [comandaOriginType, comandaOriginId],
+  );
+  const showExecutionPrompt =
+    Boolean(detail?.executor_pending) &&
+    canMarkExecution &&
+    supportsMarkExecutionOrigin(comandaOriginType) &&
+    Boolean(executionTarget);
 
   const checkoutLockedMessage = useMemo(() => {
     const reason = detail?.edit_scopes?.locked_reason;
@@ -907,6 +939,33 @@ export function ComandaCheckoutDrawer({
                     novos do vet (ex.: medicação) entram aqui e geram novo saldo.
                   </p>
                 )}
+
+                {showExecutionPrompt ? (
+                  <section className="hub-checkout-drawer__section">
+                    <h3 className="hub-checkout-drawer__section-title">Quem executou?</h3>
+                    <p className="hub-clientes__muted hub-checkout-drawer__hint">
+                      Opcional para receber agora. Sem executor, a comissão fica como «Sem profissional» até
+                      alguém marcar a execução. Para enviar ao financeiro, o executor é obrigatório.
+                    </p>
+                    <MarkExecutionForm
+                      open={showExecutionPrompt}
+                      item={executionTarget}
+                      variant="compact"
+                      keepOpenAfterSave={false}
+                      idPrefix={`checkout-exec-${String(detail.comanda.id ?? '').slice(0, 8)}`}
+                      onDone={(result) => {
+                        if (result) setExecutionSaved(result);
+                        void refreshDetailAfterExecution();
+                      }}
+                      showError={(msg) => setError(msg)}
+                      showSuccess={() => undefined}
+                    />
+                  </section>
+                ) : executionSaved ? (
+                  <p className="hub-clientes__muted hub-checkout-drawer__hint" role="status">
+                    Execução marcada · {executionSaved.staffLabel}
+                  </p>
+                ) : null}
 
                 {(originType || detail.comanda.origin_type) &&
                   String(detail.comanda.origin_type ?? originType) !== 'manual' && (
