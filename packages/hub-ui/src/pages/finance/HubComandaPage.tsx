@@ -54,8 +54,16 @@ import {
   resolveSendToFinanceiroConfirmMessage,
 } from './hubComandaEditUtils';
 import { useSelectedUnitId } from '../../utils/useSelectedUnitId';
+import { matchInventoryByCode, pickLotWithStock } from '../../utils/inventoryCodeMatch';
 import './hub-finance-page.css';
 import '../orcamentos/orcamentos-page.css';
+
+function isComandaSellableProduct(p: HubInventoryItem): boolean {
+  if (p.deleted_at) return false;
+  if (p.active === false) return false;
+  if (p.item_kind !== 'product') return false;
+  return true;
+}
 
 function extractGuardian(comanda: Record<string, unknown>): HubComandaGuardianEmbed | null {
   const g = comanda.guardian as HubComandaGuardianEmbed | null | undefined;
@@ -110,6 +118,10 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
   const [timelinePayments, setTimelinePayments] = useState<HubComandaTimelinePayment[]>([]);
 
   const newItemCounterRef = useRef(0);
+  const inventoryItemsRef = useRef(inventoryItems);
+  const inventoryLotsRef = useRef(inventoryLots);
+  inventoryItemsRef.current = inventoryItems;
+  inventoryLotsRef.current = inventoryLots;
 
   const comandaRow = payload?.comanda as Record<string, unknown> | undefined;
   const status = String(comandaRow?.status ?? '');
@@ -301,6 +313,99 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
     const key = `${NEW_ITEM_KEY_PREFIX}prd-${newItemCounterRef.current++}`;
     setItems((prev) => [...prev, { ...newProductDraft(), id: key }]);
   };
+
+  const addOrIncrementProduct = useCallback((inv: HubInventoryItem, lots: HubInventoryLotRow[]) => {
+    const lot = pickLotWithStock(lots, inv.id);
+    const onHand = Number(lot?.qty_on_hand ?? inv.qty_on_hand ?? 0);
+
+    let outcome: 'added' | 'capped' | 'no_stock' = 'added';
+    setItems((prev) => {
+      const existingIdx = prev.findIndex(
+        (it) =>
+          it.item_kind === 'product' &&
+          !it.invoiced &&
+          !it.returned &&
+          it.hub_inventory_item_id === inv.id &&
+          (it.hub_inventory_lot_id === lot?.id || !it.hub_inventory_lot_id || !lot),
+      );
+      if (existingIdx >= 0) {
+        const current = parseMoney(prev[existingIdx].quantity);
+        if (lot && onHand > 0 && current >= onHand) {
+          outcome = 'capped';
+          return prev;
+        }
+        return prev.map((it, i) => {
+          if (i !== existingIdx) return it;
+          const next = {
+            ...it,
+            quantity: String(current + 1),
+            hub_inventory_lot_id: it.hub_inventory_lot_id || lot?.id || null,
+            description: it.description || inv.name,
+            unit_amount: it.unit_amount === '0' ? String(inv.sale_amount ?? 0) : it.unit_amount,
+          };
+          next.line_total = computeLineTotal(next);
+          return next;
+        });
+      }
+
+      if (lot && onHand <= 0) {
+        outcome = 'no_stock';
+        return prev;
+      }
+
+      const key = `${NEW_ITEM_KEY_PREFIX}prd-${newItemCounterRef.current++}`;
+      const draft: ComandaItemDraft = {
+        ...newProductDraft(),
+        id: key,
+        isNew: false,
+        hub_inventory_item_id: inv.id,
+        hub_inventory_lot_id: lot?.id ?? null,
+        description: inv.name,
+        unit_amount: String(inv.sale_amount ?? 0),
+        quantity: '1',
+      };
+      draft.line_total = computeLineTotal(draft);
+      return [...prev, draft];
+    });
+
+    if (outcome === 'capped') {
+      return { ok: false, message: `${inv.name}: máximo ${onHand} no lote` };
+    }
+    if (outcome === 'no_stock') {
+      return { ok: false, message: `${inv.name}: sem estoque disponível` };
+    }
+    return { ok: true, message: `${inv.name} adicionado` };
+  }, []);
+
+  const handleAddProductById = useCallback(
+    (inventoryItemId: string) => {
+      const inv =
+        inventoryItemsRef.current.find((i) => i.id === inventoryItemId) ??
+        inventoryItems.find((i) => i.id === inventoryItemId);
+      if (!inv) return { ok: false, message: 'Produto não encontrado' };
+      return addOrIncrementProduct(inv, inventoryLotsRef.current);
+    },
+    [addOrIncrementProduct, inventoryItems],
+  );
+
+  const handleScanProductCode = useCallback(
+    async (code: string) => {
+      if (!clinicId) return { ok: false, message: 'Clínica não selecionada' };
+      const sellable = inventoryItemsRef.current.filter(isComandaSellableProduct);
+      let hit = matchInventoryByCode(sellable, code);
+      if (!hit) {
+        const res = await hubInventoryApi.items.list(clinicId, true, 'product', code);
+        const found = (res.items ?? []).filter(isComandaSellableProduct);
+        hit = matchInventoryByCode(found, code) ?? found[0] ?? null;
+        if (hit && !inventoryItemsRef.current.some((i) => i.id === hit!.id)) {
+          setInventoryItems((prev) => [...prev, hit!]);
+        }
+      }
+      if (!hit) return { ok: false, message: 'Código não encontrado' };
+      return addOrIncrementProduct(hit, inventoryLotsRef.current);
+    },
+    [addOrIncrementProduct, clinicId],
+  );
 
   const removeItem = async (idx: number) => {
     const item = items[idx];
@@ -674,6 +779,8 @@ export default function HubComandaPage({ mode = 'caixa', refreshKey = 0 }: HubCo
       computeLineTotal={computeLineTotal}
       onAddService={addNewService}
       onAddProduct={addNewProduct}
+      onScanProductCode={handleScanProductCode}
+      onAddProductById={handleAddProductById}
       onUpdateItem={updateItem}
       onRemoveItem={removeItem}
       onApplyService={applyServiceToItem}

@@ -373,8 +373,9 @@ export type MissingServiceExecutor = {
 };
 
 /**
- * Garante que linhas `appointment_service` que não são pernas de L&T
- * tenham `executed_by_staff_id` antes da cobrança.
+ * Garante que linhas `appointment_service` com regra de comissão ativa
+ * (e que não são pernas de L&T) tenham `executed_by_staff_id` antes da cobrança.
+ * Sem regra que case o serviço → não bloqueia (apuração já tolera comissão 0).
  */
 export async function assertServiceLinesHaveExecutor(
   clinicId: string,
@@ -402,9 +403,13 @@ export async function assertServiceLinesHaveExecutor(
   ];
   if (serviceIds.length === 0) return { ok: true };
 
+  const rules = await loadActiveCommissionRules(clinicId);
+  const hasServiceRules = rules.some((r) => Boolean(r.hub_service_type_id));
+  if (!hasServiceRules) return { ok: true };
+
   const { data: svcRows, error: svcErr } = await supabaseAdmin
     .from('hub_appointment_services')
-    .select('id, executed_by_staff_id, appointment_id')
+    .select('id, executed_by_staff_id, appointment_id, hub_service_type_id')
     .in('id', serviceIds);
   if (svcErr) throw new Error(svcErr.message);
 
@@ -414,6 +419,7 @@ export async function assertServiceLinesHaveExecutor(
       {
         executed_by_staff_id: (r.executed_by_staff_id as string | null) ?? null,
         appointment_id: (r.appointment_id as string | null) ?? null,
+        hub_service_type_id: (r.hub_service_type_id as string | null) ?? null,
       },
     ]),
   );
@@ -450,6 +456,11 @@ export async function assertServiceLinesHaveExecutor(
     if (!row?.appointment_id) continue;
     if (kindByAppt.get(row.appointment_id) === 'pickup_route') continue;
     if (row.executed_by_staff_id) continue;
+    const rule = matchRuleForLine(rules, {
+      hub_service_type_id: row.hub_service_type_id,
+      hub_inventory_item_id: null,
+    });
+    if (!rule) continue;
     missing.push({ origin_id: sid, description: descByOrigin.get(sid) ?? null });
   }
 

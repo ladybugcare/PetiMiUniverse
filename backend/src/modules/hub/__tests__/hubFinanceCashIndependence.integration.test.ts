@@ -117,6 +117,38 @@ describe('Financeiro × Caixa — independência e ledger', () => {
     expect(String(res.body.error)).toMatch(/abra o caixa/i);
   });
 
+  it('PIX com cash_session_id de sessão fechada ignora a sessão e grava 201', async () => {
+    configureSupabaseMock({
+      tables: {
+        clinic_hub_subscriptions: [betaClinicSubscription(TEST_CLINIC_ID)],
+        hub_clinic_settings: [clinicSettings()],
+        hub_receivables: [pendingReceivable(RECEIVABLE_ID, 100)],
+        hub_payments: [],
+        hub_cash_sessions: [cashSession({ status: 'closed', closed_at: '2026-06-15T22:00:00.000Z' })],
+        hub_financial_adjustments: [],
+        hub_comandas: [],
+        hub_charge_bundles: [],
+        hub_charge_bundle_items: [],
+        hub_customer_package_balances: [],
+        hub_package_redemptions: [],
+      },
+    });
+    authAsRole('CFINANCE');
+
+    const res = await request(app)
+      .post(`/api/hub/finance/receivables/${RECEIVABLE_ID}/payments`)
+      .send({
+        clinic_id: TEST_CLINIC_ID,
+        amount: 40,
+        payment_method: 'pix',
+        cash_session_id: CASH_SESSION_ID,
+      });
+    expect(res.status).toBe(201);
+    const pay = getMockSupabaseClient()._state.tables.hub_payments?.[0];
+    expect(pay?.cash_session_id ?? null).toBeNull();
+    expect(pay?.status).toBe('posted');
+  });
+
   it('anulação vs reembolso efetivo gravam adjustment_type distintos', async () => {
     configureSupabaseMock({
       tables: {

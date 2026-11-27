@@ -8,11 +8,18 @@ export function isFinalOperationalStatus(status: string): boolean {
 }
 
 export function itemOperationalStatus(item: DayBoardItem): string {
+  // Cirurgia concluída sem alta: preferir "Finalizado" mesmo se o encounter ainda estiver aberto.
+  if (item.surgery_status === 'completed') return 'completed';
   const base = (item.status as string) || item.appointment_status || 'waiting';
   const phase = (item as { operational_phase?: HubEncounterOperationalPhase | null }).operational_phase;
   if (base === 'in_progress' && phase === 'awaiting_exams') return 'awaiting_exams';
   if (base === 'in_progress' && phase === 'exams_returned') return 'exams_returned';
   return base;
+}
+
+/** Cirurgia concluída aguardando destino (alta ambulatorial ou internação). */
+export function isSurgeryPendingDestination(item: DayBoardItem): boolean {
+  return Boolean(item.surgery_id && item.surgery_status === 'completed' && !item.surgery_discharge_at);
 }
 
 export const VET_QUEUE_STATUS_LABEL: Record<string, string> = {

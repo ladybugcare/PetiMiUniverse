@@ -3130,14 +3130,14 @@ export const postHubFinanceCashSessionOpen = async (req: Request, res: Response)
       .maybeSingle();
     if (existing) {
       const openedAtDate = existing.opened_at
-        ? new Date(existing.opened_at as string).toISOString().slice(0, 10)
+        ? paymentYmdSaoPaulo(existing.opened_at as string)
         : null;
-      const todayYmd = new Date().toISOString().slice(0, 10);
-      const isPreviousDay = openedAtDate && openedAtDate < todayYmd;
+      const todayYmd = paymentYmdSaoPaulo(null);
+      const isPreviousDay = Boolean(openedAtDate && openedAtDate < todayYmd);
       return res.status(409).json({
         error: 'Já existe caixa aberto nesta unidade',
         previous_session_id: existing.id,
-        is_previous_day: isPreviousDay ?? false,
+        is_previous_day: isPreviousDay,
       });
     }
 

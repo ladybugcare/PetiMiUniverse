@@ -7,6 +7,7 @@ import { useKeepContentLoad } from '../../../hooks/useKeepContentLoad';
 import { HubDayNav } from '../../../components/HubDayNav';
 import { HubTabs } from '../../../components/HubTabs';
 import {
+  hubClinicalApi,
   hubEncountersApi,
   hubVetCockpitApi,
   type DayBoardItem,
@@ -198,28 +199,36 @@ const HubVetCockpitPage: React.FC = () => {
 
   const loadPatientContext = useCallback(
     async (item: DayBoardItem) => {
-      if (!clinicId || !item.pet_id) {
+      if (!clinicId) {
         setPatientContext(null);
         contextPetIdRef.current = null;
         return;
       }
-      const keepContext = contextPetIdRef.current === item.pet_id;
+      // Sem pet_id ainda dá para resolver via encounter/appointment no backend.
+      if (!item.pet_id && !item.encounter_id && !item.appointment_id) {
+        setPatientContext(null);
+        contextPetIdRef.current = null;
+        return;
+      }
+      const contextKey = item.pet_id || item.encounter_id || item.appointment_id || null;
+      const keepContext = contextKey != null && contextPetIdRef.current === contextKey;
       if (!keepContext) {
         setPatientContext(null);
         setContextLoading(true);
       }
       try {
         const ctx = await hubVetCockpitApi.patientContext(clinicId, {
-          petId: item.pet_id,
+          petId: item.pet_id ?? undefined,
           encounterId: item.encounter_id,
           appointmentId: item.appointment_id,
         });
         setPatientContext(ctx);
-        contextPetIdRef.current = item.pet_id;
-        if (item.pet_id) {
+        contextPetIdRef.current = ctx.pet?.id || contextKey;
+        const hintPetId = ctx.pet?.id || item.pet_id;
+        if (hintPetId) {
           setBadgeHints((prev) => ({
             ...prev,
-            [item.pet_id!]: {
+            [hintPetId]: {
               examsAvailable: ctx.exams_grouped.available.length > 0,
               rxDraft: ctx.draft_prescriptions_count > 0,
               hospitalized: Boolean(ctx.active_hospitalization),
@@ -265,7 +274,9 @@ const HubVetCockpitPage: React.FC = () => {
       return;
     }
     setOpsPresetPetId(item?.pet_id ?? patientContext?.pet?.id ?? null);
-    setOpsPresetCaseId(patientContext?.encounter?.hub_case_id ?? null);
+    setOpsPresetCaseId(
+      patientContext?.encounter?.hub_case_id ?? patientContext?.active_case?.id ?? null,
+    );
     setOpsPresetGuardianId(item?.guardian_id ?? patientContext?.guardian?.id ?? null);
     setOpsPresetAppointmentId(item?.appointment_id ?? null);
     setOpsPresetDailyServiceTypeId(
@@ -349,6 +360,33 @@ const HubVetCockpitPage: React.FC = () => {
     } finally {
       setStartingEncounter(false);
     }
+  };
+
+  const handleClinicalDischarge = () => {
+    const surgeryId = selected?.surgery_id;
+    if (!clinicId || !surgeryId || !canWrite) return;
+    showConfirm(
+      'Isso libera o paciente para a Recepção entregar ao tutor. Não use se o pet for internar no pós-operatório.',
+      () => {
+        void (async () => {
+          try {
+            await hubClinicalApi.patchSurgery(surgeryId, {
+              clinic_id: clinicId,
+              discharge_at: new Date().toISOString(),
+            });
+            showSuccess('Alta clínica registrada — a Recepção pode liberar a retirada.');
+            await loadQueue();
+            // Com alta, a ficha sai do limbo operacional — limpa seleção para o efeito da fila reescolher.
+            setSelected((prev) => (prev?.surgery_id === surgeryId ? null : prev));
+            setPatientContext(null);
+            contextPetIdRef.current = null;
+          } catch (e: unknown) {
+            showError((e as Error)?.message || 'Erro ao registrar alta clínica');
+          }
+        })();
+      },
+      'Registrar alta clínica?',
+    );
   };
 
   const handleComplete = async () => {
@@ -619,6 +657,7 @@ const HubVetCockpitPage: React.FC = () => {
                 if (encId) openEncounter(encId, section);
               }}
               onAdmit={() => openAdmitFromItem(selected)}
+              onClinicalDischarge={handleClinicalDischarge}
               onComplete={() => void handleComplete()}
               onSetOperationalPhase={(phase) => void handleSetOperationalPhase(phase)}
             />

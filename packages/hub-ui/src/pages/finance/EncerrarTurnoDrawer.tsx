@@ -131,24 +131,8 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
     }
     setBusy(true);
     setErrorMsg(null);
-    let closeHandoffErrors = handoffErrors;
     try {
-      if (openComandasCount > 0 && !handoffDone) {
-        if (!unitId) {
-          setErrorMsg('Unidade da sessão de caixa não encontrada.');
-          setBusy(false);
-          return;
-        }
-        const result = await enviarPendentesAoFinanceiro(clinicId, unitId);
-        if (!result.success) {
-          closeHandoffErrors = result.errors;
-          setHandoffErrors(result.errors);
-        } else {
-          closeHandoffErrors = [];
-          setHandoffErrors([]);
-          setHandoffDone(true);
-        }
-      }
+      // Handoff único no servidor (closeCashSession, abortOnHandoffErrors: false).
       const closed = await hubFinancialApi.closeCashSession(cashSession.id, {
         clinic_id: clinicId,
         closing_balance: v,
@@ -156,11 +140,12 @@ export const EncerrarTurnoDrawer: React.FC<EncerrarTurnoDrawerProps> = ({
       const apiErrors = (closed.auto_handoff_errors ?? []).filter(Boolean);
       const merged =
         apiErrors.length > 0
-          ? Array.from(new Set([...closeHandoffErrors, ...apiErrors]))
-          : closeHandoffErrors;
+          ? Array.from(new Set([...handoffErrors, ...apiErrors]))
+          : handoffErrors;
       onClosed(merged.length > 0 ? { handoffErrors: merged } : undefined);
     } catch (e) {
       setErrorMsg((e as Error)?.message || 'Erro ao fechar caixa.');
+    } finally {
       setBusy(false);
     }
   };

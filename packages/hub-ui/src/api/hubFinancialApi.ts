@@ -39,6 +39,18 @@ export type HubFinanceUnbilledItem = {
 
 export type HubStockReturnStatus = 'pending' | 'partial' | 'returned' | 'unsellable' | 'mixed' | null;
 
+/** Linha de serviço para marcar execução (gate de comissão). */
+export type HubServiceExecutionLine = {
+  id: string;
+  appointment_id: string;
+  hub_service_type_id: string | null;
+  name: string;
+  service_group: string | null;
+  executed_at: string | null;
+  executed_by_staff_id: string | null;
+  commission_requires_executor: boolean;
+};
+
 export type HubFinanceDayBoardBilling = {
   comanda_id: string | null;
   comanda_status: string | null;
@@ -1305,6 +1317,32 @@ export const hubFinancialApi = {
     reason: string;
   }): Promise<void> {
     await apiRequest(`${base}/waive-billing`, { method: 'POST', body: JSON.stringify(body) });
+  },
+
+  async getServiceExecutionLines(
+    clinicId: string,
+    sourceType: HubFinanceUnbilledSourceType | string,
+    sourceId: string,
+  ): Promise<{ lines: HubServiceExecutionLine[]; appointment_ids: string[] }> {
+    const q = new URLSearchParams({
+      clinic_id: clinicId,
+      source_type: sourceType,
+      source_id: sourceId,
+    });
+    return apiRequest(`${base}/service-execution-lines?${q.toString()}`) as Promise<{
+      lines: HubServiceExecutionLine[];
+      appointment_ids: string[];
+    }>;
+  },
+
+  async patchAppointmentServiceLine(
+    lineId: string,
+    payload: { clinic_id: string; executed: boolean; executed_by_staff_id?: string | null },
+  ): Promise<{ line: { id: string; executed_at: string | null; executed_by_staff_id: string | null } }> {
+    return apiRequest(`${base}/appointment-service-lines/${encodeURIComponent(lineId)}`, {
+      method: 'PATCH',
+      body: JSON.stringify(payload),
+    }) as Promise<{ line: { id: string; executed_at: string | null; executed_by_staff_id: string | null } }>;
   },
 
   async getCashSessionOpen(clinicId: string, unitId: string): Promise<{ cash_session: HubCashSession | null }> {

@@ -922,6 +922,12 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
       item.surgery_id = surgery.id;
       item.surgery_title = surgery.title;
       item.surgery_status = surgery.status;
+      item.surgery_discharge_at = surgery.discharge_at ?? null;
+      if (!item.pet_id && surgery.pet_id) item.pet_id = surgery.pet_id;
+      if (!item.guardian_id && surgery.guardian_id) item.guardian_id = surgery.guardian_id;
+      if (!item.hub_staff_member_id && surgery.hub_staff_member_id) {
+        item.hub_staff_member_id = surgery.hub_staff_member_id;
+      }
     };
 
     const seenSurgeryIds = new Set<string>();
@@ -945,10 +951,17 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
     const extraGuIds = new Set<string>();
     const extraStaffIds = new Set<string>();
     for (const s of surgeries) {
-      if (seenSurgeryIds.has(s.id)) continue;
       if (s.pet_id && !petMap.has(s.pet_id)) extraPetIds.add(s.pet_id);
       if (s.guardian_id && !guMap.has(s.guardian_id)) extraGuIds.add(s.guardian_id);
       if (s.hub_staff_member_id && !staffMap.has(s.hub_staff_member_id)) extraStaffIds.add(s.hub_staff_member_id);
+    }
+    for (const item of items) {
+      const petId = item.pet_id as string | null | undefined;
+      const guId = item.guardian_id as string | null | undefined;
+      const staffId = item.hub_staff_member_id as string | null | undefined;
+      if (petId && !petMap.has(petId)) extraPetIds.add(petId);
+      if (guId && !guMap.has(guId)) extraGuIds.add(guId);
+      if (staffId && !staffMap.has(staffId)) extraStaffIds.add(staffId);
     }
     if (extraPetIds.size > 0) {
       const extraPets = await fetchHubPetsMapByIds(extraPetIds);
@@ -966,21 +979,38 @@ export const getHubEncountersDayBoard = async (req: Request, res: Response) => {
       for (const s of extraStaff ?? []) staffMap.set((s as { id: string }).id, s);
     }
 
+    for (const item of items) {
+      const petId = item.pet_id as string | null | undefined;
+      const guId = item.guardian_id as string | null | undefined;
+      const staffId = item.hub_staff_member_id as string | null | undefined;
+      if (petId && !item.pet) item.pet = petMap.get(petId) ?? null;
+      if (guId && !item.guardian) item.guardian = guMap.get(guId) ?? null;
+      if (staffId && !item.staff_member) item.staff_member = staffMap.get(staffId) ?? null;
+    }
+
     for (const s of surgeries) {
       if (seenSurgeryIds.has(s.id)) continue;
       if (s.hub_encounter_id && seenEncounterIds.has(s.hub_encounter_id)) continue;
-      const startsAt = s.started_at || s.scheduled_at || null;
+      const startsAt = s.started_at || s.completed_at || s.scheduled_at || null;
+      const completedPending = s.status === 'completed';
       items.push({
         kind: s.hub_encounter_id ? 'encounter' : 'appointment_slot',
         encounter_id: s.hub_encounter_id,
         appointment_id: s.hub_appointment_id,
         starts_at: startsAt,
-        appointment_status: s.status === 'in_progress' ? 'in_progress' : 'confirmed',
-        status: s.hub_encounter_id ? (s.status === 'in_progress' ? 'in_progress' : 'waiting') : undefined,
+        appointment_status: s.status === 'in_progress' ? 'in_progress' : completedPending ? 'done' : 'confirmed',
+        status: s.hub_encounter_id
+          ? s.status === 'in_progress'
+            ? 'in_progress'
+            : completedPending
+              ? 'completed'
+              : 'waiting'
+          : undefined,
         title: s.title,
         surgery_id: s.id,
         surgery_title: s.title,
         surgery_status: s.status,
+        surgery_discharge_at: s.discharge_at ?? null,
         pet: s.pet_id ? petMap.get(s.pet_id) ?? null : null,
         guardian: s.guardian_id ? guMap.get(s.guardian_id) ?? null : null,
         staff_member: s.hub_staff_member_id ? staffMap.get(s.hub_staff_member_id) ?? null : null,

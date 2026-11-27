@@ -1,5 +1,5 @@
 import React from 'react';
-import { Ban, Coins, FilePlus2, MessageCircle, Pencil, Receipt, SendHorizonal } from 'lucide-react';
+import { Ban, CheckCircle2, Coins, FilePlus2, MessageCircle, Pencil, Receipt, SendHorizonal } from 'lucide-react';
 import type { HubFinanceDayBoardItem } from '../../api/hubFinancialApi';
 import { HubCheckbox } from '../../components/HubCheckbox';
 import { serviceGroupLabel } from '../../utils/serviceTypeSlug';
@@ -13,6 +13,7 @@ import {
 } from './hubComandaEditUtils';
 import { isDayBoardBatchSelectable } from './batchChargeItems';
 import { dayBoardCompositionLabel, resolveDayBoardComposition } from './dayBoardComposition';
+import { dayBoardItemSupportsMarkExecution } from './resolveGroomingExecutionFromDayBoard';
 import { ReceivableDueBadge } from './ReceivableDueBadge';
 import { ReceivableStockReturnBadge } from './ReceivableStockReturnBadge';
 
@@ -116,6 +117,8 @@ export type FinanceDayBoardTableProps = {
   onCheckout: (item: HubFinanceDayBoardItem) => void;
   onSendToFinanceiro?: (item: HubFinanceDayBoardItem) => void;
   onWaive?: (item: HubFinanceDayBoardItem) => void;
+  /** Abre fluxo de marcar execução (Banho & Tosa) para destravar cobrança/handoff. */
+  onMarkExecution?: (item: HubFinanceDayBoardItem) => void;
   onCancelReceivable?: (item: HubFinanceDayBoardItem) => void;
   onShareComanda: (item: HubFinanceDayBoardItem) => void;
   onRowClick?: (item: HubFinanceDayBoardItem) => void;
@@ -220,6 +223,7 @@ export function FinanceDayBoardTable({
   onCheckout,
   onSendToFinanceiro,
   onWaive,
+  onMarkExecution,
   onCancelReceivable,
   onShareComanda,
   onRowClick,
@@ -474,7 +478,23 @@ export function FinanceDayBoardTable({
                         <MessageCircle size={15} strokeWidth={2} />
                       </button>
                     )}
-                    {isCaixa && !hasReceivable && canFinancialWrite && canEdit && onWaive && (
+                    {!hasReceivable &&
+                      canFinancialWrite &&
+                      canEdit &&
+                      onMarkExecution &&
+                      dayBoardItemSupportsMarkExecution(item) && (
+                      <button
+                        type="button"
+                        className="hub-dayboard__action-btn"
+                        title="Marcar execução"
+                        aria-label="Marcar execução"
+                        disabled={busy}
+                        onClick={() => onMarkExecution(item)}
+                      >
+                        <CheckCircle2 size={15} strokeWidth={2} />
+                      </button>
+                    )}
+                    {!hasReceivable && canFinancialWrite && canEdit && onWaive && (
                       <button
                         type="button"
                         className="hub-dayboard__action-btn"

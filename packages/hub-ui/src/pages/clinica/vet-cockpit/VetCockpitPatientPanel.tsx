@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import {
   BedDouble,
   CheckCircle2,
+  DoorOpen,
   FileText,
   FlaskConical,
   Pill,
@@ -29,6 +30,7 @@ import {
   isDayBoardSurgery,
   isFinalOperationalStatus,
   isItemEmergency,
+  isSurgeryPendingDestination,
   itemOperationalStatus,
   resolveDayBoardPrimaryAction,
   sexLabel,
@@ -57,6 +59,8 @@ type Props = {
   onOpenHospitalization?: (hospitalizationId: string) => void;
   onOpenRecord: (section?: VetCockpitDrawerSection) => void;
   onAdmit?: () => void;
+  /** Alta clínica ambulatorial após cirurgia concluída (sem discharge_at). */
+  onClinicalDischarge?: () => void;
   onComplete: () => void;
   onSetOperationalPhase: (phase: HubEncounterOperationalPhase | null) => void;
 };
@@ -115,6 +119,7 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
   onOpenHospitalization,
   onOpenRecord,
   onAdmit,
+  onClinicalDischarge,
   onComplete,
   onSetOperationalPhase,
 }) => {
@@ -130,6 +135,7 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
 
   const isSurgery = isDayBoardSurgery(item);
   const isHospitalization = isDayBoardHospitalization(item);
+  const pendingSurgeryDestination = isSurgeryPendingDestination(item);
   const primaryAction = resolveDayBoardPrimaryAction(item);
   const primaryLabel = dayBoardPrimaryActionLabel(primaryAction);
 
@@ -153,13 +159,45 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
     }
   };
 
+  const pendingDestinationFooter =
+    canWrite && pendingSurgeryDestination ? (
+      <div className="vet-cockpit-panel__footer">
+        <p className="hub-clientes__muted" style={{ margin: '0 0 8px', gridColumn: '1 / -1' }}>
+          Procedimento concluído — falta alta clínica ou internação.
+        </p>
+        {onClinicalDischarge ? (
+          <button
+            type="button"
+            className="vet-cockpit-action-btn vet-cockpit-action-btn--primary"
+            onClick={onClinicalDischarge}
+          >
+            <DoorOpen size={18} aria-hidden />
+            Dar alta
+          </button>
+        ) : null}
+        {onAdmit ? (
+          <button type="button" className="vet-cockpit-action-btn" onClick={onAdmit}>
+            <BedDouble size={18} aria-hidden />
+            Internar
+          </button>
+        ) : null}
+        {onOpenSurgery ? (
+          <button type="button" className="vet-cockpit-action-btn" onClick={onOpenSurgery}>
+            <Scissors size={18} aria-hidden />
+            Ver ficha
+          </button>
+        ) : null}
+      </div>
+    ) : null;
+
   if (!context) {
     return (
       <div className="vet-cockpit-panel">
         {loading ? <HubLoading variant="block" label="Carregando paciente…" /> : (
           <>
             <p className="hub-clientes__muted">Sem contexto clínico para este paciente.</p>
-            {canWrite && primaryAction.kind !== 'none' && primaryLabel ? (
+            {pendingDestinationFooter}
+            {!pendingDestinationFooter && canWrite && primaryAction.kind !== 'none' && primaryLabel ? (
               <div className="vet-cockpit-panel__footer">
                 <button
                   type="button"
@@ -259,6 +297,12 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
               <div>
                 <span className="vet-cockpit-panel__k">Cirurgia</span>
                 <strong>{item.surgery_title || item.title || item.service_type?.name || 'Procedimento'}</strong>
+              </div>
+            ) : null}
+            {pendingSurgeryDestination ? (
+              <div>
+                <span className="vet-cockpit-panel__k">Destino</span>
+                <strong>Falta alta clínica ou internação</strong>
               </div>
             ) : null}
             {context.chief_complaint ? (
@@ -536,83 +580,87 @@ const VetCockpitPatientPanel: React.FC<Props> = ({
         </div>
       ) : null}
 
-      <div className="vet-cockpit-panel__footer">
-        {showPrimaryStart && primaryLabel ? (
-          <button
-            type="button"
-            className="vet-cockpit-action-btn vet-cockpit-action-btn--primary"
-            onClick={
-              primaryAction.kind === 'admit_hospitalization' && activeHospId && onOpenHospitalization
-                ? () => onOpenHospitalization(activeHospId)
-                : runPrimaryAction
-            }
-          >
-            {isSurgery ? (
-              <Scissors size={18} aria-hidden />
-            ) : isHospitalization || (primaryAction.kind === 'admit_hospitalization' && activeHospId) ? (
+      {pendingDestinationFooter ? (
+        pendingDestinationFooter
+      ) : (
+        <div className="vet-cockpit-panel__footer">
+          {showPrimaryStart && primaryLabel ? (
+            <button
+              type="button"
+              className="vet-cockpit-action-btn vet-cockpit-action-btn--primary"
+              onClick={
+                primaryAction.kind === 'admit_hospitalization' && activeHospId && onOpenHospitalization
+                  ? () => onOpenHospitalization(activeHospId)
+                  : runPrimaryAction
+              }
+            >
+              {isSurgery ? (
+                <Scissors size={18} aria-hidden />
+              ) : isHospitalization || (primaryAction.kind === 'admit_hospitalization' && activeHospId) ? (
+                <BedDouble size={18} aria-hidden />
+              ) : (
+                <Play size={18} aria-hidden />
+              )}
+              {primaryAction.kind === 'admit_hospitalization' && activeHospId
+                ? 'Abrir ficha da internação'
+                : primaryLabel}
+            </button>
+          ) : null}
+          {encounterId && !isSurgery && isHospitalization && activeHospId && onOpenHospitalization ? (
+            <button
+              type="button"
+              className="vet-cockpit-action-btn vet-cockpit-action-btn--primary"
+              onClick={() => onOpenHospitalization(activeHospId)}
+            >
               <BedDouble size={18} aria-hidden />
-            ) : (
-              <Play size={18} aria-hidden />
-            )}
-            {primaryAction.kind === 'admit_hospitalization' && activeHospId
-              ? 'Abrir ficha da internação'
-              : primaryLabel}
-          </button>
-        ) : null}
-        {encounterId && !isSurgery && isHospitalization && activeHospId && onOpenHospitalization ? (
-          <button
-            type="button"
-            className="vet-cockpit-action-btn vet-cockpit-action-btn--primary"
-            onClick={() => onOpenHospitalization(activeHospId)}
-          >
-            <BedDouble size={18} aria-hidden />
-            Abrir ficha da internação
-          </button>
-        ) : null}
-        {showOpenActiveHosp && activeHospId && !isHospitalization ? (
-          <button
-            type="button"
-            className="vet-cockpit-action-btn"
-            onClick={() => onOpenHospitalization?.(activeHospId)}
-          >
-            <BedDouble size={18} aria-hidden />
-            Abrir ficha da internação
-          </button>
-        ) : null}
-        {encounterId && !isSurgery && !isHospitalization ? (
-          <button
-            type="button"
-            className="vet-cockpit-action-btn vet-cockpit-action-btn--primary"
-            onClick={() => onOpenRecord('sec-resumo')}
-          >
-            <Stethoscope size={18} aria-hidden />
-            {inProgress ? 'Continuar atendimento' : 'Abrir prontuário'}
-          </button>
-        ) : null}
-        {encounterId && !isSurgery && isHospitalization ? (
-          <button type="button" className="vet-cockpit-action-btn" onClick={() => onOpenRecord('sec-resumo')}>
-            <Stethoscope size={18} aria-hidden />
-            {inProgress ? 'Abrir atendimento clínico' : 'Abrir prontuário'}
-          </button>
-        ) : null}
-        {encounterId && isSurgery ? (
-          <button type="button" className="vet-cockpit-action-btn" onClick={() => onOpenRecord('sec-resumo')}>
-            <Stethoscope size={18} aria-hidden />
-            {inProgress ? 'Abrir atendimento clínico' : 'Abrir prontuário'}
-          </button>
-        ) : null}
-        {encounterId && inProgress && canWrite && !isSurgery ? (
-          <button
-            type="button"
-            className="vet-cockpit-action-btn vet-cockpit-action-btn--finish"
-            disabled={completing}
-            onClick={onComplete}
-          >
-            <CheckCircle2 size={16} aria-hidden />
-            {completing ? 'Finalizando…' : 'Finalizar atendimento'}
-          </button>
-        ) : null}
-      </div>
+              Abrir ficha da internação
+            </button>
+          ) : null}
+          {showOpenActiveHosp && activeHospId && !isHospitalization ? (
+            <button
+              type="button"
+              className="vet-cockpit-action-btn"
+              onClick={() => onOpenHospitalization?.(activeHospId)}
+            >
+              <BedDouble size={18} aria-hidden />
+              Abrir ficha da internação
+            </button>
+          ) : null}
+          {encounterId && !isSurgery && !isHospitalization ? (
+            <button
+              type="button"
+              className="vet-cockpit-action-btn vet-cockpit-action-btn--primary"
+              onClick={() => onOpenRecord('sec-resumo')}
+            >
+              <Stethoscope size={18} aria-hidden />
+              {inProgress ? 'Continuar atendimento' : 'Abrir prontuário'}
+            </button>
+          ) : null}
+          {encounterId && !isSurgery && isHospitalization ? (
+            <button type="button" className="vet-cockpit-action-btn" onClick={() => onOpenRecord('sec-resumo')}>
+              <Stethoscope size={18} aria-hidden />
+              {inProgress ? 'Abrir atendimento clínico' : 'Abrir prontuário'}
+            </button>
+          ) : null}
+          {encounterId && isSurgery ? (
+            <button type="button" className="vet-cockpit-action-btn" onClick={() => onOpenRecord('sec-resumo')}>
+              <Stethoscope size={18} aria-hidden />
+              {inProgress ? 'Abrir atendimento clínico' : 'Abrir prontuário'}
+            </button>
+          ) : null}
+          {encounterId && inProgress && canWrite && !isSurgery ? (
+            <button
+              type="button"
+              className="vet-cockpit-action-btn vet-cockpit-action-btn--finish"
+              disabled={completing}
+              onClick={onComplete}
+            >
+              <CheckCircle2 size={16} aria-hidden />
+              {completing ? 'Finalizando…' : 'Finalizar atendimento'}
+            </button>
+          ) : null}
+        </div>
+      )}
     </div>
   );
 };

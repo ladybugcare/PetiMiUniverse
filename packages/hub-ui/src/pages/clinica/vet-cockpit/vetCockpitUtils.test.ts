@@ -6,6 +6,8 @@ import {
   isDayBoardHospitalization,
   isDayBoardSurgery,
   isFinalOperationalStatus,
+  isSurgeryPendingDestination,
+  itemOperationalStatus,
   resolveDayBoardPrimaryAction,
 } from './vetCockpitUtils';
 
@@ -142,5 +144,51 @@ describe('formatCockpitShortDate', () => {
 
   it('devolve traço sem data', () => {
     expect(formatCockpitShortDate(null)).toBe('—');
+  });
+});
+
+describe('isSurgeryPendingDestination', () => {
+  it('detecta cirurgia concluída sem alta', () => {
+    expect(
+      isSurgeryPendingDestination({
+        kind: 'encounter',
+        surgery_id: 's1',
+        surgery_status: 'completed',
+        surgery_discharge_at: null,
+        status: 'in_progress',
+      }),
+    ).toBe(true);
+  });
+
+  it('não marca com alta, em andamento ou sem ficha', () => {
+    expect(
+      isSurgeryPendingDestination({
+        kind: 'encounter',
+        surgery_id: 's1',
+        surgery_status: 'completed',
+        surgery_discharge_at: '2026-11-27T18:00:00.000Z',
+      }),
+    ).toBe(false);
+    expect(
+      isSurgeryPendingDestination({
+        kind: 'encounter',
+        surgery_id: 's1',
+        surgery_status: 'in_progress',
+      }),
+    ).toBe(false);
+    expect(isSurgeryPendingDestination({ kind: 'appointment_slot' })).toBe(false);
+  });
+});
+
+describe('itemOperationalStatus com cirurgia concluída', () => {
+  it('preferência completed quando surgery_status é completed', () => {
+    expect(
+      itemOperationalStatus({
+        kind: 'encounter',
+        status: 'in_progress',
+        surgery_id: 's1',
+        surgery_status: 'completed',
+      }),
+    ).toBe('completed');
   });
 });

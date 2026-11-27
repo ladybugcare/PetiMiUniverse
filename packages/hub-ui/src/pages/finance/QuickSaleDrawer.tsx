@@ -22,7 +22,7 @@ import {
 import { isValidBrTaxId } from '../../utils/formatBrTaxId';
 import { isValidBrPhone } from '../../utils/formatBrPhone';
 import { normalizeProductQtyInput } from './quickSaleQty';
-import { isLotExpired } from '../../utils/inventoryLotExpiry';
+import { matchInventoryByCode, pickLotWithStock } from '../../utils/inventoryCodeMatch';
 import '../clientes/clientes.css';
 import './hub-finance-page.css';
 
@@ -36,10 +36,6 @@ type Props = {
   onCheckout?: (comandaId: string) => void;
 };
 
-function digitsOnly(s: string): string {
-  return s.replace(/\D/g, '');
-}
-
 function formatBrl(n: number): string {
   return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
@@ -50,30 +46,6 @@ function isSellableProduct(p: HubInventoryItem): boolean {
   if (p.item_kind !== 'product') return false;
   const purpose = (p.sale_purpose ?? '').trim().toUpperCase();
   return !purpose || purpose === 'SALE';
-}
-
-function normalizeCode(raw: string): string {
-  return raw.trim().toLowerCase();
-}
-
-function matchInventoryByCode(items: HubInventoryItem[], code: string): HubInventoryItem | null {
-  const raw = code.trim();
-  if (!raw) return null;
-  const norm = normalizeCode(raw);
-  const digits = digitsOnly(raw);
-  const exact =
-    items.find((p) => p.ean && digitsOnly(p.ean) === digits && digits.length >= 8) ||
-    items.find((p) => p.store_sku && normalizeCode(p.store_sku) === norm) ||
-    items.find((p) => p.ean && normalizeCode(p.ean) === norm);
-  return exact ?? null;
-}
-
-function pickLotWithStock(lots: HubInventoryLotRow[], itemId: string): HubInventoryLotRow | undefined {
-  const sellable = lots.filter((l) => l.item_id === itemId && !isLotExpired(l.expiry_date));
-  return (
-    sellable.find((l) => Number(l.qty_on_hand ?? 0) > 0) ??
-    sellable[0]
-  );
 }
 
 function lotOnHand(lots: HubInventoryLotRow[], lotId: string | null | undefined): number {

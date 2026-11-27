@@ -2422,7 +2422,10 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
     .eq('clinic_id', clinic_id)
     .is('deleted_at', null)
     .maybeSingle();
-  if (!existing) return res.status(404).json({ error: 'Cirurgia não encontrada' });
+  if (!existing) {
+    console.warn('patchHubSurgery: cirurgia não encontrada', { id: id.data, clinic_id });
+    return res.status(404).json({ error: 'Cirurgia não encontrada' });
+  }
 
   const rawTeamForSync = Array.isArray(patch.team) ? patch.team : null;
   const update: Record<string, unknown> = { ...patch };
@@ -2573,7 +2576,10 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
     .select('*')
     .maybeSingle();
   if (error) return res.status(500).json({ error: error.message });
-  if (!data) return res.status(404).json({ error: 'Cirurgia não encontrada' });
+  if (!data) {
+    console.warn('patchHubSurgery: update sem linha', { id: id.data, clinic_id });
+    return res.status(404).json({ error: 'Cirurgia não encontrada' });
+  }
 
   const { data: enriched } = await supabaseAdmin
     .from('hub_surgeries')

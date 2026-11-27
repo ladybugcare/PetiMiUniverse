@@ -209,6 +209,9 @@ export type DayBoardSurgeryRow = {
   status: string;
   scheduled_at: string | null;
   started_at: string | null;
+  completed_at: string | null;
+  discharge_at: string | null;
+  clinical_outcome: string | null;
   pet_id: string;
   guardian_id: string | null;
   hub_staff_member_id: string | null;
@@ -220,7 +223,7 @@ function dayBoardSurgeryQuery(clinicId: string, staffMemberId?: string) {
   let query = supabaseAdmin
     .from('hub_surgeries')
     .select(
-      'id, title, status, scheduled_at, started_at, pet_id, guardian_id, hub_staff_member_id, hub_appointment_id, hub_encounter_id',
+      'id, title, status, scheduled_at, started_at, completed_at, discharge_at, clinical_outcome, pet_id, guardian_id, hub_staff_member_id, hub_appointment_id, hub_encounter_id',
     )
     .eq('clinic_id', clinicId)
     .is('deleted_at', null);
@@ -231,7 +234,8 @@ function dayBoardSurgeryQuery(clinicId: string, staffMemberId?: string) {
 
 /**
  * Cirurgias que devem aparecer na fila do consultório: as do dia + as já
- * iniciadas (mesmo que o slot original ainda esteja em outra data).
+ * iniciadas + as concluídas ainda sem alta clínica (mesmo espírito do in_progress:
+ * permanecem até terem destino — alta, internação ou óbito).
  */
 export async function listOperationalSurgeriesForDayBoard(opts: {
   clinicId: string;
@@ -239,21 +243,33 @@ export async function listOperationalSurgeriesForDayBoard(opts: {
   to: string;
   staffMemberId?: string;
 }): Promise<DayBoardSurgeryRow[]> {
-  const [{ data: dueRows, error: dueErr }, { data: activeRows, error: activeErr }] = await Promise.all([
+  const [
+    { data: dueRows, error: dueErr },
+    { data: activeRows, error: activeErr },
+    { data: pendingDischargeRows, error: pendingErr },
+  ] = await Promise.all([
     dayBoardSurgeryQuery(opts.clinicId, opts.staffMemberId)
       .eq('status', 'scheduled')
       .gte('scheduled_at', opts.from)
       .lt('scheduled_at', opts.to),
     dayBoardSurgeryQuery(opts.clinicId, opts.staffMemberId).eq('status', 'in_progress'),
+    dayBoardSurgeryQuery(opts.clinicId, opts.staffMemberId)
+      .eq('status', 'completed')
+      .is('discharge_at', null)
+      .is('clinical_outcome', null),
   ]);
-  if (dueErr || activeErr) {
-    const err = dueErr ?? activeErr;
+  if (dueErr || activeErr || pendingErr) {
+    const err = dueErr ?? activeErr ?? pendingErr;
     if (err && isMissingPostgrestRelation(err)) return [];
     if (err) throw new Error(err.message);
   }
 
   const byId = new Map<string, DayBoardSurgeryRow>();
-  for (const row of [...(dueRows ?? []), ...(activeRows ?? [])] as DayBoardSurgeryRow[]) {
+  for (const row of [
+    ...(dueRows ?? []),
+    ...(activeRows ?? []),
+    ...(pendingDischargeRows ?? []),
+  ] as DayBoardSurgeryRow[]) {
     byId.set(row.id, row);
   }
   return [...byId.values()];

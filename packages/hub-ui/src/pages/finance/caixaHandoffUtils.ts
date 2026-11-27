@@ -1,12 +1,8 @@
 import { hubFinancialApi } from '../../api/hubFinancialApi';
+import { ymdSaoPaulo } from '../../utils/ymdSaoPaulo';
 import { canCaixaEditOpenComanda } from './hubComandaEditUtils';
 
 const BALANCE_EPSILON = 0.02;
-
-function ymdToday(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 export type HandoffResult = {
   success: boolean;
@@ -50,7 +46,7 @@ export async function enviarPendentesAoFinanceiro(
     const res = await hubFinancialApi.handoffPending({
       clinic_id: clinicId,
       unit_id: unitId,
-      due_date: ymdToday(),
+      due_date: ymdSaoPaulo(),
     });
     const errors = (res.errors ?? []).filter((e) => !isSkippableFinanceHandoffError(e));
     return {

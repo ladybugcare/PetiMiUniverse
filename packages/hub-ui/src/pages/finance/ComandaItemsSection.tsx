@@ -1,11 +1,13 @@
-import React, { useMemo, useState } from 'react';
-import { ChevronDown, Search, Trash2 } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ChevronDown, ScanLine, Search, Trash2, X } from 'lucide-react';
 import { HubSearchableCombobox, type HubComboboxOption } from '../../components/HubSearchableCombobox';
 import type { HubInventoryItem, HubInventoryLotRow } from '../../api/hubInventoryApi';
 import type { HubServiceType } from '../../api/hubServiceTypesApi';
 import type { HubComandaPendingPriceApproval } from '../../api/hubComandaApi';
 import type { ComandaItemDraft } from './comandaItemDraft';
 import { isLotExpired } from '../../utils/inventoryLotExpiry';
+
+export type ComandaProductScanResult = { ok: boolean; message: string };
 
 function fmtBrl(n: number): string {
   return Number(n || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
@@ -33,7 +35,12 @@ type Props = {
   inventoryLots: HubInventoryLotRow[];
   computeLineTotal: (d: ComandaItemDraft) => number;
   onAddService: () => void;
+  /** Linha vazia (seleção no card) — usado como fallback no painel de adicionar. */
   onAddProduct: () => void;
+  /** Leitor USB / Enter: casa EAN ou SKU e adiciona (ou incrementa) o produto. */
+  onScanProductCode?: (code: string) => Promise<ComandaProductScanResult>;
+  /** Seleção manual no painel: adiciona (ou incrementa) pelo id do item. */
+  onAddProductById?: (inventoryItemId: string) => ComandaProductScanResult;
   onUpdateItem: (idx: number, patch: Partial<ComandaItemDraft>) => void;
   onRemoveItem: (idx: number) => void;
   onApplyService: (idx: number, serviceTypeId: string) => void;
@@ -65,6 +72,8 @@ export const ComandaItemsSection: React.FC<Props> = ({
   computeLineTotal,
   onAddService,
   onAddProduct,
+  onScanProductCode,
+  onAddProductById,
   onUpdateItem,
   onRemoveItem,
   onApplyService,
@@ -99,8 +108,59 @@ export const ComandaItemsSection: React.FC<Props> = ({
 
   /** Cards cujo estado aberto/fechado foi invertido pelo usuário (itens novos começam abertos). */
   const [toggledCards, setToggledCards] = useState<Set<string>>(() => new Set());
+  const [productAddOpen, setProductAddOpen] = useState(false);
+  const [scanCode, setScanCode] = useState('');
+  const [scanning, setScanning] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState<ComandaProductScanResult | null>(null);
+  const scanInputRef = useRef<HTMLInputElement | null>(null);
+
+  useEffect(() => {
+    if (!productAddOpen) return;
+    const t = window.setTimeout(() => scanInputRef.current?.focus(), 50);
+    return () => window.clearTimeout(t);
+  }, [productAddOpen]);
 
   const q = catalogSearch.trim().toLowerCase();
+
+  const openProductAdd = () => {
+    setProductAddOpen(true);
+    setScanFeedback(null);
+    setScanCode('');
+  };
+
+  const closeProductAdd = () => {
+    setProductAddOpen(false);
+    setScanFeedback(null);
+    setScanCode('');
+    setScanning(false);
+  };
+
+  const handleScanSubmit = async () => {
+    const code = scanCode.trim();
+    if (!code || scanning || !onScanProductCode) return;
+    setScanning(true);
+    setScanFeedback(null);
+    try {
+      const result = await onScanProductCode(code);
+      setScanFeedback(result);
+    } catch (e: unknown) {
+      setScanFeedback({ ok: false, message: (e as Error)?.message || 'Erro na leitura' });
+    } finally {
+      setScanCode('');
+      setScanning(false);
+      scanInputRef.current?.focus();
+    }
+  };
+
+  const handleManualProductPick = (inventoryItemId: string) => {
+    if (!inventoryItemId) return;
+    if (onAddProductById) {
+      const result = onAddProductById(inventoryItemId);
+      setScanFeedback(result);
+      return;
+    }
+    onAddProduct();
+  };
 
   const serviceComboOptions = useMemo((): HubComboboxOption[] => {
     const active = serviceTypes.filter((s) => !s.deleted_at && s.active !== false && !s.is_addon);
@@ -310,56 +370,6 @@ export const ComandaItemsSection: React.FC<Props> = ({
       <span>{fmtBrl(Number(it.discount_amount))}</span>
     );
 
-  const renderRemoveButton = (idx: number, label: string) => (
-    <button
-      type="button"
-      className="hub-orcamento-novo__btn hub-orcamento-novo__btn--ghost hub-orcamento-novo__btn--icon"
-      aria-label={label}
-      onClick={() => void onRemoveItem(idx)}
-    >
-      <Trash2 size={15} />
-    </button>
-  );
-
-  const renderServiceRow = ({ it, idx }: { it: ComandaItemDraft; idx: number }) => {
-    const editable = canEdit && !it.invoiced;
-    const isManual = it.origin_type === 'manual' || it.origin_type === 'manual_line';
-    return (
-      <tr key={it.id ?? `svc-${idx}`} className={it.invoiced ? 'hub-comanda-row--invoiced' : ''}>
-        <td className="hub-comanda-items__cell-service">
-          {renderServiceDescription(it, idx, editable, isManual, 'comanda')}
-        </td>
-        {showPetColumn ? (
-          <td className="hub-comanda-items__cell-pet">
-            <span className="hub-comanda-items__pet-name" title={it.pet_name ?? undefined}>
-              {it.pet_name?.trim() || '—'}
-            </span>
-          </td>
-        ) : null}
-        <td className="hub-comanda-items__cell-package">{renderPackageBlock(it, editable, 'comanda')}</td>
-        <td className="right hub-comanda-items__cell-qty">{renderQtyInput(it, idx, editable)}</td>
-        <td className="right hub-comanda-items__cell-money">
-          {renderServiceUnitInput(it, idx, editable)}
-        </td>
-        <td className="right hub-comanda-items__cell-money">
-          {renderServiceDiscountInput(it, idx, editable)}
-        </td>
-        <td className="right hub-comanda-items__cell-total">{fmtBrl(computeLineTotal(it))}</td>
-        {canEdit ? (
-          <td className="hub-comanda-items__cell-action">
-            {it.invoiced ? (
-              <span className="hub-orcamento-novo__services-table-cell--muted" style={{ fontSize: 11 }}>
-                Faturado
-              </span>
-            ) : (
-              renderRemoveButton(idx, 'Remover serviço')
-            )}
-          </td>
-        ) : null}
-      </tr>
-    );
-  };
-
   const cardKey = (prefix: string, it: ComandaItemDraft, idx: number) => `${prefix}-${it.id ?? `new-${idx}`}`;
 
   const isCardOpen = (key: string, it: ComandaItemDraft) => Boolean(it.isNew) !== toggledCards.has(key);
@@ -451,7 +461,7 @@ export const ComandaItemsSection: React.FC<Props> = ({
     const editable = canEdit && !it.invoiced;
     const isManual = it.origin_type === 'manual' || it.origin_type === 'manual_line';
     const showDescriptionEditor = editable && (Boolean(it.isNew) || isManual);
-    const key = cardKey('svc-m', it, idx);
+    const key = cardKey('svc', it, idx);
     return renderCardShell({
       key,
       it,
@@ -473,13 +483,13 @@ export const ComandaItemsSection: React.FC<Props> = ({
           {showDescriptionEditor ? (
             <div className="hub-comanda-items__card-field">
               <FieldLabel>Serviço</FieldLabel>
-              {renderServiceDescription(it, idx, editable, isManual, 'comanda-m')}
+              {renderServiceDescription(it, idx, editable, isManual, 'comanda')}
             </div>
           ) : null}
 
           <div className="hub-comanda-items__card-field">
             <FieldLabel>Pacote</FieldLabel>
-            {renderPackageBlock(it, editable, 'comanda-m')}
+            {renderPackageBlock(it, editable, 'comanda')}
           </div>
 
           <div className="hub-comanda-items__card-grid">
@@ -630,53 +640,6 @@ export const ComandaItemsSection: React.FC<Props> = ({
     );
   };
 
-  const renderProductRow = ({ it, idx }: { it: ComandaItemDraft; idx: number }) => {
-    const editable = canEdit && !it.invoiced && !it.returned;
-    const isManual = it.origin_type === 'manual' || it.origin_type === 'manual_line';
-    const inv = it.hub_inventory_item_id
-      ? inventoryItems.find((p) => p.id === it.hub_inventory_item_id)
-      : null;
-    const priceLocked = Boolean(inv && !inv.allow_price_override_on_sale);
-    const maxDiscountPct = Math.max(0, Math.min(100, Number(inv?.max_sale_discount_pct ?? 0)));
-    const qtyNum = Number(String(it.quantity).replace(',', '.')) || 0;
-    const unitNum = Number(String(it.unit_amount).replace(',', '.')) || 0;
-    const maxDiscountAmount = Math.round(((qtyNum * unitNum * maxDiscountPct) / 100) * 100) / 100;
-    return (
-      <tr
-        key={it.id ?? `prd-${idx}`}
-        className={`${it.invoiced ? 'hub-comanda-row--invoiced' : ''}${
-          it.returned ? ' hub-comanda-row--returned' : ''
-        }`.trim()}
-      >
-        <td className="hub-comanda-items__cell-service">
-          {renderProductDescription(it, idx, editable, 'comanda')}
-        </td>
-        <td className="hub-comanda-items__cell-lot">
-          {renderLotBlock(it, idx, editable, isManual, 'comanda')}
-        </td>
-        <td className="right hub-comanda-items__cell-qty">{renderQtyInput(it, idx, editable)}</td>
-        <td className="right hub-comanda-items__cell-money">
-          {renderProductUnitInput(it, idx, editable, priceLocked)}
-        </td>
-        <td className="right hub-comanda-items__cell-money">
-          {renderProductDiscountInput(it, idx, editable, inv, maxDiscountPct, maxDiscountAmount)}
-        </td>
-        <td className="right hub-comanda-items__cell-total">{fmtBrl(computeLineTotal(it))}</td>
-        {canEdit ? (
-          <td className="hub-comanda-items__cell-action">
-            {it.invoiced ? (
-              <span className="hub-orcamento-novo__services-table-cell--muted" style={{ fontSize: 11 }}>
-                Faturado
-              </span>
-            ) : (
-              renderRemoveButton(idx, 'Remover produto')
-            )}
-          </td>
-        ) : null}
-      </tr>
-    );
-  };
-
   const renderProductCard = ({ it, idx }: { it: ComandaItemDraft; idx: number }) => {
     const editable = canEdit && !it.invoiced && !it.returned;
     const isManual = it.origin_type === 'manual' || it.origin_type === 'manual_line';
@@ -688,7 +651,7 @@ export const ComandaItemsSection: React.FC<Props> = ({
     const qtyNum = Number(String(it.quantity).replace(',', '.')) || 0;
     const unitNum = Number(String(it.unit_amount).replace(',', '.')) || 0;
     const maxDiscountAmount = Math.round(((qtyNum * unitNum * maxDiscountPct) / 100) * 100) / 100;
-    const key = cardKey('prd-m', it, idx);
+    const key = cardKey('prd', it, idx);
     const lotCode = it.hub_inventory_lot_id
       ? inventoryLots.find((l) => l.id === it.hub_inventory_lot_id)?.lot_code
       : null;
@@ -713,13 +676,13 @@ export const ComandaItemsSection: React.FC<Props> = ({
           {editable && it.isNew ? (
             <div className="hub-comanda-items__card-field">
               <FieldLabel>Produto</FieldLabel>
-              {renderProductDescription(it, idx, editable, 'comanda-m')}
+              {renderProductDescription(it, idx, editable, 'comanda')}
             </div>
           ) : null}
 
           <div className="hub-comanda-items__card-field">
             <FieldLabel>Lote</FieldLabel>
-            {renderLotBlock(it, idx, editable, isManual, 'comanda-m')}
+            {renderLotBlock(it, idx, editable, isManual, 'comanda')}
           </div>
 
           <div className="hub-comanda-items__card-grid">
@@ -813,30 +776,9 @@ export const ComandaItemsSection: React.FC<Props> = ({
         {serviceRows.length === 0 ? (
           <p className="hub-comanda-items__empty">{emptyServicesLabel}</p>
         ) : (
-          <>
-            <div className="hub-comanda-items__table-wrap hub-comanda-items__desktop">
-              <table className="hub-orcamento-novo__services-table hub-quote-detail__svc-table">
-                <thead>
-                  <tr>
-                    <th>Serviço</th>
-                    {showPetColumn ? <th className="hub-comanda-items__col-pet">Pet</th> : null}
-                    <th>Pacote</th>
-                    <th className="right hub-comanda-items__col-qty">Qtd</th>
-                    <th className="right hub-comanda-items__col-money">Valor unit.</th>
-                    <th className="right hub-comanda-items__col-money">Desconto</th>
-                    <th className="right hub-comanda-items__col-money">Total linha</th>
-                    {canEdit ? (
-                      <th className="hub-orcamento-novo__services-table-col--action" aria-label="Ações" />
-                    ) : null}
-                  </tr>
-                </thead>
-                <tbody>{serviceRows.map(renderServiceRow)}</tbody>
-              </table>
-            </div>
-            <div className="hub-comanda-items__cards hub-comanda-items__mobile" aria-label="Serviços">
-              {serviceRows.map(renderServiceCard)}
-            </div>
-          </>
+          <div className="hub-comanda-items__cards" aria-label="Serviços">
+            {serviceRows.map(renderServiceCard)}
+          </div>
         )}
       </section>
 
@@ -848,37 +790,105 @@ export const ComandaItemsSection: React.FC<Props> = ({
             Produtos
           </h3>
           {canEdit ? (
-            <button type="button" className="hub-quote-detail__text-btn" onClick={onAddProduct}>
-              + Adicionar produto
-            </button>
+            productAddOpen ? (
+              <button type="button" className="hub-quote-detail__text-btn" onClick={closeProductAdd}>
+                Fechar
+              </button>
+            ) : (
+              <button type="button" className="hub-quote-detail__text-btn" onClick={openProductAdd}>
+                + Adicionar produto
+              </button>
+            )
           ) : null}
         </div>
+
+        {canEdit && productAddOpen ? (
+          <div className="hub-comanda-items__add-product" role="region" aria-label="Adicionar produto">
+            <div className="hub-comanda-items__add-product-head">
+              <span className="hub-comanda-items__add-product-title">Código de barras / SKU</span>
+              <button
+                type="button"
+                className="hub-comanda-items__add-product-close"
+                onClick={closeProductAdd}
+                aria-label="Fechar adicionar produto"
+              >
+                <X size={16} aria-hidden />
+              </button>
+            </div>
+            <div className="hub-comanda-items__scan-row">
+              <ScanLine size={18} strokeWidth={2} aria-hidden className="hub-comanda-items__scan-icon" />
+              <input
+                ref={scanInputRef}
+                id="comanda-product-scan"
+                className="hub-orcamento-novo__input hub-comanda-items__scan-input"
+                value={scanCode}
+                onChange={(e) => {
+                  setScanCode(e.target.value);
+                  if (scanFeedback) setScanFeedback(null);
+                }}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void handleScanSubmit();
+                  }
+                }}
+                placeholder="Passe o leitor ou digite e Enter"
+                autoComplete="off"
+                inputMode="text"
+                disabled={scanning || !onScanProductCode}
+                aria-describedby={scanFeedback ? 'comanda-product-scan-feedback' : 'comanda-product-scan-hint'}
+              />
+            </div>
+            {scanFeedback ? (
+              <p
+                id="comanda-product-scan-feedback"
+                className={
+                  scanFeedback.ok
+                    ? 'hub-comanda-items__scan-feedback hub-comanda-items__scan-feedback--ok'
+                    : 'hub-comanda-items__scan-feedback hub-comanda-items__scan-feedback--err'
+                }
+                role="status"
+              >
+                {scanFeedback.message}
+              </p>
+            ) : (
+              <p id="comanda-product-scan-hint" className="hub-comanda-items__scan-hint">
+                Leitores USB digitam o código e enviam Enter automaticamente.
+              </p>
+            )}
+
+            <div className="hub-comanda-items__add-product-manual">
+              <FieldLabel>Ou selecionar manualmente</FieldLabel>
+              <HubSearchableCombobox
+                id="comanda-add-product-pick"
+                className="hub-orcamento-novo__combobox hub-orcamento-novo__service-combobox"
+                options={productComboOptions}
+                value=""
+                onChange={(v) => handleManualProductPick(v)}
+                placeholder="— Selecionar produto —"
+                searchPlaceholder={productSearchHint}
+                ariaLabel="Selecionar produto"
+              />
+              <button
+                type="button"
+                className="hub-quote-detail__text-btn hub-comanda-items__add-blank"
+                onClick={() => {
+                  onAddProduct();
+                  closeProductAdd();
+                }}
+              >
+                Adicionar linha em branco
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {productRows.length === 0 ? (
           <p className="hub-comanda-items__empty">{emptyProductsLabel}</p>
         ) : (
-          <>
-            <div className="hub-comanda-items__table-wrap hub-comanda-items__desktop">
-              <table className="hub-orcamento-novo__services-table hub-quote-detail__svc-table">
-                <thead>
-                  <tr>
-                    <th>Produto</th>
-                    <th>Lote</th>
-                    <th className="right hub-comanda-items__col-qty">Qtd</th>
-                    <th className="right hub-comanda-items__col-money">Valor unit.</th>
-                    <th className="right hub-comanda-items__col-money">Desconto</th>
-                    <th className="right hub-comanda-items__col-money">Total linha</th>
-                    {canEdit ? (
-                      <th className="hub-orcamento-novo__services-table-col--action" aria-label="Ações" />
-                    ) : null}
-                  </tr>
-                </thead>
-                <tbody>{productRows.map(renderProductRow)}</tbody>
-              </table>
-            </div>
-            <div className="hub-comanda-items__cards hub-comanda-items__mobile" aria-label="Produtos">
-              {productRows.map(renderProductCard)}
-            </div>
-          </>
+          <div className="hub-comanda-items__cards" aria-label="Produtos">
+            {productRows.map(renderProductCard)}
+          </div>
         )}
       </section>
     </div>

@@ -404,7 +404,7 @@ export const BatchChargeDrawer: React.FC<BatchChargeDrawerProps> = ({
             comanda_ids: comandaIds,
             action: 'receive_now',
             payment_method: paymentMethod,
-            cash_session_id: cashSessionId,
+            cash_session_id: paymentMethod === 'cash' ? cashSessionId : null,
             idempotency_keys,
           });
           for (const r of res.results) {
@@ -440,7 +440,7 @@ export const BatchChargeDrawer: React.FC<BatchChargeDrawerProps> = ({
               clinic_id: clinicId,
               amount: it.amount,
               payment_method: paymentMethod,
-              cash_session_id: cashSessionId,
+              cash_session_id: paymentMethod === 'cash' ? cashSessionId : null,
             });
             okCount += 1;
             okTitles.push(it.title);

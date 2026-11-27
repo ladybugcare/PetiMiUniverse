@@ -1,7 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Coins } from 'lucide-react';
-import { hubFinancialApi, type HubFinanceDayBoardItem } from '../../api/hubFinancialApi';
+import {
+  hubFinancialApi,
+  type HubFinanceDayBoardItem,
+  type HubFinanceUnbilledSourceType,
+} from '../../api/hubFinancialApi';
 import { HubViewDateToolbar, type HubViewMode } from '../../components/HubViewDateToolbar';
 import { formatYmd, parseIsoYmd, todayYmd } from '../../utils/hubCalendar';
 import { addDays, startOfWeekMonday } from '../agenda/agendaModel';
@@ -19,6 +23,7 @@ import { FinanceDayBoardTable } from './FinanceDayBoardTable';
 import { HubReceivableCancelPanel } from './HubReceivableCancelPanel';
 import { HubLoading } from '../../components/HubLoading';
 import { useAlert } from '../../components/AlertProvider';
+import { MarkExecutionModal } from './MarkExecutionModal';
 
 function normalizeText(s: string): string {
   return s
@@ -147,6 +152,7 @@ export function FinanceDayBoardSection({
   const [showBatchCharge, setShowBatchCharge] = useState(false);
   const [batchItems, setBatchItems] = useState<BatchChargeItem[]>([]);
   const [cancelReceivableId, setCancelReceivableId] = useState<string | null>(null);
+  const [markExecutionItem, setMarkExecutionItem] = useState<HubFinanceDayBoardItem | null>(null);
   // Evita loop: pai costuma passar `onLoaded={() => void loadSummary()}` (nova ref a cada render).
   // Se `onLoaded` entrar nas deps de `loadDayBoard`, cada resumo dispara reload → busy eterno.
   const onLoadedRef = useRef(onLoaded);
@@ -280,6 +286,34 @@ export function FinanceDayBoardSection({
     const receivableId = item.billing.active_receivable_id;
     if (!receivableId) return;
     setCancelReceivableId(receivableId);
+  };
+
+  const onWaiveFromBoard = async (item: HubFinanceDayBoardItem) => {
+    if (!canFinancialWrite) {
+      showError('Sem permissão para marcar sem cobrança.');
+      return;
+    }
+    const reason = window.prompt('Motivo para não cobrar este atendimento (mín. 3 caracteres):');
+    if (!reason || reason.trim().length < 3) return;
+    setDayBoardBusy(true);
+    try {
+      await hubFinancialApi.waiveBilling({
+        clinic_id: clinicId,
+        source_type: item.origin_type as HubFinanceUnbilledSourceType,
+        source_id: item.origin_id,
+        reason: reason.trim(),
+      });
+      showSuccess('Registrado como sem cobrança.');
+      await loadDayBoard();
+    } catch (e) {
+      showError((e as Error)?.message || 'Erro ao registrar');
+    } finally {
+      setDayBoardBusy(false);
+    }
+  };
+
+  const onMarkExecutionFromBoard = (item: HubFinanceDayBoardItem) => {
+    setMarkExecutionItem(item);
   };
 
   const handleDateChange = (iso: string) => {
@@ -462,6 +496,8 @@ export function FinanceDayBoardSection({
           onViewComanda={onViewComanda}
           onCheckout={onCheckout}
           onShareComanda={onShareComanda}
+          onWaive={onWaiveFromBoard}
+          onMarkExecution={onMarkExecutionFromBoard}
           onCancelReceivable={onCancelReceivableFromBoard}
           onRowClick={onViewComanda}
           busy={dayBoardBusy}
@@ -533,6 +569,17 @@ export function FinanceDayBoardSection({
           );
           void loadDayBoard();
         }}
+      />
+
+      <MarkExecutionModal
+        open={!!markExecutionItem}
+        item={markExecutionItem}
+        onClose={() => setMarkExecutionItem(null)}
+        onDone={() => {
+          void loadDayBoard();
+        }}
+        showError={showError}
+        showSuccess={showSuccess}
       />
     </>
   );

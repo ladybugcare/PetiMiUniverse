@@ -452,6 +452,10 @@ import {
   patchHubFinancePaymentMethodSettings,
 } from '../hubFinancialController';
 import {
+  getHubFinanceServiceExecutionLines,
+  patchHubFinanceAppointmentServiceLine,
+} from '../hubServiceExecutionController';
+import {
   postHubChargeBundle,
   listHubChargeBundles,
   getHubChargeBundle,
@@ -2107,6 +2111,18 @@ router.post(
   authenticateUser,
   requirePermission('hub.financial.write'), requireCoreOpsWrite,
   postHubFinanceWaiveBilling
+);
+router.get(
+  '/finance/service-execution-lines',
+  authenticateUser,
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
+  getHubFinanceServiceExecutionLines
+);
+router.patch(
+  '/finance/appointment-service-lines/:lineId',
+  authenticateUser,
+  requirePermission('hub.financial.write'), requireCoreOpsWrite,
+  patchHubFinanceAppointmentServiceLine
 );
 router.post(
   '/finance/receivables/:id/payments',

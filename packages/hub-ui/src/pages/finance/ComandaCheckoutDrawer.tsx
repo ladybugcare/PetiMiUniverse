@@ -573,7 +573,7 @@ export function ComandaCheckoutDrawer({
             amount: line.amount,
             payment_method: line.method,
             installments: line.installments,
-            cash_session_id: cashSessionId,
+            cash_session_id: line.method === 'cash' ? cashSessionId : null,
             idempotency_key: ensureIdemKey(line.lineId),
             tendered_amount: line.tendered,
           });
@@ -597,7 +597,7 @@ export function ComandaCheckoutDrawer({
               amount: line.amount,
               payment_method: line.method,
               installments: line.installments,
-              cash_session_id: cashSessionId,
+              cash_session_id: line.method === 'cash' ? cashSessionId : null,
               idempotency_key: ensureIdemKey(line.lineId),
               tendered_amount: line.tendered,
             }))
@@ -611,7 +611,7 @@ export function ComandaCheckoutDrawer({
                   amount: g.total,
                   payment_method: line.method,
                   installments: line.installments,
-                  cash_session_id: cashSessionId,
+                  cash_session_id: line.method === 'cash' ? cashSessionId : null,
                   idempotency_key: ensureIdemKey(lineId),
                   tendered_amount: line.tendered,
                 };

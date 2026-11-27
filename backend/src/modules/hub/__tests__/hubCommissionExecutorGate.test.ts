@@ -13,37 +13,77 @@ const APPT_BANHO = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
 const APPT_PICKUP = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const SVC_BANHO = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const SVC_PICKUP = 'dddddddd-dddd-4ddd-8ddd-dddddddddddd';
+const SVC_TYPE_BANHO = 'abababab-abab-4aba-8aba-abababababab';
+const SVC_TYPE_OTHER = 'cdcdcdcd-cdcd-4cdc-8cdc-cdcdcdcdcdcd';
 const STAFF_EXEC = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
 const STAFF_DRIVER = 'ffffffff-ffff-4fff-8fff-ffffffffffff';
 const ROUTE_ID = '99999999-9999-4999-8999-999999999999';
 const LINE_NULL = '12121212-1212-4121-8121-121212121212';
 const LINE_HAS_STAFF = '34343434-3434-4343-8343-343434343434';
+const RULE_BANHO = '56565656-5656-4565-8565-565656565656';
+const RULE_PRODUCT = '78787878-7878-4787-8787-787878787878';
+const PRODUCT_ID = '90909090-9090-4909-8909-909090909090';
+
+function baseTables(extra: Record<string, Record<string, unknown>[]> = {}) {
+  return {
+    hub_appointment_services: [
+      {
+        id: SVC_BANHO,
+        appointment_id: APPT_BANHO,
+        executed_by_staff_id: null,
+        hub_service_type_id: SVC_TYPE_BANHO,
+      },
+      {
+        id: SVC_PICKUP,
+        appointment_id: APPT_PICKUP,
+        executed_by_staff_id: null,
+        hub_service_type_id: SVC_TYPE_OTHER,
+      },
+    ],
+    hub_appointments: [
+      { id: APPT_BANHO, clinic_id: CLINIC, appointment_kind: 'standard' },
+      { id: APPT_PICKUP, clinic_id: CLINIC, appointment_kind: 'pickup_route' },
+    ],
+    hub_commission_rules: [] as Record<string, unknown>[],
+    ...extra,
+  };
+}
 
 describe('assertServiceLinesHaveExecutor', () => {
   beforeEach(() => {
     configureSupabaseMock({
-      tables: {
-        hub_appointment_services: [
-          {
-            id: SVC_BANHO,
-            appointment_id: APPT_BANHO,
-            executed_by_staff_id: null,
-          },
-          {
-            id: SVC_PICKUP,
-            appointment_id: APPT_PICKUP,
-            executed_by_staff_id: null,
-          },
-        ],
-        hub_appointments: [
-          { id: APPT_BANHO, clinic_id: CLINIC, appointment_kind: 'standard' },
-          { id: APPT_PICKUP, clinic_id: CLINIC, appointment_kind: 'pickup_route' },
-        ],
-      },
+      tables: baseTables(),
     });
   });
 
-  it('bloqueia banho sem executor', async () => {
+  it('permite banho sem executor quando não há regras de comissão ativas', async () => {
+    const result = await assertServiceLinesHaveExecutor(CLINIC, [
+      {
+        origin_type: 'appointment_service',
+        origin_id: SVC_BANHO,
+        description: 'Banho',
+      },
+    ]);
+    expect(result.ok).toBe(true);
+  });
+
+  it('bloqueia banho sem executor quando há regra ativa para o serviço', async () => {
+    configureSupabaseMock({
+      tables: baseTables({
+        hub_commission_rules: [
+          {
+            id: RULE_BANHO,
+            clinic_id: CLINIC,
+            hub_service_type_id: SVC_TYPE_BANHO,
+            hub_inventory_item_id: null,
+            basis: 'percent_of_sale',
+            rate: 10,
+            active: true,
+            deleted_at: null,
+          },
+        ],
+      }),
+    });
     const result = await assertServiceLinesHaveExecutor(CLINIC, [
       {
         origin_type: 'appointment_service',
@@ -59,7 +99,69 @@ describe('assertServiceLinesHaveExecutor', () => {
     }
   });
 
-  it('permite perna de L&T sem executed_by', async () => {
+  it('não bloqueia quando a regra ativa é só de produto (outro alvo)', async () => {
+    configureSupabaseMock({
+      tables: baseTables({
+        hub_commission_rules: [
+          {
+            id: RULE_PRODUCT,
+            clinic_id: CLINIC,
+            hub_service_type_id: null,
+            hub_inventory_item_id: PRODUCT_ID,
+            basis: 'percent_of_sale',
+            rate: 5,
+            active: true,
+            deleted_at: null,
+          },
+        ],
+      }),
+    });
+    const result = await assertServiceLinesHaveExecutor(CLINIC, [
+      { origin_type: 'appointment_service', origin_id: SVC_BANHO },
+    ]);
+    expect(result.ok).toBe(true);
+  });
+
+  it('não bloqueia quando a regra é de outro tipo de serviço', async () => {
+    configureSupabaseMock({
+      tables: baseTables({
+        hub_commission_rules: [
+          {
+            id: RULE_BANHO,
+            clinic_id: CLINIC,
+            hub_service_type_id: SVC_TYPE_OTHER,
+            hub_inventory_item_id: null,
+            basis: 'percent_of_sale',
+            rate: 10,
+            active: true,
+            deleted_at: null,
+          },
+        ],
+      }),
+    });
+    const result = await assertServiceLinesHaveExecutor(CLINIC, [
+      { origin_type: 'appointment_service', origin_id: SVC_BANHO },
+    ]);
+    expect(result.ok).toBe(true);
+  });
+
+  it('permite perna de L&T sem executed_by mesmo com regra', async () => {
+    configureSupabaseMock({
+      tables: baseTables({
+        hub_commission_rules: [
+          {
+            id: RULE_BANHO,
+            clinic_id: CLINIC,
+            hub_service_type_id: SVC_TYPE_OTHER,
+            hub_inventory_item_id: null,
+            basis: 'percent_of_sale',
+            rate: 10,
+            active: true,
+            deleted_at: null,
+          },
+        ],
+      }),
+    });
     const result = await assertServiceLinesHaveExecutor(CLINIC, [
       {
         origin_type: 'appointment_service',
@@ -70,7 +172,7 @@ describe('assertServiceLinesHaveExecutor', () => {
     expect(result.ok).toBe(true);
   });
 
-  it('permite banho com executor', async () => {
+  it('permite banho com executor mesmo com regra', async () => {
     configureSupabaseMock({
       tables: {
         hub_appointment_services: [
@@ -78,10 +180,23 @@ describe('assertServiceLinesHaveExecutor', () => {
             id: SVC_BANHO,
             appointment_id: APPT_BANHO,
             executed_by_staff_id: STAFF_EXEC,
+            hub_service_type_id: SVC_TYPE_BANHO,
           },
         ],
         hub_appointments: [
           { id: APPT_BANHO, clinic_id: CLINIC, appointment_kind: 'standard' },
+        ],
+        hub_commission_rules: [
+          {
+            id: RULE_BANHO,
+            clinic_id: CLINIC,
+            hub_service_type_id: SVC_TYPE_BANHO,
+            hub_inventory_item_id: null,
+            basis: 'percent_of_sale',
+            rate: 10,
+            active: true,
+            deleted_at: null,
+          },
         ],
       },
     });
@@ -136,7 +251,9 @@ describe('backfillPickupLegCommissionStaff', () => {
     expect(result.updated).toBe(1);
 
     const { getMockSupabaseClient } = require('../../../__tests__/helpers/supabaseTestDouble');
-    const client = getMockSupabaseClient() as { _state?: { tables: Record<string, Array<Record<string, unknown>>> } };
+    const client = getMockSupabaseClient() as {
+      _state?: { tables: Record<string, Array<Record<string, unknown>>> };
+    };
     const lines = client._state?.tables?.hub_receivable_lines ?? [];
     const nullLine = lines.find((l) => l.id === LINE_NULL);
     const keptLine = lines.find((l) => l.id === LINE_HAS_STAFF);
@@ -171,7 +288,6 @@ describe('imutabilidade vs backfill motorista', () => {
       commission_staff_source: 'none' as const,
       commission_original_amount: frozenAmount,
     };
-    // Backfill só preenche staff; amount não muda.
     const snapshotAfter = {
       ...snapshotBefore,
       commission_staff_member_id: STAFF_DRIVER,

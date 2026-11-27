@@ -105,6 +105,8 @@ export type DayBoardItem = {
   surgery_id?: string | null;
   surgery_title?: string | null;
   surgery_status?: string | null;
+  /** Alta clínica ambulatorial da cirurgia — null = destino ainda pendente. */
+  surgery_discharge_at?: string | null;
 } & Partial<HubEncounter>;
 
 export type HubPetClinicalFlag = {

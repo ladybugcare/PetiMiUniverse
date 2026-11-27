@@ -808,17 +808,32 @@ const HubClinicSurgeryPage: React.FC = () => {
         hubEncounterId={surgery.hub_encounter_id}
         onClinicalSubmit={async (payload) => {
           if (!clinicId) return;
-          await hubClinicalApi.patchSurgery(surgery.id, {
-            clinic_id: clinicId,
-            clinical_outcome: 'death',
-            pet_death: {
-              deceased_at: payload.deceased_at,
-              death_type: payload.death_type as PetDeathType,
-              death_cause: payload.death_cause,
-              death_notes: payload.death_notes,
-              archive: payload.archive,
-            },
-          });
+          if (surgery.clinic_id && surgery.clinic_id !== clinicId) {
+            throw new Error(
+              'A clínica selecionada é diferente da ficha desta cirurgia. Troque para a clínica correta e tente de novo.',
+            );
+          }
+          try {
+            await hubClinicalApi.patchSurgery(surgery.id, {
+              clinic_id: clinicId,
+              clinical_outcome: 'death',
+              pet_death: {
+                deceased_at: payload.deceased_at,
+                death_type: payload.death_type as PetDeathType,
+                death_cause: payload.death_cause,
+                death_notes: payload.death_notes,
+                archive: payload.archive,
+              },
+            });
+          } catch (e: unknown) {
+            const err = e as Error & { status?: number };
+            if (err.status === 404 || /cirurgia não encontrada/i.test(err.message || '')) {
+              throw new Error(
+                'Ficha não encontrada nesta clínica — confira a clínica selecionada ou se a cirurgia foi cancelada.',
+              );
+            }
+            throw e;
+          }
           setDeathModalOpen(false);
           await reload();
         }}

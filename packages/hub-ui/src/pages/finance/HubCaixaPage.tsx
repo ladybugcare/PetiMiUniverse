@@ -21,6 +21,7 @@ import { HubLoading, HubRefreshingBanner } from '../../components/HubLoading';
 import { HubDayNav } from '../../components/HubDayNav';
 import { useKeepContentLoad } from '../../hooks/useKeepContentLoad';
 import { formatYmd } from '../../utils/hubCalendar';
+import { isPreviousDaySaoPaulo, ymdSaoPaulo } from '../../utils/ymdSaoPaulo';
 import {
   hubFinancialApi,
   type HubFinanceDayBoardItem,
@@ -69,6 +70,7 @@ import {
   formatComandaListTitle,
   formatComandaOriginLabel,
 } from './comandaListPreview';
+import { MarkExecutionModal } from './MarkExecutionModal';
 import '../clientes/clientes.css';
 import '../pets/pets-page.css';
 import '../servicos/servicos-page.css';
@@ -79,8 +81,7 @@ function formatBrl(n: number): string {
 }
 
 function ymdToday(): string {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  return ymdSaoPaulo();
 }
 
 function normalizeText(s: string): string {
@@ -153,11 +154,10 @@ const HubCaixaPage: React.FC = () => {
   const [viewedClosedSessionId, setViewedClosedSessionId] = useState<string | null>(null);
   const [closedSessionSummary, setClosedSessionSummary] = useState<HubCashSessionSummary | null>(null);
   const [closedSessionBusy, setClosedSessionBusy] = useState(false);
+  const [markExecutionItem, setMarkExecutionItem] = useState<HubFinanceDayBoardItem | null>(null);
 
-  // Sessão de dia anterior aberta
-  const isPreviousDaySession = cashOpen?.opened_at
-    ? new Date(cashOpen.opened_at).toISOString().slice(0, 10) < ymdToday()
-    : false;
+  // Sessão de dia anterior aberta (dia civil America/Sao_Paulo)
+  const isPreviousDaySession = isPreviousDaySaoPaulo(cashOpen?.opened_at);
 
   const canFinancialWrite = hasPermission('hub.financial.write');
   const canCreateReceivable = hasPermission('hub.receivables.create');
@@ -864,6 +864,10 @@ const HubCaixaPage: React.FC = () => {
     }
   };
 
+  const onMarkExecutionFromBoard = (item: HubFinanceDayBoardItem) => {
+    setMarkExecutionItem(item);
+  };
+
   const onSendToFinanceiro = async (item: HubFinanceDayBoardItem) => {
     if (!canCreateReceivable) { showError('Sem permissão para enviar ao financeiro.'); return; }
     setDayBoardBusy(true);
@@ -1189,6 +1193,7 @@ const HubCaixaPage: React.FC = () => {
                 onCheckout={onCheckoutFromBoard}
                 onSendToFinanceiro={onSendToFinanceiro}
                 onWaive={onWaiveFromBoard}
+                onMarkExecution={onMarkExecutionFromBoard}
                 onShareComanda={onShareComanda}
                 onCancelReceivable={onCancelReceivableFromBoard}
                 onRowClick={onEditComanda}
@@ -1897,10 +1902,11 @@ const HubCaixaPage: React.FC = () => {
           dataLoading={(loading || refreshing) && cashSummary == null}
           onClosed={async (result) => {
             setShowEncerrarTurno(false);
-            const n = result?.handoffErrors?.length ?? 0;
-            if (n > 0) {
+            const errors = (result?.handoffErrors ?? []).filter(Boolean);
+            if (errors.length > 0) {
+              const detail = errors[0];
               showWarning(
-                `${n} comanda(s) continuam abertas no caixa e precisam ser resolvidas (execução, cancelamento ou envio ao financeiro).`,
+                `O caixa foi fechado, mas ${errors.length} comanda(s) seguem abertas. Resolva execução, cobrança ou envio ao financeiro. ${detail}`,
                 'Caixa fechado com pendências',
               );
             } else {
@@ -1910,6 +1916,17 @@ const HubCaixaPage: React.FC = () => {
           }}
         />
       )}
+
+      <MarkExecutionModal
+        open={!!markExecutionItem}
+        item={markExecutionItem}
+        onClose={() => setMarkExecutionItem(null)}
+        onDone={() => {
+          void loadDayBoard();
+        }}
+        showError={showError}
+        showSuccess={showSuccess}
+      />
     </>,
   );
 };

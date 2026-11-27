@@ -82,7 +82,11 @@ describe('enviarPendentesAoFinanceiro', () => {
     const result = await enviarPendentesAoFinanceiro('clinic-1', 'unit-1');
     expect(handoffPending).toHaveBeenCalledTimes(1);
     expect(handoffPending).toHaveBeenCalledWith(
-      expect.objectContaining({ clinic_id: 'clinic-1', unit_id: 'unit-1' }),
+      expect.objectContaining({
+        clinic_id: 'clinic-1',
+        unit_id: 'unit-1',
+        due_date: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+      }),
     );
     expect(result.success).toBe(true);
     expect(result.handoffCount).toBe(2);

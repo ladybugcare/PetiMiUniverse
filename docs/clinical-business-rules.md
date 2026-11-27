@@ -256,16 +256,17 @@ Registrar procedimentos cirúrgicos com rastreio pré-operatório, anestésico, 
 ### 5.2 Conceitos
 
 - Cirurgia é um procedimento com ciclo de vida próprio, mas **pertence a um caso clínico** e nasce de um atendimento.
-- **Alta cirúrgica** (status `completed`) encerra o **procedimento**, não o **caso**.
+- **Concluir o procedimento** (`status = completed`) encerra a **ficha cirúrgica operacional**, não o **caso** e não libera a retirada no balcão.
+- **Alta clínica** (`discharge_at`) é passo separado: liberação ambulatorial para a Recepção. Distinto de concluir e de internar.
 
 ### 5.3 Regras aprovadas
 
 1. Toda cirurgia pertence a um **caso clínico** (`hub_case_id` obrigatório na criação **pelo vet**). **Exceção:** cirurgia agendada pela recepção nasce sem caso (ver regra 7).
 2. Toda cirurgia nasce de um **atendimento**; se não existir atendimento de referência, o sistema **cria automaticamente** um atendimento de admissão cirúrgica (tipo `procedure`, título "Cirurgia: {título}"). **Exceção:** cirurgia agendada pela recepção só ganha atendimento na chegada do pet (ver regra 7).
-3. **Status:** `scheduled` → `in_progress` → `completed` | `cancelled`. Iniciar uma cirurgia marcada para **outro dia** exige confirmação: o slot da agenda é antecipado para agora (mantém a duração), o status do agendamento passa a `in_progress` e o pet entra na **fila do consultório** daquele profissional. Cirurgias do dia e as já `in_progress` aparecem na fila com o selo "Cirurgia", não só como consulta.
-4. Concluir a cirurgia (`completed`) **não** encerra automaticamente o **caso** clínico (o pet pode necessitar de internação pós-op, retornos, etc.).
+3. **Status:** `scheduled` → `in_progress` → `completed` | `cancelled`. Iniciar uma cirurgia marcada para **outro dia** exige confirmação: o slot da agenda é antecipado para agora (mantém a duração), o status do agendamento passa a `in_progress` e o pet entra na **fila do consultório** daquele profissional. Cirurgias do dia, as já `in_progress` e as `completed` **ainda sem** `discharge_at` (e sem óbito) permanecem na Minha fila com o selo "Cirurgia" até terem destino (alta, internação ou óbito).
+4. Concluir a cirurgia (`completed`) **não** encerra automaticamente o **caso** clínico (o pet pode necessitar de internação pós-op, retornos, etc.) e **não** gera retirada no balcão — isso exige alta clínica (`discharge_at`).
 4.1. **Óbito** na cirurgia usa `clinical_outcome = death` (sem novo status operacional). O registro centralizado do pet é obrigatório no mesmo request; **não** se infere `death_type` a partir da origem cirúrgica. Concluir o procedimento continua ação explícita separada.
-5. **Pós-operatório internado:** o sistema oferece CTA "Internar pós-operatório" na cirurgia em andamento ou concluída; o mesmo `hub_case_id` da cirurgia é pré-preenchido na admissão — **sem** coluna FK direta entre cirurgia e internação.
+5. **Pós-operatório internado:** o sistema oferece CTA "Internar pós-operatório" na cirurgia em andamento ou concluída (e na Minha fila no limbo sem alta); o mesmo `hub_case_id` da cirurgia é pré-preenchido na admissão — **sem** coluna FK direta entre cirurgia e internação.
 6. Risco anestésico (ASA I–VI + E) é informado no pré-op; recomendado antes de confirmar o procedimento.
 7. **Agendada pela recepção:** um agendamento com serviço do grupo `cirurgia` **gera automaticamente** a ficha cirúrgica em `scheduled`, com `hub_appointment_id` e `scheduled_at` espelhando o slot. Ela nasce **sem** atendimento e **sem** caso (herda apenas `intake_hub_case_id`, quando a agenda já perguntou), aparece no Consultório com o selo "Sem caso", e ganha atendimento e caso quando o pet chega e o atendimento é aberto pelo slot. Enquanto ninguém iniciou a cirurgia, o slot manda: mudar horário **reagenda** a ficha, cancelar ou excluir o agendamento **cancela** a ficha, remover o serviço de cirurgia do slot **cancela** a ficha. A partir de `in_progress` (ou com atendimento) a ficha é do vet e a agenda não a altera mais.
 8. **Agendada pelo Consultório:** ao criar a cirurgia com `scheduled_at`, o sistema **espelha** um slot na agenda (`confirmed`, grupo `cirurgia`) e grava `hub_appointment_id` na ficha — **sem** passar pelo sync Agenda→ficha (evita duplicata). Mudar `scheduled_at` enquanto `scheduled` reagenda o slot; concluir marca o slot `done`; cancelar a ficha cancela o slot. Se a recepção cancelar/apagar o slot de uma cirurgia **com atendimento**, a ficha **não** é cancelada (só desvincula).
@@ -281,8 +282,8 @@ Página do caso → aba "Cirurgias" → "Agendar cirurgia neste caso" → `hub_c
 **Fluxo C — Pós-operatório internado:**  
 Cirurgia `in_progress` ou `completed` → "Internar pós-operatório" → rota de admissão com mesmo `pet_id` e `hub_case_id`.
 
-**Fluxo D — Conclusão:**  
-Cirurgia `in_progress` → "Concluir" → status `completed` → ficha fica **somente leitura** → se ainda não houver caso, o sistema cria um com o título do procedimento e amarra atendimento → o slot da agenda vai para `done` → timeline recebe `surgery_performed` → o registro aparece nas abas **Cirurgias** do caso e do prontuário do pet.
+**Fluxo D — Conclusão e destino:**  
+Cirurgia `in_progress` → "Concluir" → status `completed` → ficha fica **somente leitura** → se ainda não houver caso, o sistema cria um com o título do procedimento e amarra atendimento → o slot da agenda vai para `done` → timeline recebe `surgery_performed` → o item **permanece** na Minha fila até destino → CTAs **Dar alta** / **Internar** / **Ver ficha** (ficha e cockpit). Alta clínica (`discharge_at`) libera retirada na Recepção; internar abre admissão no mesmo caso; óbito usa `clinical_outcome = death`.
 
 **Fluxo E — Agendamento pela recepção (agenda):**  
 Agenda → novo agendamento com serviço do grupo `cirurgia` → ficha cirúrgica criada em `scheduled` e vinculada ao slot → aparece no Consultório em "Cirurgias (agendadas / em andamento)" → na chegada, abrir o atendimento pelo slot vincula atendimento e caso à ficha.

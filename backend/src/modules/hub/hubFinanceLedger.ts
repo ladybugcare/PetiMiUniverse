@@ -209,7 +209,7 @@ export type ValidateCashSessionResult =
 
 /**
  * Dinheiro operacional exige sessão aberta.
- * Não-dinheiro nunca exige; cash_session_id só se enviado explicitamente e válido.
+ * Não-dinheiro nunca exige sessão: qualquer cash_session_id enviado é ignorado (null).
  * Sem auto-vínculo a sessão aberta.
  */
 export async function validatePaymentCashSession(opts: {
@@ -241,24 +241,6 @@ export async function validatePaymentCashSession(opts: {
         error: 'Sessão de caixa inválida ou fechada para este recebimento em dinheiro.',
         status: 409,
       };
-    }
-    return { ok: true, cash_session_id: cashSession.id as string };
-  }
-
-  if (cashSessionId) {
-    const { data: cashSession, error: cashErr } = await supabaseAdmin
-      .from('hub_cash_sessions')
-      .select('id, clinic_id, unit_id, status')
-      .eq('id', cashSessionId)
-      .maybeSingle();
-    if (
-      cashErr ||
-      !cashSession ||
-      cashSession.clinic_id !== clinicId ||
-      cashSession.status !== 'open' ||
-      (receivableUnitId && cashSession.unit_id !== receivableUnitId)
-    ) {
-      return { ok: false, error: 'Sessão de caixa inválida ou fechada para este recebimento.', status: 409 };
     }
     return { ok: true, cash_session_id: cashSession.id as string };
   }
