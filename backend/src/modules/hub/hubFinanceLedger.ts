@@ -99,6 +99,55 @@ export async function sumPostedPaymentsForReceivables(receivableIds: string[]): 
   return round2Ledger((data ?? []).reduce((s, r) => s + Number(r.amount ?? 0), 0));
 }
 
+/**
+ * Agrega posted e refunds de linha por recebível (chunks de 200).
+ * Mesma semântica do aging / detalhe: payments status=posted;
+ * adjustments adjustment_type=refund com payment_id IS NULL.
+ */
+export async function fetchPostedAndLineRefundByReceivableIds(
+  receivableIds: string[],
+): Promise<{
+  postedByRec: Map<string, number>;
+  lineRefundByRec: Map<string, number>;
+}> {
+  const postedByRec = new Map<string, number>();
+  const lineRefundByRec = new Map<string, number>();
+  if (!receivableIds.length) return { postedByRec, lineRefundByRec };
+
+  for (let i = 0; i < receivableIds.length; i += 200) {
+    const chunk = receivableIds.slice(i, i + 200);
+    if (!chunk.length) continue;
+
+    const { data: payRows, error: payErr } = await supabaseAdmin
+      .from('hub_payments')
+      .select('receivable_id, amount')
+      .in('receivable_id', chunk)
+      .eq('status', 'posted');
+    if (payErr) throw new Error(payErr.message);
+    for (const row of payRows ?? []) {
+      const id = row.receivable_id as string;
+      postedByRec.set(id, round2Ledger((postedByRec.get(id) ?? 0) + Number(row.amount ?? 0)));
+    }
+
+    const { data: adjRows, error: adjErr } = await supabaseAdmin
+      .from('hub_financial_adjustments')
+      .select('receivable_id, amount')
+      .in('receivable_id', chunk)
+      .eq('adjustment_type', 'refund')
+      .is('payment_id', null);
+    if (adjErr) throw new Error(adjErr.message);
+    for (const row of adjRows ?? []) {
+      const id = row.receivable_id as string;
+      lineRefundByRec.set(
+        id,
+        round2Ledger((lineRefundByRec.get(id) ?? 0) + Number(row.amount ?? 0)),
+      );
+    }
+  }
+
+  return { postedByRec, lineRefundByRec };
+}
+
 export async function recalculateReceivableFromPosted(receivableId: string): Promise<string> {
   const { data: rec, error: rErr } = await supabaseAdmin
     .from('hub_receivables')

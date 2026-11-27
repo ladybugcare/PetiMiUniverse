@@ -32,6 +32,7 @@ import {
 } from './cashSessionCloseService';
 import {
   FinanceLedgerError,
+  fetchPostedAndLineRefundByReceivableIds,
   postHistoricalCashPayment,
   recalculateReceivableFromPosted,
   returnReceivableProductLines,
@@ -42,6 +43,7 @@ import {
   type PaymentReversalMode,
 } from './hubFinanceLedger';
 import {
+  attachReceivableBalanceFields,
   balanceDue as balanceDueFromNetPaid,
   netPaidEffective as netPaidEffectiveFromParts,
 } from './hubReceivableFinancialBalance';
@@ -3070,7 +3072,11 @@ export const listHubFinanceReceivables = async (req: Request, res: Response) => 
     if (status) q = q.eq('status', status);
     const { data, error } = await q;
     if (error) return res.status(500).json({ error: error.message });
-    return res.json({ receivables: data ?? [] });
+    const rows = (data ?? []) as Array<{ id: string; final_amount?: number | null }>;
+    const recIds = rows.map((r) => r.id);
+    const { postedByRec, lineRefundByRec } = await fetchPostedAndLineRefundByReceivableIds(recIds);
+    const receivables = attachReceivableBalanceFields(rows, postedByRec, lineRefundByRec);
+    return res.json({ receivables });
   } catch (e: unknown) {
     console.error('listHubFinanceReceivables', e);
     return res.status(500).json({ error: (e as Error)?.message || 'Erro interno' });
@@ -6385,31 +6391,7 @@ export const getHubFinanceAgingReport = async (req: Request, res: Response) => {
       .in('status', ['pending', 'partially_paid']);
     if (error) return res.status(500).json({ error: error.message });
     const recIds = (recs ?? []).map((r) => r.id as string);
-    const postedByRec = new Map<string, number>();
-    const lineRefundByRec = new Map<string, number>();
-    for (let i = 0; i < recIds.length; i += 200) {
-      const chunk = recIds.slice(i, i + 200);
-      if (!chunk.length) continue;
-      const { data: payRows } = await supabaseAdmin
-        .from('hub_payments')
-        .select('receivable_id, amount')
-        .in('receivable_id', chunk)
-        .eq('status', 'posted');
-      for (const row of payRows ?? []) {
-        const id = row.receivable_id as string;
-        postedByRec.set(id, round2((postedByRec.get(id) ?? 0) + Number(row.amount ?? 0)));
-      }
-      const { data: adjRows } = await supabaseAdmin
-        .from('hub_financial_adjustments')
-        .select('receivable_id, amount')
-        .in('receivable_id', chunk)
-        .eq('adjustment_type', 'refund')
-        .is('payment_id', null);
-      for (const row of adjRows ?? []) {
-        const id = row.receivable_id as string;
-        lineRefundByRec.set(id, round2((lineRefundByRec.get(id) ?? 0) + Number(row.amount ?? 0)));
-      }
-    }
+    const { postedByRec, lineRefundByRec } = await fetchPostedAndLineRefundByReceivableIds(recIds);
     const buckets = {
       no_due_date: { count: 0, total: 0 },
       not_due: { count: 0, total: 0 },

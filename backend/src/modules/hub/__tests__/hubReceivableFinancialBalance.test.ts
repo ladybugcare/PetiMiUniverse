@@ -2,10 +2,12 @@ import {
   computeReceivableFinancialAfterReturn,
   commercialReturnForLines,
   allocateLiquidLineAmounts,
+  attachReceivableBalanceFields,
   commissionAdjustmentForReturn,
   eligibleFinancialRefundCap,
   netPaidEffective,
   balanceDue,
+  receivableBalanceFields,
 } from '../hubReceivableFinancialBalance';
 
 describe('hubReceivableFinancialBalance — matriz comercial × financeiro', () => {
@@ -185,5 +187,58 @@ describe('hubReceivableFinancialBalance — matriz comercial × financeiro', () 
         returnedCommercial: 40,
       }),
     ).toBe(7.5);
+  });
+});
+
+describe('receivableBalanceFields / attachReceivableBalanceFields — paridade list/aging/detalhe', () => {
+  it('P0 parcial: final 100, posted 40 → saldo 60', () => {
+    const fields = receivableBalanceFields({
+      finalAmount: 100,
+      postedPayments: 40,
+      lineRefundsAlreadyPaidOut: 0,
+    });
+    expect(fields.posted_amount).toBe(40);
+    expect(fields.line_refunds_amount).toBe(0);
+    expect(fields.paid_amount).toBe(40);
+    expect(fields.balance_amount).toBe(60);
+    expect(
+      balanceDue({ finalAmount: 100, postedPayments: 40, lineRefundsAlreadyPaidOut: 0 }),
+    ).toBe(fields.balance_amount);
+  });
+
+  it('parcial + reembolso de linha: list = aging = detalhe', () => {
+    // final 100, pago 100, line refund 40 → pago líquido 60 → saldo 40
+    const input = {
+      finalAmount: 100,
+      postedPayments: 100,
+      lineRefundsAlreadyPaidOut: 40,
+    };
+    const fields = receivableBalanceFields(input);
+    const due = balanceDue(input);
+    expect(fields.paid_amount).toBe(60);
+    expect(fields.balance_amount).toBe(40);
+    expect(fields.balance_amount).toBe(due);
+    // aging soma o mesmo valor por linha
+    expect(due).toBe(40);
+  });
+
+  it('attachReceivableBalanceFields em array bate com os mapas', () => {
+    const rows = [
+      { id: 'a', final_amount: 100 },
+      { id: 'b', final_amount: 50 },
+    ];
+    const postedByRec = new Map([
+      ['a', 40],
+      ['b', 50],
+    ]);
+    const lineRefundByRec = new Map([['a', 0]]);
+    const enriched = attachReceivableBalanceFields(rows, postedByRec, lineRefundByRec);
+    expect(enriched[0].balance_amount).toBe(60);
+    expect(enriched[0].paid_amount).toBe(40);
+    expect(enriched[1].balance_amount).toBe(0);
+    expect(enriched[1].paid_amount).toBe(50);
+    // soma dos saldos = o que o aging agregaria para as mesmas linhas
+    const agingTotal = enriched.reduce((s, r) => s + (r.balance_amount > 0.009 ? r.balance_amount : 0), 0);
+    expect(agingTotal).toBe(60);
   });
 });

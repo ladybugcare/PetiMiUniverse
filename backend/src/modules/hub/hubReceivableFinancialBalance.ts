@@ -251,6 +251,52 @@ export function liquidAmountForLine(opts: {
 }
 
 /**
+ * Campos de saldo alinhados ao detalhe do recebível / aging.
+ * `paid_amount` = pago líquido efetivo (posted − line refunds).
+ */
+export type ReceivableBalanceFields = {
+  posted_amount: number;
+  line_refunds_amount: number;
+  paid_amount: number;
+  balance_amount: number;
+};
+
+export function receivableBalanceFields(input: {
+  finalAmount: number;
+  postedPayments: number;
+  lineRefundsAlreadyPaidOut: number;
+}): ReceivableBalanceFields {
+  const posted_amount = round2Money(input.postedPayments);
+  const line_refunds_amount = round2Money(input.lineRefundsAlreadyPaidOut);
+  const paid_amount = netPaidEffective({
+    postedPayments: posted_amount,
+    lineRefundsAlreadyPaidOut: line_refunds_amount,
+  });
+  const balance_amount = balanceDue({
+    finalAmount: input.finalAmount,
+    postedPayments: posted_amount,
+    lineRefundsAlreadyPaidOut: line_refunds_amount,
+  });
+  return { posted_amount, line_refunds_amount, paid_amount, balance_amount };
+}
+
+/** Anexa campos de saldo a uma lista de recebíveis usando mapas de agregação. */
+export function attachReceivableBalanceFields<T extends { id: string; final_amount?: number | null }>(
+  rows: T[],
+  postedByRec: Map<string, number>,
+  lineRefundByRec: Map<string, number>,
+): Array<T & ReceivableBalanceFields> {
+  return rows.map((row) => {
+    const fields = receivableBalanceFields({
+      finalAmount: Number(row.final_amount ?? 0),
+      postedPayments: postedByRec.get(row.id) ?? 0,
+      lineRefundsAlreadyPaidOut: lineRefundByRec.get(row.id) ?? 0,
+    });
+    return { ...row, ...fields };
+  });
+}
+
+/**
  * Ajuste de comissão em devolução, proporcional ao valor comercial devolvido
  * sobre a base líquida original da linha (vale para % e fixo).
  * `alreadyAdjusted` limita o acumulado a no máximo a comissão original (múltiplas parciais).

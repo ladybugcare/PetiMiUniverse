@@ -50,6 +50,14 @@ const BUCKET_META: Record<string, { label: string; tone: string }> = {
 
 const BUCKET_ORDER = ['not_due', 'overdue_1_30', 'overdue_31_60', 'overdue_61_plus'] as const;
 
+/** Saldo em aberto: usa balance_amount da API quando presente. */
+function outstanding(r: HubFinanceReceivable): number {
+  if (typeof r.balance_amount === 'number' && Number.isFinite(r.balance_amount)) {
+    return Math.max(0, r.balance_amount);
+  }
+  return Math.max(0, Number(r.final_amount ?? 0));
+}
+
 export const HubRelatoriosPendingPayments: React.FC<HubRelatoriosPendingPaymentsProps> = ({
   clinicId,
   unitId,
@@ -75,7 +83,7 @@ export const HubRelatoriosPendingPayments: React.FC<HubRelatoriosPendingPayments
         const aOver = a.overdue_days ?? -1;
         const bOver = b.overdue_days ?? -1;
         if (aOver !== bOver) return bOver - aOver;
-        return Number(b.final_amount) - Number(a.final_amount);
+        return outstanding(b) - outstanding(a);
       });
       setRows(merged);
       succeed();
@@ -96,7 +104,7 @@ export const HubRelatoriosPendingPayments: React.FC<HubRelatoriosPendingPayments
     let overdueTotal = 0;
     let partialCount = 0;
     for (const r of rows) {
-      const amount = Number(r.final_amount ?? 0);
+      const amount = outstanding(r);
       total += amount;
       if (r.overdue_days != null) {
         overdueCount += 1;
@@ -121,7 +129,7 @@ export const HubRelatoriosPendingPayments: React.FC<HubRelatoriosPendingPayments
       const key = bucketForOverdue(r.overdue_days);
       const cur = map.get(key) ?? { count: 0, total: 0 };
       cur.count += 1;
-      cur.total += Number(r.final_amount ?? 0);
+      cur.total += outstanding(r);
       map.set(key, cur);
     }
     const maxTotal = Math.max(0, ...[...map.values()].map((v) => v.total));
@@ -144,14 +152,14 @@ export const HubRelatoriosPendingPayments: React.FC<HubRelatoriosPendingPayments
     unitId,
     title: 'Pagamentos pendentes',
     slug: 'pagamentos-pendentes',
-    headers: ['Cliente', 'Serviços', 'Status', 'Vencimento', 'Dias atraso', 'Valor'],
+    headers: ['Cliente', 'Serviços', 'Status', 'Vencimento', 'Dias atraso', 'Saldo em aberto'],
     rows: rows.map((r) => [
       r.guardian?.full_name,
       formatReceivableListTitle(r),
       STATUS_LABELS[r.status] ?? r.status,
       r.due_date,
       r.overdue_days,
-      Number(r.final_amount ?? 0),
+      outstanding(r),
     ]),
     showError,
   });
@@ -301,7 +309,7 @@ export const HubRelatoriosPendingPayments: React.FC<HubRelatoriosPendingPayments
                   <th>Cliente</th>
                   <th>Serviços</th>
                   <th>Status / Vencimento</th>
-                  <th className="hub-finance-page__th-num">Valor</th>
+                  <th className="hub-finance-page__th-num">Saldo</th>
                 </tr>
               </thead>
               <tbody>
@@ -348,7 +356,7 @@ export const HubRelatoriosPendingPayments: React.FC<HubRelatoriosPendingPayments
                       <ReceivableDueBadge dueDate={row.due_date} status={row.status} />
                     </td>
                     <td className="hub-finance-page__td-num">
-                      {formatBrl(Number(row.final_amount ?? 0))}
+                      {formatBrl(outstanding(row))}
                     </td>
                   </tr>
                 ))}

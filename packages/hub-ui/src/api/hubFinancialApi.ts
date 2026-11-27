@@ -93,6 +93,14 @@ export type HubFinanceReceivable = {
   net_amount_at_sale?: number | null;
   /** Acumulado comercial já devolvido. */
   returned_amount?: number;
+  /** Soma de payments status=posted (quando a listagem enriquece). */
+  posted_amount?: number;
+  /** Reembolsos de linha já liquidados (payment_id null). */
+  line_refunds_amount?: number;
+  /** Pago líquido efetivo (= posted − line refunds). */
+  paid_amount?: number;
+  /** Saldo a receber (= final − pago líquido efetivo). */
+  balance_amount?: number;
   currency: string;
   status: string;
   due_date?: string | null;
