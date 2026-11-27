@@ -102,6 +102,13 @@ function chunkIds(ids: string[], size = 80): string[][] {
   return out;
 }
 
+/** Evita HeadersOverflow no PostgREST (~16KB) em `.in('id', [muitos UUIDs])`. */
+function chunkIds(ids: string[], size = 80): string[][] {
+  const out: string[][] = [];
+  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
+  return out;
+}
+
 function actorUserId(req: Request): string | null {
   return req.user?.id ?? null;
 }
