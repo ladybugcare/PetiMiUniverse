@@ -54,8 +54,60 @@ type SessionTarget = {
 const ACTIVE_STAGES: GroomingStage[] = ['queued', 'in_service', 'finishing', 'ready'];
 const PENDING_LIST_STAGES: GroomingStage[] = ['queued', 'in_service', 'finishing'];
 
-/** Sessões abertas da unidade (estágios operacionais). Sem filtro de data: presença aberta já limita o conjunto. */
+/** Limites do dia civil em America/Sao_Paulo (igual ao day-board). */
+export function dayBoundsSaoPaulo(now = new Date()): { from: string; to: string; dateYmd: string } {
+  const dateYmd = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Sao_Paulo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(now);
+  return {
+    from: new Date(`${dateYmd}T00:00:00-03:00`).toISOString(),
+    to: new Date(`${dateYmd}T23:59:59.999-03:00`).toISOString(),
+    dateYmd,
+  };
+}
+
+/**
+ * Mesmo critério do day-board: agendamento do dia, check-in no dia,
+ * ou walk-in criado no dia. Evita sessões demo/antigas ainda "abertas".
+ */
+export function isSessionOnGroomingDay(
+  session: {
+    hubAppointmentId: string | null;
+    checkedInAt: string | null;
+    createdAt: string;
+  },
+  dayAppointmentIds: Set<string>,
+  from: string,
+  to: string,
+): boolean {
+  const aid = session.hubAppointmentId;
+  if (aid && dayAppointmentIds.has(aid)) return true;
+  const checkedIn = session.checkedInAt;
+  if (checkedIn && checkedIn >= from && checkedIn <= to) return true;
+  if (!aid && session.createdAt >= from && session.createdAt <= to) return true;
+  return false;
+}
+
+/** Sessões da unidade no dia operacional (alinhado ao board de banho e tosa). */
 async function loadDaySessions(scope: VoiceScope): Promise<SessionTarget[]> {
+  const { from, to } = dayBoundsSaoPaulo();
+
+  const { data: appts, error: apptErr } = await supabaseAdmin
+    .from('hub_appointments')
+    .select('id')
+    .eq('clinic_id', scope.clinicId)
+    .eq('unit_id', scope.unitId)
+    .is('deleted_at', null)
+    .neq('status', 'cancelled')
+    .lt('starts_at', to)
+    .gt('ends_at', from)
+    .limit(200);
+  if (apptErr) throw new Error(apptErr.message);
+  const dayAppointmentIds = new Set((appts ?? []).map((a: { id: string }) => a.id));
+
   const { data, error } = await supabaseAdmin
     .from('hub_grooming_sessions')
     .select(
@@ -65,6 +117,8 @@ async function loadDaySessions(scope: VoiceScope): Promise<SessionTarget[]> {
       unit_id,
       hub_appointment_id,
       grooming_stage,
+      checked_in_at,
+      created_at,
       hub_pets!inner ( id, name )
     `,
     )
@@ -76,17 +130,33 @@ async function loadDaySessions(scope: VoiceScope): Promise<SessionTarget[]> {
 
   if (error) throw new Error(error.message);
 
-  return (data ?? []).map((row: Record<string, unknown>) => {
-    const pet = row.hub_pets as { id?: string; name?: string } | null;
-    return {
-      sessionId: row.id as string,
-      petId: (row.pet_id as string) ?? pet?.id ?? '',
-      petName: (pet?.name ?? '').trim() || 'Pet',
-      stage: row.grooming_stage as GroomingStage,
-      hubAppointmentId: (row.hub_appointment_id as string | null) ?? null,
-      unitId: (row.unit_id as string | null) ?? null,
-    };
-  });
+  return (data ?? [])
+    .map((row: Record<string, unknown>) => {
+      const pet = row.hub_pets as { id?: string; name?: string } | null;
+      return {
+        sessionId: row.id as string,
+        petId: (row.pet_id as string) ?? pet?.id ?? '',
+        petName: (pet?.name ?? '').trim() || 'Pet',
+        stage: row.grooming_stage as GroomingStage,
+        hubAppointmentId: (row.hub_appointment_id as string | null) ?? null,
+        unitId: (row.unit_id as string | null) ?? null,
+        checkedInAt: (row.checked_in_at as string | null) ?? null,
+        createdAt: (row.created_at as string) ?? '',
+      };
+    })
+    .filter((s) =>
+      isSessionOnGroomingDay(
+        {
+          hubAppointmentId: s.hubAppointmentId,
+          checkedInAt: s.checkedInAt,
+          createdAt: s.createdAt,
+        },
+        dayAppointmentIds,
+        from,
+        to,
+      ),
+    )
+    .map(({ checkedInAt: _c, createdAt: _d, ...target }) => target);
 }
 
 export function resolveGroomingTargets(

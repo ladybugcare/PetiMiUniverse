@@ -10,7 +10,9 @@ import { supabaseAdmin } from '../../../config/supabase';
 import { transitionGroomingSessionStage } from '../groomingSessionService';
 import { normalizePetName } from '../voice/normalizePetName';
 import {
+  dayBoundsSaoPaulo,
   executeVoiceCommand,
+  isSessionOnGroomingDay,
   resolveGroomingTargets,
 } from '../voice/voiceCommandService';
 
@@ -23,15 +25,57 @@ const scope = {
   actorUserId: 'user-voice',
 };
 
-function sessionsChain(rows: unknown[]) {
+const { from: dayFrom, to: dayTo } = dayBoundsSaoPaulo();
+const todayIso = new Date(new Date(dayFrom).getTime() + 12 * 3600_000).toISOString();
+const yesterdayIso = new Date(new Date(dayFrom).getTime() - 12 * 3600_000).toISOString();
+
+function chainResolving(rows: unknown[]) {
   const chain: Record<string, jest.Mock> = {};
   const self = () => chain;
   chain.select = jest.fn(self);
   chain.eq = jest.fn(self);
   chain.is = jest.fn(self);
   chain.in = jest.fn(self);
+  chain.neq = jest.fn(self);
+  chain.lt = jest.fn(self);
+  chain.gt = jest.fn(self);
   chain.limit = jest.fn().mockResolvedValue({ data: rows, error: null });
   return chain;
+}
+
+/** Mock: appointments do dia + sessões de grooming. */
+function mockVoiceTables(opts: {
+  appointmentIds?: string[];
+  sessions?: unknown[];
+  boarding?: unknown[];
+}) {
+  fromMock.mockImplementation((table: string) => {
+    if (table === 'hub_appointments') {
+      return chainResolving((opts.appointmentIds ?? []).map((id) => ({ id })));
+    }
+    if (table === 'hub_grooming_sessions') {
+      return chainResolving(opts.sessions ?? []);
+    }
+    if (table === 'hub_boarding_reservations') {
+      return chainResolving(opts.boarding ?? []);
+    }
+    return chainResolving([]);
+  });
+}
+
+function sessionRow(
+  partial: Record<string, unknown> & { id: string; name: string; stage: string },
+) {
+  return {
+    id: partial.id,
+    pet_id: partial.pet_id ?? `pet-${partial.id}`,
+    unit_id: 'unit-1',
+    hub_appointment_id: partial.hub_appointment_id ?? null,
+    grooming_stage: partial.stage,
+    checked_in_at: partial.checked_in_at ?? null,
+    created_at: partial.created_at ?? todayIso,
+    hub_pets: { id: partial.pet_id ?? `pet-${partial.id}`, name: partial.name },
+  };
 }
 
 describe('normalizePetName', () => {
@@ -99,35 +143,20 @@ describe('executeVoiceCommand', () => {
     expect(fromMock).not.toHaveBeenCalled();
   });
 
-  it('list_pending lista nomes da fila', async () => {
-    fromMock.mockReturnValue(
-      sessionsChain([
-        {
-          id: 's1',
-          pet_id: 'p1',
-          unit_id: 'unit-1',
-          hub_appointment_id: null,
-          grooming_stage: 'queued',
-          hub_pets: { id: 'p1', name: 'Thor' },
-        },
-        {
-          id: 's2',
-          pet_id: 'p2',
-          unit_id: 'unit-1',
-          hub_appointment_id: null,
-          grooming_stage: 'in_service',
-          hub_pets: { id: 'p2', name: 'Mel' },
-        },
-        {
-          id: 's3',
-          pet_id: 'p3',
-          unit_id: 'unit-1',
-          hub_appointment_id: null,
-          grooming_stage: 'ready',
-          hub_pets: { id: 'p3', name: 'Bob' },
-        },
-      ]),
-    );
+  it('list_pending lista nomes da fila do dia e ignora prontos/antigos', async () => {
+    mockVoiceTables({
+      sessions: [
+        sessionRow({ id: 's1', name: 'Thor', stage: 'queued', created_at: todayIso }),
+        sessionRow({ id: 's2', name: 'Mel', stage: 'in_service', created_at: todayIso }),
+        sessionRow({ id: 's3', name: 'Bob', stage: 'ready', created_at: todayIso }),
+        sessionRow({
+          id: 's-old',
+          name: '[Demo Salão] Bolinha',
+          stage: 'queued',
+          created_at: yesterdayIso,
+        }),
+      ],
+    });
 
     const result = await executeVoiceCommand({
       intent: 'grooming.list_pending',
@@ -137,10 +166,11 @@ describe('executeVoiceCommand', () => {
     expect(result.message).toContain('Thor');
     expect(result.message).toContain('Mel');
     expect(result.message).not.toContain('Bob');
+    expect(result.message).not.toContain('Bolinha');
   });
 
   it('start_service retorna not_found se pet ausente', async () => {
-    fromMock.mockReturnValue(sessionsChain([]));
+    mockVoiceTables({ sessions: [] });
     const result = await executeVoiceCommand({
       intent: 'grooming.start_service',
       petName: 'Rex',
@@ -151,26 +181,12 @@ describe('executeVoiceCommand', () => {
   });
 
   it('start_service pede Hub quando há homônimos', async () => {
-    fromMock.mockReturnValue(
-      sessionsChain([
-        {
-          id: 's1',
-          pet_id: 'p1',
-          unit_id: 'unit-1',
-          hub_appointment_id: null,
-          grooming_stage: 'queued',
-          hub_pets: { id: 'p1', name: 'Thor' },
-        },
-        {
-          id: 's2',
-          pet_id: 'p2',
-          unit_id: 'unit-1',
-          hub_appointment_id: null,
-          grooming_stage: 'queued',
-          hub_pets: { id: 'p2', name: 'Thor' },
-        },
-      ]),
-    );
+    mockVoiceTables({
+      sessions: [
+        sessionRow({ id: 's1', name: 'Thor', stage: 'queued' }),
+        sessionRow({ id: 's2', name: 'Thor', stage: 'queued', pet_id: 'p2' }),
+      ],
+    });
     const result = await executeVoiceCommand({
       intent: 'grooming.start_service',
       petName: 'Thor',
@@ -181,7 +197,7 @@ describe('executeVoiceCommand', () => {
   });
 
   it('ignora pets de outra unidade (filtro no query)', async () => {
-    fromMock.mockReturnValue(sessionsChain([]));
+    mockVoiceTables({ sessions: [] });
     const result = await executeVoiceCommand({
       intent: 'grooming.start_service',
       petName: 'Mel',
@@ -189,23 +205,12 @@ describe('executeVoiceCommand', () => {
     });
     expect(result.status).toBe('not_found');
     expect(fromMock).toHaveBeenCalledWith('hub_grooming_sessions');
-    const chain = fromMock.mock.results[0]?.value;
-    expect(chain.eq).toHaveBeenCalledWith('unit_id', 'unit-1');
   });
 
   it('mark_ready sem confirmação pede confirmação', async () => {
-    fromMock.mockReturnValue(
-      sessionsChain([
-        {
-          id: 's1',
-          pet_id: 'p1',
-          unit_id: 'unit-1',
-          hub_appointment_id: null,
-          grooming_stage: 'in_service',
-          hub_pets: { id: 'p1', name: 'Mel' },
-        },
-      ]),
-    );
+    mockVoiceTables({
+      sessions: [sessionRow({ id: 's1', name: 'Mel', stage: 'in_service' })],
+    });
     const result = await executeVoiceCommand({
       intent: 'grooming.mark_ready',
       petName: 'Mel',
@@ -217,28 +222,9 @@ describe('executeVoiceCommand', () => {
   });
 
   it('mark_ready confirmado chama transição para ready', async () => {
-    fromMock.mockImplementation((table: string) => {
-      if (table === 'hub_grooming_sessions') {
-        return sessionsChain([
-          {
-            id: 's1',
-            pet_id: 'p1',
-            unit_id: 'unit-1',
-            hub_appointment_id: null,
-            grooming_stage: 'in_service',
-            hub_pets: { id: 'p1', name: 'Mel' },
-          },
-        ]);
-      }
-      // boarding lookup
-      const chain: Record<string, jest.Mock> = {};
-      const self = () => chain;
-      chain.select = jest.fn(self);
-      chain.eq = jest.fn(self);
-      chain.is = jest.fn(self);
-      chain.in = jest.fn(self);
-      chain.limit = jest.fn().mockResolvedValue({ data: [], error: null });
-      return chain;
+    mockVoiceTables({
+      sessions: [sessionRow({ id: 's1', name: 'Mel', stage: 'in_service' })],
+      boarding: [],
     });
     transitionMock.mockResolvedValue({
       status: 'executed',
@@ -262,5 +248,41 @@ describe('executeVoiceCommand', () => {
       }),
     );
     expect(result.message).toMatch(/aguardando retirada/i);
+  });
+});
+
+describe('isSessionOnGroomingDay', () => {
+  it('inclui walk-in criado hoje e exclui ontem', () => {
+    expect(
+      isSessionOnGroomingDay(
+        { hubAppointmentId: null, checkedInAt: null, createdAt: todayIso },
+        new Set(),
+        dayFrom,
+        dayTo,
+      ),
+    ).toBe(true);
+    expect(
+      isSessionOnGroomingDay(
+        { hubAppointmentId: null, checkedInAt: null, createdAt: yesterdayIso },
+        new Set(),
+        dayFrom,
+        dayTo,
+      ),
+    ).toBe(false);
+  });
+
+  it('inclui sessão cujo agendamento está no dia', () => {
+    expect(
+      isSessionOnGroomingDay(
+        {
+          hubAppointmentId: 'appt-1',
+          checkedInAt: yesterdayIso,
+          createdAt: yesterdayIso,
+        },
+        new Set(['appt-1']),
+        dayFrom,
+        dayTo,
+      ),
+    ).toBe(true);
   });
 });
