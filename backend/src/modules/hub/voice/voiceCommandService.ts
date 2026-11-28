@@ -9,7 +9,6 @@ import {
   syncAppointmentStatusForStage,
   transitionGroomingSessionStage,
 } from '../groomingSessionService';
-import { ensureGroomingQueuedForAppointment } from '../hubGroomingController';
 import { OPEN_GROOMING_SESSION_STAGES } from '../hubGroomingOpenPresence';
 import { normalizePetName } from './normalizePetName';
 
@@ -62,7 +61,21 @@ type DayTarget = {
 };
 
 const ACTIVE_STAGES: GroomingStage[] = ['queued', 'in_service', 'finishing', 'ready'];
-const PENDING_LIST_STAGES: GroomingStage[] = ['queued', 'in_service', 'finishing'];
+/** Alinhado ao board: agendado/check-in ainda «faltam», mais fila e em atendimento. */
+const PENDING_LIST_STAGES: GroomingStage[] = [
+  'scheduled',
+  'checked_in',
+  'queued',
+  'in_service',
+  'finishing',
+];
+const PENDING_STAGE_RANK: Partial<Record<GroomingStage, number>> = {
+  in_service: 5,
+  finishing: 4,
+  queued: 3,
+  checked_in: 2,
+  scheduled: 1,
+};
 const GROOMING_SERVICE_GROUP = 'banho_tosa';
 
 /** Limites do dia civil em America/Sao_Paulo (igual ao day-board). */
@@ -263,7 +276,10 @@ async function loadDayTargets(scope: VoiceScope): Promise<DayTarget[]> {
 
   const petIdsNeeded = new Set<string>();
   for (const a of groomingAppts) {
-    if (!sessionByAppt.has(a.id as string) && a.pet_id) petIdsNeeded.add(a.pet_id as string);
+    if (a.pet_id) petIdsNeeded.add(a.pet_id as string);
+  }
+  for (const s of daySessions) {
+    if (s.petId) petIdsNeeded.add(s.petId);
   }
   const petNameById = new Map<string, string>();
   if (petIdsNeeded.size > 0) {
@@ -271,11 +287,10 @@ async function loadDayTargets(scope: VoiceScope): Promise<DayTarget[]> {
       .from('hub_pets')
       .select('id, name')
       .eq('clinic_id', scope.clinicId)
-      .in('id', [...petIdsNeeded])
-      .is('deleted_at', null);
+      .in('id', [...petIdsNeeded]);
     if (petErr) throw new Error(petErr.message);
     for (const p of pets ?? []) {
-      petNameById.set((p as { id: string }).id, String((p as { name: string }).name || 'Pet'));
+      petNameById.set((p as { id: string }).id, String((p as { name: string }).name || '').trim() || 'Pet');
     }
   }
 
@@ -283,7 +298,7 @@ async function loadDayTargets(scope: VoiceScope): Promise<DayTarget[]> {
     sessionId: s.sessionId,
     appointmentId: s.appointmentId,
     petId: s.petId,
-    petName: s.petName,
+    petName: petNameById.get(s.petId) || s.petName,
     stage: s.stage,
     unitId: s.unitId,
   }));
@@ -302,7 +317,7 @@ async function loadDayTargets(scope: VoiceScope): Promise<DayTarget[]> {
       sessionId: null,
       appointmentId: apptId,
       petId,
-      petName: petNameById.get(petId) ?? 'Pet',
+      petName: petNameById.get(petId) || 'Pet',
       stage,
       unitId: (a.unit_id as string | null) ?? scope.unitId,
     });
@@ -353,6 +368,9 @@ async function ensureSessionForStart(
   scope: VoiceScope,
   target: DayTarget,
 ): Promise<{ ok: true; sessionId: string } | { ok: false; result: VoiceCommandResult }> {
+  // Import dinâmico evita ciclo hubGroomingController ↔ voice no boot do Railway.
+  const { ensureGroomingQueuedForAppointment } = await import('../hubGroomingController');
+
   if (target.sessionId) {
     await abandonStaleOpenSessionsForPet({
       clinicId: scope.clinicId,
@@ -360,6 +378,44 @@ async function ensureSessionForStart(
       keepSessionId: target.sessionId,
       keepAppointmentId: target.appointmentId,
     });
+    if (
+      (target.stage === 'scheduled' || target.stage === 'checked_in') &&
+      target.appointmentId
+    ) {
+      const bumped = await ensureGroomingQueuedForAppointment(
+        scope.clinicId,
+        target.appointmentId,
+      );
+      if (!bumped.ok) {
+        return {
+          ok: false,
+          result: {
+            status: 'temporarily_unavailable',
+            message: bumped.error || 'Não consegui colocar na fila. Use o Hub.',
+            petName: target.petName,
+          },
+        };
+      }
+    } else if (target.stage === 'scheduled' || target.stage === 'checked_in') {
+      const toQueued = await transitionGroomingSessionStage({
+        clinicId: scope.clinicId,
+        sessionId: target.sessionId,
+        to: 'queued',
+        actorUserId: scope.actorUserId,
+        source: 'voice_alexa',
+      });
+      if (toQueued.status !== 'executed' && toQueued.status !== 'already_applied') {
+        return {
+          ok: false,
+          result: {
+            status: 'temporarily_unavailable',
+            message: 'Não consegui colocar na fila. Use o Hub.',
+            petName: target.petName,
+            sessionId: target.sessionId,
+          },
+        };
+      }
+    }
     return { ok: true, sessionId: target.sessionId };
   }
 
@@ -601,7 +657,20 @@ async function handleListPending(scope: VoiceScope): Promise<VoiceCommandResult>
     };
   }
 
-  const names = pending.map((s) => s.petName);
+  // Um nome por pet (vários agendamentos no dia → escolhe o estágio mais avançado).
+  const byPet = new Map<string, DayTarget>();
+  for (const t of pending) {
+    const prev = byPet.get(t.petId);
+    if (!prev) {
+      byPet.set(t.petId, t);
+      continue;
+    }
+    const prevRank = PENDING_STAGE_RANK[prev.stage] ?? 0;
+    const nextRank = PENDING_STAGE_RANK[t.stage] ?? 0;
+    if (nextRank > prevRank) byPet.set(t.petId, t);
+  }
+  const unique = [...byPet.values()];
+  const names = unique.map((s) => s.petName);
   let list: string;
   if (names.length === 1) list = names[0]!;
   else if (names.length === 2) list = `${names[0]} e ${names[1]}`;
@@ -609,7 +678,7 @@ async function handleListPending(scope: VoiceScope): Promise<VoiceCommandResult>
 
   return {
     status: 'executed',
-    message: `Faltam ${pending.length}: ${list}.`,
+    message: `Faltam ${unique.length}: ${list}.`,
   };
 }
 

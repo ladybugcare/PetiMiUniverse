@@ -8,10 +8,6 @@ jest.mock('../groomingSessionService', () => ({
   syncAppointmentStatusForStage: jest.fn().mockResolvedValue(undefined),
 }));
 
-jest.mock('../hubGroomingController', () => ({
-  ensureGroomingQueuedForAppointment: jest.fn().mockResolvedValue({ ok: true }),
-}));
-
 import { supabaseAdmin } from '../../../config/supabase';
 import { normalizePetName } from '../voice/normalizePetName';
 import {
