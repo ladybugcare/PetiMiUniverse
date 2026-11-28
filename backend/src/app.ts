@@ -111,6 +111,12 @@ const getAllowedOrigins = (): string[] => {
     origins.push(process.env.FRONTEND_URL);
   }
 
+  // Hub + API pública (consentimento OAuth MCP é servido na própria API)
+  if (process.env.HUB_WEB_URL) origins.push(process.env.HUB_WEB_URL);
+  if (process.env.PETMI_HUB_WEB_URL) origins.push(process.env.PETMI_HUB_WEB_URL);
+  if (process.env.PETMI_PUBLIC_API_URL) origins.push(process.env.PETMI_PUBLIC_API_URL);
+  if (process.env.BACKEND_PUBLIC_URL) origins.push(process.env.BACKEND_PUBLIC_URL);
+
   // Fallback para origens hardcoded se não houver variáveis de ambiente (compatibilidade)
   if (origins.length === 0) {
     origins.push(
