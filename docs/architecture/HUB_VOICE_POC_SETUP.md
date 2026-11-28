@@ -8,10 +8,13 @@ Endpoint da API: `https://backend-staging-334260f3.up.railway.app/api/integratio
 2. Login com a conta Amazon que vai testar (a mesma do Echo, se possível).
 3. **Create Skill** → nome `PetMi Voice` → idioma **Portuguese (BR)** → tipo **Custom** → modelo **Start from Scratch** → hospedagem **Provision your own**.
 4. Em **Endpoint** → HTTPS → Default Region:
-   - URL: `https://backend-staging-334260f3.up.railway.app/api/integrations/alexa`
-   - SSL Certificate: **My development endpoint has a certificate from a trusted certificate authority**
-5. Em **Build → Interaction Model → JSON Editor**, cole o conteúdo de [`apps/alexa-skill/interactionModels/custom/pt-BR.json`](../../apps/alexa-skill/interactionModels/custom/pt-BR.json) e **Save Model** → **Build Model**.
-6. Em **Test**, deixe o skill testing em **Development**.
+   - URL: `https://backend-staging-334260f3.up.railway.app/api/integrations/alexa` (sem barra no final)
+   - SSL Certificate: **I will upload a self-signed certificate in X.509 format**
+   - Cole o PEM de [`apps/alexa-skill/railway-staging-fullchain.pem`](../../apps/alexa-skill/railway-staging-fullchain.pem) (4 certificados).  
+     Motivo: o Railway usa cadeia Let’s Encrypt YE2; com a 1ª/2ª opção a Alexa falha o handshake e mostra “Não foi possível acessar a Skill” (JSON Output vazio, sem log na API).
+5. **Save Endpoints**
+6. Em **Build → Interaction Model → JSON Editor**, cole o conteúdo de [`apps/alexa-skill/interactionModels/custom/pt-BR.json`](../../apps/alexa-skill/interactionModels/custom/pt-BR.json) e **Save Model** → **Build Model**.
+7. Em **Test**, deixe o skill testing em **Development**.
 
 ## 2. Obter `ALEXA_SKILL_ID`
 

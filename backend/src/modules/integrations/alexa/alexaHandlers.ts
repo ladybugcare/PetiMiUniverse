@@ -20,7 +20,12 @@ type ScopeAttrs = {
 
 function speak(handlerInput: HandlerInput, message: string, shouldEnd = true): Response {
   const builder = handlerInput.responseBuilder.speak(message);
-  if (shouldEnd) builder.withShouldEndSession(true);
+  if (shouldEnd) {
+    builder.withShouldEndSession(true);
+  } else {
+    // Sessão aberta exige reprompt — senão a Alexa rejeita com "problema na resposta".
+    builder.reprompt(message).withShouldEndSession(false);
+  }
   return builder.getResponse();
 }
 
