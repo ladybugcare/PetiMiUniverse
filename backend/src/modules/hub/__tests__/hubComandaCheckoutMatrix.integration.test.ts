@@ -281,6 +281,32 @@ describe('Matriz Caixa — open → checkout por origem', () => {
     });
   });
 
+  describe('herança financial_notes do agendamento', () => {
+    it('copia financial_notes para notes da comanda na abertura', async () => {
+      configureSupabaseMock({
+        tables: baseFinanceTables({
+          hub_service_types: [serviceType(CLINIC_SERVICE_ID, 'clinica', 'Consulta')],
+          hub_appointments: [
+            appointmentRow(APPT_CLINIC_ID, CLINIC_SERVICE_ID, 'Consulta', {
+              financial_notes: 'Tutor pediu parcelamento em 2x',
+            }),
+          ],
+          hub_appointment_services: [
+            appointmentService(`${APPT_CLINIC_ID}-svc`, APPT_CLINIC_ID, CLINIC_SERVICE_ID, 120),
+          ],
+        }),
+      });
+
+      const open = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'appointment',
+        origin_id: APPT_CLINIC_ID,
+      });
+      expect(open.status).toBe(201);
+      expect(open.body.comanda.notes).toBe('Tutor pediu parcelamento em 2x');
+    });
+  });
+
   describe('grooming_session (walk-in closed)', () => {
     beforeEach(() => {
       configureSupabaseMock({
@@ -535,6 +561,50 @@ describe('Matriz Caixa — open → checkout por origem', () => {
 
       const payments = getMockSupabaseClient()._state.tables.hub_payments ?? [];
       expect(payments[0]).toMatchObject({ amount: 90, cash_session_id: CASH_SESSION_ID });
+    });
+
+    it('herda notes e client_notes do orçamento na abertura', async () => {
+      configureSupabaseMock({
+        tables: baseFinanceTables({
+          hub_quotes: [
+            {
+              id: QUOTE_ID,
+              clinic_id: TEST_CLINIC_ID,
+              unit_id: TEST_UNIT_ID,
+              guardian_id: TEST_GUARDIAN_ID,
+              status: 'accepted',
+              billing_state: 'awaiting_billing',
+              billing_waived_at: null,
+              notes: 'Desconto 10% acordado no comercial',
+              client_notes: 'Mensagem ao tutor no PDF',
+              deleted_at: null,
+            },
+          ],
+          hub_quote_lines: [
+            {
+              id: QUOTE_LINE_ID,
+              quote_id: QUOTE_ID,
+              hub_service_type_id: BATH_SERVICE_ID,
+              description: 'Banho orçado',
+              quantity: 1,
+              unit_price: 90,
+              discount_amount: 0,
+              line_total: 90,
+              sort_order: 0,
+            },
+          ],
+          hub_service_types: [serviceType(BATH_SERVICE_ID, 'banho_tosa', 'Banho')],
+        }),
+      });
+
+      const open = await openComanda({
+        clinic_id: TEST_CLINIC_ID,
+        origin_type: 'quote',
+        origin_id: QUOTE_ID,
+      });
+      expect(open.status).toBe(201);
+      expect(open.body.comanda.notes).toBe('Desconto 10% acordado no comercial');
+      expect(open.body.comanda.client_notes).toBe('Mensagem ao tutor no PDF');
     });
 
     it('comanda e recebível usam o total com desconto percentual', async () => {

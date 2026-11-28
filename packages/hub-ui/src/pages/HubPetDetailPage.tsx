@@ -10,12 +10,18 @@ import { redirectAwayFromHub } from '../utils/redirectAwayFromHub';
 import { useAlert } from '../components/AlertProvider';
 import { HubLoading } from '../components/HubLoading';
 import { getSelectedUnitId } from '../utils/useSelectedUnitId';
-import { hubPetsApi, type HubPet } from '../api/hubPetsApi';
+import {
+  hubPetsApi,
+  shouldOpenPetDeathReview,
+  type HubPet,
+  type HubPetDeathPending,
+} from '../api/hubPetsApi';
 import './clientes/clientes.css';
 import './pets/pets-page.css';
 import '../components/hub-profile.css';
 import { PetDetailPanel } from './pets/PetDetailPanel';
 import { RegisterPetDeathModal } from './pets/RegisterPetDeathModal';
+import { PetDeathReviewPanel } from './pets/PetDeathReviewPanel';
 import { hasValidPetDeath } from './pets/petDeath';
 
 const HubPetDetailPage: React.FC = () => {
@@ -31,6 +37,10 @@ const HubPetDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [pet, setPet] = useState<HubPet | null>(null);
   const [deathOpen, setDeathOpen] = useState(false);
+  const [deathReview, setDeathReview] = useState<{
+    petName: string;
+    pending: HubPetDeathPending;
+  } | null>(null);
 
   const accessAllowed = hasPermission('hub.pets.read');
 
@@ -135,10 +145,24 @@ const HubPetDetailPage: React.FC = () => {
         onClose={() => setDeathOpen(false)}
         clinicId={clinicId || ''}
         pet={pet}
-        onRegistered={async () => {
+        onRegistered={async (res) => {
           setDeathOpen(false);
           await load();
+          if (shouldOpenPetDeathReview(res.pending) && res.pending) {
+            setDeathReview({
+              petName: pet?.name || res.pet?.name || 'Pet',
+              pending: res.pending,
+            });
+          }
         }}
+      />
+
+      <PetDeathReviewPanel
+        open={Boolean(deathReview)}
+        onClose={() => setDeathReview(null)}
+        petName={deathReview?.petName || 'Pet'}
+        pending={deathReview?.pending ?? null}
+        clinicId={clinicId || ''}
       />
     </div>
   );

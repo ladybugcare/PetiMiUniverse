@@ -3,6 +3,9 @@
  * Cancelamento puro com reissue reabre itens; void_sale mantém cobertos.
  */
 
+/** Status que ainda bloqueiam nova cobrança da mesma origem (P2-05). */
+export const CHARGEABLE_RECEIVABLE_STATUSES = ['pending', 'partially_paid', 'paid'] as const;
+
 export type ReceivableCoverageRow = {
   status?: unknown;
   returned_amount?: unknown;

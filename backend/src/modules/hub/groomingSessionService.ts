@@ -23,7 +23,13 @@ export const GROOMING_SESSION_SELECT = `
   tutor_notes_snapshot, operational_notes, checklist, created_at, updated_at
 `;
 
-export type GroomingTransitionSource = 'hub_ui' | 'voice_alexa' | 'reception_custody' | 'system';
+export type GroomingTransitionSource =
+  | 'hub_ui'
+  | 'voice_alexa'
+  | 'chatgpt'
+  | 'action_engine'
+  | 'reception_custody'
+  | 'system';
 
 export type TransitionGroomingSessionResult =
   | { status: 'executed'; session: Record<string, unknown>; from: GroomingStage; to: GroomingStage }

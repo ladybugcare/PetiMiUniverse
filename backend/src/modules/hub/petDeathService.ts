@@ -1,9 +1,16 @@
 /**
  * Domínio de óbito do pet — registro/correção/invalidação atômicos via RPC.
  * Óbito (clínico) é independente de arquivamento (deleted_at).
+ * Após registro: cancela appointments futuros não iniciados e devolve revisão.
  */
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import {
+  applyOperationalCancelToAppointments,
+  PET_DEATH_CANCEL_WAIVE,
+} from './hubAppointmentOperationalCancel';
+import { BOARDING_COMANDA_INCOMPLETE_STATUSES } from './boardingOperational';
+import { syncSurgeryForAppointmentSafe } from './hubSurgeryFromAppointment';
 
 export const DEATH_TYPES = ['euthanasia', 'natural', 'accidental', 'other', 'unknown'] as const;
 export type PetDeathType = (typeof DEATH_TYPES)[number];
@@ -77,14 +84,58 @@ export type HubPetDeathFields = {
   [key: string]: unknown;
 };
 
-export type PetDeathResult =
-  | { ok: true; pet: HubPetDeathFields; pending?: PetDeathPendingCounts; archived?: boolean }
-  | { ok: false; error: string; code?: string; status: number };
+export type PetDeathCancelledAppointment = {
+  id: string;
+  starts_at: string;
+  status: string;
+  service_name: string | null;
+};
+
+export type PetDeathPendingReviewKind =
+  | 'appointment_in_progress'
+  | 'boarding_reservation'
+  | 'grooming_session'
+  | 'surgery_scheduled';
+
+export type PetDeathPendingReviewItem = {
+  kind: PetDeathPendingReviewKind;
+  id: string;
+  status: string;
+  starts_at?: string | null;
+  expected_check_in?: string | null;
+  expected_check_out?: string | null;
+  service_name?: string | null;
+  label?: string | null;
+  grooming_stage?: string | null;
+  hub_appointment_id?: string | null;
+};
 
 export type PetDeathPendingCounts = {
   future_appointments: number;
   active_boarding_reservations: number;
+  cancelled_appointments: number;
+  pending_review_count: number;
+  cancelled_appointments_list: PetDeathCancelledAppointment[];
+  pending_review: PetDeathPendingReviewItem[];
 };
+
+export type PetDeathResult =
+  | { ok: true; pet: HubPetDeathFields; pending?: PetDeathPendingCounts; archived?: boolean }
+  | { ok: false; error: string; code?: string; status: number };
+
+const AUTO_CANCEL_STATUSES = ['pending_confirm', 'confirmed'] as const;
+const IN_PROGRESS_APPT_STATUSES = ['checked_in', 'in_progress'] as const;
+/** Reserva/custódia ainda aberta — alinhado a boardingOperational. */
+const BOARDING_PENDING_STATUSES = [...BOARDING_COMANDA_INCOMPLETE_STATUSES] as const;
+/** Sessões de grooming ainda operacionais (não entregues/encerradas). */
+const GROOMING_OPEN_STAGES = [
+  'scheduled',
+  'checked_in',
+  'queued',
+  'in_service',
+  'finishing',
+  'ready',
+] as const;
 
 /** Óbito válido = falecido e não invalidado. */
 export function hasValidPetDeath(pet: {
@@ -138,28 +189,219 @@ export function mapPetDeathRpcError(message: string): { error: string; code?: st
   return null;
 }
 
-async function countPendingOps(clinicId: string, petId: string): Promise<PetDeathPendingCounts> {
+async function resolveAppointmentServiceName(
+  appointmentId: string,
+  hubServiceTypeId: string | null | undefined,
+): Promise<string | null> {
+  if (hubServiceTypeId) {
+    const { data } = await supabaseAdmin
+      .from('hub_service_types')
+      .select('name')
+      .eq('id', hubServiceTypeId)
+      .maybeSingle();
+    const name = (data as { name?: string } | null)?.name;
+    if (name) return name;
+  }
+  const { data: lines } = await supabaseAdmin
+    .from('hub_appointment_services')
+    .select('hub_service_type_id, order_index')
+    .eq('appointment_id', appointmentId)
+    .order('order_index', { ascending: true })
+    .limit(1);
+  const first = (lines ?? [])[0] as { hub_service_type_id?: string } | undefined;
+  if (!first?.hub_service_type_id) return null;
+  const { data: st } = await supabaseAdmin
+    .from('hub_service_types')
+    .select('name')
+    .eq('id', first.hub_service_type_id)
+    .maybeSingle();
+  return (st as { name?: string } | null)?.name ?? null;
+}
+
+type ApptRow = {
+  id: string;
+  starts_at: string;
+  status: string;
+  hub_service_type_id?: string | null;
+};
+
+/**
+ * Cancela futuros pending_confirm/confirmed e monta payload de revisão
+ * (boarding, appointments em andamento, grooming aberto, cirurgia scheduled).
+ */
+export async function cancelFutureOpsAfterPetDeath(
+  clinicId: string,
+  petId: string,
+  opts?: { actorUserId?: string | null },
+): Promise<PetDeathPendingCounts> {
   const nowIso = new Date().toISOString();
-  const [appts, boarding] = await Promise.all([
-    supabaseAdmin
-      .from('hub_appointments')
-      .select('id', { count: 'exact', head: true })
-      .eq('clinic_id', clinicId)
-      .eq('pet_id', petId)
-      .is('deleted_at', null)
-      .gt('starts_at', nowIso)
-      .not('status', 'in', '("cancelled","done","paid","no_show")'),
-    supabaseAdmin
-      .from('hub_boarding_reservations')
-      .select('id', { count: 'exact', head: true })
-      .eq('clinic_id', clinicId)
-      .eq('pet_id', petId)
-      .in('status', ['reserved', 'checked_in', 'confirmed', 'active']),
-  ]);
+
+  const { data: futureRows, error: futureErr } = await supabaseAdmin
+    .from('hub_appointments')
+    .select('id, starts_at, status, hub_service_type_id')
+    .eq('clinic_id', clinicId)
+    .eq('pet_id', petId)
+    .is('deleted_at', null)
+    .gt('starts_at', nowIso)
+    .in('status', [...AUTO_CANCEL_STATUSES]);
+
+  if (futureErr) {
+    console.error('[petDeath] list future appointments', futureErr.message);
+  }
+
+  const toCancel = (futureRows ?? []) as ApptRow[];
+  const cancelledList: PetDeathCancelledAppointment[] = [];
+
+  if (toCancel.length > 0) {
+    try {
+      await applyOperationalCancelToAppointments({
+        clinicId,
+        appointmentIds: toCancel.map((r) => r.id),
+        terminalStatus: 'cancelled',
+        waiveReason: PET_DEATH_CANCEL_WAIVE,
+      });
+      for (const row of toCancel) {
+        await syncSurgeryForAppointmentSafe({
+          clinicId,
+          appointmentId: row.id,
+          userId: opts?.actorUserId ?? null,
+        });
+        const service_name = await resolveAppointmentServiceName(row.id, row.hub_service_type_id);
+        cancelledList.push({
+          id: row.id,
+          starts_at: row.starts_at,
+          status: 'cancelled',
+          service_name,
+        });
+      }
+    } catch (e) {
+      console.error('[petDeath] auto-cancel appointments', (e as Error)?.message);
+    }
+  }
+
+  const pending_review: PetDeathPendingReviewItem[] = [];
+
+  const { data: inProgressRows } = await supabaseAdmin
+    .from('hub_appointments')
+    .select('id, starts_at, status, hub_service_type_id')
+    .eq('clinic_id', clinicId)
+    .eq('pet_id', petId)
+    .is('deleted_at', null)
+    .in('status', [...IN_PROGRESS_APPT_STATUSES]);
+
+  for (const row of (inProgressRows ?? []) as ApptRow[]) {
+    const service_name = await resolveAppointmentServiceName(row.id, row.hub_service_type_id);
+    pending_review.push({
+      kind: 'appointment_in_progress',
+      id: row.id,
+      status: row.status,
+      starts_at: row.starts_at,
+      service_name,
+      label: service_name,
+    });
+  }
+
+  const { data: boardingRows } = await supabaseAdmin
+    .from('hub_boarding_reservations')
+    .select('id, status, expected_check_in, expected_check_out')
+    .eq('clinic_id', clinicId)
+    .eq('pet_id', petId)
+    .is('deleted_at', null)
+    .in('status', [...BOARDING_PENDING_STATUSES]);
+
+  for (const row of boardingRows ?? []) {
+    const r = row as {
+      id: string;
+      status: string;
+      expected_check_in?: string | null;
+      expected_check_out?: string | null;
+    };
+    pending_review.push({
+      kind: 'boarding_reservation',
+      id: r.id,
+      status: r.status,
+      expected_check_in: r.expected_check_in ?? null,
+      expected_check_out: r.expected_check_out ?? null,
+      label: 'Hotel / creche',
+    });
+  }
+
+  const { data: groomingRows } = await supabaseAdmin
+    .from('hub_grooming_sessions')
+    .select('id, grooming_stage, hub_appointment_id, checked_in_at, created_at')
+    .eq('clinic_id', clinicId)
+    .eq('pet_id', petId)
+    .is('deleted_at', null)
+    .in('grooming_stage', [...GROOMING_OPEN_STAGES]);
+
+  for (const row of groomingRows ?? []) {
+    const g = row as {
+      id: string;
+      grooming_stage: string;
+      hub_appointment_id?: string | null;
+      checked_in_at?: string | null;
+      created_at?: string | null;
+    };
+    pending_review.push({
+      kind: 'grooming_session',
+      id: g.id,
+      status: g.grooming_stage,
+      grooming_stage: g.grooming_stage,
+      hub_appointment_id: g.hub_appointment_id ?? null,
+      starts_at: g.checked_in_at ?? g.created_at ?? null,
+      label: 'Banho & tosa',
+      service_name: 'Banho & tosa',
+    });
+  }
+
+  const { data: surgeryRows } = await supabaseAdmin
+    .from('hub_surgeries')
+    .select('id, status, title, scheduled_at, hub_appointment_id, hub_encounter_id')
+    .eq('clinic_id', clinicId)
+    .eq('pet_id', petId)
+    .is('deleted_at', null)
+    .eq('status', 'scheduled');
+
+  for (const row of surgeryRows ?? []) {
+    const s = row as {
+      id: string;
+      status: string;
+      title?: string | null;
+      scheduled_at?: string | null;
+      hub_appointment_id?: string | null;
+      hub_encounter_id?: string | null;
+    };
+    // Fichas já em atendimento (com encounter) ficam no fluxo clínico; só scheduled residual.
+    if (s.hub_encounter_id) continue;
+    pending_review.push({
+      kind: 'surgery_scheduled',
+      id: s.id,
+      status: s.status,
+      starts_at: s.scheduled_at ?? null,
+      hub_appointment_id: s.hub_appointment_id ?? null,
+      label: s.title?.trim() || 'Cirurgia agendada',
+      service_name: s.title?.trim() || 'Cirurgia',
+    });
+  }
+
+  const { count: remainingFuture } = await supabaseAdmin
+    .from('hub_appointments')
+    .select('id', { count: 'exact', head: true })
+    .eq('clinic_id', clinicId)
+    .eq('pet_id', petId)
+    .is('deleted_at', null)
+    .gt('starts_at', nowIso)
+    .not('status', 'in', '("cancelled","done","paid","no_show")');
+
+  const boardingCount = pending_review.filter((i) => i.kind === 'boarding_reservation').length;
 
   return {
-    future_appointments: appts.count ?? 0,
-    active_boarding_reservations: boarding.count ?? 0,
+    future_appointments: remainingFuture ?? 0,
+    active_boarding_reservations: boardingCount,
+    cancelled_appointments: cancelledList.length,
+    pending_review_count: pending_review.length,
+    cancelled_appointments_list: cancelledList,
+    pending_review,
   };
 }
 
@@ -216,7 +458,9 @@ export async function registerPetDeath(input: RegisterPetDeathInput): Promise<Pe
       return { ok: false, error: 'Resposta inválida ao registrar óbito', status: 500 };
     }
 
-    const pending = await countPendingOps(b.clinic_id, b.pet_id);
+    const pending = await cancelFutureOpsAfterPetDeath(b.clinic_id, b.pet_id, {
+      actorUserId: b.actor_user_id ?? null,
+    });
     return {
       ok: true,
       pet,

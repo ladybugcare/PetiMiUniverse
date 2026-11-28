@@ -1294,7 +1294,7 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
                         Perfil de permissão
                       </label>
                       <p className="hub-equipe__role-hint">
-                        Quem a pessoa é no sistema: Admin, Gerente, Recepção, Funcionário ou Financeiro.
+                        Quem a pessoa é no sistema: Admin, Gerente, Balcão, Funcionário ou Financeiro.
                         Banho, clínica, Leva e Traz etc. não são perfil — marque em «Áreas do Hub».
                       </p>
                       <HubSearchableCombobox
@@ -1317,7 +1317,7 @@ const HubStaffDrawer: React.FC<HubStaffDrawerProps> = ({
                       <p className="hub-clientes__label">Áreas do Hub</p>
                       <p className="hub-equipe__role-hint">
                         O que a pessoa faz no dia a dia. Ex.: Funcionário + Banho &amp; Tosa; Funcionário + Leva e
-                        Traz; Recepção costuma usar Recepção + Caixa.
+                        Traz; Balcão costuma usar Balcão + Caixa.
                       </p>
                       <div className="hub-equipe__operational-areas__grid" role="group" aria-label="Áreas operacionais do Hub">
                         {HUB_OPERATIONAL_AREAS.map((area) => {

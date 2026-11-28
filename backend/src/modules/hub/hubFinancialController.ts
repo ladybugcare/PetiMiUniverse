@@ -48,6 +48,7 @@ import {
   balanceDue as balanceDueFromNetPaid,
   netPaidEffective as netPaidEffectiveFromParts,
 } from './hubReceivableFinancialBalance';
+import { CHARGEABLE_RECEIVABLE_STATUSES } from './hubReceivableCancelCoverage';
 import {
   accrueCommissionSnapshots,
   assertServiceLinesHaveExecutor,
@@ -257,7 +258,7 @@ async function fetchActiveReceivableKeys(clinicId: string): Promise<Set<string>>
     .select('source_type, source_id')
     .eq('clinic_id', clinicId)
     .is('deleted_at', null)
-    .neq('status', 'cancelled');
+    .in('status', [...CHARGEABLE_RECEIVABLE_STATUSES]);
   if (error) throw new Error(error.message);
   const set = new Set<string>();
   for (const row of data ?? []) {

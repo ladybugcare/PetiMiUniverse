@@ -5,6 +5,7 @@
  */
 import { supabaseAdmin } from '../../config/supabase';
 import { reversePackageRedemptionsForComanda } from './hubPackagesService';
+import { CHARGEABLE_RECEIVABLE_STATUSES } from './hubReceivableCancelCoverage';
 
 export type CancellationOperationalType = 'appointment' | 'grooming_session' | 'encounter' | 'quote';
 
@@ -140,7 +141,7 @@ async function fetchActiveReceivableKeys(clinicId: string): Promise<Set<string>>
     .select('source_type, source_id')
     .eq('clinic_id', clinicId)
     .is('deleted_at', null)
-    .neq('status', 'cancelled');
+    .in('status', [...CHARGEABLE_RECEIVABLE_STATUSES]);
   if (error) throw new Error(error.message);
   const set = new Set<string>();
   for (const row of data ?? []) {

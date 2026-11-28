@@ -7,9 +7,9 @@
           "summary": "Comandos de voz para a operação de banho e tosa do PetMi Hub.",
           "description": "POC do PetMi Voice: inicie atendimento, marque pets como prontos e consulte a fila de banho e tosa por voz, usando o Echo no salão.",
           "examplePhrases": [
-            "Alexa, abra o pet mi",
-            "Alexa, diga ao pet mi que a Mel está pronta",
-            "Alexa, pergunte ao pet mi quem falta atender"
+            "Alexa, abra o assistente petimi",
+            "Alexa, diga ao assistente petimi que a Mel está pronta",
+            "Alexa, pergunte ao assistente petimi quem falta atender"
           ],
           "keywords": ["petmi", "banho", "tosa", "pets"]
         }

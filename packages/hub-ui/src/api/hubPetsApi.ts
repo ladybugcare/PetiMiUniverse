@@ -31,10 +31,49 @@ export interface HubPetGuardianRef {
   guardian_name: string | null;
 }
 
+export type HubPetDeathCancelledAppointment = {
+  id: string;
+  starts_at: string;
+  status: string;
+  service_name: string | null;
+};
+
+export type HubPetDeathPendingReviewKind =
+  | 'appointment_in_progress'
+  | 'boarding_reservation'
+  | 'grooming_session'
+  | 'surgery_scheduled';
+
+export type HubPetDeathPendingReviewItem = {
+  kind: HubPetDeathPendingReviewKind;
+  id: string;
+  status: string;
+  starts_at?: string | null;
+  expected_check_in?: string | null;
+  expected_check_out?: string | null;
+  service_name?: string | null;
+  label?: string | null;
+  grooming_stage?: string | null;
+  hub_appointment_id?: string | null;
+};
+
 export type HubPetDeathPending = {
   future_appointments: number;
   active_boarding_reservations: number;
+  cancelled_appointments?: number;
+  pending_review_count?: number;
+  cancelled_appointments_list?: HubPetDeathCancelledAppointment[];
+  pending_review?: HubPetDeathPendingReviewItem[];
 };
+
+/** Abre o painel de revisão se houve cancelamento automático ou restam pendências. */
+export function shouldOpenPetDeathReview(pending?: HubPetDeathPending | null): boolean {
+  if (!pending) return false;
+  const cancelled =
+    pending.cancelled_appointments_list?.length ?? pending.cancelled_appointments ?? 0;
+  const review = pending.pending_review?.length ?? pending.pending_review_count ?? 0;
+  return cancelled > 0 || review > 0;
+}
 
 export interface HubPet {
   id: string;

@@ -92,12 +92,17 @@ import {
 import { resolveStaffIdForUser } from './hubStaffResolve';
 import { isAppointmentPendingPeriodicSeriesInvoice } from './hubSeriesBillingService';
 import {
+  CHARGEABLE_RECEIVABLE_STATUSES,
   isFinancialCancelWithoutReturn,
   receivableBillsComandaItem,
   receivableKeepsComandaChargeable,
   receivableListableOnComanda,
   receivableResidualCountsTowardBalance,
 } from './hubReceivableCancelCoverage';
+import {
+  COMANDA_ITEM_ALREADY_BILLED_MESSAGE,
+  isComandaItemCoverUniqueViolation,
+} from './hubComandaItemCoverUnique';
 
 const uuidStr = z.string().uuid();
 
@@ -306,7 +311,7 @@ async function fetchActiveReceivableKeys(clinicId: string): Promise<Set<string>>
     .select('source_type, source_id')
     .eq('clinic_id', clinicId)
     .is('deleted_at', null)
-    .neq('status', 'cancelled');
+    .in('status', [...CHARGEABLE_RECEIVABLE_STATUSES]);
   if (error) throw new Error(error.message);
   const set = new Set<string>();
   for (const row of data ?? []) {
@@ -355,7 +360,7 @@ async function fetchBilledComandaOriginKeys(clinicId: string): Promise<Set<strin
     .eq('clinic_id', clinicId)
     .in('comanda_id', comandaIds)
     .is('deleted_at', null)
-    .neq('status', 'cancelled');
+    .in('status', [...CHARGEABLE_RECEIVABLE_STATUSES]);
   if (rErr) throw new Error(rErr.message);
   const billedComandaIds = new Set((receivables ?? []).map((r) => r.comanda_id as string).filter(Boolean));
   for (const c of comandas) {
@@ -1718,6 +1723,29 @@ async function buildComandaItemsFromGroomingSession(
   };
 }
 
+/** Limite alinhado ao PATCH da comanda (`notes` / `client_notes`). */
+const COMANDA_NOTE_MAX = 2000;
+
+function trimComandaNote(value: string | null | undefined, max = COMANDA_NOTE_MAX): string | null {
+  const t = (value ?? '').trim();
+  if (!t) return null;
+  return t.length > max ? t.slice(0, max) : t;
+}
+
+async function fetchAppointmentFinancialNotesForComanda(
+  clinicId: string,
+  appointmentId: string
+): Promise<string | null> {
+  const { data, error } = await supabaseAdmin
+    .from('hub_appointments')
+    .select('financial_notes')
+    .eq('id', appointmentId)
+    .eq('clinic_id', clinicId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return trimComandaNote(data.financial_notes as string | null);
+}
+
 async function buildComandaItemsFromQuote(
   clinicId: string,
   quoteId: string
@@ -1726,13 +1754,14 @@ async function buildComandaItemsFromQuote(
   subtotal: number;
   unit_id: string | null;
   guardian_id: string;
+  notes: string | null;
   client_notes: string | null;
   discount_amount: number;
 }> {
   const { data: quote, error: qErr } = await supabaseAdmin
     .from('hub_quotes')
     .select(
-      'id, clinic_id, unit_id, guardian_id, status, billing_state, billing_waived_at, client_notes, discount_kind, discount_value'
+      'id, clinic_id, unit_id, guardian_id, status, billing_state, billing_waived_at, notes, client_notes, discount_kind, discount_value'
     )
     .eq('id', quoteId)
     .maybeSingle();
@@ -1870,7 +1899,8 @@ async function buildComandaItemsFromQuote(
     subtotal: subtotalRounded,
     unit_id: unitId,
     guardian_id: guardianId,
-    client_notes: (quote.client_notes as string | null)?.trim() || null,
+    notes: trimComandaNote(quote.notes as string | null),
+    client_notes: trimComandaNote(quote.client_notes as string | null),
     discount_amount: headerDiscount,
   };
 }
@@ -3123,6 +3153,21 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
       return res.status(400).json({ error: tenantCheck.error });
     }
 
+    // Herança pontual na criação (não no sync): orçamento.notes / agenda.financial_notes → caixa.
+    let inheritedNotes: string | null =
+      origin_type === 'quote' && 'notes' in built
+        ? trimComandaNote((built as { notes?: string | null }).notes)
+        : null;
+    const inheritedClientNotes =
+      origin_type === 'quote' && 'client_notes' in built
+        ? trimComandaNote((built as { client_notes?: string | null }).client_notes)
+        : null;
+    if (!inheritedNotes && seriesGuardAppointmentId) {
+      inheritedNotes = await fetchAppointmentFinancialNotesForComanda(clinic_id, seriesGuardAppointmentId);
+    } else if (!inheritedNotes && origin_type === 'appointment') {
+      inheritedNotes = await fetchAppointmentFinancialNotesForComanda(clinic_id, effectiveOriginId);
+    }
+
     const { data: comanda, error: cErr } = await supabaseAdmin
       .from('hub_comandas')
       .insert({
@@ -3139,8 +3184,8 @@ export const postHubComandaOpen = async (req: Request, res: Response) => {
         subtotal_amount: built.subtotal,
         discount_amount: discount,
         total_amount: total,
-        notes: null,
-        client_notes: origin_type === 'quote' && 'client_notes' in built ? (built.client_notes as string | null) : null,
+        notes: inheritedNotes,
+        client_notes: inheritedClientNotes,
       })
       .select('id')
       .single();
@@ -4407,6 +4452,12 @@ export const postHubComandaCheckout = async (req: Request, res: Response) => {
       const { error: lnErr } = await supabaseAdmin.from('hub_receivable_lines').insert(lineRows);
       if (lnErr) {
         await rollbackReceivables();
+        if (isComandaItemCoverUniqueViolation(lnErr)) {
+          return res.status(409).json({
+            error: COMANDA_ITEM_ALREADY_BILLED_MESSAGE,
+            code: 'COMANDA_ITEM_ALREADY_BILLED',
+          });
+        }
         return res.status(500).json({ error: lnErr.message });
       }
     }
@@ -4976,6 +5027,14 @@ export async function leavePendingHandoffComanda(
     const { error: lnErr } = await supabaseAdmin.from('hub_receivable_lines').insert(lineRows);
     if (lnErr) {
       await rollback();
+      if (isComandaItemCoverUniqueViolation(lnErr)) {
+        return {
+          comanda_id: comandaId,
+          receivable_ids: [],
+          error: COMANDA_ITEM_ALREADY_BILLED_MESSAGE,
+          code: 'COMANDA_ITEM_ALREADY_BILLED',
+        };
+      }
       return { comanda_id: comandaId, receivable_ids: [], error: lnErr.message };
     }
 
@@ -5507,6 +5566,10 @@ async function ensureOpenComandaForCompletedEncounter(
       built.pet_id ??
       (billableItems.map((it) => it.pet_id).find((pid): pid is string => Boolean(pid)) ?? null);
 
+    const inheritedNotes = appointmentId
+      ? await fetchAppointmentFinancialNotesForComanda(clinicId, appointmentId)
+      : null;
+
     const { data: comanda, error: cErr } = await supabaseAdmin
       .from('hub_comandas')
       .insert({
@@ -5523,7 +5586,7 @@ async function ensureOpenComandaForCompletedEncounter(
         subtotal_amount: subtotal,
         discount_amount: discount,
         total_amount: total,
-        notes: null,
+        notes: inheritedNotes,
       })
       .select('id')
       .single();
@@ -7659,7 +7722,12 @@ export const postHubComandaCheckoutBulk = async (req: Request, res: Response) =>
           results.push({
             comanda_id: comandaId,
             receivable_ids: [],
-            error: linesErr.message ?? 'Erro ao criar linhas do recebível',
+            error: isComandaItemCoverUniqueViolation(linesErr)
+              ? COMANDA_ITEM_ALREADY_BILLED_MESSAGE
+              : (linesErr.message ?? 'Erro ao criar linhas do recebível'),
+            ...(isComandaItemCoverUniqueViolation(linesErr)
+              ? { code: 'COMANDA_ITEM_ALREADY_BILLED' as const }
+              : {}),
           });
           continue;
         }

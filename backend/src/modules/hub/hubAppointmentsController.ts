@@ -2,6 +2,7 @@ import type { Request, Response } from 'express';
 import { createHash, randomUUID } from 'crypto';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
+import { assertPetEligibleForNewOp } from './hubTenantAsserts';
 import { ensureDefaultHubServiceGroups } from './hubServiceGroupsController';
 import { getOrCreateHubClinicSettings } from './hubClinicSettingsController';
 import { COAT_TYPE_VALUES, PORTE_VALUES, parsePricingMatrixJson, roundMoney2 } from './hubServiceTypesPricingMatrix';
@@ -46,10 +47,8 @@ import {
   openComandaIdsForAppointments,
   syncOpenComandasAfterAppointmentOperationalComplete,
 } from './hubComandasController';
-import {
-  handleComandaAfterOperationalCancel,
-  type ComandaOperationalCancelEffect,
-} from './hubComandaOperationalCancel';
+import { type ComandaOperationalCancelEffect } from './hubComandaOperationalCancel';
+import { cascadeAfterAppointmentTerminalStatus } from './hubAppointmentOperationalCancel';
 import { hasPackageBalanceForServices, listActivePackageBalances } from './hubPackagesService';
 import { normalizeSeriesBillingForInsert } from './hubSeriesBillingService';
 import {
@@ -79,7 +78,6 @@ import {
 } from './hubSpecialPrices';
 import { upsertSpecialPriceFromAppointment } from './hubSpecialPricesController';
 import { syncSurgeryForAppointmentSafe } from './hubSurgeryFromAppointment';
-import { cancelLinkedOpenEncountersForAppointments } from './hubClinicalAppointmentMirror';
 import { isResourceScheduleConflict } from './hubResourceConflict';
 import { resolveResourceSnapshot } from './hubResourcesService';
 import {
@@ -447,19 +445,6 @@ async function assertStaffInClinicOptional(clinicId: string, staffId: string | n
     .from('hub_staff_members')
     .select('id')
     .eq('id', staffId)
-    .eq('clinic_id', clinicId)
-    .is('deleted_at', null)
-    .maybeSingle();
-  if (error || !data) return false;
-  return true;
-}
-
-async function assertPetInClinic(clinicId: string, petId: string | null): Promise<boolean> {
-  if (!petId) return true;
-  const { data, error } = await supabaseAdmin
-    .from('hub_pets')
-    .select('id')
-    .eq('id', petId)
     .eq('clinic_id', clinicId)
     .is('deleted_at', null)
     .maybeSingle();
@@ -1784,7 +1769,7 @@ export const createHubAppointment = async (req: Request, res: Response) => {
     if (!(await assertStaffInClinicOptional(b.clinic_id, b.hub_staff_member_id ?? null))) {
       return res.status(400).json({ error: 'Profissional inválido ou não pertence à clínica' });
     }
-    if (!(await assertPetInClinic(b.clinic_id, b.pet_id ?? null))) {
+    if (!(await assertPetEligibleForNewOp(b.clinic_id, b.pet_id ?? null))) {
       return res.status(400).json({ error: 'Pet inválido ou não pertence à clínica' });
     }
     if (!(await assertGuardianInClinic(b.clinic_id, b.guardian_id ?? null))) {
@@ -3225,7 +3210,7 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
     if (b.hub_staff_member_id !== undefined && !(await assertStaffInClinicOptional(b.clinic_id, b.hub_staff_member_id))) {
       return res.status(400).json({ error: 'Profissional inválido' });
     }
-    if (b.pet_id !== undefined && !(await assertPetInClinic(b.clinic_id, b.pet_id))) {
+    if (b.pet_id !== undefined && !(await assertPetEligibleForNewOp(b.clinic_id, b.pet_id))) {
       return res.status(400).json({ error: 'Pet inválido' });
     }
     if (b.guardian_id !== undefined && !(await assertGuardianInClinic(b.clinic_id, b.guardian_id))) {
@@ -3765,69 +3750,12 @@ export const patchHubAppointment = async (req: Request, res: Response) => {
     const comandaEffects: ComandaOperationalCancelEffect[] = [];
     if (patch.status === 'cancelled' || patch.status === 'no_show') {
       const terminalStatus = patch.status as 'cancelled' | 'no_show';
-      const cascadedLegIds: string[] = [];
-      for (const tid of targetIds) {
-        const { data: parentKindRow } = await supabaseAdmin
-          .from('hub_appointments')
-          .select('appointment_kind')
-          .eq('id', tid)
-          .eq('clinic_id', b.clinic_id)
-          .maybeSingle();
-        const parentKind = String(
-          (parentKindRow as { appointment_kind?: string } | null)?.appointment_kind ?? '',
-        );
-        if (parentKind === 'pickup_route') continue;
-
-        const { data: childLegs } = await supabaseAdmin
-          .from('hub_appointments')
-          .select('id')
-          .eq('clinic_id', b.clinic_id)
-          .eq('parent_appointment_id', tid)
-          .eq('appointment_kind', 'pickup_route')
-          .is('deleted_at', null)
-          .not('status', 'in', '("cancelled","no_show")');
-        const legIds = (childLegs ?? [])
-          .map((r) => (r as { id: string }).id)
-          .filter((legId) => !targetIds.includes(legId));
-        if (legIds.length === 0) continue;
-
-        const { error: cascadeErr } = await supabaseAdmin
-          .from('hub_appointments')
-          .update({ status: terminalStatus })
-          .in('id', legIds)
-          .eq('clinic_id', b.clinic_id);
-        if (cascadeErr) {
-          console.error(
-            `patchHubAppointment cascade ${terminalStatus} pickup legs`,
-            tid,
-            cascadeErr.message,
-          );
-        } else {
-          cascadedLegIds.push(...legIds);
-        }
-      }
-
-      const waiveReason =
-        terminalStatus === 'no_show'
-          ? 'Falta registrada no agendamento'
-          : 'Cancelamento operacional do agendamento';
-      const allApptIds = [...targetIds, ...cascadedLegIds];
-      const cancelledEncounterIds = await cancelLinkedOpenEncountersForAppointments({
+      const cascade = await cascadeAfterAppointmentTerminalStatus({
         clinicId: b.clinic_id,
-        appointmentIds: allApptIds,
+        appointmentIds: targetIds,
+        terminalStatus,
       });
-      for (const tid of allApptIds) {
-        const effect = await handleComandaAfterOperationalCancel(b.clinic_id, 'appointment', tid, {
-          waiveReason,
-        });
-        comandaEffects.push(effect);
-      }
-      for (const encounterId of cancelledEncounterIds) {
-        const effect = await handleComandaAfterOperationalCancel(b.clinic_id, 'encounter', encounterId, {
-          waiveReason,
-        });
-        comandaEffects.push(effect);
-      }
+      comandaEffects.push(...cascade.comandaEffects);
     }
 
     if (b.status === 'done' || b.status === 'paid') {

@@ -21,8 +21,8 @@ export const HUB_JOB_FUNCTION_OPTIONS: HubJobFunctionOption[] = [
   },
   {
     value: 'Recepção',
-    label: 'Recepção',
-    description: 'Atendimento ao cliente, agendamentos e cadastros.',
+    label: 'Balcão',
+    description: 'Linha de frente: chegadas, liberações, encaminhamentos e cobrança pós-atendimento.',
   },
   {
     value: 'Auxiliar Veterinário(a)',

@@ -11,7 +11,7 @@ import {
 export const HUB_ACCESS_ROLE_OPTIONS: { value: HubStaffAccessRole; label: string }[] = [
   { value: 'CADMIN', label: 'Administrador' },
   { value: 'CMANAGER', label: 'Gerente' },
-  { value: 'CASSISTANT', label: 'Recepção' },
+  { value: 'CASSISTANT', label: 'Balcão' },
   { value: 'CSTAFF', label: 'Funcionário' },
   { value: 'CFINANCE', label: 'Financeiro' },
 ];
@@ -25,7 +25,7 @@ export const HUB_ACCESS_ROLE_LEGACY_OPTIONS: { value: HubStaffAccessRole; label:
 /** Papéis sugeridos ao escolher a função principal (cargo ≠ perfil). */
 export function suggestAccessRoleForJobTitle(jobTitle: string): HubStaffAccessRole | null {
   const j = jobTitle.trim();
-  if (j === 'Recepção') return 'CASSISTANT';
+  if (j === 'Recepção' || j === 'Balcão') return 'CASSISTANT';
   if (
     j === 'Motorista' ||
     j === 'Banho & Tosa' ||

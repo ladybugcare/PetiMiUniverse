@@ -12,12 +12,14 @@ vi.mock('../../../config/supabase', () => {
   const rpc = vi.fn();
   const chain: Record<string, unknown> = {};
   const self = () => chain;
-  for (const m of ['select', 'eq', 'is', 'gt', 'not', 'in', 'gte', 'lte']) {
+  for (const m of ['select', 'eq', 'is', 'gt', 'not', 'in', 'gte', 'lte', 'order', 'limit', 'update']) {
     chain[m] = vi.fn(self);
   }
-  // Terminadores usados em countPendingOps (thenable)
+  chain.maybeSingle = vi.fn(async () => ({ data: null, error: null }));
+  // Terminadores usados em cancelFutureOpsAfterPetDeath (thenable)
   Object.assign(chain, {
-    then: (resolve: (v: unknown) => unknown) => resolve({ count: 0, error: null }),
+    then: (resolve: (v: unknown) => unknown) =>
+      resolve({ data: [], count: 0, error: null }),
   });
   return {
     supabaseAdmin: {
@@ -26,6 +28,20 @@ vi.mock('../../../config/supabase', () => {
     },
   };
 });
+
+vi.mock('../hubAppointmentOperationalCancel', () => ({
+  applyOperationalCancelToAppointments: vi.fn(async () => ({
+    cancelledIds: [],
+    cascadedLegIds: [],
+    cancelledEncounterIds: [],
+    comandaEffects: [],
+  })),
+  PET_DEATH_CANCEL_WAIVE: 'Cancelamento automático por óbito do pet',
+}));
+
+vi.mock('../hubSurgeryFromAppointment', () => ({
+  syncSurgeryForAppointmentSafe: vi.fn(async () => undefined),
+}));
 
 import { supabaseAdmin } from '../../../config/supabase';
 
@@ -107,6 +123,12 @@ describe('petDeathService RPC wrappers', () => {
     if (res.ok) {
       expect(res.pet.id).toBe(PET);
       expect(res.archived).toBe(false);
+      expect(res.pending).toMatchObject({
+        cancelled_appointments: 0,
+        pending_review_count: 0,
+        cancelled_appointments_list: [],
+        pending_review: [],
+      });
     }
     expect(supabaseAdmin.rpc).toHaveBeenCalledWith(
       'hub_register_pet_death',

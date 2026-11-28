@@ -57,8 +57,14 @@ export type ReceptionBoardItem = {
   opened_at: string;
   resolved_at: string | null;
   resolution: string | null;
+  /** `null` = usuário sem acesso ao caixa/financeiro; não mostrar aviso. */
+  charge_pending?: boolean | null;
   pet: { id: string | null; name: string };
   guardian: { id: string | null; full_name: string; phone: string | null } | null;
+};
+
+export type ReceptionBoardSummary = {
+  charge_pending_open: number;
 };
 
 export type ReceptionCue = {
@@ -117,7 +123,11 @@ export type ReceptionHandoffDetail = Omit<ReceptionBoardItem, 'pet' | 'guardian'
 export const hubReceptionApi = {
   board(clinicId: string, unitId: string, dateYmd: string) {
     const q = new URLSearchParams({ clinic_id: clinicId, unit_id: unitId, date: dateYmd });
-    return apiRequest(`/api/hub/reception/board?${q}`) as Promise<{ date: string; items: ReceptionBoardItem[] }>;
+    return apiRequest(`/api/hub/reception/board?${q}`) as Promise<{
+      date: string;
+      items: ReceptionBoardItem[];
+      summary?: ReceptionBoardSummary;
+    }>;
   },
   detail(id: string, clinicId: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });

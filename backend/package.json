@@ -5,7 +5,7 @@
     "node": ">=20"
   },
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "tsx watch --clear-screen=false --no-cache src/server.ts",
     "dev:clean": "sh -c 'for p in $(lsof -ti tcp:3000 2>/dev/null); do kill -9 \"$p\" 2>/dev/null; done; true' && npm run dev",
     "build": "tsc",
     "start": "node dist/server.js",
@@ -24,6 +24,7 @@
     "smoke:tenant-isolation": "tsx scripts/hub-tenant-isolation-smoke.ts"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@sentry/node": "^9.47.2",
     "@supabase/supabase-js": "^2.76.1",
     "@types/pdfkit": "^0.17.6",

@@ -8,7 +8,12 @@ import { hubClinicalApi, type HubHospitalization } from '../../../api/hubClinica
 import { useAlert } from '../../../components/AlertProvider';
 import { formatHospDateTime, HOSP_STATUS_LABEL, petInitials } from './hospDisplay';
 import { RegisterPetDeathModal } from '../../pets/RegisterPetDeathModal';
+import { PetDeathReviewPanel } from '../../pets/PetDeathReviewPanel';
 import type { PetDeathType } from '../../pets/petDeath';
+import {
+  shouldOpenPetDeathReview,
+  type HubPetDeathPending,
+} from '../../../api/hubPetsApi';
 import '../../agenda/new-appointment-modal.css';
 
 export type HospDischargeStatus = 'discharged' | 'death' | 'transferred';
@@ -56,11 +61,15 @@ const HospDischargePanel: React.FC<Props> = ({
   onClose,
   onDischarged,
 }) => {
-  const { showError, showSuccess, showWarning } = useAlert();
+  const { showError, showSuccess } = useAlert();
   const [status, setStatus] = useState<HospDischargeStatus>('discharged');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [deathModalOpen, setDeathModalOpen] = useState(false);
+  const [deathReview, setDeathReview] = useState<{
+    petName: string;
+    pending: HubPetDeathPending;
+  } | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -246,7 +255,7 @@ const HospDischargePanel: React.FC<Props> = ({
         hubEncounterId={hospitalization?.hub_encounter_id}
         onClinicalSubmit={async (payload) => {
           if (!hospitalization) return;
-          const res = (await hubClinicalApi.patchHospitalization(hospitalization.id, {
+          const res = await hubClinicalApi.patchHospitalization(hospitalization.id, {
             clinic_id: clinicId,
             status: 'death',
             discharge_notes: payload.death_notes,
@@ -257,17 +266,23 @@ const HospDischargePanel: React.FC<Props> = ({
               death_notes: payload.death_notes,
               archive: payload.archive,
             },
-          })) as { pet_death_pending?: { future_appointments: number; active_boarding_reservations: number } };
+          });
           const pending = res.pet_death_pending;
-          if (pending && (pending.future_appointments > 0 || pending.active_boarding_reservations > 0)) {
-            showWarning(
-              `Há pendências: ${pending.future_appointments} agendamento(s) futuro(s) e ${pending.active_boarding_reservations} reserva(s). Nada foi cancelado automaticamente.`,
-            );
-          }
           setDeathModalOpen(false);
           onClose();
           await onDischarged();
+          if (shouldOpenPetDeathReview(pending) && pending) {
+            setDeathReview({ petName, pending });
+          }
         }}
+      />
+
+      <PetDeathReviewPanel
+        open={Boolean(deathReview)}
+        onClose={() => setDeathReview(null)}
+        petName={deathReview?.petName || 'Pet'}
+        pending={deathReview?.pending ?? null}
+        clinicId={clinicId}
       />
     </>
   );

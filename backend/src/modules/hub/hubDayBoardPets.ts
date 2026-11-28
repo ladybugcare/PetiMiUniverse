@@ -14,8 +14,16 @@ export type HubDayBoardPetRow = {
   coat_type?: string | null;
   notes?: string | null;
   behavior_tags?: string[] | null;
+  /** Presente para enrich de itens existentes (falecido/arquivado ainda aparece na fila). */
+  deleted_at?: string | null;
+  deceased_at?: string | null;
+  death_invalidated_at?: string | null;
 };
 
+/**
+ * Enrich de pets já referenciados em day boards.
+ * Inclui falecidos/arquivados para não cair em "Sem pet" — flags vêm no row.
+ */
 export async function fetchHubPetsMapByIds(
   petIds: Iterable<string | null | undefined>,
 ): Promise<Map<string, HubDayBoardPetRow>> {
@@ -25,23 +33,19 @@ export async function fetchHubPetsMapByIds(
   const { data, error } = await supabaseAdmin
     .from('hub_pets')
     .select(`${HUB_DAY_BOARD_PET_SELECT}, deleted_at, deceased_at, death_invalidated_at`)
-    .in('id', uniq)
-    .is('deleted_at', null);
+    .in('id', uniq);
 
   if (error) {
     console.error('[hubDayBoardPets] fetchHubPetsMapByIds', error);
     return new Map();
   }
 
-  const { isPetEligibleForNewOp } = await import('./petDeathService');
-  const eligible = (data ?? []).filter((p) =>
-    isPetEligibleForNewOp(p as {
-      deleted_at?: string | null;
-      deceased_at?: string | null;
-      death_invalidated_at?: string | null;
+  return new Map(
+    (data ?? []).map((p) => {
+      const row = p as HubDayBoardPetRow & { id: string };
+      return [row.id, row];
     }),
   );
-  return new Map(eligible.map((p) => [p.id as string, p as HubDayBoardPetRow]));
 }
 
 /**

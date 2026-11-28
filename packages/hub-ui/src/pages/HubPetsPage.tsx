@@ -2,7 +2,12 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth, getStoredClinicId, usePermissions, type AppRole } from '@petimi/web-core';
 import { hubGuardiansApi, type HubGuardian } from '../api/hubGuardiansApi';
-import { hubPetsApi, type HubPet } from '../api/hubPetsApi';
+import {
+  hubPetsApi,
+  shouldOpenPetDeathReview,
+  type HubPet,
+  type HubPetDeathPending,
+} from '../api/hubPetsApi';
 import { useAlert } from '../components/AlertProvider';
 import { HubLoading, HubRefreshingBanner } from '../components/HubLoading';
 import { useKeepContentLoad } from '../hooks/useKeepContentLoad';
@@ -20,6 +25,7 @@ import { getSelectedUnitId } from '../utils/useSelectedUnitId';
 import { resolvePetBodyPorteForApi } from '../data/breedDefaultSizeTier';
 import type { CoatTypeValue, PetBodyPorteValue } from '../utils/hubServiceTypesPricingMatrix';
 import { RegisterPetDeathModal } from './pets/RegisterPetDeathModal';
+import { PetDeathReviewPanel } from './pets/PetDeathReviewPanel';
 import { hasValidPetDeath, type PetSituationFilter } from './pets/petDeath';
 
 type PanelMode = 'create' | 'detail' | 'edit';
@@ -75,6 +81,10 @@ const HubPetsPage: React.FC = () => {
   const [tutorFilter, setTutorFilter] = useState('');
   const [situationFilter, setSituationFilter] = useState<PetSituationFilter>('active');
   const [deathPet, setDeathPet] = useState<HubPet | null>(null);
+  const [deathReview, setDeathReview] = useState<{
+    petName: string;
+    pending: HubPetDeathPending;
+  } | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -460,11 +470,23 @@ const HubPetsPage: React.FC = () => {
         onClose={() => setDeathPet(null)}
         clinicId={clinicId || ''}
         pet={deathPet}
-        onRegistered={async () => {
+        onRegistered={async (res) => {
+          const name = deathPet?.name || res.pet?.name || 'Pet';
           if (deathPet && selectedId === deathPet.id) closePanel();
           setDeathPet(null);
           await loadPets();
+          if (shouldOpenPetDeathReview(res.pending) && res.pending) {
+            setDeathReview({ petName: name, pending: res.pending });
+          }
         }}
+      />
+
+      <PetDeathReviewPanel
+        open={Boolean(deathReview)}
+        onClose={() => setDeathReview(null)}
+        petName={deathReview?.petName || 'Pet'}
+        pending={deathReview?.pending ?? null}
+        clinicId={clinicId || ''}
       />
     </div>
   );

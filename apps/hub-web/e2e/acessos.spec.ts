@@ -134,7 +134,7 @@ test.describe('acessos Hub', () => {
     });
   });
 
-  test('CSTAFF recepcao cai na Operação da Recepção', async ({ page }) => {
+  test('CSTAFF recepcao cai no Balcão', async ({ page }) => {
     const creds = hubCstaffReceptionCredentials();
     if (!skipIfMissing(creds, 'CSTAFF recepcao')) return;
 
@@ -142,7 +142,7 @@ test.describe('acessos Hub', () => {
     await expect(page).toHaveURL(/\/hub\/recepcao(?:\?|$)/, { timeout: 20_000 });
 
     await expectNav(page, {
-      visiveis: ['Recepção', 'Agenda', 'Orçamento', 'Clientes', 'Pets'],
+      visiveis: ['Balcão', 'Agenda', 'Orçamento', 'Clientes', 'Pets'],
       ocultos: ['Dashboard', 'Financeiro', /^Caixa/, 'Clínica', 'Banho & Tosa', 'Leva e Traz'],
     });
   });

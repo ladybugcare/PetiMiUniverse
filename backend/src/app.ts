@@ -41,6 +41,12 @@ import publicMercadoPagoRoutes from './modules/hub/routes/publicMercadoPago.js';
 import publicBoardingCareRoutes from './modules/hub/routes/publicBoardingCare.js';
 import publicClinicProfilesRoutes from './modules/hub/routes/publicClinicProfiles.js';
 import alexaRouter from './modules/integrations/alexa/alexaRouter.js';
+import {
+  oauthRouter,
+  oauthProtectedResourceHandler,
+  oauthAuthorizationServerHandler,
+} from './modules/integrations/oauth/oauthRouter.js';
+import mcpRouter from './modules/integrations/mcp/mcpRouter.js';
 
 // 🔹 Variáveis de ambiente são carregadas automaticamente por loadEnv.ts
 // quando importamos supabase (config/supabase.ts importa './loadEnv')
@@ -235,6 +241,15 @@ app.use('/api/public', publicExamReferralsRoutes);
 app.use('/api/public', publicMercadoPagoRoutes);
 app.use('/api/public', publicBoardingCareRoutes);
 app.use('/api/public', publicClinicProfilesRoutes);
+
+// 🔹 OAuth AS lite (ChatGPT MCP) + metadata discovery
+app.get('/.well-known/oauth-protected-resource', oauthProtectedResourceHandler);
+app.get('/.well-known/oauth-authorization-server', oauthAuthorizationServerHandler);
+app.use('/oauth', oauthRouter);
+
+// 🔹 MCP remote server (Streamable HTTP)
+app.use('/mcp', mcpRouter);
+
 app.use('/health', healthRoutes);
 
 // 🔹 Healthcheck melhorado (verifica dependências)

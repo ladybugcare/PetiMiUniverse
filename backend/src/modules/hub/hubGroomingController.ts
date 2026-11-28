@@ -21,6 +21,7 @@ import {
   fetchHubPetsMapByIds,
   resolvePrimaryPetIdsByGuardians,
 } from './hubDayBoardPets';
+import { assertPetEligibleForNewOp } from './hubTenantAsserts';
 import {
   findOpenGroomingPresenceForPet,
   openGroomingPresenceConflictPayload,
@@ -138,17 +139,6 @@ function classifyGroomingServiceMix(
     if (st.code === 'banho_tosa' || tosaPattern(blob)) return 'with_tosa';
   }
   return 'banho_only';
-}
-
-async function assertPetInClinic(clinicId: string, petId: string): Promise<boolean> {
-  const { data } = await supabaseAdmin
-    .from('hub_pets')
-    .select('id')
-    .eq('id', petId)
-    .eq('clinic_id', clinicId)
-    .is('deleted_at', null)
-    .maybeSingle();
-  return !!data;
 }
 
 function buildServiceLinesForAppointment(
@@ -903,7 +893,7 @@ export const createHubGroomingSession = async (req: Request, res: Response) => {
     if (!parsed.success) return res.status(400).json({ error: parsed.error.flatten() });
     const b = parsed.data;
 
-    if (!(await assertPetInClinic(b.clinic_id, b.pet_id))) {
+    if (!(await assertPetEligibleForNewOp(b.clinic_id, b.pet_id))) {
       return res.status(400).json({ error: 'Pet inválido' });
     }
 

@@ -1699,7 +1699,9 @@ export const patchHubEncounter = async (req: Request, res: Response) => {
       }
     }
 
-    let petDeathPending: { future_appointments: number; active_boarding_reservations: number } | undefined;
+    let petDeathPending:
+      | import('./petDeathService').PetDeathPendingCounts
+      | undefined;
     if (b.clinical_outcome === 'death') {
       const petIdForDeath = b.pet_id ?? existing.pet_id;
       if (!petIdForDeath) {

@@ -101,7 +101,7 @@ const navSections: NavSection[] = [
     id: 'operacao',
     title: 'Operação',
     items: [
-      { to: '/hub/recepcao', label: 'Recepção', icon: Inbox, permission: 'reception.ops.read' },
+      { to: '/hub/recepcao', label: 'Balcão', icon: Inbox, permission: 'reception.ops.read' },
       { to: '/hub/clinica', label: 'Clínica', icon: Stethoscope, permission: 'hub.clinic.read' },
       { to: '/hub/banho-tosa', label: 'Banho & Tosa', icon: Scissors, permission: 'grooming.queue.read' },
       { to: '/hub/hotel-creche', label: 'Hotel & Creche', icon: Hotel, permission: 'boarding.reservations.read' },

@@ -24,11 +24,11 @@ Endpoint da API: `https://backend-staging-334260f3.up.railway.app/api/integratio
 
 ## 3. Obter `alexaUserId` (conta de teste)
 
-1. No console → aba **Test** → digite `abra o pet mi` (ou use o Echo em desenvolvimento).
+1. No console → aba **Test** → digite `abra o assistente petimi` (ou use o Echo em desenvolvimento).
 2. Vá em **Build → Endpoint** ou use o **Device Log / Request** do simulador: no JSON do request, copie  
    `context.System.user.userId`  
    (formato `amzn1.ask.account.…`).
-3. Alternativa com Echo: diga “Alexa, abra o pet mi” e, nos logs da API staging no Railway, o primeiro request pode ser `unauthorized` — ainda assim o body da Alexa traz o `userId` se você inspecionar o request no console de teste.
+3. Alternativa com Echo: diga “Alexa, abra o assistente petimi” e, nos logs da API staging no Railway, o primeiro request pode ser `unauthorized` — ainda assim o body da Alexa traz o `userId` se você inspecionar o request no console de teste.
 4. Atalho confiável: no Test Console, abra **JSON Input/Output** (ícone `{}`) após qualquer invocação e copie `context.System.user.userId`.
 
 ## 4. Obter `clinicId` e `unitId` (Hub staging)
@@ -76,7 +76,7 @@ Após salvar as variáveis, faça um redeploy se o Railway não reiniciar sozinh
 
 ## 7. Testar
 
-1. Simulador: “abra o pet mi” → deve responder o help curto (não “desabilitado” / “não autorizado”).
+1. Simulador: “abra o assistente petimi” → deve responder o help curto (não “desabilitado” / “não autorizado”).
 2. Com um pet na fila (`queued`): “inicie o banho do Thor”.
 3. Com pet em atendimento: “a Mel está pronta” → confirme com “sim”.
 4. “quem falta atender?”.
@@ -84,10 +84,10 @@ Após salvar as variáveis, faça um redeploy se o Railway não reiniciar sozinh
 
 ## Frases úteis
 
-- “Alexa, abra o pet mi”
-- “Alexa, diga ao pet mi que inicie o banho do Thor”
-- “Alexa, diga ao pet mi que a Mel está pronta”
-- “Alexa, pergunte ao pet mi quem falta atender”
+- “Alexa, abra o assistente petimi”
+- “Alexa, diga ao assistente petimi que inicie o banho do Thor”
+- “Alexa, diga ao assistente petimi que a Mel está pronta”
+- “Alexa, pergunte ao assistente petimi quem falta atender”
 
 ## Troubleshooting rápido
 

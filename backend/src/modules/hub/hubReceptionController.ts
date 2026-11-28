@@ -47,15 +47,28 @@ function originModule(sourceType: string, kind: string, context?: Record<string,
 
 async function petHasOpenCharge(clinicId: string, petId: string | null): Promise<boolean> {
   if (!petId) return false;
-  const { count, error } = await supabaseAdmin
+  const set = await petsWithOpenCharge(clinicId, [petId]);
+  return set.has(petId);
+}
+
+/** Batch: pets com comanda `open` / `awaiting_balance` (mesmo critério do detail). */
+async function petsWithOpenCharge(clinicId: string, petIds: string[]): Promise<Set<string>> {
+  const unique = [...new Set(petIds.filter(Boolean))];
+  if (!unique.length) return new Set();
+  const { data, error } = await supabaseAdmin
     .from('hub_comandas')
-    .select('id', { count: 'exact', head: true })
+    .select('pet_id')
     .eq('clinic_id', clinicId)
-    .eq('pet_id', petId)
+    .in('pet_id', unique)
     .is('deleted_at', null)
     .in('financial_status', ['open', 'awaiting_balance']);
   if (error) throw new Error(error.message);
-  return (count ?? 0) > 0;
+  const out = new Set<string>();
+  for (const row of data ?? []) {
+    const id = row.pet_id as string | null;
+    if (id) out.add(id);
+  }
+  return out;
 }
 
 /** Recupera pet_id pela origem quando o handoff ficou sem pet (ex.: ON DELETE SET NULL). */
@@ -202,12 +215,29 @@ export const getHubReceptionBoard = async (req: Request, res: Response) => {
     const petById = new Map((petsRes.data ?? []).map((p) => [p.id as string, p]));
     const guardianById = new Map((guardiansRes.data ?? []).map((g) => [g.id as string, g]));
 
+    let chargePendingByPet: Set<string> | null = null;
+    const userId = req.user?.id;
+    if (userId) {
+      const canSeeCharge =
+        (await checkPermission(userId, parsed.data.clinic_id, 'hub.financial.read')) ||
+        (await checkPermission(userId, parsed.data.clinic_id, 'hub.cash.receive'));
+      if (canSeeCharge) {
+        chargePendingByPet = await petsWithOpenCharge(parsed.data.clinic_id, petIds);
+      }
+    }
+
+    let chargePendingOpen = 0;
     const items = dayRows.map((row) => {
       const petId = resolvedPetIds.get(row.id as string) ?? null;
       const guardianId = (row.guardian_id as string | null) ?? null;
       const petRow = petId ? petById.get(petId) : undefined;
       const guardianRow = guardianId ? guardianById.get(guardianId) : undefined;
       const petName = typeof petRow?.name === 'string' ? petRow.name.trim() : '';
+      const chargePending =
+        chargePendingByPet == null
+          ? null
+          : Boolean(petId && chargePendingByPet.has(petId) && String(row.status) === 'open');
+      if (chargePending) chargePendingOpen += 1;
       return {
         id: row.id,
         kind: row.kind,
@@ -218,6 +248,7 @@ export const getHubReceptionBoard = async (req: Request, res: Response) => {
         opened_at: row.opened_at,
         resolved_at: row.resolved_at,
         resolution: row.resolution,
+        charge_pending: chargePending,
         pet: {
           id: petId,
           name: petName || 'Sem nome',
@@ -232,10 +263,14 @@ export const getHubReceptionBoard = async (req: Request, res: Response) => {
       };
     });
 
-    return res.json({ date: day, items });
+    return res.json({
+      date: day,
+      items,
+      summary: chargePendingByPet == null ? undefined : { charge_pending_open: chargePendingOpen },
+    });
   } catch (e: unknown) {
     console.error('getHubReceptionBoard', e);
-    return res.status(500).json({ error: (e as Error)?.message || 'Erro ao carregar a recepção' });
+    return res.status(500).json({ error: (e as Error)?.message || 'Erro ao carregar o balcão' });
   }
 };
 

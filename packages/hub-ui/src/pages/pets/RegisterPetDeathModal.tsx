@@ -81,7 +81,7 @@ export const RegisterPetDeathModal: React.FC<RegisterPetDeathModalProps> = ({
   onClinicalSubmit,
   onRegistered,
 }) => {
-  const { showError, showSuccess, showWarning } = useAlert();
+  const { showError, showSuccess } = useAlert();
   const [deceasedLocal, setDeceasedLocal] = useState(toDatetimeLocalValue());
   const [deathType, setDeathType] = useState<PetDeathType | ''>('');
   const [deathCause, setDeathCause] = useState('');
@@ -156,12 +156,6 @@ export const RegisterPetDeathModal: React.FC<RegisterPetDeathModalProps> = ({
         hub_encounter_id: hubEncounterId,
       });
       showSuccess(archive ? 'Óbito registrado e cadastro arquivado' : 'Óbito registrado');
-      const pending = res.pending;
-      if (pending && (pending.future_appointments > 0 || pending.active_boarding_reservations > 0)) {
-        showWarning(
-          `Há pendências: ${pending.future_appointments} agendamento(s) futuro(s) e ${pending.active_boarding_reservations} reserva(s) de hotel/creche. Revise manualmente — nada foi cancelado automaticamente.`,
-        );
-      }
       onRegistered?.(res);
       onClose();
     } catch (e: unknown) {

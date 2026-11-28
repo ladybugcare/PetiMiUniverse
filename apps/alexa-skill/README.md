@@ -5,7 +5,8 @@ Modelo de interação e manifesto da Custom Skill **PetMi Voice** (locale `pt-BR
 ## Invocação
 
 - Nome: `pet mi`
-- Exemplos: “Alexa, abra o pet mi”, “Alexa, diga ao pet mi que a Mel está pronta”
+- Invocation name: `assistente petimi` (evita confusão ASR com “patinete”).
+- Exemplos: “Alexa, abra o assistente petimi”, “Alexa, diga ao assistente petimi que a Mel está pronta”
 
 ## Endpoint
 

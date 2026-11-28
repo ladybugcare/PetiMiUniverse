@@ -1,4 +1,5 @@
 import { apiRequest, getApiBaseUrl, getStoredClinicId as readStoredClinicId, getSupabase } from '@petimi/web-core';
+import type { HubPetDeathPending } from './hubPetsApi';
 
 const encBase = '/api/hub/encounters';
 const clinicalBase = '/api/hub/clinical';
@@ -598,7 +599,7 @@ export const hubEncountersApi = {
   ) {
     return apiRequest(`${encBase}/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }) as Promise<{
       encounter: HubEncounter;
-      pet_death_pending?: { future_appointments: number; active_boarding_reservations: number };
+      pet_death_pending?: HubPetDeathPending;
     }>;
   },
   complete(id: string, clinicId: string, changedBy?: string | null) {
@@ -1051,7 +1052,7 @@ export const hubClinicalApi = {
       body: JSON.stringify(payload),
     }) as Promise<{
       hospitalization: HubHospitalization;
-      pet_death_pending?: { future_appointments: number; active_boarding_reservations: number };
+      pet_death_pending?: HubPetDeathPending;
     }>;
   },
   listHospitalizationCharges(hospitalizationId: string, clinicId: string) {
@@ -1251,7 +1252,11 @@ export const hubClinicalApi = {
     return apiRequest(`${clinicalBase}/surgeries/${id}`, {
       method: 'PATCH',
       body: JSON.stringify(payload),
-    }) as Promise<{ surgery: HubSurgery; payables?: HubSurgeryPayable[] }>;
+    }) as Promise<{
+      surgery: HubSurgery;
+      payables?: HubSurgeryPayable[];
+      pet_death_pending?: HubPetDeathPending;
+    }>;
   },
   listSurgeryServices(surgeryId: string, clinicId: string) {
     const q = new URLSearchParams({ clinic_id: clinicId });

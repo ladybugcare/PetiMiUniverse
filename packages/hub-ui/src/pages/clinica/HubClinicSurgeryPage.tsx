@@ -2,7 +2,12 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowLeft, BedDouble, Check, DoorOpen, HeartCrack, Link2, Play } from 'lucide-react';
 import { RegisterPetDeathModal } from '../pets/RegisterPetDeathModal';
+import { PetDeathReviewPanel } from '../pets/PetDeathReviewPanel';
 import type { PetDeathType } from '../pets/petDeath';
+import {
+  shouldOpenPetDeathReview,
+  type HubPetDeathPending,
+} from '../../api/hubPetsApi';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
@@ -101,6 +106,10 @@ const HubClinicSurgeryPage: React.FC = () => {
   const [linkCaseSubmitting, setLinkCaseSubmitting] = useState(false);
   const [showDaySections, setShowDaySections] = useState(false);
   const [deathModalOpen, setDeathModalOpen] = useState(false);
+  const [deathReview, setDeathReview] = useState<{
+    petName: string;
+    pending: HubPetDeathPending;
+  } | null>(null);
   const examsBlockRef = useRef<HTMLDivElement | null>(null);
   const scrolledToExamsRef = useRef(false);
 
@@ -822,8 +831,9 @@ const HubClinicSurgeryPage: React.FC = () => {
               'A clínica selecionada é diferente da ficha desta cirurgia. Troque para a clínica correta e tente de novo.',
             );
           }
+          let pending: HubPetDeathPending | undefined;
           try {
-            await hubClinicalApi.patchSurgery(surgery.id, {
+            const res = await hubClinicalApi.patchSurgery(surgery.id, {
               clinic_id: clinicId,
               clinical_outcome: 'death',
               pet_death: {
@@ -834,6 +844,7 @@ const HubClinicSurgeryPage: React.FC = () => {
                 archive: payload.archive,
               },
             });
+            pending = res.pet_death_pending;
           } catch (e: unknown) {
             const err = e as Error & { status?: number };
             if (err.status === 404 || /cirurgia não encontrada/i.test(err.message || '')) {
@@ -845,7 +856,21 @@ const HubClinicSurgeryPage: React.FC = () => {
           }
           setDeathModalOpen(false);
           await reload();
+          if (shouldOpenPetDeathReview(pending) && pending) {
+            setDeathReview({
+              petName: surgery.hub_pets?.name || 'Pet',
+              pending,
+            });
+          }
         }}
+      />
+
+      <PetDeathReviewPanel
+        open={Boolean(deathReview)}
+        onClose={() => setDeathReview(null)}
+        petName={deathReview?.petName || 'Pet'}
+        pending={deathReview?.pending ?? null}
+        clinicId={clinicId || ''}
       />
     </div>
   );

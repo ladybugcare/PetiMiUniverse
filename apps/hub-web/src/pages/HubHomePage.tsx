@@ -49,7 +49,7 @@ const BENEFITS = [
 const PILLARS = [
   {
     icon: Headphones,
-    name: 'Recepção',
+    name: 'Balcão',
     lead: 'Quem recebe o tutor organiza a chegada, a agenda e o cadastro.',
     items: ['Confirma horários e recebe o pet', 'Atualiza clientes e pets na hora', 'Vê quem está chegando no dia'],
   },

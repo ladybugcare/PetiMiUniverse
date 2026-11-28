@@ -19,7 +19,12 @@ import {
   Coins,
 } from 'lucide-react';
 import { RegisterPetDeathModal } from '../pets/RegisterPetDeathModal';
+import { PetDeathReviewPanel } from '../pets/PetDeathReviewPanel';
 import type { PetDeathType } from '../pets/petDeath';
+import {
+  shouldOpenPetDeathReview,
+  type HubPetDeathPending,
+} from '../../api/hubPetsApi';
 import { getStoredClinicId, usePermissions } from '@petimi/web-core';
 import { useAlert } from '../../components/AlertProvider';
 import { HubLoading } from '../../components/HubLoading';
@@ -153,6 +158,10 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
   const [refreshing, setRefreshing] = useState(false);
   const [completing, setCompleting] = useState(false);
   const [deathModalOpen, setDeathModalOpen] = useState(false);
+  const [deathReview, setDeathReview] = useState<{
+    petName: string;
+    pending: HubPetDeathPending;
+  } | null>(null);
   const [casePrompt, setCasePrompt] = useState<CaseAfterCompletePrompt | null>(null);
   const [casePromptSaving, setCasePromptSaving] = useState(false);
   const loadedEncounterIdRef = useRef<string | null>(null);
@@ -1190,12 +1199,28 @@ export const HubClinicalWorkspace: React.FC<HubClinicalWorkspaceProps> = ({
                 archive: payload.archive,
               },
             });
-            if (res.encounter) {
-              // reload via existing state path if available
-            }
+            const pending = res.pet_death_pending;
             setDeathModalOpen(false);
+            if (shouldOpenPetDeathReview(pending) && pending) {
+              setDeathReview({
+                petName: encounter.pet?.name || 'Pet',
+                pending,
+              });
+              return;
+            }
             window.location.reload();
           }}
+        />
+
+        <PetDeathReviewPanel
+          open={Boolean(deathReview)}
+          onClose={() => {
+            setDeathReview(null);
+            window.location.reload();
+          }}
+          petName={deathReview?.petName || 'Pet'}
+          pending={deathReview?.pending ?? null}
+          clinicId={clinicId || ''}
         />
 
         {evolutionDrawerOpen ? (

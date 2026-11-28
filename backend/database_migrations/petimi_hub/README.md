@@ -356,3 +356,7 @@ Cada arquivo `.sql` tem **prefixo numérico** (`001_`, `009a_`, `050b_`, …) ig
 178. **`178_alter_hub_appointment_series_invoice_discount.sql`** — `invoice_discount_percent` (0–100, default 0) em `hub_appointment_series` para desconto de cabeçalho na fatura mensal. Executar depois do item 100.
 
 179. **`179_alter_hub_appointments_no_show_status.sql`** — inclui `no_show` (falta) no CHECK de `hub_appointments.status`. Executar depois do item 48.
+
+182. **`182_uniq_hub_receivable_lines_comanda_item_cover.sql`** — P2-05: coluna `covers_comanda_item` + índice único parcial por `comanda_item_id` (anti-corrida de checkout); trigger sincroniza reissue/`cancel_rebill`; unicidade de origem sem comanda passa a excluir `refunded`. Executar depois dos itens 041 e 174.
+
+183. **`183_create_hub_assistant_oauth_and_actions.sql`** — Action Engine / ChatGPT MCP: `hub_assistant_connections`, OAuth codes/refresh, `hub_action_confirmations`, `hub_action_idempotency_keys`. Executar depois do item 182. Ver [HUB_ACTION_ENGINE_MCP_POC.md](../../docs/architecture/HUB_ACTION_ENGINE_MCP_POC.md).

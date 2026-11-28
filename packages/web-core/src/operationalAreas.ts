@@ -18,7 +18,7 @@ export type HubOperationalArea = (typeof HUB_OPERATIONAL_AREAS)[number];
 const AREA_SET = new Set<string>(HUB_OPERATIONAL_AREAS);
 
 export const HUB_OPERATIONAL_AREA_LABELS: Record<HubOperationalArea, string> = {
-  recepcao: 'Recepção',
+  recepcao: 'Balcão',
   caixa: 'Caixa',
   financeiro: 'Financeiro (backoffice)',
   clinica: 'Clínica',
@@ -113,7 +113,7 @@ export function sanitizeOperationalAreas(raw: unknown): HubOperationalArea[] {
 
 export function defaultOperationalAreasForJobTitle(jobTitle: string): HubOperationalArea[] {
   const j = jobTitle.trim();
-  if (j === 'Recepção') return ['recepcao', 'caixa'];
+  if (j === 'Recepção' || j === 'Balcão') return ['recepcao', 'caixa'];
   if (j === 'Banho & Tosa') return ['banho_tosa'];
   if (j === 'Motorista') return ['leva_traz'];
   if (

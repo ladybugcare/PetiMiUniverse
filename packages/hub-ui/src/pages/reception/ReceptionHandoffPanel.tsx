@@ -19,7 +19,6 @@ import {
   type ReceptionResolveAction,
   type ReceptionResolvePayload,
 } from '../../api/hubReceptionApi';
-import { caixaSearchHref } from '../finance/hubRelatoriosLinks';
 import '../clientes/clientes.css';
 import '../clientes/clientes-drawer.css';
 import '../clinica/clinica-page.css';
@@ -78,7 +77,7 @@ function taskTimeline(view: ReceptionHandoffDetail): Array<{ label: string; valu
       const sameMoment = Math.abs(new Date(view.opened_at).getTime() - new Date(starts).getTime()) < 60_000;
       if (!sameMoment) {
         rows.push({
-          label: 'Na fila da recepção',
+          label: 'Na fila do balcão',
           value: formatWhen(view.opened_at),
           hint: openedRel.text,
         });
@@ -156,7 +155,7 @@ function taskTimeline(view: ReceptionHandoffDetail): Array<{ label: string; valu
       view.resolution === 'motorista_embarcou'
         ? `Confirmado pelo motorista${late}`
         : view.resolution === 'embarquei'
-          ? `Confirmado pela recepção${late}`
+          ? `Confirmado pelo balcão${late}`
           : view.resolution || undefined;
     rows.push({
       label: 'Concluída em',
@@ -307,7 +306,7 @@ const ReceptionHandoffPanel: React.FC<ReceptionHandoffPanelProps> = ({
   const currentItem = view ?? boardFallback;
   const action = currentItem ? primaryAction(currentItem) : null;
   const phone = view?.guardian?.phone ?? boardFallback?.guardian?.phone ?? null;
-  const panelTitle = currentItem ? columnTitle(currentItem) : 'Recepção';
+  const panelTitle = currentItem ? columnTitle(currentItem) : 'Balcão';
   const panelSubtitle = currentItem ? taskKindLabel(currentItem.kind) : undefined;
   const displayPetName = (() => {
     const candidates = [view?.pet.name, boardFallback?.pet.name];
@@ -632,7 +631,7 @@ const ReceptionHandoffPanel: React.FC<ReceptionHandoffPanelProps> = ({
                     <p className="hub-reception-panel__cue-detail">
                       {view.delivery_boarding.boarded_source === 'driver'
                         ? 'Registrado pelo motorista'
-                        : 'Registrado pela recepção'}
+                        : 'Registrado pelo balcão'}
                       {view.delivery_boarding.boarded_late ? ' (posterior)' : ''}
                     </p>
                   </li>
@@ -681,16 +680,23 @@ const ReceptionHandoffPanel: React.FC<ReceptionHandoffPanelProps> = ({
 
           {view.charge_pending ? (
             <div className="hub-reception-panel__charge" role="status">
-              <p className="hub-reception-panel__charge-text">Há cobrança em aberto no Caixa.</p>
-              <Link
-                to={caixaSearchHref({
-                  q: displayPetName !== 'Sem nome' ? displayPetName : view.guardian?.full_name,
-                  status: 'comanda_aberta',
-                })}
+              <p className="hub-reception-panel__charge-text">Há cobrança em aberto para este pet.</p>
+              <a
+                href="#hub-balcao-cobrar"
                 className="hub-reception-panel__charge-link"
+                onClick={(e) => {
+                  e.preventDefault();
+                  onClose();
+                  window.requestAnimationFrame(() => {
+                    document.getElementById('hub-balcao-cobrar')?.scrollIntoView({
+                      behavior: 'smooth',
+                      block: 'start',
+                    });
+                  });
+                }}
               >
-                Ir ao Caixa
-              </Link>
+                Cobrar agora
+              </a>
             </div>
           ) : null}
 

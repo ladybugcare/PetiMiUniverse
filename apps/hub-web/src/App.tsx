@@ -47,6 +47,8 @@ import HubSignUpPage from './pages/HubSignUpPage';
 import HubEmailConfirmedPage from './pages/HubEmailConfirmedPage';
 import HubErrorBoundary from './components/HubErrorBoundary';
 import HubAcceptInvitationPage from './pages/HubAcceptInvitationPage';
+import HubAssistantOAuthConsentPage from './pages/HubAssistantOAuthConsentPage';
+import HubAssistantIntegrationsPage from './pages/HubAssistantIntegrationsPage';
 import HubInviteSignUpPage from './pages/HubInviteSignUpPage';
 import HubClinicOnboardingPage from './pages/HubClinicOnboardingPage';
 import HubAppShell from './components/HubAppShell';
@@ -103,6 +105,7 @@ const router = createBrowserRouter(
       <Route path="/reset-password" element={<HubResetPasswordPage />} />
       <Route path="/signup" element={<HubSignUpPage />} />
       <Route path="/accept-invitation" element={<HubAcceptInvitationPage />} />
+      <Route path="/oauth/assistant/consent" element={<HubAssistantOAuthConsentPage />} />
       <Route path="/signup-convite" element={<HubInviteSignUpPage />} />
       <Route path="/email-confirmed" element={<HubEmailConfirmedPage />} />
       <Route path="/c/:slug" element={<PublicClinicProfilePage />} />
@@ -168,6 +171,7 @@ const router = createBrowserRouter(
         <Route path="notificacoes" element={<HubNotificationsPage />} />
         <Route path="suporte" element={<HubSupportTicketsPage />} />
         <Route path="meu-perfil" element={<HubMeuPerfilPage />} />
+        <Route path="integracoes" element={<HubAssistantIntegrationsPage />} />
         <Route path="perfil-clinica" element={<HubClinicaPerfilPage />} />
         <Route path="design-system" element={<HubDesignSystemPage />} />
         <Route path="configuracoes-sistema/*" element={<HubSystemSettingsRoutes />} />

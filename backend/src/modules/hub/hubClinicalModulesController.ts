@@ -49,7 +49,11 @@ import {
 } from './hubPayablesService';
 import { roundMoney2 } from './hubVariablePrice';
 import { resolveHospitalizationEventsId } from './hospitalizationRequestIds';
-import { clinicalDeathPayloadSchema, registerPetDeath } from './petDeathService';
+import {
+  clinicalDeathPayloadSchema,
+  registerPetDeath,
+  type PetDeathPendingCounts,
+} from './petDeathService';
 import {
   assertCaseInClinic,
   assertEncounterInClinic,
@@ -1841,7 +1845,7 @@ export const patchHubHospitalization = async (req: Request, res: Response) => {
   const cancellingHospitalization = patch.status === 'cancelled';
 
   // Óbito: registro centralizado do pet + status da internação na mesma RPC (atômico).
-  let petDeathPending: { future_appointments: number; active_boarding_reservations: number } | undefined;
+  let petDeathPending: PetDeathPendingCounts | undefined;
   if (patch.status === 'death') {
     if (!pet_death?.death_type) {
       return res.status(400).json({
@@ -2436,7 +2440,7 @@ export const patchHubSurgery = async (req: Request, res: Response) => {
   const linkedAppointmentId = (existing as { hub_appointment_id?: string | null }).hub_appointment_id;
   const existingDischargeAt = (existing as { discharge_at?: string | null }).discharge_at ?? null;
 
-  let petDeathPending: { future_appointments: number; active_boarding_reservations: number } | undefined;
+  let petDeathPending: PetDeathPendingCounts | undefined;
   if (clinical_outcome === 'death') {
     if (!pet_death?.death_type) {
       return res.status(400).json({
