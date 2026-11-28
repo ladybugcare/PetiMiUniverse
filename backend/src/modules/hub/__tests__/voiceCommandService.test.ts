@@ -15,6 +15,7 @@ import {
   dayBoundsSaoPaulo,
   executeVoiceCommand,
   isSessionOnGroomingDay,
+  pickVoiceTarget,
   resolveGroomingTargets,
 } from '../voice/voiceCommandService';
 
@@ -50,6 +51,57 @@ describe('resolveGroomingTargets', () => {
     const sessions = [{ petName: 'Thor' }, { petName: 'thor' }, { petName: 'Mel' }];
     expect(resolveGroomingTargets(sessions, 'MEL').matches).toHaveLength(1);
     expect(resolveGroomingTargets(sessions, 'Thor').matches).toHaveLength(2);
+  });
+});
+
+describe('pickVoiceTarget', () => {
+  const base = {
+    sessionId: null as string | null,
+    unitId: 'u',
+    petName: 'Frete',
+  };
+
+  it('escolhe o próximo agendamento do mesmo pet (não trata como homônimo)', () => {
+    const picked = pickVoiceTarget([
+      {
+        ...base,
+        appointmentId: 'later',
+        petId: 'frete',
+        stage: 'scheduled' as const,
+        startsAt: '2026-11-28T20:00:00.000Z',
+      },
+      {
+        ...base,
+        appointmentId: 'earlier',
+        petId: 'frete',
+        stage: 'scheduled' as const,
+        startsAt: '2026-11-28T16:00:00.000Z',
+      },
+    ]);
+    expect(picked.kind).toBe('one');
+    if (picked.kind === 'one') expect(picked.target.appointmentId).toBe('earlier');
+  });
+
+  it('desambigua só quando são pets distintos com o mesmo nome', () => {
+    const picked = pickVoiceTarget([
+      {
+        ...base,
+        appointmentId: 'a',
+        petId: 'jade-1',
+        petName: 'Jade',
+        stage: 'scheduled' as const,
+        startsAt: '2026-11-28T11:00:00.000Z',
+      },
+      {
+        ...base,
+        appointmentId: 'b',
+        petId: 'jade-2',
+        petName: 'Jade',
+        stage: 'scheduled' as const,
+        startsAt: '2026-11-28T12:00:00.000Z',
+      },
+    ]);
+    expect(picked.kind).toBe('homonyms');
   });
 });
 

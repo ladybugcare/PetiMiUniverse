@@ -58,6 +58,7 @@ type DayTarget = {
   petName: string;
   stage: GroomingStage;
   unitId: string | null;
+  startsAt: string | null;
 };
 
 const ACTIVE_STAGES: GroomingStage[] = ['queued', 'in_service', 'finishing', 'ready'];
@@ -242,6 +243,11 @@ async function loadDayTargets(scope: VoiceScope): Promise<DayTarget[]> {
     .limit(100);
   if (sessErr) throw new Error(sessErr.message);
 
+  const startsAtByAppt = new Map<string, string>();
+  for (const a of groomingAppts) {
+    startsAtByAppt.set(a.id as string, String(a.starts_at || ''));
+  }
+
   const daySessions = (sessRaw ?? [])
     .map((row: Record<string, unknown>) => {
       const pet = row.hub_pets as { id?: string; name?: string } | null;
@@ -301,6 +307,11 @@ async function loadDayTargets(scope: VoiceScope): Promise<DayTarget[]> {
     petName: petNameById.get(s.petId) || s.petName,
     stage: s.stage,
     unitId: s.unitId,
+    startsAt:
+      (s.appointmentId ? startsAtByAppt.get(s.appointmentId) : null) ||
+      s.checkedInAt ||
+      s.createdAt ||
+      null,
   }));
 
   for (const a of groomingAppts) {
@@ -320,6 +331,7 @@ async function loadDayTargets(scope: VoiceScope): Promise<DayTarget[]> {
       petName: petNameById.get(petId) || 'Pet',
       stage,
       unitId: (a.unit_id as string | null) ?? scope.unitId,
+      startsAt: String(a.starts_at || '') || null,
     });
   }
 
@@ -333,6 +345,91 @@ export function resolveGroomingTargets(
   const normalized = normalizePetName(petName);
   const matches = sessions.filter((s) => normalizePetName(s.petName) === normalized);
   return { matches, normalized };
+}
+
+/**
+ * Homônimos (pets distintos) → desambiguar.
+ * Vários agendamentos do mesmo pet no dia (ex.: Frete 16h e 20h) → pega o próximo (estágio + horário).
+ */
+export function pickVoiceTarget<T extends DayTarget>(
+  matches: T[],
+): { kind: 'one'; target: T } | { kind: 'homonyms'; matches: T[] } | { kind: 'none' } {
+  if (matches.length === 0) return { kind: 'none' };
+  const byPet = new Map<string, T[]>();
+  for (const m of matches) {
+    const list = byPet.get(m.petId) ?? [];
+    list.push(m);
+    byPet.set(m.petId, list);
+  }
+  if (byPet.size > 1) return { kind: 'homonyms', matches };
+  const samePet = [...byPet.values()][0] ?? [];
+  if (samePet.length === 1) return { kind: 'one', target: samePet[0]! };
+
+  samePet.sort((a, b) => {
+    const rankA = PENDING_STAGE_RANK[a.stage] ?? 0;
+    const rankB = PENDING_STAGE_RANK[b.stage] ?? 0;
+    if (rankA !== rankB) return rankB - rankA;
+    const ta = a.startsAt ? new Date(a.startsAt).getTime() : Number.POSITIVE_INFINITY;
+    const tb = b.startsAt ? new Date(b.startsAt).getTime() : Number.POSITIVE_INFINITY;
+    return ta - tb;
+  });
+  return { kind: 'one', target: samePet[0]! };
+}
+
+type ResourceOption = { id: string; name?: string; busy?: boolean };
+
+async function transitionInServiceForVoice(opts: {
+  clinicId: string;
+  sessionId: string;
+  actorUserId: string;
+}): Promise<{
+  result: Awaited<ReturnType<typeof transitionGroomingSessionStage>>;
+  spokenExtra?: string;
+}> {
+  const first = await transitionGroomingSessionStage({
+    clinicId: opts.clinicId,
+    sessionId: opts.sessionId,
+    to: 'in_service',
+    actorUserId: opts.actorUserId,
+    source: 'voice_alexa',
+  });
+  if (first.status !== 'resource_conflict') return { result: first };
+
+  const body = (first.body ?? {}) as { resources?: ResourceOption[] };
+  const resources = Array.isArray(body.resources) ? body.resources : [];
+  const free = resources.find((r) => r && r.id && !r.busy);
+  if (free) {
+    const retry = await transitionGroomingSessionStage({
+      clinicId: opts.clinicId,
+      sessionId: opts.sessionId,
+      to: 'in_service',
+      actorUserId: opts.actorUserId,
+      source: 'voice_alexa',
+      hubResourceId: free.id,
+    });
+    if (retry.status === 'executed' || retry.status === 'already_applied') {
+      return {
+        result: retry,
+        spokenExtra: `na ${free.name || 'banheira livre'}`,
+      };
+    }
+    if (retry.status !== 'resource_conflict') return { result: retry };
+  }
+
+  // Igual ao Hub com política opcional: inicia sem alocar se nada estiver livre.
+  const skip = await transitionGroomingSessionStage({
+    clinicId: opts.clinicId,
+    sessionId: opts.sessionId,
+    to: 'in_service',
+    actorUserId: opts.actorUserId,
+    source: 'voice_alexa',
+    hubResourceId: null,
+    skipResource: true,
+  });
+  if (skip.status === 'executed' || skip.status === 'already_applied') {
+    return { result: skip, spokenExtra: 'sem banheira alocada' };
+  }
+  return { result: first };
 }
 
 async function petHasActiveBoarding(clinicId: string, petId: string): Promise<boolean> {
@@ -474,16 +571,17 @@ async function handleStartService(
 ): Promise<VoiceCommandResult> {
   const targets = await loadDayTargets(scope);
   const { matches } = resolveGroomingTargets(targets, petName);
-  if (matches.length === 0) {
+  const picked = pickVoiceTarget(matches as DayTarget[]);
+  if (picked.kind === 'none') {
     return {
       status: 'not_found',
       message: `Não encontrei ${petName} na fila de banho e tosa de hoje. Confira no Hub.`,
       petName,
     };
   }
-  if (matches.length > 1) return disambiguationResult(matches as DayTarget[]);
+  if (picked.kind === 'homonyms') return disambiguationResult(picked.matches);
 
-  const target = matches[0] as DayTarget;
+  const target = picked.target;
   if (target.sessionId && (target.stage === 'in_service' || target.stage === 'finishing')) {
     return {
       status: 'already_applied',
@@ -504,12 +602,10 @@ async function handleStartService(
   const ensured = await ensureSessionForStart(scope, target);
   if (!ensured.ok) return ensured.result;
 
-  const result = await transitionGroomingSessionStage({
+  const { result, spokenExtra } = await transitionInServiceForVoice({
     clinicId: scope.clinicId,
     sessionId: ensured.sessionId,
-    to: 'in_service',
     actorUserId: scope.actorUserId,
-    source: 'voice_alexa',
   });
 
   if (result.status === 'executed' || result.status === 'already_applied') {
@@ -518,7 +614,9 @@ async function handleStartService(
       message:
         result.status === 'already_applied'
           ? `${target.petName} já estava em atendimento.`
-          : `Atendimento de ${target.petName} iniciado.`,
+          : spokenExtra
+            ? `Atendimento de ${target.petName} iniciado ${spokenExtra}.`
+            : `Atendimento de ${target.petName} iniciado.`,
       sessionId: ensured.sessionId,
       petName: target.petName,
     };
@@ -561,16 +659,17 @@ async function handleMarkReady(
 ): Promise<VoiceCommandResult> {
   const targets = await loadDayTargets(scope);
   const { matches } = resolveGroomingTargets(targets, petName);
-  if (matches.length === 0) {
+  const picked = pickVoiceTarget(matches as DayTarget[]);
+  if (picked.kind === 'none') {
     return {
       status: 'not_found',
       message: `Não encontrei ${petName} na fila de banho e tosa de hoje. Confira no Hub.`,
       petName,
     };
   }
-  if (matches.length > 1) return disambiguationResult(matches as DayTarget[]);
+  if (picked.kind === 'homonyms') return disambiguationResult(picked.matches);
 
-  const target = matches[0] as DayTarget;
+  const target = picked.target;
   if (!target.sessionId) {
     return {
       status: 'invalid_state',

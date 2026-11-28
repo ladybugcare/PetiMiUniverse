@@ -95,18 +95,26 @@ function intervalsOverlap(aStart: string, aEnd: string, bStart: string, bEnd: st
   return new Date(aStart).getTime() < new Date(bEnd).getTime() && new Date(aEnd).getTime() > new Date(bStart).getTime();
 }
 
-function isLiveBusy(row: {
-  status: string;
-  starts_at: string;
-  ends_at: string;
-  resource_released_at: string | null;
-}, nowIso: string): boolean {
+/** Ocupação «ao vivo» do recurso (mode=now). Exportada para testes. */
+export function isAppointmentResourceLiveBusy(
+  row: {
+    status: string;
+    starts_at: string;
+    ends_at: string;
+    resource_released_at: string | null;
+  },
+  nowIso: string,
+): boolean {
   if (row.resource_released_at) return false;
   if (row.status === 'cancelled' || row.status === 'done' || row.status === 'paid') return false;
-  if (row.status === 'in_progress') return true;
   const now = new Date(nowIso).getTime();
-  const start = new Date(row.starts_at).getTime();
   const end = new Date(row.ends_at).getTime();
+  // in_progress sem liberação: ocupado só até o fim do slot (evita banheira presa em atendimento órfão).
+  if (row.status === 'in_progress') {
+    if (Number.isFinite(end) && now >= end) return false;
+    return true;
+  }
+  const start = new Date(row.starts_at).getTime();
   return now >= start && now < end;
 }
 
@@ -226,7 +234,7 @@ export async function getResourceAvailability(opts: {
     if (released) continue;
     if (opts.mode === 'now') {
       if (
-        isLiveBusy(
+        isAppointmentResourceLiveBusy(
           {
             status: String(row.status),
             starts_at: String(row.starts_at),
