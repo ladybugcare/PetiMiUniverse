@@ -1,0 +1,46 @@
+{
+  "manifest": {
+    "publishingInformation": {
+      "locales": {
+        "pt-BR": {
+          "name": "PetMi Voice",
+          "summary": "Comandos de voz para a operação de banho e tosa do PetMi Hub.",
+          "description": "POC do PetMi Voice: inicie atendimento, marque pets como prontos e consulte a fila de banho e tosa por voz, usando o Echo no salão.",
+          "examplePhrases": [
+            "Alexa, abra o pet mi",
+            "Alexa, diga ao pet mi que a Mel está pronta",
+            "Alexa, pergunte ao pet mi quem falta atender"
+          ],
+          "keywords": ["petmi", "banho", "tosa", "pets"]
+        }
+      },
+      "isAvailableWorldwide": false,
+      "testingInstructions": "Conta Alexa autorizada na allowlist. Conta de teste: staging PetMi Hub. Pets de fixture: Thor, Mel.",
+      "category": "BUSINESS_AND_FINANCE",
+      "distributionCountries": ["BR"]
+    },
+    "apis": {
+      "custom": {
+        "endpoint": {
+          "uri": "https://backend-staging-334260f3.up.railway.app/api/integrations/alexa",
+          "sslCertificateType": "Wildcard"
+        },
+        "interfaces": []
+      }
+    },
+    "manifestVersion": "1.0",
+    "privacyAndCompliance": {
+      "allowsPurchases": false,
+      "usesPersonalInfo": false,
+      "isChildDirected": false,
+      "isExportCompliant": true,
+      "containsAds": false,
+      "locales": {
+        "pt-BR": {
+          "privacyPolicyUrl": "https://petmi.app/privacy",
+          "termsOfUseUrl": "https://petmi.app/terms"
+        }
+      }
+    }
+  }
+}

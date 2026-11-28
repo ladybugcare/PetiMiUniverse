@@ -40,6 +40,7 @@ import publicExamReferralsRoutes from './modules/hub/routes/publicExamReferrals.
 import publicMercadoPagoRoutes from './modules/hub/routes/publicMercadoPago.js';
 import publicBoardingCareRoutes from './modules/hub/routes/publicBoardingCare.js';
 import publicClinicProfilesRoutes from './modules/hub/routes/publicClinicProfiles.js';
+import alexaRouter from './modules/integrations/alexa/alexaRouter.js';
 
 // 🔹 Variáveis de ambiente são carregadas automaticamente por loadEnv.ts
 // quando importamos supabase (config/supabase.ts importa './loadEnv')
@@ -178,6 +179,9 @@ app.use(
 
 // 🔹 Correlation ID middleware (deve ser um dos primeiros)
 app.use(correlationIdMiddleware);
+
+// 🔹 Alexa webhook ANTES de express.json e rate limit — assinatura exige corpo bruto.
+app.use('/api/integrations/alexa', alexaRouter);
 
 // 🔹 Sanitização de inputs (proteção contra XSS)
 // Aplicar em rotas que recebem dados do usuário

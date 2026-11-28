@@ -1,0 +1,139 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "pet mi",
+      "intents": [
+        {
+          "name": "AMAZON.CancelIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.HelpIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.StopIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.FallbackIntent",
+          "samples": []
+        },
+        {
+          "name": "AMAZON.NavigateHomeIntent",
+          "samples": []
+        },
+        {
+          "name": "StartServiceIntent",
+          "slots": [
+            {
+              "name": "pet",
+              "type": "AMAZON.FirstName"
+            }
+          ],
+          "samples": [
+            "inicie o banho do {pet}",
+            "inicie o banho da {pet}",
+            "inicie a tosa do {pet}",
+            "inicie a tosa da {pet}",
+            "comece o banho do {pet}",
+            "comece o banho da {pet}",
+            "comece a tosa do {pet}",
+            "comece a tosa da {pet}",
+            "comece o atendimento do {pet}",
+            "comece o atendimento da {pet}",
+            "iniciar banho do {pet}",
+            "iniciar tosa da {pet}",
+            "iniciar atendimento do {pet}",
+            "iniciar atendimento da {pet}"
+          ]
+        },
+        {
+          "name": "MarkReadyIntent",
+          "slots": [
+            {
+              "name": "pet",
+              "type": "AMAZON.FirstName"
+            }
+          ],
+          "samples": [
+            "a {pet} está pronta",
+            "o {pet} está pronto",
+            "{pet} está pronta",
+            "{pet} está pronto",
+            "marque a {pet} como pronta",
+            "marque o {pet} como pronto",
+            "finalize o atendimento da {pet}",
+            "finalize o atendimento do {pet}",
+            "{pet} pronta",
+            "{pet} pronto"
+          ]
+        },
+        {
+          "name": "ListPendingIntent",
+          "slots": [],
+          "samples": [
+            "quem falta atender",
+            "quais pets faltam atender",
+            "quem está na fila",
+            "lista da fila",
+            "quem falta",
+            "quais pets estão aguardando",
+            "fila de banho e tosa"
+          ]
+        },
+        {
+          "name": "FinishBathIntent",
+          "slots": [
+            {
+              "name": "pet",
+              "type": "AMAZON.FirstName"
+            }
+          ],
+          "samples": [
+            "o banho do {pet} terminou",
+            "o banho da {pet} terminou",
+            "a tosa do {pet} terminou",
+            "a tosa da {pet} terminou",
+            "termine o banho do {pet}",
+            "termine o banho da {pet}",
+            "banho do {pet} acabou",
+            "banho da {pet} acabou"
+          ]
+        }
+      ],
+      "types": []
+    },
+    "dialog": {
+      "intents": [
+        {
+          "name": "MarkReadyIntent",
+          "confirmationRequired": true,
+          "prompts": {
+            "confirmation": "ConfirmMarkReady"
+          },
+          "slots": [
+            {
+              "name": "pet",
+              "type": "AMAZON.FirstName",
+              "confirmationRequired": false,
+              "elicitationRequired": false
+            }
+          ]
+        }
+      ],
+      "delegationStrategy": "SKILL_RESPONSE"
+    },
+    "prompts": [
+      {
+        "id": "ConfirmMarkReady",
+        "variations": [
+          {
+            "type": "PlainText",
+            "value": "Confirmar que está pronta?"
+          }
+        ]
+      }
+    ]
+  }
+}

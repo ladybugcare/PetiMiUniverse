@@ -1,26 +1,20 @@
 import type { Request, Response } from 'express';
 import { z } from 'zod';
 import { supabaseAdmin } from '../../config/supabase';
-import { notifyHubGroomingExtraRequest, notifyHubPetReady } from './hubNotifyEvents';
+import { notifyHubGroomingExtraRequest } from './hubNotifyEvents';
 import { scheduleReceptionSync } from './receptionSync';
 import {
   GROOMING_STAGES,
   GROOMING_EVENT_TITLES,
   GROOMING_NEXT_STAGE,
   GROOMING_STAGE_LABELS,
-  appointmentStatusForGroomingStage,
   boardStageFromAppointmentStatus,
-  canTransitionGroomingStage,
-  isGroomingServiceOperationallyDone,
   type GroomingStage,
 } from './groomingStages';
-import { ensureGroomingAppointmentLinesExecuted } from './groomingExecution';
-import { prepareResourceForGroomingStart, releaseAppointmentResource } from './hubResourcesService';
 import { buildGroomingDisplayTags } from './groomingPetTags';
 import {
-  syncOpenComandasAfterGroomingClosed,
-  syncOpenComandasAfterAppointmentOperationalComplete,
   financialAdjustmentFlagsForAppointments,
+  syncOpenComandasAfterGroomingClosed,
 } from './hubComandasController';
 import {
   coalesceAppointmentPetId,
@@ -34,17 +28,18 @@ import {
   PET_OPEN_GROOMING_MSG,
 } from './hubGroomingOpenPresence';
 import { isOpenPresenceUniqueViolation } from './hubOpenPresenceUnique';
+import {
+  GROOMING_SESSION_SELECT,
+  logGroomingEvent,
+  syncAppointmentStatusForStage,
+  transitionGroomingSessionStage,
+} from './groomingSessionService';
 
 const uuidStr = z.string().uuid();
 const GROOMING_SERVICE_GROUP = 'banho_tosa';
 const groomingStageSchema = z.enum(GROOMING_STAGES);
 
-const SESSION_SELECT = `
-  id, clinic_id, unit_id, pet_id, guardian_id, hub_appointment_id, hub_staff_member_id,
-  grooming_stage, priority, checked_in_at, started_at, ready_at, delivered_at, closed_at,
-  paused_at,
-  tutor_notes_snapshot, operational_notes, checklist, created_at, updated_at
-`;
+const SESSION_SELECT = GROOMING_SESSION_SELECT;
 
 const dayBoardQuerySchema = z
   .object({
@@ -154,69 +149,6 @@ async function assertPetInClinic(clinicId: string, petId: string): Promise<boole
     .is('deleted_at', null)
     .maybeSingle();
   return !!data;
-}
-
-async function logGroomingEvent(opts: {
-  clinic_id: string;
-  session_id: string;
-  event_type: string;
-  title?: string;
-  body?: string | null;
-  payload?: Record<string, unknown>;
-  created_by_staff_id?: string | null;
-}) {
-  await supabaseAdmin.from('hub_grooming_events').insert({
-    clinic_id: opts.clinic_id,
-    hub_grooming_session_id: opts.session_id,
-    event_type: opts.event_type,
-    title: opts.title ?? GROOMING_EVENT_TITLES[opts.event_type] ?? opts.event_type,
-    body: opts.body ?? null,
-    payload: opts.payload ?? {},
-    created_by_staff_id: opts.created_by_staff_id ?? null,
-  });
-}
-
-function stageTimestampsPatch(stage: GroomingStage, now: string): Record<string, string> {
-  const patch: Record<string, string> = {};
-  if (stage === 'checked_in') patch.checked_in_at = now;
-  if (stage === 'in_service') patch.started_at = now;
-  if (stage === 'ready') patch.ready_at = now;
-  if (stage === 'delivered') patch.delivered_at = now;
-  if (stage === 'closed') patch.closed_at = now;
-  return patch;
-}
-
-async function syncAppointmentStatusForStage(
-  clinicId: string,
-  appointmentId: string | null | undefined,
-  stage: GroomingStage,
-) {
-  if (!appointmentId) return;
-  const nextStatus = appointmentStatusForGroomingStage(stage);
-  if (!nextStatus) return;
-
-  const { data: current } = await supabaseAdmin
-    .from('hub_appointments')
-    .select('status')
-    .eq('id', appointmentId)
-    .eq('clinic_id', clinicId)
-    .maybeSingle();
-  // Quitação financeira (`paid`) não é rebaixada por encerramento operacional (`done`).
-  if (current?.status === 'paid' && nextStatus !== 'paid') {
-    if (nextStatus === 'done') {
-      void syncOpenComandasAfterAppointmentOperationalComplete(clinicId, appointmentId);
-    }
-    return;
-  }
-
-  await supabaseAdmin
-    .from('hub_appointments')
-    .update({ status: nextStatus })
-    .eq('id', appointmentId)
-    .eq('clinic_id', clinicId);
-  if (nextStatus === 'done' || nextStatus === 'paid') {
-    void syncOpenComandasAfterAppointmentOperationalComplete(clinicId, appointmentId);
-  }
 }
 
 function buildServiceLinesForAppointment(
@@ -1056,6 +988,25 @@ export const patchHubGroomingSession = async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Envie grooming_stage ou paused, não ambos no mesmo pedido.' });
     }
 
+    if (b.grooming_stage !== undefined) {
+      const result = await transitionGroomingSessionStage({
+        clinicId: b.clinic_id,
+        sessionId: id.data,
+        to: b.grooming_stage,
+        actorUserId: req.user?.id ?? null,
+        skipResource: b.skip_resource,
+        hubResourceId: b.hub_resource_id,
+        source: 'hub_ui',
+      });
+      if (result.status === 'not_found') return res.status(404).json({ error: 'Sessão não encontrada' });
+      if (result.status === 'invalid_state') return res.status(400).json({ error: result.message });
+      if (result.status === 'resource_conflict') {
+        return res.status(result.httpStatus).json(result.body);
+      }
+      if (result.status === 'error') return res.status(500).json({ error: result.message });
+      return res.json({ session: result.session });
+    }
+
     const { data: current, error: curErr } = await supabaseAdmin
       .from('hub_grooming_sessions')
       .select(SESSION_SELECT)
@@ -1070,28 +1021,6 @@ export const patchHubGroomingSession = async (req: Request, res: Response) => {
     const now = new Date().toISOString();
     let shouldLogPause = false;
     let shouldLogResume = false;
-
-    if (b.grooming_stage !== undefined) {
-      const from = current.grooming_stage as GroomingStage;
-      const to = b.grooming_stage;
-      if (!canTransitionGroomingStage(from, to)) {
-        return res.status(400).json({
-          error: `Transição inválida: ${GROOMING_STAGE_LABELS[from]} → ${GROOMING_STAGE_LABELS[to]}`,
-        });
-      }
-      if (to === 'in_service') {
-        const decision = await prepareResourceForGroomingStart({
-          clinicId: b.clinic_id,
-          appointmentId: current.hub_appointment_id as string | null,
-          hubResourceId: b.hub_resource_id,
-          skipResource: b.skip_resource,
-        });
-        if (!decision.ok) return res.status(decision.status).json(decision.body);
-      }
-      patch.grooming_stage = to;
-      Object.assign(patch, stageTimestampsPatch(to, now));
-      patch.paused_at = null;
-    }
 
     if (b.paused !== undefined) {
       const st = current.grooming_stage as GroomingStage;
@@ -1143,46 +1072,6 @@ export const patchHubGroomingSession = async (req: Request, res: Response) => {
       .maybeSingle();
     if (error) return res.status(500).json({ error: error.message });
     if (!data) return res.status(404).json({ error: 'Sessão não encontrada' });
-
-    if (b.grooming_stage !== undefined) {
-      await logGroomingEvent({
-        clinic_id: b.clinic_id,
-        session_id: id.data,
-        event_type: 'stage_change',
-        body: `${GROOMING_STAGE_LABELS[current.grooming_stage as GroomingStage]} → ${GROOMING_STAGE_LABELS[b.grooming_stage]}`,
-        payload: { from: current.grooming_stage, to: b.grooming_stage },
-      });
-      await syncAppointmentStatusForStage(
-        b.clinic_id,
-        current.hub_appointment_id as string | null,
-        b.grooming_stage,
-      );
-      if (isGroomingServiceOperationallyDone(b.grooming_stage)) {
-        await releaseAppointmentResource(b.clinic_id, current.hub_appointment_id as string | null);
-        // Pronto ⇒ linhas do agendamento feitas (contador X/Y) + comanda deixa de ser «em andamento».
-        try {
-          await ensureGroomingAppointmentLinesExecuted({
-            clinicId: b.clinic_id,
-            appointmentId: current.hub_appointment_id as string | null,
-            executedByStaffId: (current.hub_staff_member_id as string | null) ?? null,
-          });
-        } catch (markErr) {
-          console.error('ensureGroomingAppointmentLinesExecuted', id.data, markErr);
-        }
-        void syncOpenComandasAfterGroomingClosed(b.clinic_id, id.data);
-      }
-      if (b.grooming_stage === 'ready') {
-        // Recepção e caixa atendem o tutor; quem concluiu o banho não precisa do aviso.
-        void notifyHubPetReady({
-          clinicId: b.clinic_id,
-          unitId: (current as Record<string, unknown>).unit_id as string | null,
-          petId: (current as Record<string, unknown>).pet_id as string | null,
-          sessionId: id.data,
-          excludeUserIds: req.user?.id ? [req.user.id] : undefined,
-        });
-      }
-      scheduleReceptionSync(b.clinic_id, (current as { pet_id?: string | null }).pet_id);
-    }
 
     if (shouldLogPause) {
       await logGroomingEvent({ clinic_id: b.clinic_id, session_id: id.data, event_type: 'pause' });
