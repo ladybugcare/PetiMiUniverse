@@ -52,7 +52,8 @@ function resolveScopeOrSpeak(handlerInput: HandlerInput): ScopeAttrs | Response 
   const skillErr = assertSkillId(handlerInput);
   if (skillErr) return skillErr;
 
-  const resolved = resolveAlexaScope(getAlexaUserId(handlerInput));
+  const alexaUserId = getAlexaUserId(handlerInput);
+  const resolved = resolveAlexaScope(alexaUserId);
   if (!resolved.ok) {
     if (resolved.reason === 'disabled') {
       return speak(handlerInput, 'PetMi Voice está desabilitado.');
@@ -60,6 +61,8 @@ function resolveScopeOrSpeak(handlerInput: HandlerInput): ScopeAttrs | Response 
     if (resolved.reason === 'misconfigured') {
       return speak(handlerInput, 'PetMi Voice está temporariamente indisponível.');
     }
+    // POC: log completo para incluir na ALEXA_VOICE_ALLOWLIST (não é segredo de API).
+    console.warn('[alexa] unauthorized alexaUserId=', alexaUserId || '(vazio)');
     return speak(handlerInput, 'Dispositivo não autorizado. Peça ao administrador para vincular o Echo.');
   }
   return {
