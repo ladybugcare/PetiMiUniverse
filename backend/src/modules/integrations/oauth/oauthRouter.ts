@@ -160,8 +160,19 @@ oauthRouter.post('/consent/approve', authenticateUser, async (req, res) => {
       resource,
     } = req.body ?? {};
 
-    if (!clinic_id || !unit_id || !client_id || !redirect_uri || !code_challenge) {
-      return res.status(400).json({ error: 'Parâmetros incompletos' });
+    const missing = (
+      [
+        ['clinic_id', clinic_id],
+        ['unit_id', unit_id],
+        ['client_id', client_id],
+        ['redirect_uri', redirect_uri],
+        ['code_challenge', code_challenge],
+      ] as const
+    )
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
+    if (missing.length) {
+      return res.status(400).json({ error: `Parâmetros incompletos: ${missing.join(', ')}` });
     }
 
     const active = await assertClinicUserActive(userId, clinic_id);

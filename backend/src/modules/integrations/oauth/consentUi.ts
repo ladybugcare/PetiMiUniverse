@@ -13,6 +13,15 @@ export function oauthConsentUiJsHandler(_req: Request, res: Response): void {
   const errEl = document.getElementById('err');
   function showErr(m) { errEl.textContent = m || ''; }
 
+  const requiredOauth = ['client_id', 'redirect_uri', 'code_challenge'];
+  const missingOauth = requiredOauth.filter(function (k) { return !oauth[k]; });
+  if (missingOauth.length) {
+    showErr(
+      'Fluxo OAuth incompleto (faltam: ' + missingOauth.join(', ') + '). ' +
+      'Feche esta aba e clique em Connect de novo no ChatGPT — a URL precisa vir de /oauth/authorize.'
+    );
+  }
+
   const scopesEl = document.getElementById('scopes');
   if (scopesEl) {
     scopesEl.textContent =
@@ -80,11 +89,22 @@ export function oauthConsentUiJsHandler(_req: Request, res: Response): void {
   document.getElementById('btnApprove').addEventListener('click', async function () {
     showErr('');
     try {
+      if (missingOauth.length) {
+        throw new Error(
+          'Fluxo OAuth incompleto (faltam: ' + missingOauth.join(', ') + '). ' +
+          'Feche e inicie Connect de novo no ChatGPT.'
+        );
+      }
+      const clinicId = document.getElementById('clinic').value;
+      const unitId = document.getElementById('unit').value;
+      if (!clinicId || !unitId) {
+        throw new Error('Selecione clínica e unidade');
+      }
       const res = await api('/oauth/consent/approve', {
         method: 'POST',
         body: JSON.stringify({
-          clinic_id: document.getElementById('clinic').value,
-          unit_id: document.getElementById('unit').value,
+          clinic_id: clinicId,
+          unit_id: unitId,
           client_id: oauth.client_id,
           redirect_uri: oauth.redirect_uri,
           scope: oauth.scope,
