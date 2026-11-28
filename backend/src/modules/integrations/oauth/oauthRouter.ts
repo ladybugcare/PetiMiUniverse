@@ -1,11 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { authenticateUser } from '../../../middleware/authMiddleware';
 import { supabaseAdmin } from '../../../config/supabase';
-import {
-  hubWebBase,
-  MCP_SCOPES,
-  publicApiBase,
-} from './oauthCrypto';
+import { MCP_SCOPES, publicApiBase } from './oauthCrypto';
 import {
   assertClinicUserActive,
   createConnection,
@@ -17,8 +13,12 @@ import {
   refreshAccessToken,
   revokeConnection,
 } from './connectionService';
+import { oauthConsentUiHandler } from './consentUi';
 
 const oauthRouter = Router();
+
+/** Consentimento na API (Railway) — evita Vercel Authentication no Hub staging. */
+oauthRouter.get('/consent-ui', oauthConsentUiHandler);
 
 function resourceMetadataUrl(): string {
   return `${publicApiBase()}/.well-known/oauth-protected-resource`;
@@ -97,7 +97,10 @@ oauthRouter.get('/authorize', (req, res) => {
   if (!q.get('client_id') || !q.get('redirect_uri') || !q.get('code_challenge')) {
     return res.status(400).send('Parâmetros OAuth incompletos');
   }
-  const dest = `${hubWebBase()}/oauth/assistant/consent?${q.toString()}`;
+  // Preferir UI na API: popup do ChatGPT não passa pela proteção Vercel do Hub.
+  const consentBase =
+    process.env.PETMI_OAUTH_CONSENT_URL || `${publicApiBase()}/oauth/consent-ui`;
+  const dest = `${consentBase}?${q.toString()}`;
   return res.redirect(302, dest);
 });
 
