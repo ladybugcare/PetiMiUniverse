@@ -1,6 +1,16 @@
 import { supabaseAdmin } from '../../../config/supabase';
-import { GROOMING_STAGE_LABELS, type GroomingStage } from '../groomingStages';
-import { transitionGroomingSessionStage } from '../groomingSessionService';
+import {
+  GROOMING_STAGE_LABELS,
+  boardStageFromAppointmentStatus,
+  type GroomingStage,
+} from '../groomingStages';
+import {
+  logGroomingEvent,
+  syncAppointmentStatusForStage,
+  transitionGroomingSessionStage,
+} from '../groomingSessionService';
+import { ensureGroomingQueuedForAppointment } from '../hubGroomingController';
+import { OPEN_GROOMING_SESSION_STAGES } from '../hubGroomingOpenPresence';
 import { normalizePetName } from './normalizePetName';
 
 export const VOICE_INTENTS = [
@@ -42,17 +52,18 @@ export type VoiceCommandResult = {
   candidates?: Array<{ sessionId: string; petName: string; stage: GroomingStage }>;
 };
 
-type SessionTarget = {
-  sessionId: string;
+type DayTarget = {
+  sessionId: string | null;
+  appointmentId: string | null;
   petId: string;
   petName: string;
   stage: GroomingStage;
-  hubAppointmentId: string | null;
   unitId: string | null;
 };
 
 const ACTIVE_STAGES: GroomingStage[] = ['queued', 'in_service', 'finishing', 'ready'];
 const PENDING_LIST_STAGES: GroomingStage[] = ['queued', 'in_service', 'finishing'];
+const GROOMING_SERVICE_GROUP = 'banho_tosa';
 
 /** Limites do dia civil em America/Sao_Paulo (igual ao day-board). */
 export function dayBoundsSaoPaulo(now = new Date()): { from: string; to: string; dateYmd: string } {
@@ -91,13 +102,76 @@ export function isSessionOnGroomingDay(
   return false;
 }
 
-/** Sessões da unidade no dia operacional (alinhado ao board de banho e tosa). */
-async function loadDaySessions(scope: VoiceScope): Promise<SessionTarget[]> {
-  const { from, to } = dayBoundsSaoPaulo();
-
-  const { data: appts, error: apptErr } = await supabaseAdmin
-    .from('hub_appointments')
+async function getGroomingServiceTypeIds(clinicId: string): Promise<Set<string>> {
+  const { data, error } = await supabaseAdmin
+    .from('hub_service_types')
     .select('id')
+    .eq('clinic_id', clinicId)
+    .eq('service_group', GROOMING_SERVICE_GROUP)
+    .is('deleted_at', null);
+  if (error) throw new Error(error.message);
+  return new Set((data ?? []).map((r: { id: string }) => r.id));
+}
+
+/**
+ * Encerra sessões abertas do pet que não pertencem ao alvo do dia
+ * (ex.: encaixe antigo preso em «em atendimento» enquanto o board mostra o agendamento de hoje).
+ */
+export async function abandonStaleOpenSessionsForPet(opts: {
+  clinicId: string;
+  petId: string;
+  keepSessionId?: string | null;
+  keepAppointmentId?: string | null;
+}): Promise<number> {
+  const { data, error } = await supabaseAdmin
+    .from('hub_grooming_sessions')
+    .select('id, hub_appointment_id, grooming_stage')
+    .eq('clinic_id', opts.clinicId)
+    .eq('pet_id', opts.petId)
+    .in('grooming_stage', [...OPEN_GROOMING_SESSION_STAGES])
+    .is('deleted_at', null)
+    .limit(20);
+  if (error) throw new Error(error.message);
+
+  let closed = 0;
+  const now = new Date().toISOString();
+  for (const row of data ?? []) {
+    const id = row.id as string;
+    const aid = (row.hub_appointment_id as string | null) ?? null;
+    if (opts.keepSessionId && id === opts.keepSessionId) continue;
+    if (opts.keepAppointmentId && aid === opts.keepAppointmentId) continue;
+
+    const from = row.grooming_stage as GroomingStage;
+    const { error: upErr } = await supabaseAdmin
+      .from('hub_grooming_sessions')
+      .update({ grooming_stage: 'closed', closed_at: now, paused_at: null })
+      .eq('id', id)
+      .eq('clinic_id', opts.clinicId);
+    if (upErr) throw new Error(upErr.message);
+
+    await logGroomingEvent({
+      clinic_id: opts.clinicId,
+      session_id: id,
+      event_type: 'stage_change',
+      body: `${GROOMING_STAGE_LABELS[from] ?? from} → ${GROOMING_STAGE_LABELS.closed}`,
+      payload: { from, to: 'closed', via: 'voice_stale_cleanup' },
+    });
+    await syncAppointmentStatusForStage(opts.clinicId, aid, 'closed');
+    closed += 1;
+  }
+  return closed;
+}
+
+/** Alvos do board de hoje: sessões do dia + agendamentos B&T do dia sem sessão do dia. */
+async function loadDayTargets(scope: VoiceScope): Promise<DayTarget[]> {
+  const { from, to } = dayBoundsSaoPaulo();
+  const groomingTypeIds = await getGroomingServiceTypeIds(scope.clinicId);
+
+  const { data: apptsRaw, error: apptErr } = await supabaseAdmin
+    .from('hub_appointments')
+    .select(
+      'id, pet_id, unit_id, status, appointment_kind, hub_service_type_id, starts_at, ends_at',
+    )
     .eq('clinic_id', scope.clinicId)
     .eq('unit_id', scope.unitId)
     .is('deleted_at', null)
@@ -106,9 +180,35 @@ async function loadDaySessions(scope: VoiceScope): Promise<SessionTarget[]> {
     .gt('ends_at', from)
     .limit(200);
   if (apptErr) throw new Error(apptErr.message);
-  const dayAppointmentIds = new Set((appts ?? []).map((a: { id: string }) => a.id));
 
-  const { data, error } = await supabaseAdmin
+  const apptRows = (apptsRaw ?? []) as Array<Record<string, unknown>>;
+  const apptIds = apptRows.map((a) => a.id as string);
+
+  const lineTypeIdsByAppt = new Map<string, string[]>();
+  if (apptIds.length > 0) {
+    const { data: lines, error: lineErr } = await supabaseAdmin
+      .from('hub_appointment_services')
+      .select('appointment_id, hub_service_type_id')
+      .in('appointment_id', apptIds);
+    if (lineErr) throw new Error(lineErr.message);
+    for (const row of lines ?? []) {
+      const aid = (row as { appointment_id: string }).appointment_id;
+      const stid = (row as { hub_service_type_id: string }).hub_service_type_id;
+      const list = lineTypeIdsByAppt.get(aid) ?? [];
+      list.push(stid);
+      lineTypeIdsByAppt.set(aid, list);
+    }
+  }
+
+  const groomingAppts = apptRows.filter((a) => {
+    const primary = a.hub_service_type_id as string | null;
+    if (primary && groomingTypeIds.has(primary)) return true;
+    const lines = lineTypeIdsByAppt.get(a.id as string) ?? [];
+    return lines.some((id) => groomingTypeIds.has(id));
+  });
+  const dayAppointmentIds = new Set(groomingAppts.map((a) => a.id as string));
+
+  const { data: sessRaw, error: sessErr } = await supabaseAdmin
     .from('hub_grooming_sessions')
     .select(
       `
@@ -127,18 +227,17 @@ async function loadDaySessions(scope: VoiceScope): Promise<SessionTarget[]> {
     .is('deleted_at', null)
     .in('grooming_stage', ACTIVE_STAGES)
     .limit(100);
+  if (sessErr) throw new Error(sessErr.message);
 
-  if (error) throw new Error(error.message);
-
-  return (data ?? [])
+  const daySessions = (sessRaw ?? [])
     .map((row: Record<string, unknown>) => {
       const pet = row.hub_pets as { id?: string; name?: string } | null;
       return {
         sessionId: row.id as string,
+        appointmentId: (row.hub_appointment_id as string | null) ?? null,
         petId: (row.pet_id as string) ?? pet?.id ?? '',
         petName: (pet?.name ?? '').trim() || 'Pet',
         stage: row.grooming_stage as GroomingStage,
-        hubAppointmentId: (row.hub_appointment_id as string | null) ?? null,
         unitId: (row.unit_id as string | null) ?? null,
         checkedInAt: (row.checked_in_at as string | null) ?? null,
         createdAt: (row.created_at as string) ?? '',
@@ -147,7 +246,7 @@ async function loadDaySessions(scope: VoiceScope): Promise<SessionTarget[]> {
     .filter((s) =>
       isSessionOnGroomingDay(
         {
-          hubAppointmentId: s.hubAppointmentId,
+          hubAppointmentId: s.appointmentId,
           checkedInAt: s.checkedInAt,
           createdAt: s.createdAt,
         },
@@ -155,14 +254,67 @@ async function loadDaySessions(scope: VoiceScope): Promise<SessionTarget[]> {
         from,
         to,
       ),
-    )
-    .map(({ checkedInAt: _c, createdAt: _d, ...target }) => target);
+    );
+
+  const sessionByAppt = new Map<string, (typeof daySessions)[number]>();
+  for (const s of daySessions) {
+    if (s.appointmentId) sessionByAppt.set(s.appointmentId, s);
+  }
+
+  const petIdsNeeded = new Set<string>();
+  for (const a of groomingAppts) {
+    if (!sessionByAppt.has(a.id as string) && a.pet_id) petIdsNeeded.add(a.pet_id as string);
+  }
+  const petNameById = new Map<string, string>();
+  if (petIdsNeeded.size > 0) {
+    const { data: pets, error: petErr } = await supabaseAdmin
+      .from('hub_pets')
+      .select('id, name')
+      .eq('clinic_id', scope.clinicId)
+      .in('id', [...petIdsNeeded])
+      .is('deleted_at', null);
+    if (petErr) throw new Error(petErr.message);
+    for (const p of pets ?? []) {
+      petNameById.set((p as { id: string }).id, String((p as { name: string }).name || 'Pet'));
+    }
+  }
+
+  const targets: DayTarget[] = daySessions.map((s) => ({
+    sessionId: s.sessionId,
+    appointmentId: s.appointmentId,
+    petId: s.petId,
+    petName: s.petName,
+    stage: s.stage,
+    unitId: s.unitId,
+  }));
+
+  for (const a of groomingAppts) {
+    const apptId = a.id as string;
+    if (sessionByAppt.has(apptId)) continue;
+    const petId = (a.pet_id as string | null) ?? '';
+    if (!petId) continue;
+    const stage = boardStageFromAppointmentStatus(
+      String(a.status || ''),
+      a.appointment_kind as string | null,
+    );
+    if (stage === 'ready' || stage === 'closed' || stage === 'delivered') continue;
+    targets.push({
+      sessionId: null,
+      appointmentId: apptId,
+      petId,
+      petName: petNameById.get(petId) ?? 'Pet',
+      stage,
+      unitId: (a.unit_id as string | null) ?? scope.unitId,
+    });
+  }
+
+  return targets;
 }
 
 export function resolveGroomingTargets(
-  sessions: SessionTarget[],
+  sessions: Array<{ petName: string } & Record<string, unknown>>,
   petName: string,
-): { matches: SessionTarget[]; normalized: string } {
+): { matches: typeof sessions; normalized: string } {
   const normalized = normalizePetName(petName);
   const matches = sessions.filter((s) => normalizePetName(s.petName) === normalized);
   return { matches, normalized };
@@ -184,25 +336,88 @@ async function petHasActiveBoarding(clinicId: string, petId: string): Promise<bo
   return (data?.length ?? 0) > 0;
 }
 
-function disambiguationResult(matches: SessionTarget[]): VoiceCommandResult {
+function disambiguationResult(matches: DayTarget[]): VoiceCommandResult {
   return {
     status: 'needs_disambiguation',
     message:
       'Encontrei mais de um pet com esse nome. Use o Hub para escolher o atendimento certo.',
     candidates: matches.map((m) => ({
-      sessionId: m.sessionId,
+      sessionId: m.sessionId ?? m.appointmentId ?? '',
       petName: m.petName,
       stage: m.stage,
     })),
   };
 }
 
+async function ensureSessionForStart(
+  scope: VoiceScope,
+  target: DayTarget,
+): Promise<{ ok: true; sessionId: string } | { ok: false; result: VoiceCommandResult }> {
+  if (target.sessionId) {
+    await abandonStaleOpenSessionsForPet({
+      clinicId: scope.clinicId,
+      petId: target.petId,
+      keepSessionId: target.sessionId,
+      keepAppointmentId: target.appointmentId,
+    });
+    return { ok: true, sessionId: target.sessionId };
+  }
+
+  if (!target.appointmentId) {
+    return {
+      ok: false,
+      result: {
+        status: 'not_found',
+        message: `Não encontrei atendimento de ${target.petName} hoje. Confira no Hub.`,
+        petName: target.petName,
+      },
+    };
+  }
+
+  await abandonStaleOpenSessionsForPet({
+    clinicId: scope.clinicId,
+    petId: target.petId,
+    keepAppointmentId: target.appointmentId,
+  });
+
+  const ensured = await ensureGroomingQueuedForAppointment(scope.clinicId, target.appointmentId);
+  if (!ensured.ok) {
+    return {
+      ok: false,
+      result: {
+        status: 'temporarily_unavailable',
+        message: ensured.error || 'Não consegui abrir a sessão. Use o Hub.',
+        petName: target.petName,
+      },
+    };
+  }
+
+  const { data: session, error } = await supabaseAdmin
+    .from('hub_grooming_sessions')
+    .select('id')
+    .eq('clinic_id', scope.clinicId)
+    .eq('hub_appointment_id', target.appointmentId)
+    .is('deleted_at', null)
+    .maybeSingle();
+  if (error || !session) {
+    return {
+      ok: false,
+      result: {
+        status: 'temporarily_unavailable',
+        message: 'Não consegui abrir a sessão. Use o Hub.',
+        petName: target.petName,
+      },
+    };
+  }
+  return { ok: true, sessionId: session.id as string };
+}
+
 async function handleStartService(
   scope: VoiceScope,
   petName: string,
 ): Promise<VoiceCommandResult> {
-  const sessions = await loadDaySessions(scope);
-  const { matches } = resolveGroomingTargets(sessions, petName);
+  const targets = await loadDayTargets(scope);
+  const { matches } = resolveGroomingTargets(targets, petName);
   if (matches.length === 0) {
     return {
       status: 'not_found',
@@ -210,10 +425,10 @@ async function handleStartService(
       petName,
     };
   }
-  if (matches.length > 1) return disambiguationResult(matches);
+  if (matches.length > 1) return disambiguationResult(matches as DayTarget[]);
 
-  const target = matches[0]!;
-  if (target.stage === 'in_service' || target.stage === 'finishing') {
+  const target = matches[0] as DayTarget;
+  if (target.sessionId && (target.stage === 'in_service' || target.stage === 'finishing')) {
     return {
       status: 'already_applied',
       message: `${target.petName} já está em atendimento.`,
@@ -221,18 +436,21 @@ async function handleStartService(
       petName: target.petName,
     };
   }
-  if (target.stage !== 'queued') {
+  if (target.stage === 'ready') {
     return {
       status: 'invalid_state',
-      message: `${target.petName} está em ${GROOMING_STAGE_LABELS[target.stage]}. Não dá para iniciar agora.`,
-      sessionId: target.sessionId,
+      message: `${target.petName} já está pronta. Não dá para iniciar agora.`,
+      sessionId: target.sessionId ?? undefined,
       petName: target.petName,
     };
   }
 
+  const ensured = await ensureSessionForStart(scope, target);
+  if (!ensured.ok) return ensured.result;
+
   const result = await transitionGroomingSessionStage({
     clinicId: scope.clinicId,
-    sessionId: target.sessionId,
+    sessionId: ensured.sessionId,
     to: 'in_service',
     actorUserId: scope.actorUserId,
     source: 'voice_alexa',
@@ -245,7 +463,7 @@ async function handleStartService(
         result.status === 'already_applied'
           ? `${target.petName} já estava em atendimento.`
           : `Atendimento de ${target.petName} iniciado.`,
-      sessionId: target.sessionId,
+      sessionId: ensured.sessionId,
       petName: target.petName,
     };
   }
@@ -253,7 +471,7 @@ async function handleStartService(
     return {
       status: 'resource_conflict',
       message: `${result.message} Escolha pelo Hub.`,
-      sessionId: target.sessionId,
+      sessionId: ensured.sessionId,
       petName: target.petName,
     };
   }
@@ -261,7 +479,7 @@ async function handleStartService(
     return {
       status: 'invalid_state',
       message: result.message,
-      sessionId: target.sessionId,
+      sessionId: ensured.sessionId,
       petName: target.petName,
     };
   }
@@ -275,7 +493,7 @@ async function handleStartService(
   return {
     status: 'temporarily_unavailable',
     message: 'Não consegui atualizar agora. Tente de novo ou use o Hub.',
-    sessionId: target.sessionId,
+    sessionId: ensured.sessionId,
     petName: target.petName,
   };
 }
@@ -285,8 +503,8 @@ async function handleMarkReady(
   petName: string,
   confirmed: boolean,
 ): Promise<VoiceCommandResult> {
-  const sessions = await loadDaySessions(scope);
-  const { matches } = resolveGroomingTargets(sessions, petName);
+  const targets = await loadDayTargets(scope);
+  const { matches } = resolveGroomingTargets(targets, petName);
   if (matches.length === 0) {
     return {
       status: 'not_found',
@@ -294,9 +512,16 @@ async function handleMarkReady(
       petName,
     };
   }
-  if (matches.length > 1) return disambiguationResult(matches);
+  if (matches.length > 1) return disambiguationResult(matches as DayTarget[]);
 
-  const target = matches[0]!;
+  const target = matches[0] as DayTarget;
+  if (!target.sessionId) {
+    return {
+      status: 'invalid_state',
+      message: `${target.petName} ainda não está em atendimento. Inicie o banho ou a tosa primeiro.`,
+      petName: target.petName,
+    };
+  }
   if (target.stage === 'ready') {
     return {
       status: 'already_applied',
@@ -367,8 +592,8 @@ async function handleMarkReady(
 }
 
 async function handleListPending(scope: VoiceScope): Promise<VoiceCommandResult> {
-  const sessions = await loadDaySessions(scope);
-  const pending = sessions.filter((s) => PENDING_LIST_STAGES.includes(s.stage));
+  const targets = await loadDayTargets(scope);
+  const pending = targets.filter((s) => PENDING_LIST_STAGES.includes(s.stage));
   if (pending.length === 0) {
     return {
       status: 'executed',
