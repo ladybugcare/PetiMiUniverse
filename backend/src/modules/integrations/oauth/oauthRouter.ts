@@ -13,12 +13,13 @@ import {
   refreshAccessToken,
   revokeConnection,
 } from './connectionService';
-import { oauthConsentUiHandler } from './consentUi';
+import { oauthConsentUiHandler, oauthConsentUiJsHandler } from './consentUi';
 
 const oauthRouter = Router();
 
 /** Consentimento na API (Railway) — evita Vercel Authentication no Hub staging. */
 oauthRouter.get('/consent-ui', oauthConsentUiHandler);
+oauthRouter.get('/consent-ui.js', oauthConsentUiJsHandler);
 
 function resourceMetadataUrl(): string {
   return `${publicApiBase()}/.well-known/oauth-protected-resource`;
